@@ -182,6 +182,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
           <button
             onClick={handleSave}
             disabled={!name.trim() || sizes.length === 0}
+            data-guide-anchor="grade.salvar"
             className="flex-1 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
           >
             Salvar Grade

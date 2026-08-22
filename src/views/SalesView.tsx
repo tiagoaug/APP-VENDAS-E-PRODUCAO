@@ -36,6 +36,14 @@ import DeliveryItemsPicker, { deliveryItemKey } from '../components/DeliveryItem
 import { formatDeliveryItemsList } from '../utils/deliveryItemsFormat';
 import Modal from '../components/Modal';
 
+// Mudança de item no popup "Alterar Produtos" (Pedido & Separação) — ver
+// onAlterarProdutosVenda. `remove` referencia a posição no array `sale.items` (mesmo
+// `itemIdx` já usado por onSepararCaixas/onPartialRevertSeparacao); `add` carrega os
+// dados completos de um item novo, ainda não separado.
+export type SaleItemChange =
+  | { type: 'remove'; itemIdx: number; quantity: number }
+  | { type: 'add'; productId: string; variationId: string; saleType: SaleType; size?: string; quantity: number; price: number; unitPrice?: number };
+
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
 // Mostrar Grade e Quantidades, Mostrar Padrão de Embalagem) persistem entre
 // navegações/recarregamentos — sem isso, voltar para a tela de Vendas sempre
@@ -105,6 +113,10 @@ interface SalesViewProps {
   onRevertExpedition: (saleId: string) => Promise<void>;
   onSepararCaixas: (saleId: string, separations: { itemIdx: number; quantity: number }[]) => Promise<void>;
   onPartialRevertSeparacao: (saleId: string, reverts: { itemIdx: number; quantity: number }[]) => Promise<void>;
+  // "Alterar Produtos" (popup Pedido & Separação) — remover devolve o que já estava
+  // separado pro estoque antes de encolher/apagar a linha; adicionar entra como item
+  // comum "não separado", pro próprio usuário separar depois pelo stepper de sempre.
+  onAlterarProdutosVenda: (saleId: string, changes: SaleItemChange[]) => Promise<void>;
   onNavigateStock: () => void;
   onNavigateStockGlance: () => void;
   onNavigatePCP: () => void;
@@ -173,6 +185,7 @@ export default function SalesView({
   onRevertExpedition,
   onSepararCaixas,
   onPartialRevertSeparacao,
+  onAlterarProdutosVenda,
   onNavigateStock,
   onNavigateStockGlance,
   onNavigatePCP,
@@ -453,16 +466,60 @@ export default function SalesView({
   const [revertChoiceMode, setRevertChoiceMode] = useState<null | 'choose' | 'partial'>(null);
   const [processingPopupSep, setProcessingPopupSep] = useState(false);
 
+  // "Alterar Produtos" — modo de edição de itens do pedido, dentro do mesmo popup de
+  // separação (ver onAlterarProdutosVenda). editProdutosMode substitui o corpo/rodapé do
+  // popup pelo painel de remover/adicionar, mesmo padrão de troca de conteúdo já usado por
+  // revertChoiceMode acima.
+  const [editProdutosMode, setEditProdutosMode] = useState(false);
+  // Quantidade a remover por índice de item (posição em sale.items)
+  const [alterarRemoveQtys, setAlterarRemoveQtys] = useState<Record<number, number>>({});
+  // Itens novos ainda não salvos, aguardando o toque em "Salvar Alterações"
+  const [alterarAddDrafts, setAlterarAddDrafts] = useState<{
+    id: string; productId: string; variationId: string; saleType: SaleType; size?: string;
+    quantity: number; price: number; unitPrice?: number;
+  }[]>([]);
+  const [addProductId, setAddProductId] = useState('');
+  const [addVariationId, setAddVariationId] = useState('');
+  const [addSaleType, setAddSaleType] = useState<SaleType>(SaleType.RETAIL);
+  const [addSize, setAddSize] = useState('');
+  const [addQty, setAddQty] = useState(1);
+  const [addPrice, setAddPrice] = useState(0);
+  const [processingAlterar, setProcessingAlterar] = useState(false);
+
   // Inicializa as quantidades de separação quando o popup de itens abre
   useEffect(() => {
-    if (!itemsPopupSale) { setPopupSepQtys({}); setPopupRevertQtys({}); setRevertChoiceMode(null); return; }
+    if (!itemsPopupSale) {
+      setPopupSepQtys({}); setPopupRevertQtys({}); setRevertChoiceMode(null);
+      setEditProdutosMode(false); setAlterarRemoveQtys({}); setAlterarAddDrafts([]);
+      setAddProductId(''); setAddVariationId(''); setAddSaleType(SaleType.RETAIL); setAddSize(''); setAddQty(1); setAddPrice(0);
+      return;
+    }
     const rows = buildSeparationRows(itemsPopupSale, products, stockLots);
     const init: Record<number, number> = {};
     rows.forEach(row => { init[row.idx] = row.maxSeparable; });
     setPopupSepQtys(init);
     setPopupRevertQtys({});
+    setEditProdutosMode(false); setAlterarRemoveQtys({}); setAlterarAddDrafts([]);
+    setAddProductId(''); setAddVariationId(''); setAddSaleType(SaleType.RETAIL); setAddSize(''); setAddQty(1); setAddPrice(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsPopupSale?.id]);
+
+  // Pré-preenche o preço do item "a adicionar" com o preço de tabela sempre que
+  // produto/variação/tipo/tamanho mudam — mesma resolução usada em ProductFormView
+  // (variation.sizePrices[size].sale, com product.salePrice como fallback pro Varejo;
+  // product.salePrice também é o preço "por grade" do Atacado).
+  useEffect(() => {
+    const product = products.find(p => p.id === addProductId);
+    if (!product) return;
+    if (addSaleType === SaleType.WHOLESALE) {
+      setAddPrice(product.salePrice || 0);
+    } else {
+      const variation = product.variations.find(v => v.id === addVariationId);
+      const sizePrice = addSize ? variation?.sizePrices?.[addSize]?.sale : undefined;
+      setAddPrice(sizePrice ?? product.salePrice ?? 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addProductId, addVariationId, addSaleType, addSize]);
 
   const handleOpenExport = (e: React.MouseEvent, sale: Sale, format: 'pdf' | 'jpg') => {
     e.stopPropagation();
@@ -630,21 +687,18 @@ export default function SalesView({
     setLabelProfilePicker({ open: true, items });
   };
 
-  // 75×24mm — mesmo tamanho "★" (mais usado) dos presets de PrintLabelEditorModal.tsx
-  // (THERMAL_SIZES) — usado só quando "Criar Novo Perfil" parte de etiqueta em branco, já que
-  // esse fluxo simplificado não tem uma etapa própria de escolher tamanho.
-  const DEFAULT_LABEL_PROFILE_SIZE = { widthMm: 75, heightMm: 24 };
-
   const handlePickLabelProfile = (file: LabelFile) => {
     const items = labelProfilePicker.items;
     setLabelProfilePicker({ open: false, items: [] });
     onOpenLabelEditor?.({ widthMm: file.widthMm, heightMm: file.heightMm, paperSizeId: file.paperSizeId, existingFile: file, batchContext: { items } });
   };
 
-  const handleCreateNewLabelProfile = () => {
+  // Tamanho escolhido na etapa "Tamanho da Etiqueta" do próprio LabelProfilePickerModal (ver
+  // onCreateNew) — nada mais fica implícito/hardcoded aqui.
+  const handleCreateNewLabelProfile = (widthMm: number, heightMm: number) => {
     const items = labelProfilePicker.items;
     setLabelProfilePicker({ open: false, items: [] });
-    onOpenLabelEditor?.({ ...DEFAULT_LABEL_PROFILE_SIZE, batchContext: { items } });
+    onOpenLabelEditor?.({ widthMm, heightMm, batchContext: { items } });
   };
 
   const handleConfirmExport = async (
@@ -1137,6 +1191,7 @@ export default function SalesView({
                   setManagementView('chooser');
                   setManagementSearchTerm('');
                 }}
+                data-guide-anchor="sales.gerenciamento"
                 className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${showManagementCard ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-emerald-400' : 'bg-white text-slate-600 hover:text-emerald-600'}`}
                 title="Gerenciamento — Cruzamento, Diagnósticos, Expedição, Estoque, Lotes, Balanço"
               >
@@ -1146,11 +1201,12 @@ export default function SalesView({
             )}
             <button
               onClick={() => setShowFilters(true)}
-              className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 relative shadow-sm ${showFilters ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-indigo-400' : 'bg-white text-slate-600 hover:text-indigo-500'}`}
+              data-guide-anchor="sales.filtros"
+              className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 relative shadow-sm ${showFilters ? 'bg-rose-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-rose-400' : 'bg-white text-slate-600 hover:text-rose-500'}`}
               title="Configurações e Filtros"
             >
               <div className="relative">
-                <Filter size={18} strokeWidth={2.5} className={showFilters ? '' : 'text-indigo-500'} />
+                <Filter size={18} strokeWidth={2.5} className={showFilters ? '' : 'text-rose-500'} />
                 {activeFiltersCount > 0 && (
                   <span className="absolute -top-3 -right-3 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
                     {activeFiltersCount}
@@ -1162,6 +1218,7 @@ export default function SalesView({
 
             <button
               onClick={onNavigateStockGlance}
+              data-guide-anchor="sales.disponivel"
               className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-sky-400' : 'bg-white text-slate-600 hover:text-sky-600'}`}
               title="Disponível em Estoque (somente leitura)"
             >
@@ -1193,6 +1250,7 @@ export default function SalesView({
               <button
                 type="button"
                 onClick={() => setManagementView('cruzamento')}
+                data-guide-anchor="sales.mgmtCruzamento"
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
@@ -1208,6 +1266,7 @@ export default function SalesView({
               <button
                 type="button"
                 onClick={() => setShowDiagnosticsModal(true)}
+                data-guide-anchor="sales.mgmtDiagnosticos"
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/15' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
@@ -1223,6 +1282,7 @@ export default function SalesView({
               <button
                 type="button"
                 onClick={() => setShowEntryHistoryModal(true)}
+                data-guide-anchor="sales.mgmtHistorico"
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-500/10 border-slate-500/30 hover:bg-slate-500/15' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-500/20 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
@@ -1238,6 +1298,7 @@ export default function SalesView({
               <button
                 type="button"
                 onClick={() => setManagementView('expedicao')}
+                data-guide-anchor="sales.mgmtExpedicao"
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-sky-500/10 border-sky-500/30 hover:bg-sky-500/15' : 'bg-sky-50 border-sky-200 hover:bg-sky-100'}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-100 text-sky-600'}`}>
@@ -1253,6 +1314,7 @@ export default function SalesView({
               <button
                 type="button"
                 onClick={onNavigateStock}
+                data-guide-anchor="sales.mgmtEstoque"
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-violet-500/10 border-violet-500/30 hover:bg-violet-500/15' : 'bg-violet-50 border-violet-200 hover:bg-violet-100'}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-100 text-violet-600'}`}>
@@ -1269,6 +1331,7 @@ export default function SalesView({
                 <button
                   type="button"
                   onClick={() => setManagementView('lotes')}
+                  data-guide-anchor="sales.mgmtLotes"
                   className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
                 >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
@@ -1285,6 +1348,7 @@ export default function SalesView({
               <button
                 type="button"
                 onClick={onNavigateStockBalance}
+                data-guide-anchor="sales.mgmtBalanco"
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-indigo-500/10 border-indigo-500/30 hover:bg-indigo-500/15' : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
@@ -1549,9 +1613,9 @@ export default function SalesView({
         )}
 
         {/* Search - Always Visible */}
-        <div className="relative">
+        <div data-guide-anchor="sales.busca" className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} strokeWidth={2.5} />
-          <input 
+          <input
             type="text"
             placeholder="Pesquisar cliente ou pedido..."
             value={searchQuery}
@@ -2575,6 +2639,7 @@ export default function SalesView({
                             <div className="p-3 flex flex-col gap-2">
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleCopyMessage(sale); setActiveMenuId(null); }}
+                                data-guide-anchor="sales.optCopiarTexto"
                                 className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                               >
                                 <Copy size={16} className="text-sky-500" /> Copiar Texto
@@ -2588,6 +2653,7 @@ export default function SalesView({
                                     <button
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); setSeparacaoSale(sale); setActiveMenuId(null); }}
+                                      data-guide-anchor="sales.optSepararCaixas"
                                       className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                     >
                                       <Boxes size={16} className="text-indigo-500" /> Separar Caixas
@@ -2598,6 +2664,7 @@ export default function SalesView({
                               {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleReleaseClick(sale); setActiveMenuId(null); }}
+                                  data-guide-anchor="sales.optExpedirReservado"
                                   className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
                                   <Truck size={16} className="text-emerald-600" /> Expedir / Baixar
@@ -2606,6 +2673,7 @@ export default function SalesView({
                               {sale.status === SaleStatus.SALE && getUnfulfilledStockStatus(sale)?.ready ? (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setExpediteSale(sale); setActiveMenuId(null); }}
+                                  data-guide-anchor="sales.optExpedirEstoque"
                                   className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
                                   <Truck size={16} className="text-emerald-600" /> Expedir / Baixar
@@ -2614,6 +2682,7 @@ export default function SalesView({
                               {sale.status === SaleStatus.SALE && (sale.deliveryStatus === 'DELIVERED' || sale.items.some(it => it.fulfilled === true) || sale.items.some(it => (it.boxesSeparated || 0) > 0)) && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setRevertSale(sale); setActiveMenuId(null); }}
+                                  data-guide-anchor="sales.optReverterExpedicao"
                                   className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
                                   <RotateCcw size={16} className="text-amber-500" /> Reverter Expedição
@@ -2625,6 +2694,7 @@ export default function SalesView({
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setActiveMenuId(null); }}
+                                data-guide-anchor="sales.optCancelarPedido"
                                 className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                               >
                                 <Ban size={16} className="text-orange-500" /> Cancelar Pedido
@@ -2663,6 +2733,7 @@ export default function SalesView({
         type="button"
         title="Nova venda"
         onClick={onAdd}
+        data-guide-anchor="sales.novoPedido"
         className="fixed bottom-24 right-6 w-16 h-16 bg-slate-900 dark:bg-indigo-600 text-white rounded-[2rem] shadow-2xl flex items-center justify-center active:scale-95 transition-all z-50 border-4 border-white dark:border-slate-800"
       >
          <Plus size={36} strokeWidth={2.5} />
@@ -2985,6 +3056,67 @@ export default function SalesView({
           }
         };
 
+        // "Alterar Produtos" — dados derivados do formulário de adicionar produto e handlers
+        // de remover/adicionar/salvar. Ver onAlterarProdutosVenda (App.tsx) e SaleItemChange.
+        const alterarProduct = products.find(p => p.id === addProductId);
+        const alterarVariation = alterarProduct?.variations.find(v => v.id === addVariationId);
+        const alterarSaleTypes = alterarProduct
+          ? ((alterarProduct.saleTypes && alterarProduct.saleTypes.length > 0) ? alterarProduct.saleTypes : [alterarProduct.type])
+          : [];
+        const alterarGrid = alterarProduct ? grids.find(g => g.id === alterarProduct.defaultGridId) : undefined;
+        const canAddDraft = !!alterarProduct && !!alterarVariation && (addSaleType === SaleType.WHOLESALE || !!addSize) && addQty > 0;
+
+        const handleAddDraft = () => {
+          if (!canAddDraft || !alterarProduct || !alterarVariation) return;
+          setAlterarAddDrafts(prev => [...prev, {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            productId: alterarProduct.id,
+            variationId: alterarVariation.id,
+            saleType: addSaleType,
+            size: addSaleType === SaleType.RETAIL ? addSize : undefined,
+            quantity: addQty,
+            price: addPrice,
+            unitPrice: addSaleType === SaleType.WHOLESALE ? (alterarProduct.unitSalePrice || undefined) : undefined,
+          }]);
+          setAddProductId(''); setAddVariationId(''); setAddSaleType(SaleType.RETAIL); setAddSize(''); setAddQty(1); setAddPrice(0);
+        };
+
+        const handleRemoveDraft = (id: string) => {
+          setAlterarAddDrafts(prev => prev.filter(d => d.id !== id));
+        };
+
+        const alterarRemoveList = rows
+          .map(r => ({ itemIdx: r.idx, quantity: alterarRemoveQtys[r.idx] || 0 }))
+          .filter(x => x.quantity > 0);
+        const totalAlterarRemove = alterarRemoveList.reduce((sum, x) => sum + x.quantity, 0);
+        const totalAlterarAdd = alterarAddDrafts.reduce((sum, d) => sum + d.quantity, 0);
+        const canSaveAlterar = alterarRemoveList.length > 0 || alterarAddDrafts.length > 0;
+        const alterarDeltaParts = [
+          totalAlterarRemove > 0 ? `-${totalAlterarRemove}` : null,
+          totalAlterarAdd > 0 ? `+${totalAlterarAdd}` : null,
+        ].filter(Boolean);
+        const alterarSaveLabel = alterarDeltaParts.length > 0 ? `Salvar Alterações (${alterarDeltaParts.join(' / ')})` : 'Salvar Alterações';
+
+        const handleConfirmAlterar = async () => {
+          if (!canSaveAlterar) return;
+          setProcessingAlterar(true);
+          try {
+            const changes: SaleItemChange[] = [
+              ...alterarRemoveList.map(r => ({ type: 'remove' as const, itemIdx: r.itemIdx, quantity: r.quantity })),
+              ...alterarAddDrafts.map(d => ({
+                type: 'add' as const, productId: d.productId, variationId: d.variationId, saleType: d.saleType,
+                size: d.size, quantity: d.quantity, price: d.price, unitPrice: d.unitPrice,
+              })),
+            ];
+            await onAlterarProdutosVenda(s.id, changes);
+            setEditProdutosMode(false);
+            setAlterarRemoveQtys({});
+            setAlterarAddDrafts([]);
+          } finally {
+            setProcessingAlterar(false);
+          }
+        };
+
         return (
           <div
             className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
@@ -3027,6 +3159,200 @@ export default function SalesView({
 
               {/* Items + separation controls */}
               <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3 custom-scrollbar">
+              {editProdutosMode ? (
+                <>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Remover itens do pedido</p>
+                  {rows.map(row => {
+                    const removeQty = alterarRemoveQtys[row.idx] ?? 0;
+                    const willRelease = Math.min(removeQty, row.separated);
+                    return (
+                      <div key={row.idx} className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="min-w-0">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
+                              {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                              {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                            </span>
+                            {row.item.size && <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Nº {row.item.size}</p>}
+                          </div>
+                          <span className="text-[11px] font-black text-slate-400 shrink-0">{row.item.quantity} {row.unit}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-rose-500 shrink-0">Remover</span>
+                          <div className={`flex items-center flex-1 rounded-xl p-1 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
+                            <button
+                              type="button"
+                              onClick={() => setAlterarRemoveQtys(prev => ({ ...prev, [row.idx]: Math.max(0, removeQty - 1) }))}
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center active:scale-90 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}
+                              aria-label="Diminuir"
+                            >
+                              <Minus size={13} strokeWidth={3} />
+                            </button>
+                            <input
+                              type="number"
+                              min={0}
+                              max={row.item.quantity}
+                              value={removeQty === 0 ? '' : removeQty}
+                              onFocus={e => e.currentTarget.select()}
+                              onChange={e => setAlterarRemoveQtys(prev => ({ ...prev, [row.idx]: Math.min(row.item.quantity, Math.max(0, parseInt(e.target.value) || 0)) }))}
+                              className={`w-full text-center border-none p-0 text-sm font-black focus:ring-0 bg-transparent ${removeQty > 0 ? 'text-rose-500' : (isDarkMode ? 'text-slate-500' : 'text-slate-300')}`}
+                              aria-label="Quantidade a remover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setAlterarRemoveQtys(prev => ({ ...prev, [row.idx]: Math.min(row.item.quantity, removeQty + 1) }))}
+                              className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center active:scale-90 transition-all"
+                              aria-label="Aumentar"
+                            >
+                              <Plus size={13} strokeWidth={3} />
+                            </button>
+                          </div>
+                          <span className="text-[9px] font-black uppercase text-slate-400 w-8 text-center shrink-0">{row.unit}</span>
+                        </div>
+                        {willRelease > 0 && (
+                          <p className="text-[9px] font-bold text-emerald-500 mt-2">Libera {willRelease} {row.unit} de volta pro estoque disponível</p>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1 pt-2">Adicionar produto</p>
+                  <div className={`p-3 rounded-2xl border flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <select
+                      value={addProductId}
+                      onChange={e => {
+                        const pid = e.target.value;
+                        setAddProductId(pid);
+                        setAddVariationId('');
+                        setAddSize('');
+                        const p = products.find(pp => pp.id === pid);
+                        const types = p ? ((p.saleTypes && p.saleTypes.length > 0) ? p.saleTypes : [p.type]) : [SaleType.RETAIL];
+                        setAddSaleType(types[0]);
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                    >
+                      <option value="">Selecione um produto...</option>
+                      {products.map(p => <option key={p.id} value={p.id}>{p.reference} · {p.name}</option>)}
+                    </select>
+
+                    {alterarProduct && (
+                      <select
+                        value={addVariationId}
+                        onChange={e => setAddVariationId(e.target.value)}
+                        className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                      >
+                        <option value="">Selecione a cor...</option>
+                        {alterarProduct.variations.map(v => <option key={v.id} value={v.id}>{v.colorName}</option>)}
+                      </select>
+                    )}
+
+                    {alterarProduct && alterarSaleTypes.length > 1 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setAddSaleType(SaleType.RETAIL); setAddSize(''); }}
+                          className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${addSaleType === SaleType.RETAIL ? 'bg-indigo-600 text-white border-indigo-600' : (isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-600')}`}
+                        >
+                          Varejo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setAddSaleType(SaleType.WHOLESALE); setAddSize(''); }}
+                          className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${addSaleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white border-indigo-600' : (isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-600')}`}
+                        >
+                          Atacado
+                        </button>
+                      </div>
+                    )}
+
+                    {alterarProduct && addSaleType === SaleType.RETAIL && alterarVariation && (
+                      <select
+                        value={addSize}
+                        onChange={e => setAddSize(e.target.value)}
+                        className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                      >
+                        <option value="">Selecione o tamanho...</option>
+                        {(alterarGrid?.sizes || []).map(sz => <option key={sz} value={sz}>{sz}</option>)}
+                      </select>
+                    )}
+
+                    {alterarProduct && alterarVariation && (addSaleType === SaleType.WHOLESALE || addSize) && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col shrink-0">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Qtd.</span>
+                          <div className={`flex items-center rounded-xl p-1 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
+                            <button type="button" onClick={() => setAddQty(q => Math.max(1, q - 1))} className={`w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`} aria-label="Diminuir quantidade">
+                              <Minus size={12} strokeWidth={3} />
+                            </button>
+                            <input
+                              type="number"
+                              min={1}
+                              value={addQty}
+                              onFocus={e => e.currentTarget.select()}
+                              onChange={e => setAddQty(Math.max(1, parseInt(e.target.value) || 1))}
+                              className={`w-10 text-center border-none p-0 text-sm font-black focus:ring-0 bg-transparent ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                            />
+                            <button type="button" onClick={() => setAddQty(q => q + 1)} className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center active:scale-90" aria-label="Aumentar quantidade">
+                              <Plus size={12} strokeWidth={3} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Preço {addSaleType === SaleType.WHOLESALE ? '(grade)' : '(par)'}</span>
+                          <div className={`flex items-center rounded-xl px-3 py-1.5 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
+                            <span className="text-xs font-bold text-slate-400 mr-1">R$</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={addPrice}
+                              onFocus={e => e.currentTarget.select()}
+                              onChange={e => setAddPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                              className={`w-full border-none p-0 text-sm font-black focus:ring-0 bg-transparent ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      disabled={!canAddDraft}
+                      onClick={handleAddDraft}
+                      className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${!canAddDraft ? (isDarkMode ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed' : 'bg-slate-100 text-slate-300 cursor-not-allowed') : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                    >
+                      <Plus size={13} strokeWidth={3} /> Adicionar à lista
+                    </button>
+                  </div>
+
+                  {alterarAddDrafts.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">A adicionar</p>
+                      {alterarAddDrafts.map(d => {
+                        const p = products.find(pp => pp.id === d.productId);
+                        const v = p?.variations.find(vv => vv.id === d.variationId);
+                        const unit = d.saleType === SaleType.WHOLESALE ? 'cx' : 'pares';
+                        return (
+                          <div key={d.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-emerald-900/10 border-emerald-800/30' : 'bg-emerald-50 border-emerald-100'}`}>
+                            <div className="min-w-0">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-wider">
+                                {p?.reference && `${p.reference} · `}{p?.name}{v?.colorName && ` · ${v.colorName}`}
+                              </span>
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">
+                                {d.size ? `Nº ${d.size} · ` : ''}{d.quantity} {unit} · R$ {d.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <button type="button" onClick={() => handleRemoveDraft(d.id)} className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 shrink-0" aria-label="Remover da lista">
+                              <X size={14} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
                 {/* Banner de bloqueio quando entregue */}
                 {isDelivered && (
                   <div className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl ${isDarkMode ? 'bg-emerald-900/20 border border-emerald-800/30' : 'bg-emerald-50 border border-emerald-100'}`}>
@@ -3121,7 +3447,7 @@ export default function SalesView({
                       )}
 
                       {/* Quantity stepper */}
-                      <div className={`flex items-center gap-2 ${isDelivered ? 'pointer-events-none' : ''}`}>
+                      <div data-guide-anchor="sales.popupSepararStepper" className={`flex items-center gap-2 ${isDelivered ? 'pointer-events-none' : ''}`}>
                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 shrink-0">Separar</span>
                         <div className={`flex items-center flex-1 rounded-xl p-1 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
                           <button
@@ -3310,6 +3636,8 @@ export default function SalesView({
                     </p>
                   </div>
                 )}
+                </>
+              )}
               </div>
 
               {/* Footer */}
@@ -3325,80 +3653,128 @@ export default function SalesView({
                     )}
                   </div>
                 </div>
-                {(() => {
-                  const hasSeparated = s.deliveryStatus === 'DELIVERED' || s.items.some(it => it.fulfilled === true || (it.boxesSeparated || 0) > 0);
-                  if (revertChoiceMode === 'partial') {
-                    // Modo parcial: [CANCELAR] [CONFIRMAR REVERSÃO (X)]
-                    return (
-                      <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
-                        <button
-                          type="button"
-                          disabled={processingPopupSep}
-                          onClick={() => { setRevertChoiceMode(null); setPopupRevertQtys({}); }}
-                          className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          disabled={processingPopupSep || totalToRevert === 0}
-                          onClick={handleConfirmPartialRevert}
-                          className={`flex-[1.5] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
-                            totalToRevert === 0
-                              ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
-                              : 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
-                          }`}
-                        >
-                          <RotateCcw size={14} strokeWidth={2.5} />
-                          {processingPopupSep ? '...' : `Reverter (${totalToRevert})`}
-                        </button>
-                      </div>
-                    );
-                  }
+                {editProdutosMode ? (
+                  <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                    <button
+                      type="button"
+                      disabled={processingAlterar}
+                      onClick={() => { setEditProdutosMode(false); setAlterarRemoveQtys({}); setAlterarAddDrafts([]); }}
+                      className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={processingAlterar || !canSaveAlterar}
+                      onClick={handleConfirmAlterar}
+                      className={`flex-[1.5] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                        !canSaveAlterar
+                          ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                    >
+                      <Check size={14} strokeWidth={2.5} />
+                      {processingAlterar ? '...' : alterarSaveLabel}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {(() => {
+                      const hasSeparated = s.deliveryStatus === 'DELIVERED' || s.items.some(it => it.fulfilled === true || (it.boxesSeparated || 0) > 0);
+                      if (revertChoiceMode === 'partial') {
+                        // Modo parcial: [CANCELAR] [CONFIRMAR REVERSÃO (X)]
+                        return (
+                          <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                            <button
+                              type="button"
+                              disabled={processingPopupSep}
+                              onClick={() => { setRevertChoiceMode(null); setPopupRevertQtys({}); }}
+                              className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={processingPopupSep || totalToRevert === 0}
+                              onClick={handleConfirmPartialRevert}
+                              className={`flex-[1.5] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                                totalToRevert === 0
+                                  ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
+                                  : 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
+                              }`}
+                            >
+                              <RotateCcw size={14} strokeWidth={2.5} />
+                              {processingPopupSep ? '...' : `Reverter (${totalToRevert})`}
+                            </button>
+                          </div>
+                        );
+                      }
 
-                  return (
-                    <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                      return (
+                        <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                          <button
+                            type="button"
+                            onClick={() => { setItemsPopupSale(null); setRevertChoiceMode(null); }}
+                            disabled={processingPopupSep}
+                            data-guide-anchor="sales.popupFechar"
+                            className={`flex-[0.8] py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
+                          >
+                            Fechar
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={processingPopupSep || !hasSeparated || isDelivered}
+                            onClick={() => setRevertChoiceMode('choose')}
+                            data-guide-anchor="sales.popupReverter"
+                            className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all border-r ${
+                              !hasSeparated || isDelivered
+                                ? (isDarkMode ? 'text-slate-600 border-slate-700 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed')
+                                : revertChoiceMode === 'choose'
+                                  ? (isDarkMode ? 'text-amber-400 bg-amber-500/10 border-amber-700/40' : 'text-amber-700 bg-amber-100 border-amber-200')
+                                  : (isDarkMode ? 'text-amber-500 hover:bg-amber-500/10 border-slate-700' : 'text-amber-600 hover:bg-amber-50 border-slate-100')
+                            }`}
+                          >
+                            <RotateCcw size={14} strokeWidth={2.5} />
+                            Reverter
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={processingPopupSep || toApply.length === 0 || isDelivered}
+                            onClick={handleConfirmSep}
+                            data-guide-anchor="sales.popupSeparar"
+                            className={`flex-[1.2] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all ${
+                              toApply.length === 0 || isDelivered
+                                ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
+                                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            }`}
+                          >
+                            <Boxes size={14} strokeWidth={2.5} />
+                            {processingPopupSep ? '...' : `Separar (${totalToSeparate})`}
+                          </button>
+                        </div>
+                      );
+                    })()}
+
+                    {revertChoiceMode === null && (
                       <button
                         type="button"
-                        onClick={() => { setItemsPopupSale(null); setRevertChoiceMode(null); }}
-                        disabled={processingPopupSep}
-                        className={`flex-[0.8] py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
-                      >
-                        Fechar
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={processingPopupSep || !hasSeparated || isDelivered}
-                        onClick={() => setRevertChoiceMode('choose')}
-                        className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all border-r ${
-                          !hasSeparated || isDelivered
-                            ? (isDarkMode ? 'text-slate-600 border-slate-700 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed')
-                            : revertChoiceMode === 'choose'
-                              ? (isDarkMode ? 'text-amber-400 bg-amber-500/10 border-amber-700/40' : 'text-amber-700 bg-amber-100 border-amber-200')
-                              : (isDarkMode ? 'text-amber-500 hover:bg-amber-500/10 border-slate-700' : 'text-amber-600 hover:bg-amber-50 border-slate-100')
+                        disabled={isDelivered || !!s.productionOrderId}
+                        onClick={() => setEditProdutosMode(true)}
+                        data-guide-anchor="sales.popupAlterarProdutos"
+                        title={s.productionOrderId ? 'Pedido vinculado à produção — altere pela Ordem de Produção.' : (isDelivered ? 'Pedido entregue — não é possível alterar os produtos.' : 'Adicionar ou remover produtos deste pedido')}
+                        className={`w-full mt-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 border-2 border-dashed ${
+                          isDelivered || s.productionOrderId
+                            ? (isDarkMode ? 'text-slate-600 border-slate-700 cursor-not-allowed' : 'text-slate-300 border-slate-200 cursor-not-allowed')
+                            : (isDarkMode ? 'text-indigo-400 border-indigo-800/40 hover:bg-indigo-500/10' : 'text-indigo-600 border-indigo-200 hover:bg-indigo-50')
                         }`}
                       >
-                        <RotateCcw size={14} strokeWidth={2.5} />
-                        Reverter
+                        <Pencil size={13} strokeWidth={2.5} /> Alterar Produtos
                       </button>
-
-                      <button
-                        type="button"
-                        disabled={processingPopupSep || toApply.length === 0 || isDelivered}
-                        onClick={handleConfirmSep}
-                        className={`flex-[1.2] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all ${
-                          toApply.length === 0 || isDelivered
-                            ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                        }`}
-                      >
-                        <Boxes size={14} strokeWidth={2.5} />
-                        {processingPopupSep ? '...' : `Separar (${totalToSeparate})`}
-                      </button>
-                    </div>
-                  );
-                })()}
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -244,6 +244,8 @@ export const DASHBOARD_CARD_SECTORS: Record<string, SectorId[]> = {
   customers: ['clientes_fornecedores'],
   suppliers: ['compras'],
   debt_management: ['financeiro'],
+  commission_to_sellers: ['financeiro'],
+  provider_service_orders: ['financeiro'],
   stock_value: ['estoque'],
   estimated_profit: ['financeiro'],
   checks: ['financeiro'],

@@ -189,8 +189,9 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
 
         <div className="flex gap-2 pt-2">
           <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
-          <button 
+          <button
             onClick={handleSave}
+            data-guide-anchor="cat.salvar"
             className="flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg shadow-indigo-200"
           >
             Salvar

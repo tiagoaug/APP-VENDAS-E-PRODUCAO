@@ -126,6 +126,15 @@ export default function PurchasesView({
     purchases.forEach(p => merged.set(p.id, p));
     return Array.from(merged.values());
   }, [purchases, olderPurchases]);
+
+  // `suppliers` (prop) só traz quem tem isSupplier — uma Compra pode ter supplierId apontando
+  // pra alguém cadastrado só como Prestador de Serviço (ex.: vinda de "Pagar Fornecedor" em
+  // Financeiro), aí suppliers.find nunca acha e o card mostra o texto genérico "Fornecedor" em
+  // vez do nome real. Mesma correção já feita em PurchaseFormView.tsx.
+  const availableThirdParties = useMemo(
+    () => people.filter(p => p.isSupplier || p.isServiceProvider),
+    [people],
+  );
   const [typeFilter, setTypeFilter] = usePersistedState<'ALL' | PurchaseType>('purchasesView_typeFilter', 'ALL');
   const [periodFilter, setPeriodFilter] = usePersistedState<string>('purchasesView_periodFilter', ''); // YYYY-MM
   const [showFilters, setShowFilters] = useState(false);
@@ -234,7 +243,7 @@ export default function PurchasesView({
     try {
       await exportPurchase({
         purchase: exportModal.purchase,
-        suppliers,
+        suppliers: availableThirdParties,
         products,
         additionalNote: note,
         isDarkMode,
@@ -267,7 +276,7 @@ export default function PurchasesView({
 
       // Filter by supplier / search
       if (searchQuery.trim()) {
-        const supplier = suppliers.find((s) => s.id === purchase.supplierId);
+        const supplier = availableThirdParties.find((s) => s.id === purchase.supplierId);
         const lowerSearch = searchQuery.toLowerCase();
 
         const supplierMatch = supplier?.name.toLowerCase().includes(lowerSearch);
@@ -278,7 +287,7 @@ export default function PurchasesView({
 
       return true;
     }).sort((a, b) => b.date - a.date);
-  }, [effectivePurchases, suppliers, typeFilter, periodFilter, searchQuery]);
+  }, [effectivePurchases, availableThirdParties, typeFilter, periodFilter, searchQuery]);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -330,7 +339,7 @@ export default function PurchasesView({
       .map(([groupId, occs]) => {
         const sorted = [...occs].sort((a, b) => (a.installmentNumber || 0) - (b.installmentNumber || 0));
         const first = sorted[0];
-        const supplier = suppliers.find(s => s.id === first.supplierId);
+        const supplier = availableThirdParties.find(s => s.id === first.supplierId);
         const paidCount = sorted.filter(o => o.paymentStatus === PaymentStatus.PAID).length;
         const totalValue = sorted.reduce((acc, o) => acc + o.total, 0);
         const remainingValue = sorted.filter(o => o.paymentStatus !== PaymentStatus.PAID).reduce((acc, o) => acc + o.total, 0);
@@ -348,7 +357,7 @@ export default function PurchasesView({
         };
       })
       .sort((a, b) => (a.nextDue?.dueDate || Infinity) - (b.nextDue?.dueDate || Infinity));
-  }, [effectivePurchases, suppliers]);
+  }, [effectivePurchases, availableThirdParties]);
   const [isRecurringOverviewExpanded, setIsRecurringOverviewExpanded] = useState(false);
 
   // Renderiza uma linha de item do carrinho (compartilhada entre o preview do card e o popup completo)
@@ -583,6 +592,7 @@ export default function PurchasesView({
             onClick={onAdd}
             title="Nova Compra"
             aria-label="Adicionar nova compra"
+            data-guide-anchor="purchases.novaCompra"
             className="bg-blue-600 text-white p-3 rounded-[1rem] shadow-sm active:scale-95 transition-all flex items-center justify-center cursor-pointer hover:bg-blue-700"
           >
             <Plus size={20} strokeWidth={2.5} />
@@ -665,7 +675,7 @@ export default function PurchasesView({
           <button
             type="button"
             onClick={() => setShowFilters(true)}
-            className={`h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center transition-all relative ${showFilters ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/40' : isDarkMode ? 'bg-slate-900 text-slate-400 border border-slate-800' : 'bg-white text-slate-400 border border-slate-100 shadow-sm'}`}
+            className="h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center transition-all relative bg-rose-500 text-white shadow-sm"
             title="Filtros e Configurações"
             aria-label="Abrir filtros e configurações"
           >
@@ -756,7 +766,7 @@ export default function PurchasesView({
 
       <div className="flex flex-col gap-8 mt-2">
         {filteredPurchases.map((purchase) => {
-          const supplier = suppliers.find((s) => s.id === purchase.supplierId);
+          const supplier = availableThirdParties.find((s) => s.id === purchase.supplierId);
           const itemCount = purchase.type === PurchaseType.GENERAL
             ? (purchase.generalItems?.length || 0)
             : purchase.type === PurchaseType.SOLE
@@ -1022,7 +1032,7 @@ export default function PurchasesView({
               setSelectedPurchaseForChecks(null);
             }}
             purchase={p}
-            supplier={suppliers.find(s => s.id === p.supplierId)}
+            supplier={availableThirdParties.find(s => s.id === p.supplierId)}
             isDarkMode={isDarkMode}
             onUpdateCheque={(chequeId, newStatus) => {
               if (!p.checks) return;

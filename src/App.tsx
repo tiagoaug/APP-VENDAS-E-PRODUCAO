@@ -35,6 +35,7 @@ import {
   Footprints,
   Sparkles,
   ScanLine,
+  HelpCircle,
   Sun,
   Store,
   Truck,
@@ -196,6 +197,10 @@ import TransactionModal from "./components/TransactionModal";
 import SolePurchaseModal from "./components/SolePurchaseModal";
 import PalmilhaPurchaseModal from "./components/PalmilhaPurchaseModal";
 import AIAssistantModal from "./components/AIAssistantModal";
+import HelpCenterModal from "./components/HelpCenterModal";
+import GuidedTourOverlay from "./components/GuidedTourOverlay";
+import DraggableHelpPoint from "./components/DraggableHelpPoint";
+import { JOURNEYS, JourneyStep } from "./data/journeys";
 import ScannerModal from "./components/ScannerModal";
 import { scannerService } from "./services/scannerService";
 import { ToastContainer } from "./components/ToastContainer";
@@ -289,6 +294,9 @@ interface TabItemProps {
   iconMode?: NavIconMode;
   tintColor?: string;
   monoColor?: string;
+  // Chave de ancoragem pro motor de tours guiados (ver GuidedTourOverlay.tsx) — vira o atributo
+  // data-guide-anchor no botão real, sem mudar nenhum comportamento do item.
+  anchorKey?: string;
 }
 
 function TabItem({
@@ -300,6 +308,7 @@ function TabItem({
   iconMode = 'mono',
   tintColor = '#4f46e5',
   monoColor = '#4f46e5',
+  anchorKey,
 }: TabItemProps) {
   const isColored = iconMode === 'colored';
 
@@ -318,6 +327,7 @@ function TabItem({
       onClick={onClick}
       title={label}
       aria-label={`Ir para ${label}`}
+      data-guide-anchor={anchorKey}
       className="flex flex-col items-center justify-center gap-0.5 flex-1 py-2 transition-all"
     >
       <div className="w-10 h-7 flex items-center justify-center rounded-xl transition-all" style={pillStyle}>
@@ -363,6 +373,22 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('hide_financial_values', String(hideFinancialValues));
   }, [hideFinancialValues]);
+  // "Me guie" — modo de treinamento: toca sozinho o tour da tela atual (ver JOURNEYS) e libera
+  // o "?" arrastável (DraggableHelpPoint). Ver plano em lazy-seeking-sun.md.
+  const [guideModeEnabled, setGuideModeEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('guide_mode_enabled') === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('guide_mode_enabled', String(guideModeEnabled));
+  }, [guideModeEnabled]);
+  // Modo do "?" arrastável — 1: soltar já mostra a explicação (toque de novo fecha). 2: soltar
+  // só reposiciona, um toque separado mostra/fecha. Ver DraggableHelpPoint.tsx.
+  const [helpPointMode, setHelpPointMode] = useState<1 | 2>(() => {
+    return localStorage.getItem('guide_help_point_mode') === '2' ? 2 : 1;
+  });
+  useEffect(() => {
+    localStorage.setItem('guide_help_point_mode', String(helpPointMode));
+  }, [helpPointMode]);
   const [fontScale, setFontScale] = useState<number>(() => {
     const saved = localStorage.getItem('font_size_pref');
     const parsed = saved ? parseInt(saved, 10) : NaN;
@@ -416,6 +442,9 @@ export default function App() {
   const [onboardingStatusDecided, setOnboardingStatusDecided] = useState(false);
   const [onboardingActive, setOnboardingActive] = useState(false);
   const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
+  // Passo do micro-guia (spotlight) dentro da etapa atual da Configuração Inicial — ver
+  // onboardingSteps[i].guideSteps / GuidedTourOverlay. Reseta pra 0 sempre que a etapa muda.
+  const [onboardingGuideStepIndex, setOnboardingGuideStepIndex] = useState(0);
   const onboardingAutoTriggeredRef = useRef(false);
 
   // Cadastro Guiado de Modelo — wizard separado do Assistente de Configuração Inicial acima
@@ -622,6 +651,14 @@ export default function App() {
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
   const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+  // Central de Ajuda — assistente local/offline (ver HelpCenterModal.tsx), distinto do
+  // Assistente IA acima (esse é na nuvem). Sempre disponível, sem gate de módulo/flag —
+  // ajuda deve funcionar em qualquer conta, mesmo sem IA/Produção ligados.
+  const [isHelpCenterOpen, setIsHelpCenterOpen] = useState(false);
+  // Tour guiado (spotlight) — ver GuidedTourOverlay.tsx e src/data/journeys.ts. Estado de
+  // sessão só (não persiste): se o usuário sair do app no meio, o tour reseta.
+  const [activeJourneyId, setActiveJourneyId] = useState<string | null>(null);
+  const [journeyStepIndex, setJourneyStepIndex] = useState(0);
   const [aiEnabled, setAiEnabled] = useState(true);
   const [isHeaderScannerOpen, setIsHeaderScannerOpen] = useState(false);
   const [aiPersonPrefill, setAiPersonPrefill] = useState<Partial<Person> | null>(null);
@@ -698,6 +735,8 @@ export default function App() {
       { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 9, module: 'sales' },
       { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 10, module: 'sales' },
       { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 11, module: 'sales' },
+      { id: 'commission_to_sellers', label: 'Comissão a Vendedores', visible: true, order: 11.5, module: 'sales' },
+      { id: 'provider_service_orders', label: 'Ordens de Serviço a Fornecedores', visible: true, order: 11.7, module: 'sales' },
       { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 13, module: 'sales' },
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
       { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'any' },
@@ -708,6 +747,7 @@ export default function App() {
       { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
       { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
       { id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' },
+      { id: 'print_labels', label: 'Impressão de Etiquetas', visible: true, order: 19.5, module: 'production' },
       { id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' },
       { id: 'pcp_purchase_needs', label: 'Necessidades de Compras (PCP)', visible: true, order: 21, module: 'production' },
       { id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: 23, module: 'any' },
@@ -755,6 +795,11 @@ export default function App() {
     // Migration: ensure print_center is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'print_center')) {
       config.cards.push({ id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+    // Migration: ensure print_labels is present (antes era um ícone fixo no topo do app)
+    if (config.cards && !config.cards.find((c: any) => c.id === 'print_labels')) {
+      config.cards.push({ id: 'print_labels', label: 'Impressão de Etiquetas', visible: true, order: 19.5, module: 'production' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
     // Migration: ensure factory_config card is present
@@ -1337,22 +1382,105 @@ export default function App() {
   // etapa foi cumprida — nenhuma dessas telas precisa de um callback de "registro criado".
   // Revenda pura não fabrica nada, então não faz sentido pedir grade de numeração de
   // produção nessa etapa — só entra pra quem fabrica (Fabricação própria/Híbrido).
-  const onboardingSteps: { view: ViewType; label: string; isComplete: boolean; params?: { initialFilter: 'CUSTOMER' | 'SUPPLIER' } }[] = [
-    { view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0 },
-    { view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0 },
+  //
+  // `guideSteps` (opcional) alimenta um GuidedTourOverlay leve por cima da tela, destacando o
+  // botão de abrir o cadastro e o botão de salvar — ver render do overlay logo abaixo do
+  // StepWizardBar. `productionSubScreen` força ProductionConfigView a abrir direto na aba certa
+  // (mesmo mecanismo que os atalhos do menu já usam, App.tsx:1298/1544 — nada novo lá).
+  const onboardingSteps: { view: ViewType; label: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; productionSubScreen?: ProductionScreenType }[] = [
+    {
+      view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0,
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'cat.novo', text: 'Toque aqui para cadastrar uma categoria nova.' },
+        { type: 'highlight_tap', anchorKey: 'cat.salvar', text: 'Digite o nome e toque aqui para salvar.' },
+      ],
+    },
+    {
+      view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0,
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'color.novo', text: 'Toque aqui para cadastrar uma cor nova.' },
+        { type: 'highlight_tap', anchorKey: 'color.salvar', text: 'Digite o nome e toque aqui para salvar.' },
+      ],
+    },
     ...(onboardingStatus?.businessType !== 'REVENDA'
-      ? [{ view: ViewType.GRIDS, label: 'Cadastre uma Grade/Unidade', isComplete: grids.length > 0 }]
+      ? [{
+          view: ViewType.GRIDS, label: 'Cadastre uma Grade/Unidade', isComplete: grids.length > 0,
+          guideSteps: [
+            { type: 'highlight_tap' as const, anchorKey: 'grade.novo', text: 'Toque aqui para criar uma grade nova.' },
+            { type: 'message' as const, text: 'Dê um nome e adicione pelo menos um tamanho.' },
+            { type: 'highlight_tap' as const, anchorKey: 'grade.salvar', text: 'Toque aqui para salvar a grade.' },
+          ],
+        }]
       : []),
-    { view: ViewType.PEOPLE, params: { initialFilter: 'CUSTOMER' as const }, label: 'Cadastre um Cliente', isComplete: people.some(p => p.isCustomer) },
-    { view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Cadastre um Fornecedor', isComplete: people.some(p => p.isSupplier) },
-    { view: ViewType.ACCOUNTS, label: 'Cadastre uma Conta de Movimentação', isComplete: accounts.length > 0 },
-    { view: ViewType.PAYMENT_METHODS, label: 'Cadastre um Meio de Recebimento', isComplete: paymentMethods.length > 0 },
-    { view: ViewType.PRODUCT_FORM, label: 'Crie seu primeiro Produto', isComplete: products.length > 0 },
+    ...(onboardingStatus?.businessType !== 'REVENDA'
+      ? [{
+          view: ViewType.PRODUCTION_CONFIG, label: 'Cadastre um Padrão de Embalagem', isComplete: productionConfigs.some(c => c.type === 'PACKAGING'),
+          productionSubScreen: 'EMBALAGENS' as ProductionScreenType,
+          guideSteps: [
+            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar um padrão de embalagem.' },
+            { type: 'message' as const, text: 'Preencha o nome, a capacidade e a composição por tamanho.' },
+            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.salvarRegistro', text: 'Toque aqui para salvar.' },
+          ],
+        }]
+      : []),
+    ...(onboardingStatus?.businessType !== 'REVENDA'
+      ? [{
+          view: ViewType.PRODUCTION_CONFIG, label: 'Cadastre uma Unidade de Medida', isComplete: productionConfigs.some(c => c.type === 'UNIT'),
+          productionSubScreen: 'UNIDADES' as ProductionScreenType,
+          guideSteps: [
+            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar uma unidade de medida (ex.: kg, metro, unidade).' },
+            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.salvarRegistro', text: 'Digite a sigla e toque aqui para salvar.' },
+          ],
+        }]
+      : []),
+    {
+      view: ViewType.PEOPLE, params: { initialFilter: 'CUSTOMER' as const }, label: 'Cadastre um Cliente', isComplete: people.some(p => p.isCustomer),
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um cliente novo.' },
+        { type: 'message', text: "Marque a opção \"Cliente\" e preencha nome e telefone." },
+        { type: 'highlight_tap', anchorKey: 'person.salvar', text: 'Toque aqui para salvar.' },
+      ],
+    },
+    {
+      view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Cadastre um Fornecedor', isComplete: people.some(p => p.isSupplier),
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um fornecedor novo.' },
+        { type: 'message', text: "Marque a opção \"Fornecedor\" e preencha nome e telefone." },
+        { type: 'highlight_tap', anchorKey: 'person.salvar', text: 'Toque aqui para salvar.' },
+      ],
+    },
+    {
+      view: ViewType.ACCOUNTS, label: 'Cadastre uma Conta de Movimentação', isComplete: accounts.length > 0,
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'account.novo', text: 'Toque aqui para cadastrar uma conta nova.' },
+        { type: 'highlight_tap', anchorKey: 'account.salvar', text: 'Digite o nome e toque aqui para salvar.' },
+      ],
+    },
+    {
+      view: ViewType.PAYMENT_METHODS, label: 'Cadastre um Meio de Recebimento', isComplete: paymentMethods.length > 0,
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'paymethod.novo', text: 'Toque aqui para cadastrar um meio de recebimento novo.' },
+        { type: 'highlight_tap', anchorKey: 'paymethod.salvar', text: 'Digite o nome e toque aqui para salvar.' },
+      ],
+    },
+    // ProductFormView já tem seu próprio modo guiado campo-a-campo (isGuided/GUIDED_SECTIONS) —
+    // só precisa ser ativado por este parâmetro, sem GuidedTourOverlay nenhum aqui.
+    { view: ViewType.PRODUCT_FORM, params: { guided: true }, label: 'Crie seu primeiro Produto', isComplete: products.length > 0 },
+    {
+      view: ViewType.SALE_FORM, label: 'Cadastre uma Venda', isComplete: sales.length > 0,
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'saleForm.cliente', text: 'Selecione o cliente. Não tem nenhum ainda? Toque em "Cadastrar agora" logo abaixo do campo.' },
+        { type: 'message', text: 'Adicione os produtos tocando em "+ Modelo" e defina a forma de pagamento.' },
+        { type: 'highlight_tap', anchorKey: 'saleForm.finalizar', text: 'Toque aqui para concluir a venda. O estoque baixa automaticamente e a receita entra no financeiro.' },
+      ],
+    },
   ];
 
   const goToOnboardingStep = (index: number) => {
     setOnboardingStepIndex(index);
+    setOnboardingGuideStepIndex(0);
     const step = onboardingSteps[index];
+    if (step.productionSubScreen) setProductionSubScreen(step.productionSubScreen);
     navigateTo(step.view, step.params ?? null);
   };
 
@@ -1540,6 +1668,72 @@ export default function App() {
   const resetTo = (view: ViewType) => {
     setCurrentView(view);
     setHistory([view]);
+  };
+
+  // Tour guiado (spotlight) — ver GuidedTourOverlay.tsx / src/data/journeys.ts.
+  const handleStartJourney = (journeyId: string) => {
+    const journey = JOURNEYS.find(j => j.id === journeyId);
+    if (!journey) return;
+    if (journey.productionSubScreen) setProductionSubScreen(journey.productionSubScreen);
+    navigateTo(journey.entryScreen, journey.entryParams ?? null);
+    setJourneyStepIndex(0);
+    setActiveJourneyId(journeyId);
+  };
+
+  const handleAdvanceJourney = () => {
+    const journey = JOURNEYS.find(j => j.id === activeJourneyId);
+    if (!journey) return;
+    const next = journeyStepIndex + 1;
+    if (next >= journey.steps.length) {
+      toast.show('Tour concluído! 🎉');
+      setActiveJourneyId(null);
+      setJourneyStepIndex(0);
+    } else {
+      setJourneyStepIndex(next);
+    }
+  };
+
+  const handleExitJourney = () => {
+    setActiveJourneyId(null);
+    setJourneyStepIndex(0);
+  };
+
+  // "Me guie" ligado: toca sozinho o tour da tela pra qual o usuário NAVEGAR dali em diante.
+  // De propósito só reage a MUDANÇA DE TELA (currentView), não a ligar/desligar o toggle em si
+  // — senão, ligar o "Me guie" enquanto ainda está na Central de Ajuda (tela atual = Painel
+  // Inicial) já dispararia um tour na hora, atropelando quem só queria ver o "?" aparecer. Se o
+  // usuário sair do tour manualmente ("Sair do tour") e ficar na mesma tela, também não
+  // reinicia sozinho.
+  useEffect(() => {
+    if (!guideModeEnabled || onboardingActive) return;
+    // DASHBOARD fica de fora de propósito: é a tela mais visitada do app (toque em "Home",
+    // abrir o app, etc.), então qualquer tour com entryScreen ali (ex.: "Como fazer uma
+    // venda") reiniciaria sozinho toda vez que a pessoa voltasse pro Painel Inicial — chato
+    // e nada a ver com "acabei de chegar numa tela pra aprender ela". Continua acessível na
+    // hora que quiser, manualmente, pelos Guias.
+    if (currentView === ViewType.DASHBOARD) return;
+    const journey = JOURNEYS.find(j => j.entryScreen === currentView && (!j.productionOnly || modulesConfig.production));
+    if (journey && activeJourneyId !== journey.id) {
+      setActiveJourneyId(journey.id);
+      setJourneyStepIndex(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentView, onboardingActive]);
+
+  // Abre a Impressão de Etiquetas (Ablemark) — antes era um ícone fixo no topo do app; agora
+  // é chamada só daqui, tanto pelo menu "Mais" (SettingsView) quanto pelo card do Painel
+  // Inicial (DashboardView). Só faz sentido checar/pedir Bluetooth em quem tem impressora
+  // Ablemark de verdade (Android) — fora disso a tela ainda serve pra criar/editar arquivos e
+  // imprimir por outros meios, não pode ficar travada nesse pré-requisito.
+  const handleOpenLabelPrintStudio = async () => {
+    if (isAblemarkPlatform()) {
+      const enabled = await isPrinterBluetoothEnabled();
+      if (!enabled) {
+        const grantedNow = await requestPrinterBluetoothEnable();
+        if (!grantedNow) return;
+      }
+    }
+    navigateTo(ViewType.LABEL_PRINT_STUDIO);
   };
 
   const toggleDarkMode = () => setAppTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -2436,6 +2630,139 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       toast.show('Erro ao reverter separação: ' + (e.message || e));
+    }
+  };
+
+  // "Alterar Produtos" — acrescenta/remove itens de um pedido já lançado, direto do
+  // popup "Pedido & Separação". Mesmo padrão de transação de handleSepararCaixas/
+  // handlePartialRevertSeparacao (ver comentários lá) — não é o mesmo caminho de
+  // "Editar Venda" (SaleFormView): aquela tela não devolve estoque/StockLot de itens já
+  // separados e apaga os campos de separação de TODOS os itens a cada salvamento, então
+  // não serve pra este caso. Remover reaproveita revertSeparationSupply (a mesma função
+  // que o botão "Reverter" já usa) pra devolver o que estava separado antes de encolher/
+  // apagar a linha; adicionar só entra como item comum "não separado" — o próprio
+  // usuário separa depois pelo stepper que já existe neste popup, sem lógica de estoque
+  // nova pro caminho de adição.
+  const handleAlterarProdutosVenda = async (
+    saleId: string,
+    changes: (
+      | { type: 'remove'; itemIdx: number; quantity: number }
+      | { type: 'add'; productId: string; variationId: string; saleType: SaleType; size?: string; quantity: number; price: number; unitPrice?: number }
+    )[]
+  ) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+    if (sale.deliveryStatus === 'DELIVERED') { toast.show('Pedido entregue — não é possível alterar os produtos.'); return; }
+    if (sale.productionOrderId) { toast.show('Pedido vinculado à produção — altere pela Ordem de Produção.'); return; }
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
+    try {
+      const removes = changes.filter((c): c is Extract<typeof changes[number], { type: 'remove' }> => c.type === 'remove');
+      const adds = changes.filter((c): c is Extract<typeof changes[number], { type: 'add' }> => c.type === 'add');
+
+      const candidateProductIds = new Set<string>();
+      const candidateStockLotIds = new Set<string>();
+      removes.forEach(r => {
+        const item = sale.items[r.itemIdx];
+        if (!item || r.quantity <= 0) return;
+        candidateProductIds.add(item.productId);
+        (item.separatedStockLotIds || []).forEach(id => candidateStockLotIds.add(id));
+      });
+
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const saleRef = doc(db, `users/${uid}/sales`, saleId);
+        const saleSnap = await transaction.get(saleRef);
+        if (!saleSnap.exists()) throw new Error('Venda não encontrada.');
+        const freshSale = { id: saleSnap.id, ...saleSnap.data() } as Sale;
+        if (freshSale.deliveryStatus === 'DELIVERED') throw new Error('Pedido entregue — não é possível alterar os produtos.');
+        if (freshSale.productionOrderId) throw new Error('Pedido vinculado à produção — altere pela Ordem de Produção.');
+
+        const productRefs = new Map<string, any>();
+        const productData = new Map<string, any>();
+        for (const pid of candidateProductIds) {
+          const ref = doc(db, `users/${uid}/products`, pid);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) { productRefs.set(pid, ref); productData.set(pid, { id: pid, ...snap.data() }); }
+        }
+
+        const stockLotRefs = new Map<string, any>();
+        const freshStockLots: StockLot[] = [];
+        for (const id of candidateStockLotIds) {
+          const ref = doc(db, `users/${uid}/stockLots`, id);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) {
+            stockLotRefs.set(id, ref);
+            freshStockLots.push({ id: snap.id, ...snap.data() } as StockLot);
+          }
+        }
+
+        const productUpdates = new Map<string, any>();
+        const getProd = (id: string) => {
+          if (productUpdates.has(id)) return productUpdates.get(id);
+          const p = productData.get(id);
+          if (!p) return null;
+          const cloned = JSON.parse(JSON.stringify(p));
+          productUpdates.set(id, cloned);
+          return cloned;
+        };
+        const stockLotWrites = new Map<string, any>();
+        const stockLotCreates: any[] = [];
+
+        // Remoções: devolve o que já estava separado (mesma função do "Reverter"),
+        // depois encolhe a quantidade pedida — ou remove a linha inteira, se a
+        // quantidade a remover cobrir tudo que restava. Mapeado por itemIdx original
+        // (freshSale.items ainda tem a mesma ordem/posições da leitura em SalesView).
+        let newItems: SaleItem[] = freshSale.items.map((item, idx) => {
+          const rem = removes.find(r => r.itemIdx === idx);
+          if (!rem || rem.quantity <= 0) return item;
+          const qtyToRemove = Math.min(rem.quantity, item.quantity);
+          const qtyToRestore = Math.min(qtyToRemove, item.boxesSeparated || 0);
+          const reverted = qtyToRestore > 0
+            ? revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates, freshStockLots)
+            : item;
+          const newQuantity = Math.max(0, reverted.quantity - qtyToRemove);
+          return { ...reverted, quantity: newQuantity };
+        }).filter(item => item.quantity > 0);
+
+        // Adições: entram como item comum, ainda não separado — o próprio usuário
+        // separa depois pelo stepper de sempre deste popup.
+        adds.forEach(a => {
+          if (a.quantity <= 0) return;
+          const newItem: SaleItem = {
+            productId: a.productId,
+            variationId: a.variationId,
+            saleType: a.saleType,
+            size: a.size,
+            quantity: a.quantity,
+            price: a.price,
+            unitPrice: a.unitPrice,
+            fulfilled: false,
+          };
+          newItems = [...newItems, newItem];
+        });
+
+        const newSubtotal = newItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+        const newTotal = Math.max(0, newSubtotal - (freshSale.discount || 0));
+
+        for (const [pid, prod] of productUpdates) {
+          const ref = productRefs.get(pid);
+          if (ref) transaction.set(ref, deepClean(prod), { merge: true });
+        }
+        for (const [id, data] of stockLotWrites.entries()) {
+          const ref = stockLotRefs.get(id);
+          if (ref) transaction.update(ref, deepClean(data));
+        }
+        for (const docItem of stockLotCreates) {
+          const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
+          transaction.set(ref, deepClean(docItem));
+        }
+        transaction.update(saleRef, { items: deepClean(newItems), subtotal: newSubtotal, total: newTotal });
+      });
+
+      toast.show('Produtos do pedido atualizados com sucesso.');
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao alterar produtos do pedido: ' + (e.message || e));
     }
   };
 
@@ -4108,10 +4435,19 @@ export default function App() {
     // (tem que cadastrar o que vende) mesmo com o módulo Produção desativado. As outras
     // telas de Produção (rota, matriz, grade etc.) continuam exigindo os dois módulos juntos.
     const isProductCatalogView = view === ViewType.PRODUCTION_ENGINEERING;
+    // Padrão de Embalagens (grade por tamanho de caixa) também precisa funcionar sem Produção
+    // — quem vende sem produzir usa essa mesma grade pra "Transformar em Varejo ao Receber"
+    // (Compras) e "Converter em Pares" (Estoque). Só libera quando a navegação já mirou
+    // especificamente nesse sub-tela (via navigateToProduction('EMBALAGENS')) — o resto de
+    // PRODUCTION_CONFIG (Setores, Facas, Matrizes etc.) continua exigindo o módulo inteiro,
+    // e ProductionConfigView entra em modo restrito (restrictToPackaging) pra não vazar pro
+    // menu completo (ver onde é instanciado, abaixo).
+    const isPackagingOnlyView = view === ViewType.PRODUCTION_CONFIG && productionSubScreen === 'EMBALAGENS';
 
     if (isSalesView && !modulesConfig.sales) return renderView(ViewType.DASHBOARD);
     if (isProductCatalogView && !modulesConfig.sales && !modulesConfig.production) return renderView(ViewType.DASHBOARD);
-    if (isProductionView && !isProductCatalogView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
+    if (isPackagingOnlyView && !modulesConfig.sales) return renderView(ViewType.DASHBOARD);
+    if (isProductionView && !isProductCatalogView && !isPackagingOnlyView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
     if (isDeliveryView && (!modulesConfig.sales || !modulesConfig.entregas)) return renderView(ViewType.DASHBOARD);
     if (isBlingView && !modulesConfig.bling) return renderView(ViewType.DASHBOARD);
@@ -4145,6 +4481,10 @@ export default function App() {
             purchaseRequests={purchaseRequests}
             serviceOrders={serviceOrders}
             productionOrders={productionOrders}
+            collaborators={collaborators}
+            companyProfile={companyProfile}
+            onPayCommission={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
+            onPayProviderServiceOrders={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
             onAddSale={() => resetTo(ViewType.SALE_FORM)}
             onUpdateCheckStatus={handleCheckStatusChange}
             isDarkMode={isDarkMode}
@@ -4171,6 +4511,7 @@ export default function App() {
             onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
             activeCollaborator={activeCollaborator}
             aiEnabled={aiEnabled}
+            onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
           />
         );
       case ViewType.DASHBOARD_CONFIG:
@@ -4223,6 +4564,7 @@ export default function App() {
             setHideFinancialValues={setHideFinancialValues}
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
             onOpenProductCreationChoice={handleOpenProductCreationChoice}
+            onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
           />
         );
       case ViewType.PRODUCTS:
@@ -4791,6 +5133,12 @@ export default function App() {
             productionOrders={productionOrders}
             lots={productionLots}
             modulesConfig={modulesConfig}
+            onNavigateToPackagingConfig={() => navigateToProduction('EMBALAGENS')}
+            onQuickAddPerson={async (person) => {
+              const result = await firebaseService.saveDocument("people", person);
+              toast.show('Fornecedor cadastrado!');
+              return result as Person;
+            }}
             onCreateProductionOrder={async (order, newLots, deductions) => {
               await firebaseService.saveDocument("productionOrders", order);
               for (const lot of newLots) {
@@ -4977,6 +5325,17 @@ export default function App() {
                   const linkedServiceOrderItems = (purchase.generalItems || []).filter(item => item.serviceOrderId);
                   for (const item of linkedServiceOrderItems) {
                     await firebaseService.updateDocument("serviceOrders", item.serviceOrderId!, { transactionId: savedTx.id, updatedAt: Date.now() });
+                  }
+                } else if (purchase.generateTransaction === false) {
+                  // Compra "Não Contábil" (generateTransaction === false) nunca gera Transaction
+                  // — não tem um passo de "pagamento" separado (o formulário nem mostra
+                  // Vencimento/Pagamento nesse modo), então salvar a compra já É a quitação.
+                  // Sem transactionId pra usar, marca a OS fechada por outro caminho
+                  // (ServiceOrder.paidNaoContabil, ver isOsPaid em FinancialView.tsx) — senão
+                  // essas OS ficam presas em "Em Aberto" pra sempre.
+                  const linkedServiceOrderItems = (purchase.generalItems || []).filter(item => item.serviceOrderId);
+                  for (const item of linkedServiceOrderItems) {
+                    await firebaseService.updateDocument("serviceOrders", item.serviceOrderId!, { paidNaoContabil: true, updatedAt: Date.now() });
                   }
                 }
 
@@ -5512,6 +5871,7 @@ export default function App() {
             onRevertExpedition={handleRevertExpedition}
             onSepararCaixas={handleSepararCaixas}
             onPartialRevertSeparacao={handlePartialRevertSeparacao}
+            onAlterarProdutosVenda={handleAlterarProdutosVenda}
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
             onNavigateStockGlance={() => navigateTo(ViewType.STOCK_GLANCE)}
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
@@ -5760,6 +6120,7 @@ export default function App() {
             initialShowBalancoConfirm={currentParams?.initialShowBalancoConfirm}
             modulesConfig={modulesConfig}
             showThumbnails={showEngineeringThumbnails}
+            onNavigateToPackagingConfig={() => navigateToProduction('EMBALAGENS')}
           />
         );
       case ViewType.STOCK_GLANCE:
@@ -5792,6 +6153,11 @@ export default function App() {
             lots={productionLots}
             sectors={sectors}
             productionConfigs={productionConfigs}
+            onQuickAddPerson={async (person) => {
+              const result = await firebaseService.saveDocument("people", person);
+              toast.show('Cliente cadastrado!');
+              return result as Person;
+            }}
             onCreateProductionOrder={async (order, newLots, deductions) => {
               await firebaseService.saveDocument("productionOrders", order);
               for (const lot of newLots) {
@@ -6161,6 +6527,7 @@ export default function App() {
             lots={productionLots}
             products={products}
             soleStock={soleStockEntries}
+            restrictToPackaging={!modulesConfig.production}
           />
         );
       case ViewType.PRODUCT_SHEET:
@@ -7260,31 +7627,19 @@ export default function App() {
             <ScanLine size={20} />
           </motion.button>
           )}
-          {modulesConfig.production && (
+          {/* Impressão de Etiquetas saiu do topo — agora vive só em Mais > Módulo de Produção
+              e como card do Painel Inicial (ver handleOpenLabelPrintStudio abaixo). */}
           <motion.button
             type="button"
-            onClick={async () => {
-              // Só faz sentido checar/pedir Bluetooth em quem tem impressora Ablemark de
-              // verdade (Android) — fora disso a tela de etiquetas ainda serve pra criar/editar
-              // arquivos e imprimir por outros meios, não pode ficar travada nesse pré-requisito.
-              if (isAblemarkPlatform()) {
-                const enabled = await isPrinterBluetoothEnabled();
-                if (!enabled) {
-                  const grantedNow = await requestPrinterBluetoothEnable();
-                  if (!grantedNow) return;
-                }
-              }
-              navigateTo(ViewType.LABEL_PRINT_STUDIO);
-            }}
-            title="Impressão de Etiquetas"
-            aria-label="Impressão de Etiquetas"
-            whileHover={{ scale: 1.15, rotate: 8 }}
+            onClick={() => setIsHelpCenterOpen(true)}
+            title="Central de Ajuda"
+            aria-label="Central de Ajuda"
+            whileHover={{ scale: 1.15, rotate: -8 }}
             whileTap={{ scale: 0.9 }}
-            className="p-2 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400 transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+            className="p-2 rounded-full bg-sky-50 dark:bg-sky-900/30 text-sky-500 dark:text-sky-400 transition-colors hover:bg-sky-100 dark:hover:bg-sky-900/50"
           >
-            <Printer size={20} />
+            <HelpCircle size={20} />
           </motion.button>
-          )}
           {modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
             <motion.button
               type="button"
@@ -7357,6 +7712,18 @@ export default function App() {
               onContinue={handleOnboardingAdvance}
               onSkipStep={handleOnboardingAdvance}
               onDismiss={handleOnboardingDismiss}
+            />
+          )}
+          {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView
+            && (onboardingSteps[onboardingStepIndex].guideSteps?.length ?? 0) > onboardingGuideStepIndex && (
+            <GuidedTourOverlay
+              title={onboardingSteps[onboardingStepIndex].label}
+              steps={onboardingSteps[onboardingStepIndex].guideSteps!}
+              stepIndex={onboardingGuideStepIndex}
+              currentView={currentView}
+              isDarkMode={isDarkMode}
+              onAdvance={() => setOnboardingGuideStepIndex(i => i + 1)}
+              onExit={() => setOnboardingGuideStepIndex(onboardingSteps[onboardingStepIndex].guideSteps!.length)}
             />
           )}
           {productWizardActive && productWizardSteps[productWizardStepIndex]?.view === currentView && (
@@ -7496,6 +7863,7 @@ export default function App() {
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.purchases}
               monoColor={navMonoColor}
+              anchorKey="nav.compras"
             />
           )}
           {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) && (
@@ -7508,6 +7876,7 @@ export default function App() {
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.sales}
               monoColor={navMonoColor}
+              anchorKey="nav.vendas"
             />
           )}
           {modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) && (
@@ -7691,6 +8060,48 @@ export default function App() {
         isDarkMode={isDarkMode}
         onSave={handleSavePalmilhaPurchase}
       />
+
+      <HelpCenterModal
+        isOpen={isHelpCenterOpen}
+        onClose={() => setIsHelpCenterOpen(false)}
+        isDarkMode={isDarkMode}
+        currentView={currentView}
+        currentViewTitle={typeof headerTitle === 'string' ? headerTitle : 'esta tela'}
+        productionEnabled={modulesConfig.production}
+        onNavigate={(view) => { setIsHelpCenterOpen(false); navigateTo(view); }}
+        onStartJourney={(id) => { setIsHelpCenterOpen(false); handleStartJourney(id); }}
+        guideModeEnabled={guideModeEnabled}
+        onToggleGuideMode={() => setGuideModeEnabled(prev => !prev)}
+        helpPointMode={helpPointMode}
+        onChangeHelpPointMode={setHelpPointMode}
+      />
+
+      {guideModeEnabled && (
+        <DraggableHelpPoint
+          isDarkMode={isDarkMode}
+          mode={helpPointMode}
+          onNavigate={(view, params, productionSubScreen) => {
+            if (productionSubScreen) setProductionSubScreen(productionSubScreen);
+            navigateTo(view, params);
+          }}
+        />
+      )}
+
+      {activeJourneyId && (() => {
+        const journey = JOURNEYS.find(j => j.id === activeJourneyId);
+        if (!journey) return null;
+        return (
+          <GuidedTourOverlay
+            title={journey.title}
+            steps={journey.steps}
+            stepIndex={journeyStepIndex}
+            currentView={currentView}
+            isDarkMode={isDarkMode}
+            onAdvance={handleAdvanceJourney}
+            onExit={handleExitJourney}
+          />
+        );
+      })()}
 
       <AIAssistantModal
         isOpen={isAIAssistantOpen}

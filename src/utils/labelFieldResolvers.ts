@@ -151,8 +151,13 @@ export interface GradeCellLayout {
   qtyCxMm: number; qtyCyMm: number;
 }
 
+// fontSizeMm: tamanho da fonte configurado no elemento (LabelElement.fontSize) — a pílula da
+// numeração acompanha esse valor (altura = fonte + folga fixa) em vez de uma fração fixa da
+// caixa toda, sempre limitada ao espaço disponível (deixando espaço pra quantidade abaixo dela,
+// quando existe).
 export function computeGradeLayout(
   gridEntries: { sz: string; qty: number | null }[], boxXmm: number, boxYmm: number, boxWmm: number, boxHmm: number,
+  fontSizeMm: number = 3.5,
 ): GradeCellLayout[] {
   if (gridEntries.length === 0) return [];
   const hasQty = gridEntries.some(e => e.qty !== null);
@@ -160,8 +165,12 @@ export function computeGradeLayout(
   const totalUnits = gridEntries.length + (hasQty ? GRADE_TOTAL_WIDTH_FACTOR : 0);
   const cellW = boxWmm / totalUnits;
   const totalCellW = cellW * GRADE_TOTAL_WIDTH_FACTOR;
-  const szH = hasQty ? boxHmm * 0.48 : boxHmm * 0.70;
   const pad = GRADE_PAD_MM;
+  // Altura "natural" da pílula pro tamanho de fonte atual (texto + folga vertical), limitada ao
+  // teto de sempre (proporção da caixa) e a um mínimo que ainda deixe espaço pra quantidade.
+  const szHCap = hasQty ? boxHmm * 0.48 : boxHmm * 0.70;
+  const szHNatural = fontSizeMm * 1.7 + pad * 2;
+  const szH = Math.max(Math.min(szHNatural, szHCap), Math.min(fontSizeMm * 1.2, szHCap));
 
   const cells: GradeCellLayout[] = gridEntries.map((e, idx) => {
     const cellX = boxXmm + cellW * idx;

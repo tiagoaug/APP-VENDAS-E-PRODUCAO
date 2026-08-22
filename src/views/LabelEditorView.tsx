@@ -9,7 +9,7 @@ import {
   Maximize2, Minimize2, Image as ImageIcon2, ChevronDown, Ruler as RulerIcon, RotateCw, Wrench, Grid3x3, Tag, Radius,
   FileText, StickyNote,
 } from 'lucide-react';
-import { LabelElement, LabelDataBinding, BatchLabelItem, ProductionLot, ServiceOrder, Sector } from '../types';
+import { LabelElement, LabelDataBinding, BatchLabelItem, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { printAbleMarkLabel2 as printAbleMarkLabel } from '../lib/ablemarkPrinter2';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
 import { toast } from '../utils/toast';
@@ -139,7 +139,7 @@ function previewBindingText(binding: LabelDataBinding, ctx: LabelBindingContext 
 function GradePreview({ el, ctx, pxPerMmX, pxPerMmY }: { el: LabelElement; ctx: LabelBindingContext | null; pxPerMmX: number; pxPerMmY: number }) {
   const resolved = el.dataBinding ? resolveLabelBinding(el.dataBinding, ctx) : null;
   const gridEntries = resolved?.kind === 'grade' ? resolved.gridEntries : [];
-  const cells = computeGradeLayout(gridEntries, 0, 0, el.w, el.h);
+  const cells = computeGradeLayout(gridEntries, 0, 0, el.w, el.h, el.fontSize || 3.5);
   if (cells.length === 0) {
     return (
       <div className="w-full h-full flex items-center justify-center border-2 border-dashed border-slate-300 pointer-events-none text-slate-400 text-[8px] font-bold uppercase">
@@ -148,12 +148,17 @@ function GradePreview({ el, ctx, pxPerMmX, pxPerMmY }: { el: LabelElement; ctx: 
     );
   }
   const fontPx = Math.max(6, (el.fontSize || 3.5) * pxPerMmX);
+  // Estilo da pílula da numeração (não da quantidade abaixo) — ver LabelElement.gradeSizeStyle.
+  const sizeStyle = el.gradeSizeStyle || 'filled';
+  const pillCls = sizeStyle === 'inverted' ? 'bg-white text-black border-2 border-black box-border'
+    : sizeStyle === 'plain' ? 'bg-transparent text-black'
+    : 'bg-black text-white';
   return (
     <div className="relative w-full h-full pointer-events-none">
       {cells.map((c, i) => (
         <div key={i}>
           <div
-            className="absolute rounded-sm bg-black text-white flex items-center justify-center font-black leading-none"
+            className={`absolute rounded-sm flex items-center justify-center font-black leading-none ${pillCls}`}
             style={{
               left: `${(c.pillXmm / el.w) * 100}%`, top: `${(c.pillYmm / el.h) * 100}%`,
               width: `${(c.pillWmm / el.w) * 100}%`, height: `${(c.pillHmm / el.h) * 100}%`,
@@ -278,6 +283,30 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const activeBindingContext: LabelBindingContext | null = session.batch?.items?.[0]
     ? { item: session.batch.items[0], lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors }
     : null;
+
+  // Instruções por setor disponíveis pra escolher em "Obs. Setor" (ver LabelElement.sectorNoteFilter)
+  // — mesma ideia de PrintLabelEditorModal.tsx (availableSectorNotes): em lote (várias etiquetas,
+  // possivelmente de variantes diferentes), reúne a UNIÃO das instruções de TODOS os itens, não só
+  // do representante da prévia — cada etiqueta resolve seu próprio texto na hora de imprimir.
+  const availableSectorNotes: { sectorId: string; sectorName: string; noteName: string; text: string }[] = (() => {
+    const seen = new Map<string, { sectorId: string; sectorName: string; noteName: string; text: string }>();
+    const sectors = session.productionContext?.sectors || [];
+    for (const item of session.batch?.items || []) {
+      const v = item.variation;
+      if (!v?.sectorNotes) continue;
+      Object.entries(v.sectorNotes).forEach(([sid, notes]) => {
+        const sector = sectors.find(s => s.id === sid);
+        const sectorName = (sector?.name || sid).toUpperCase();
+        (notes as SectorNote[]).filter(n => n.text).forEach(n => {
+          const noteName = n.name || '(sem nome)';
+          const key = `${sid}::${noteName}`;
+          if (!seen.has(key)) seen.set(key, { sectorId: sid, sectorName, noteName, text: n.text });
+        });
+      });
+    }
+    return Array.from(seen.values());
+  })();
+  const [notePickerOpen, setNotePickerOpen] = useState(false);
 
   useEffect(() => {
     if (selected) setAngleInput(String(Math.round(selected.rotation)));
@@ -958,6 +987,37 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                         </div>
                       </div>
                     )}
+
+                    {/* Instrução a Exibir — só no elemento Obs. Setor: escolhe UMA instrução
+                        específica (setor+nome) em vez da concatenação de todas (ver
+                        LabelElement.sectorNoteFilter/getSectorNotesText). */}
+                    {selected.dataBinding === 'sectornotes' && (
+                      <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                        <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Instrução a exibir</span>
+                        </div>
+                        <div className={`p-3 ${isDarkMode ? 'bg-slate-800/30' : 'bg-white'}`}>
+                          {availableSectorNotes.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setNotePickerOpen(true)}
+                              className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-800'}`}
+                            >
+                              <span className="truncate">
+                                {selected.sectorNoteFilter
+                                  ? availableSectorNotes.find(n => n.sectorId === selected.sectorNoteFilter!.sectorId && n.noteName === selected.sectorNoteFilter!.noteName)
+                                    ? `${availableSectorNotes.find(n => n.sectorId === selected.sectorNoteFilter!.sectorId && n.noteName === selected.sectorNoteFilter!.noteName)!.sectorName} — ${selected.sectorNoteFilter.noteName}`
+                                    : 'Todas as instruções'
+                                  : 'Todas as instruções'}
+                              </span>
+                              <ChevronDown size={14} className="shrink-0" />
+                            </button>
+                          ) : (
+                            <p className="text-[10px] font-bold text-slate-400">Nenhuma instrução de setor cadastrada pra esse item ainda.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
@@ -1071,6 +1131,31 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             </div>
           )}
 
+          {selected.type === 'grade' && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-0.5">Estilo da numeração</span>
+              <div className={`flex gap-1 p-1 rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                {([
+                  ['filled', '38', 'bg-slate-900 text-white'],
+                  ['inverted', '38', 'bg-white text-slate-900 border border-slate-900'],
+                  ['plain', '38', 'bg-transparent text-slate-900 dark:text-white'],
+                ] as const).map(([value, sample, sampleCls]) => {
+                  const active = (selected.gradeSizeStyle || 'filled') === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => updateElement(selected.id, { gradeSizeStyle: value })}
+                      className={`flex-1 flex items-center justify-center py-1.5 rounded-md transition-all ring-2 ${active ? 'ring-indigo-500' : 'ring-transparent'}`}
+                    >
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black leading-none ${sampleCls}`}>{sample}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
 
           {/* Ocultar (global) / travar posição (vale pra todos os tipos, inclusive linha) /
               tela cheia — controle rápido do elemento selecionado. As demais travas (largura,
@@ -1170,6 +1255,26 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     />
                   </div>
                 </div>
+
+                {selected.type === 'grade' && (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>Tamanho da fonte</span><span className={selected.lockFontSize ? 'opacity-40' : ''}>{(selected.fontSize || 3.5).toFixed(1)}mm</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => updateElement(selected.id, { lockFontSize: !selected.lockFontSize })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockFontSize ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                        {selected.lockFontSize ? <Lock size={15} /> : <Unlock size={15} />}
+                      </button>
+                      <input
+                        type="range" min={2} max={20} step={0.5}
+                        value={selected.fontSize || 3.5}
+                        disabled={selected.lockFontSize}
+                        onChange={e => updateElement(selected.id, { fontSize: parseFloat(e.target.value) })}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1547,6 +1652,49 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         onPickCamera={() => pickImage(CameraSource.Camera)}
         onPickGallery={() => pickImage(CameraSource.Photos)}
       />
+
+      {selected && (
+        <Modal isOpen={notePickerOpen} onClose={() => setNotePickerOpen(false)} title="Instrução a Exibir" icon={<StickyNote size={20} />} maxWidth="max-w-md" zIndex={98000}>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => { updateElement(selected.id, { sectorNoteFilter: undefined }); setNotePickerOpen(false); }}
+              className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
+                !selected.sectorNoteFilter
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+              }`}
+            >
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${!selected.sectorNoteFilter ? 'border-indigo-500 bg-indigo-500 text-white' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                {!selected.sectorNoteFilter && <Check size={12} strokeWidth={3} />}
+              </span>
+              <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Todas as instruções</span>
+            </button>
+
+            {availableSectorNotes.map(n => {
+              const isSel = selected.sectorNoteFilter?.sectorId === n.sectorId && selected.sectorNoteFilter?.noteName === n.noteName;
+              return (
+                <button
+                  key={`${n.sectorId}::${n.noteName}`}
+                  type="button"
+                  onClick={() => { updateElement(selected.id, { sectorNoteFilter: { sectorId: n.sectorId, noteName: n.noteName } }); setNotePickerOpen(false); }}
+                  className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
+                    isSel ? 'border-indigo-500 bg-indigo-500/10' : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${isSel ? 'border-indigo-500 bg-indigo-500 text-white' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                    {isSel && <Check size={12} strokeWidth={3} />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{n.noteName}</p>
+                    <p className="text-[9px] font-bold text-slate-400 mt-0.5 truncate">{n.sectorName} — {n.text}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
 
       {selected?.imageDataUrl && (
         <Modal isOpen={showImageCrop} onClose={() => setShowImageCrop(false)} title="Recortar Imagem" icon={<CropIcon size={20} />} maxWidth="max-w-md" zIndex={98000}>

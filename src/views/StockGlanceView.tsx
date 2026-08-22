@@ -336,11 +336,9 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
           onClick={() => setShowFilterModal(true)}
           title="Filtrar"
           aria-label="Filtrar"
-          className={`relative w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${activeFilterCount > 0 ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 shadow-sm'}`}
+          data-guide-anchor="stock.disponivelFiltro"
+          className="relative w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-rose-500 text-white shadow-sm"
         >
-          {/* Anel pulsante — chama atenção pro filtro, já que ele também esconde a opção de
-              mostrar/ocultar o badge de pares por caixa. */}
-          <span className="absolute inset-0 rounded-full bg-indigo-400 animate-ping opacity-60 pointer-events-none" />
           <Filter size={16} className="relative" />
           {activeFilterCount > 0 && (
             <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
@@ -355,6 +353,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
         <button
           type="button"
           onClick={() => { setActiveTab(SaleType.WHOLESALE); setColorFilter(null); }}
+          data-guide-anchor="stock.disponivelAtacado"
           className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === SaleType.WHOLESALE ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
         >
           <Boxes size={14} /> Atacado
@@ -362,6 +361,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
         <button
           type="button"
           onClick={() => { setActiveTab(SaleType.RETAIL); setColorFilter(null); }}
+          data-guide-anchor="stock.disponivelVarejo"
           className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === SaleType.RETAIL ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
         >
           <Package size={14} /> Varejo
@@ -371,6 +371,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
             type="button"
             onClick={() => { setActiveTab(REPOSICAO_TAB); setColorFilter(null); }}
             title="Planejamento de Reposição de Estoque"
+            data-guide-anchor="stock.disponivelReposicao"
             className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isReposicao ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
           >
             <ClipboardList size={14} /> Reposição

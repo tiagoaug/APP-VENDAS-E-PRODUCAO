@@ -107,6 +107,7 @@ export default function AccountModal({ isOpen, onClose, onSave, account, modules
               onSave({ name, balance, color: 'bg-indigo-500', type, isDefault });
               onClose();
             }}
+            data-guide-anchor="account.salvar"
             className="flex-1 py-4 rounded-2xl bg-indigo-600 font-black uppercase tracking-widest text-[10px] text-white shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-95"
           >
             Salvar

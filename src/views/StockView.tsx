@@ -54,6 +54,116 @@ function resolvePkgCapacity(pkg?: ProductionConfigItem): number {
   return match ? parseInt(match[1], 10) : 0;
 }
 
+// "Converter em Pares" — popup independente do modo Balanço (isEditing), pensado pra quem não
+// tem o módulo de Produção (revendedor): escolhe quantas caixas do Atacado converter e em qual
+// grade (padrão de embalagem já cadastrado), e cada uma vira pares no Varejo na hora, sem
+// precisar do Fracionar Pedido do PCP.
+const ConvertToRetailModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  isDarkMode: boolean;
+  variationName: string;
+  boxQty: number;
+  packagingItems: ProductionConfigItem[];
+  onNavigateToPackagingConfig?: () => void;
+  onConfirm: (boxes: number, pkgId: string) => void;
+}> = ({ isOpen, onClose, isDarkMode, variationName, boxQty, packagingItems, onNavigateToPackagingConfig, onConfirm }) => {
+  const [boxes, setBoxes] = useState(1);
+  const [pkgId, setPkgId] = useState('');
+
+  useEffect(() => {
+    if (isOpen) { setBoxes(boxQty > 0 ? 1 : 0); setPkgId(''); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  const pkg = packagingItems.find(p => p.id === pkgId);
+  const breakdown: Record<string, number> = pkg?.metadata?.sizeQuantities || {};
+  const capacity = resolvePkgCapacity(pkg) || Object.values(breakdown).reduce((s: number, q) => s + (Number(q) || 0), 0);
+  const safeBoxes = Math.max(0, Math.min(boxes, boxQty));
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Converter em Pares" icon={<Boxes size={20} />} maxWidth="max-w-sm" zIndex={97000}>
+      <div className="flex flex-col gap-4">
+        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+          {variationName} — transforma caixas do Atacado em pares no Varejo, usando a grade escolhida.
+        </p>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Caixas a converter (de {boxQty} disponíveis)</label>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setBoxes(b => Math.max(0, b - 1))} aria-label="Diminuir" className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-black ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>−</button>
+            <input
+              type="number" inputMode="numeric" value={boxes}
+              onChange={e => setBoxes(Math.max(0, Number(e.target.value) || 0))}
+              onFocus={e => e.target.select()}
+              aria-label="Quantidade de caixas"
+              className={`flex-1 text-center text-xl font-black rounded-xl py-2 outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+            />
+            <button type="button" onClick={() => setBoxes(b => Math.min(boxQty, b + 1))} aria-label="Aumentar" className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-black ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>+</button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Grade da caixa</label>
+          <select
+            value={pkgId} onChange={e => setPkgId(e.target.value)}
+            aria-label="Grade da caixa"
+            className={`w-full px-3 py-2.5 rounded-xl text-sm font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+          >
+            <option value="">Selecione…</option>
+            {packagingItems.map(p => (
+              <option key={p.id} value={p.id}>{p.name} ({resolvePkgCapacity(p)} pares)</option>
+            ))}
+          </select>
+        </div>
+
+        {pkg && capacity > 0 && (
+          <div className={`p-3 rounded-xl ${isDarkMode ? 'bg-emerald-900/15' : 'bg-emerald-50'}`}>
+            <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">
+              {safeBoxes} caixa(s) × {capacity} pares = {safeBoxes * capacity} pares
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(breakdown).filter(([, q]) => Number(q) > 0).map(([size, q]) => (
+                <span key={size} className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black">
+                  {size}: {Number(q) * safeBoxes}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {packagingItems.length === 0 && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[10px] text-amber-500 font-bold">Nenhuma grade cadastrada ainda.</p>
+            {onNavigateToPackagingConfig && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Deseja sair pra cadastrar a grade? Alterações não salvas no Estoque serão perdidas.')) {
+                    onNavigateToPackagingConfig();
+                  }
+                }}
+                className="self-start text-[10px] font-black uppercase tracking-widest text-indigo-500 underline"
+              >
+                Cadastrar grade agora
+              </button>
+            )}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={safeBoxes <= 0 || !pkg}
+          onClick={() => onConfirm(safeBoxes, pkgId)}
+          className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+        >
+          Converter
+        </button>
+      </div>
+    </Modal>
+  );
+};
+
 interface StockViewProps {
   products: Product[];
   productionConfigs: ProductionConfigItem[];
@@ -90,6 +200,9 @@ interface StockViewProps {
    * módulo Produção ativo essa coleção fica sempre vazia, então as duas abas somem. */
   modulesConfig?: AppModulesConfig;
   showThumbnails?: boolean;
+  // Atalho pra cadastrar uma grade de embalagem direto do popup "Converter em Pares" — chega
+  // mesmo sem o módulo de Produção ligado (ver restrictToPackaging em ProductionConfigView.tsx).
+  onNavigateToPackagingConfig?: () => void;
 }
 
 export default function StockView({
@@ -115,6 +228,7 @@ export default function StockView({
   initialShowBalancoConfirm,
   modulesConfig,
   showThumbnails = true,
+  onNavigateToPackagingConfig,
 }: StockViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
@@ -188,6 +302,54 @@ export default function StockView({
   );
 
   const packagingItems = productionConfigs.filter(c => c.type === 'PACKAGING');
+
+  // "Converter em Pares" — mesma ideia do Fracionar Pedido do PCP (quebrar caixas Atacado em
+  // pares por tamanho), só que sem lote/OS/setor no meio: pensado pra quem vende sem o módulo
+  // de Produção (StockView é a única tela de estoque que esse perfil de conta usa). Só aparece
+  // quando `!modulesConfig?.production` (ver botão em StockCard) — quem tem Produção ligada
+  // continua usando o Fracionar Pedido de sempre, sem esse atalho extra pra não duplicar o
+  // mesmo conceito em dois lugares.
+  const [convertModal, setConvertModal] = useState<{ productId: string; variationId: string; variationName: string } | null>(null);
+
+  const handleConvertToRetail = async (productId: string, variationId: string, boxes: number, pkgId: string) => {
+    const source = isEditing ? (editedStocks[productId] || products.find(p => p.id === productId)) : products.find(p => p.id === productId);
+    const pkg = packagingItems.find(p => p.id === pkgId);
+    if (!source || !pkg) return;
+    const variation = source.variations.find(v => v.id === variationId);
+    if (!variation) return;
+    const boxQty = variation.stock['WHOLESALE'] || 0;
+    const safeBoxes = Math.max(0, Math.min(boxes, boxQty));
+    const breakdown: Record<string, number> = pkg.metadata?.sizeQuantities || {};
+    if (safeBoxes <= 0 || Object.keys(breakdown).length === 0) return;
+
+    const newStock: Record<string, number> = { ...variation.stock, WHOLESALE: Math.max(0, boxQty - safeBoxes) };
+    Object.entries(breakdown).forEach(([size, qtyPerBox]) => {
+      const add = (Number(qtyPerBox) || 0) * safeBoxes;
+      if (add > 0) newStock[size] = (newStock[size] || 0) + add;
+    });
+
+    // Consome das alocações de embalagem existentes (do fim pra início, mesmo critério já
+    // usado no fracionamento do PCP em App.tsx) pra não deixar `stockPkgAllocations`
+    // apontando pra mais caixas do que realmente sobraram no Atacado.
+    let remaining = safeBoxes;
+    const newAllocations = (variation.stockPkgAllocations || []).map(a => ({ ...a }));
+    for (let i = newAllocations.length - 1; i >= 0 && remaining > 0; i--) {
+      const take = Math.min(newAllocations[i].qty, remaining);
+      newAllocations[i].qty -= take;
+      remaining -= take;
+    }
+
+    const updated: Product = {
+      ...source,
+      variations: source.variations.map(v =>
+        v.id === variationId ? { ...v, stock: newStock, stockPkgAllocations: newAllocations.filter(a => a.qty > 0) } : v
+      ),
+    };
+    if (isEditing) setEditedStocks(prev => ({ ...prev, [updated.id]: updated }));
+    await onUpdateProduct(updated);
+    toast.show(`${safeBoxes} caixa(s) convertida(s) em pares no Varejo.`);
+    setConvertModal(null);
+  };
 
   const filteredProducts = products.filter(
     (p) =>
@@ -448,6 +610,8 @@ export default function StockView({
             onPrint={() => setProductForLabels(product)}
             poolFilter={stockTypeFilter}
             showThumbnail={showThumbnails}
+            canConvertToRetail={!modulesConfig?.production}
+            onOpenConvertToRetail={(variationId, variationName) => setConvertModal({ productId: product.id, variationId, variationName })}
           />
         ))}
 
@@ -467,6 +631,24 @@ export default function StockView({
           </div>
         )}
       </div>
+
+      {convertModal && (() => {
+        const sourceProduct = isEditing ? (editedStocks[convertModal.productId] || products.find(p => p.id === convertModal.productId)) : products.find(p => p.id === convertModal.productId);
+        const variation = sourceProduct?.variations.find(v => v.id === convertModal.variationId);
+        const boxQty = variation?.stock['WHOLESALE'] || 0;
+        return (
+          <ConvertToRetailModal
+            isOpen
+            onClose={() => setConvertModal(null)}
+            isDarkMode={isDarkMode}
+            variationName={convertModal.variationName}
+            boxQty={boxQty}
+            packagingItems={packagingItems}
+            onNavigateToPackagingConfig={onNavigateToPackagingConfig}
+            onConfirm={(boxes, pkgId) => handleConvertToRetail(convertModal.productId, convertModal.variationId, boxes, pkgId)}
+          />
+        );
+      })()}
 
       <StockEntryHistoryModal
         isOpen={showEntryHistory}
@@ -614,7 +796,11 @@ const StockCard: React.FC<{
   onPrint: () => void;
   poolFilter?: 'ALL' | SaleType.WHOLESALE | SaleType.RETAIL;
   showThumbnail?: boolean;
-}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint, poolFilter = 'ALL', showThumbnail = true }) => {
+  /** true = sem módulo de Produção — mostra o atalho "Converter em Pares" (Atacado→Varejo)
+   * direto no Estoque, já que quem tem Produção usa o Fracionar Pedido do PCP pra isso. */
+  canConvertToRetail?: boolean;
+  onOpenConvertToRetail?: (variationId: string, variationName: string) => void;
+}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint, poolFilter = 'ALL', showThumbnail = true, canConvertToRetail = false, onOpenConvertToRetail }) => {
   // Padrão "avulso a escolha do cliente" (sem tamanhos fixos) — referência de
   // capacidade para alocações avulsas que não correspondem a nenhuma embalagem cadastrada.
   const avulsoPkg = packagingItems.find(p => p.metadata?.mode === 'FREE');
@@ -958,6 +1144,20 @@ const StockCard: React.FC<{
                             </div>
                           )}
                         </div>
+
+                        {/* Converter em Pares — só sem módulo de Produção, produto híbrido com
+                            caixas em estoque. Quem tem Produção usa o Fracionar Pedido do PCP. */}
+                        {!isEditing && canConvertToRetail && showRetail && boxQty > 0 && (
+                          <div className={`px-4 py-3 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                            <button
+                              type="button"
+                              onClick={() => onOpenConvertToRetail?.(v.id, v.colorName)}
+                              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/35' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                            >
+                              <Boxes size={13} /> Converter em Pares
+                            </button>
+                          </div>
+                        )}
 
                         {/* Embalagens — acordeão multi-alocação */}
                         <div className={`border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>

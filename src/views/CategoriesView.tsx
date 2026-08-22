@@ -440,8 +440,9 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
             );
           })}
 
-        <button 
+        <button
           onClick={() => { setEditingCategory(null); setIsModalOpen(true); }}
+          data-guide-anchor="cat.novo"
           className={`border-2 border-dashed rounded-3xl p-4 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] group min-h-[100px] mt-2 ${
             isDarkMode 
               ? 'bg-indigo-950/10 border-indigo-900/30 text-indigo-400 hover:bg-indigo-900/20 hover:border-indigo-500' 

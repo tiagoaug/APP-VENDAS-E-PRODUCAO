@@ -11,6 +11,9 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   isDanger?: boolean;
+  /** Sobe o z-index padrão (90000) quando esse diálogo é aberto de dentro de outro popup/Modal
+   * com z-index mais alto — senão ele renderiza atrás e fica invisível até o outro fechar. */
+  zIndex?: number;
 }
 
 export default function ConfirmDialog({
@@ -21,13 +24,14 @@ export default function ConfirmDialog({
   cancelLabel = 'Cancelar',
   onConfirm,
   onCancel,
-  isDanger = true
+  isDanger = true,
+  zIndex = 90000,
 }: ConfirmDialogProps) {
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[90000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div className="fixed inset-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" style={{ zIndex }}>
         <motion.div
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}

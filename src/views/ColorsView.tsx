@@ -176,6 +176,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
 
       <button
         onClick={() => { setEditingColor(null); setIsModalOpen(true); }}
+        data-guide-anchor="color.novo"
         className={`border-2 border-dashed rounded-2xl p-4 flex items-center justify-center gap-3 transition-all cursor-pointer hover:scale-[1.01] active:scale-[0.98] ${
           isDarkMode
             ? 'bg-slate-900 border-slate-800 text-slate-500 hover:text-indigo-400 hover:border-indigo-900/50'

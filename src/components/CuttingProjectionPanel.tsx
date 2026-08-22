@@ -563,13 +563,15 @@ export default function CuttingAreaPanel({
     });
   };
 
-  const handleCreateNewLabelProfile = () => {
+  // Tamanho escolhido na etapa "Tamanho da Etiqueta" do próprio LabelProfilePickerModal (ver
+  // onCreateNew) — nada mais fica implícito/hardcoded aqui.
+  const handleCreateNewLabelProfile = (widthMm: number, heightMm: number) => {
     const items = labelPicker.items;
     const os = labelOsOverride !== undefined ? labelOsOverride : (activeOSForSelectedLot ?? null);
     const lot = selectedLot;
     closeLabelPicker();
     onNavigate(ViewType.LABEL_EDITOR, {
-      widthMm: 75, heightMm: 24, // mesmo tamanho "★" default de SalesView/PCPView
+      widthMm, heightMm,
       batchContext: { items },
       productionContext: { lot: lot ?? undefined, os, sectors, sectorId: os?.sectorId ?? (lot ? lot.route?.[lot.currentSectorIndex] : undefined) },
     });

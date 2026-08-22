@@ -61,6 +61,7 @@ export default function ColorModal({ isOpen, onClose, onSave, color }: ColorModa
               setIsComposite(false);
               onClose();
             }}
+            data-guide-anchor="color.salvar"
             className="flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg"
           >
             Salvar

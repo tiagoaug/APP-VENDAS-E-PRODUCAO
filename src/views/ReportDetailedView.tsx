@@ -157,7 +157,7 @@ export default function ReportDetailedView({
     if (reportId !== 'produtos-curva-a') return [];
     const filtered = sales.filter(s => s.status === SaleStatus.SALE && filterByDateRange(s.date));
     
-    const byProduct: Record<string, { id: string, name: string, colorName: string, categoryName: string, quantity: number, total: number }> = {};
+    const byProduct: Record<string, { id: string, reference: string, colorName: string, categoryName: string, quantity: number, total: number }> = {};
     filtered.forEach(s => {
       s.items.forEach(item => {
         const prod = products.find(p => p.id === item.productId);
@@ -167,7 +167,7 @@ export default function ReportDetailedView({
         if (!byProduct[key]) {
           byProduct[key] = {
             id: key,
-            name: prod?.name || '?',
+            reference: prod?.reference || '?',
             colorName: variation?.colorName || '?',
             categoryName: categoryName,
             quantity: 0,
@@ -373,10 +373,10 @@ export default function ReportDetailedView({
       ]);
       autoTable(doc, { startY: 40, head, body, theme: 'grid' });
     } else if (reportId === 'produtos-curva-a') {
-      const head = [['#', 'Produto', 'Qtd Vendida', 'Receita Total', 'Curva']];
+      const head = [['#', 'Referência', 'Qtd Vendida', 'Receita Total', 'Curva']];
       const body = curvaAData.map((r, i) => [
         (i + 1).toString(),
-        r.name,
+        r.reference,
         r.quantity.toString(),
         `R$ ${r.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         r.classification
@@ -728,7 +728,7 @@ export default function ReportDetailedView({
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>
-                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">Produto</th>
+                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">Ref.</th>
                                 <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">Cor</th>
                                 <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">Categoria</th>
                                 <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800 text-right">Qtd</th>
@@ -739,7 +739,7 @@ export default function ReportDetailedView({
                         <tbody>
                             {curvaAData.map((r, i) => (
                                 <tr key={i} className={`border-b last:border-0 dark:border-slate-800 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}>
-                                    <td className="p-3 text-[10px] font-bold uppercase truncate max-w-[120px]">{r.name}</td>
+                                    <td className="p-3 text-[10px] font-bold uppercase truncate max-w-[60px]">{r.reference}</td>
                                     <td className="p-3 text-[10px] font-bold uppercase truncate max-w-[120px]">{r.colorName}</td>
                                     <td className="p-3 text-[10px] font-bold uppercase truncate max-w-[120px]">{r.categoryName}</td>
                                     <td className="p-3 text-xs text-right font-bold text-slate-500">{r.quantity}</td>

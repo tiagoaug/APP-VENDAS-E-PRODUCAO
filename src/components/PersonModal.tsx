@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from 'react';
 import { DeliveryAddress, Person } from '../types';
-import { X, Plus, Trash2, ChevronDown, MapPin, Contact as ContactIcon } from 'lucide-react';
+import { X, MapPin, Contact as ContactIcon } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 import { toast } from '../utils/toast';
@@ -32,9 +32,11 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
   const [internalContacts, setInternalContacts] = useState<{ name: string; role: 'Vendedor' | 'Comprador' }[]>([]);
   const [observations, setObservations] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress | undefined>(undefined);
-  const [sellerSearch, setSellerSearch] = useState('');
-  const [showSellerSuggestions, setShowSellerSuggestions] = useState(false);
-  const [contactRole, setContactRole] = useState<'Vendedor' | 'Comprador'>('Vendedor');
+  // Popup "tem um vendedor/comprador?" disparado ao MARCAR Cliente (pergunta por Comprador) ou
+  // Fornecedor (pergunta por Vendedor) — ver onChange dos checkboxes abaixo. Substitui a antiga
+  // seção sempre visível "Vendedores/Compradores Internos" (buscava/linkava Pessoas reais),
+  // que gerava confusão por ficar exposta o tempo todo mesmo sem nada pra cadastrar ali.
+  const [contactPrompt, setContactPrompt] = useState<{ role: 'Vendedor' | 'Comprador'; step: 'ask' | 'name'; name: string } | null>(null);
 
   useEffect(() => {
     if (person) {
@@ -68,46 +70,18 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       setObservations(initialData?.observations || '');
       setDeliveryAddress(initialData?.defaultDeliveryAddress);
     }
-    setSellerSearch('');
+    setContactPrompt(null);
   }, [person, isOpen, initialData]);
 
   if (!isOpen) return null;
 
-  const handleAddSeller = (sellerId: string) => {
-    if (contactRole === 'Vendedor') {
-      if (associatedSellerIds.includes(sellerId)) {
-        toast.show('Este vendedor já está associado.');
-        return;
-      }
-      setAssociatedSellerIds([...associatedSellerIds, sellerId]);
-    } else {
-      if (associatedContactIds.includes(sellerId)) {
-        toast.show('Este comprador já está associado.');
-        return;
-      }
-      setAssociatedContactIds([...associatedContactIds, sellerId]);
-    }
-    setSellerSearch('');
-    setShowSellerSuggestions(false);
-  };
-
-  const handleAddInternalContact = (name: string) => {
-    if (!name.trim()) return;
-    setInternalContacts([...internalContacts, { name: name.trim(), role: contactRole }]);
-    setSellerSearch('');
-    setShowSellerSuggestions(false);
-  };
-
-  const handleRemoveSeller = (id: string, isBuyerContact: boolean) => {
-    if (isBuyerContact) {
-      setAssociatedContactIds(associatedContactIds.filter(sId => sId !== id));
-    } else {
-      setAssociatedSellerIds(associatedSellerIds.filter(sId => sId !== id));
-    }
-  };
-
-  const handleRemoveInternalContact = (index: number) => {
-    setInternalContacts(internalContacts.filter((_, i) => i !== index));
+  // Passo "Sim" do popup de vendedor/comprador interno — adiciona o nome digitado como contato
+  // interno simples (sem vincular a uma Pessoa cadastrada, mesmo formato de sempre em
+  // internalContacts) e fecha o popup.
+  const confirmContactPrompt = () => {
+    if (!contactPrompt || !contactPrompt.name.trim()) return;
+    setInternalContacts([...internalContacts, { name: contactPrompt.name.trim(), role: contactPrompt.role }]);
+    setContactPrompt(null);
   };
 
   // Importa nome/telefone/e-mail direto da agenda nativa do aparelho (Android/iOS) — evita
@@ -177,13 +151,8 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
     }
   };
 
-  const filteredSellers = allPeople.filter(s => 
-    s.id !== person?.id &&
-    s.name.toLowerCase().includes(sellerSearch.toLowerCase()) &&
-    (contactRole === 'Vendedor' ? !associatedSellerIds.includes(s.id) : !associatedContactIds.includes(s.id))
-  );
-
   return (
+    <>
     <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-white dark:bg-slate-900 rounded-[32px] p-8 w-full max-w-2xl shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto force-scrollbar">
         <div className="flex justify-between items-center mb-8">
@@ -267,17 +236,26 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
               <input 
                 type="checkbox" 
                 className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
-                checked={isCustomer} 
-                onChange={(e) => setIsCustomer(e.target.checked)} 
+                checked={isCustomer}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsCustomer(checked);
+                  // Só pergunta ao MARCAR — desmarcar não deve interromper com popup nenhum.
+                  if (checked) setContactPrompt({ role: 'Comprador', step: 'ask', name: '' });
+                }}
               />
               <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Cliente</span>
             </label>
             <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
-                checked={isSupplier} 
-                onChange={(e) => setIsSupplier(e.target.checked)} 
+                checked={isSupplier}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsSupplier(checked);
+                  if (checked) setContactPrompt({ role: 'Vendedor', step: 'ask', name: '' });
+                }}
               />
               <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Fornecedor</span>
             </label>
@@ -312,137 +290,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
 
           {(isCustomer || isSupplier) && (
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
-              <div className="flex justify-between items-end mb-1">
-                <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Vendedores / Compradores Internos</label>
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl gap-1">
-                  <button 
-                    type="button"
-                    onClick={() => setContactRole('Vendedor')}
-                    className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${contactRole === 'Vendedor' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
-                  >
-                    Vendedor
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setContactRole('Comprador')}
-                    className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${contactRole === 'Comprador' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
-                  >
-                    Comprador
-                  </button>
-                </div>
-              </div>
-              
-              <div className="relative">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      placeholder={`Nome do ${contactRole.toLowerCase()}...`}
-                      className="w-full h-14 bg-slate-50 dark:bg-slate-800/50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 text-base font-bold transition-all outline-none dark:text-white"
-                      value={sellerSearch}
-                      onChange={(e) => {
-                        setSellerSearch(e.target.value);
-                        setShowSellerSuggestions(true);
-                      }}
-                      onFocus={() => setShowSellerSuggestions(true)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && sellerSearch.trim()) {
-                          e.preventDefault();
-                          // Se houver uma sugestão exata, adiciona ela
-                          const exactMatch = filteredSellers.find(s => s.name.toLowerCase() === sellerSearch.toLowerCase());
-                          if (exactMatch) {
-                            handleAddSeller(exactMatch.id);
-                          } else {
-                            handleAddInternalContact(sellerSearch);
-                          }
-                        }
-                      }}
-                    />
-                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
-                  <button
-                    type="button"
-                    className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 transition-all active:scale-90 shadow-lg shadow-indigo-500/20"
-                    title="Adicionar contato"
-                    onClick={() => {
-                      if (sellerSearch.trim()) {
-                        const exactMatch = filteredSellers.find(s => s.name.toLowerCase() === sellerSearch.toLowerCase());
-                        if (exactMatch) {
-                          handleAddSeller(exactMatch.id);
-                        } else {
-                          handleAddInternalContact(sellerSearch);
-                        }
-                      }
-                    }}
-                  >
-                    <Plus size={24} strokeWidth={3} />
-                  </button>
-                </div>
-
-                {showSellerSuggestions && sellerSearch && (
-                  <div className="absolute z-[60] w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl max-h-48 overflow-y-auto force-scrollbar">
-                    <div className="p-2 border-b border-slate-50 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 flex justify-between items-center">
-                      <span>Sugestões Encontradas</span>
-                    </div>
-                    {filteredSellers.map(s => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        className="w-full text-left px-5 py-4 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-base font-bold dark:text-white border-b border-slate-50 dark:border-slate-800 last:border-0 transition-colors flex items-center justify-between group"
-                        onClick={() => handleAddSeller(s.id)}
-                      >
-                        <div className="flex flex-col">
-                          <span>{s.name}</span>
-                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{s.isSeller ? 'Vendedor' : s.isBuyer ? 'Comprador' : 'Contato'}</span>
-                        </div>
-                        <Plus size={14} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="w-full text-left px-5 py-4 bg-slate-50/50 dark:bg-slate-800/30 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-xs font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 transition-all flex items-center justify-between group"
-                      onClick={() => handleAddInternalContact(sellerSearch)}
-                    >
-                      <div className="flex flex-col">
-                        <span>Adicionar "{sellerSearch}"</span>
-                        <span className="text-[9px] opacity-60">Como contato interno simples</span>
-                      </div>
-                      <Plus size={14} />
-                    </button>
-                  </div>
-                )}
-
-            </div>
-
-            {/* List of associated and internal contacts */}
-            <div className="flex flex-wrap gap-2 pt-2">
-              {associatedSellerIds.map(sId => {
-                const s = allPeople.find(p => p.id === sId);
-                return (
-                  <div key={sId} className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1.5 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-tighter">{s?.name || 'Vendedor'}</span>
-                    <button onClick={() => handleRemoveSeller(sId, false)} title="Remover Vendedor" className="text-indigo-400 hover:text-rose-500"><X size={12} /></button>
-                  </div>
-                );
-              })}
-              {associatedContactIds.map(sId => {
-                const s = allPeople.find(p => p.id === sId);
-                return (
-                  <div key={sId} className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter">{s?.name || 'Comprador'}</span>
-                    <button onClick={() => handleRemoveSeller(sId, true)} title="Remover Comprador" className="text-emerald-400 hover:text-rose-500"><X size={12} /></button>
-                  </div>
-                );
-              })}
-              {internalContacts.map((c, idx) => (
-                <div key={idx} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${c.role === 'Vendedor' ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-50 dark:border-indigo-900/30' : 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-50 dark:border-emerald-900/30'}`}>
-                  <span className={`text-[10px] font-black uppercase tracking-tighter ${c.role === 'Vendedor' ? 'text-indigo-500' : 'text-emerald-500'}`}>{c.name}</span>
-                  <button onClick={() => handleRemoveInternalContact(idx)} title="Remover Contato" className="text-slate-300 hover:text-rose-500"><X size={12} /></button>
-                </div>
-              ))}
-            </div>
-
-            {/* Observations Field */}
+              {/* Observations Field */}
             <div className="pt-4 space-y-1.5">
               <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Observações Internas</label>
               <textarea
@@ -478,8 +326,9 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
             >
               Cancelar
             </button>
-            <button 
+            <button
               onClick={handleSave}
+              data-guide-anchor="person.salvar"
               className="flex-1 h-14 rounded-2xl bg-indigo-600 text-white font-black uppercase text-xs tracking-widest shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
               Salvar
@@ -488,5 +337,79 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
         </div>
       </div>
     </div>
+
+    {contactPrompt && (
+      <div
+        className="fixed inset-0 bg-slate-900/70 z-[70] flex items-center justify-center p-4"
+        // No passo "ask", tocar fora equivale a responder Não (sem dado nenhum a perder). No
+        // passo "name" NÃO fecha mais — evita perder o nome já digitado por um toque
+        // acidental fora do cartão (ex.: teclado do celular empurrando o layout).
+        onClick={() => { if (contactPrompt.step === 'ask') setContactPrompt(null); }}
+      >
+        <div
+          className="bg-white dark:bg-slate-900 rounded-[28px] p-6 w-full max-w-sm shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contactPrompt.step === 'ask' ? (
+            <>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-6 text-center leading-relaxed">
+                {contactPrompt.role === 'Comprador'
+                  ? 'Esse cliente tem um comprador responsável que você já conhece?'
+                  : 'Esse fornecedor tem um vendedor que te atende?'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setContactPrompt(null)}
+                  className="flex-1 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
+                >
+                  Não
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContactPrompt(prev => prev ? { ...prev, step: 'name' } : prev)}
+                  className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
+                >
+                  Sim
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2 block">
+                Nome do {contactPrompt.role.toLowerCase()}
+              </label>
+              <input
+                autoFocus
+                type="text"
+                placeholder={`Nome do ${contactPrompt.role.toLowerCase()}...`}
+                className="w-full h-14 bg-slate-50 dark:bg-slate-800/50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 text-base font-bold transition-all outline-none dark:text-white mb-4"
+                value={contactPrompt.name}
+                onChange={(e) => setContactPrompt(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && contactPrompt.name.trim()) confirmContactPrompt(); }}
+              />
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setContactPrompt(null)}
+                  className="flex-1 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={!contactPrompt.name.trim()}
+                  onClick={confirmContactPrompt}
+                  className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    )}
+    </>
   );
 }

@@ -91,8 +91,9 @@ export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, i
           </div>
         ))}
 
-        <button 
+        <button
           onClick={onAdd}
+          data-guide-anchor="paymethod.novo"
           className="bg-slate-50 dark:bg-slate-900 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2rem] py-8 flex flex-col items-center justify-center gap-2 text-slate-300 dark:text-slate-700 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-100 dark:hover:border-blue-900/30 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-all cursor-pointer"
         >
           <Plus size={24} />

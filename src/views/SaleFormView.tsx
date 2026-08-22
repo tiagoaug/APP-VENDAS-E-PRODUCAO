@@ -8,6 +8,7 @@ import ReminderPickerModal from '../components/ReminderPickerModal';
 import DeliveryAddressForm from '../components/DeliveryAddressForm';
 import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator, MapPin } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
+import PersonModal from '../components/PersonModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sharePDF } from '../utils/pdfExport';
@@ -60,9 +61,15 @@ interface SaleFormViewProps {
   // isSeller no combo "Vendedor/Responsável" — a comissão é calculada a partir daqui na hora
   // de salvar (ver Sale.commissionAmount).
   collaborators?: Collaborator[];
+  // Cadastro rápido de Cliente sem sair da tela de venda (ver PersonModal local abaixo) — usado
+  // quando o campo Cliente está vazio e não há nenhum cliente cadastrado ainda (ex.: usuário
+  // pulou essa etapa da Configuração Inicial). Mesma escrita que PeopleView já faz
+  // (firebaseService.saveDocument('people', ...)), só que aqui o id retornado é usado pra
+  // selecionar o cliente recém-criado automaticamente.
+  onQuickAddPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
 }
 
-export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [] }: SaleFormViewProps) {
+export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [], onQuickAddPerson }: SaleFormViewProps) {
   const sellerCollaborators = useMemo(() => collaborators.filter(c => c.isSeller), [collaborators]);
   const hasProduction = modulesConfig.production;
   // Refinamento por função dentro do setor Vendas (ver taskPermissions em Collaborator) — 'Vender'
@@ -119,6 +126,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [isAutoOrderNumber, setIsAutoOrderNumber] = useState(true);
   const [customerId, setCustomerId] = useState('');
   const [sellerId, setSellerId] = useState('');
+  // Cadastro rápido de Cliente sem sair da tela de venda — ver onQuickAddPerson.
+  const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
   const [blocks, setBlocks] = useState<SaleBlock[]>([]);
   const [status, setStatus] = useState<SaleStatus>(() => (!saleId && !canVender && canOrcamento) ? SaleStatus.QUOTE : SaleStatus.SALE);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -1324,7 +1333,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                   Edição bloqueada — reverta a expedição em Vendas para editar
                 </p>
               )}
-              <div className="flex items-center gap-3 mt-2">
+              <div data-guide-anchor="saleForm.autoNumero" className="flex items-center gap-3 mt-2">
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <div className="relative">
                     <input
@@ -1376,6 +1385,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             type="button"
             onClick={() => setStatus(SaleStatus.SALE)}
             disabled={!canVender}
+            data-guide-anchor="saleForm.tipoVendaVenda"
             className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center disabled:opacity-40 disabled:cursor-not-allowed ${status === SaleStatus.SALE ? 'bg-[#7c3aed] text-white shadow-lg' : 'text-slate-400'}`}
             aria-label="Definir como venda"
             title={canVender ? 'Venda' : 'Sem permissão pra vender'}
@@ -1386,6 +1396,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             type="button"
             onClick={() => setStatus(SaleStatus.CONFIRMED)}
             disabled={!canVender}
+            data-guide-anchor="saleForm.tipoVendaPedido"
             className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center disabled:opacity-40 disabled:cursor-not-allowed ${status === SaleStatus.CONFIRMED ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-400'}`}
             aria-label="Definir como pedido confirmado"
             title={canVender ? 'Pedido confirmado — sem abate de estoque' : 'Sem permissão pra vender'}
@@ -1396,6 +1407,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             type="button"
             onClick={() => setStatus(SaleStatus.QUOTE)}
             disabled={!canOrcamento}
+            data-guide-anchor="saleForm.tipoVendaOrcamento"
             className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center disabled:opacity-40 disabled:cursor-not-allowed ${status === SaleStatus.QUOTE ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-400'}`}
             aria-label="Definir como orçamento"
             title={canOrcamento ? 'Orçamento' : 'Sem permissão pra emitir orçamentos'}
@@ -1423,17 +1435,29 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           {/* Cliente */}
           <div className="relative">
             <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Cliente</label>
-            <ComboBox
-              options={people.filter(p => p.isCustomer).map(p => ({ id: p.id, name: p.name }))}
-              value={customerId}
-              onChange={setCustomerId}
-              placeholder="SELECIONE O CLIENTE"
-              isDarkMode={isDarkMode}
-            />
+            <div data-guide-anchor="saleForm.cliente">
+              <ComboBox
+                options={people.filter(p => p.isCustomer).map(p => ({ id: p.id, name: p.name }))}
+                value={customerId}
+                onChange={setCustomerId}
+                placeholder="SELECIONE O CLIENTE"
+                isDarkMode={isDarkMode}
+              />
+            </div>
+            {people.filter(p => p.isCustomer).length === 0 && (
+              <button
+                type="button"
+                onClick={() => setIsQuickPersonModalOpen(true)}
+                className="mt-2 px-3 text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600"
+              >
+                Nenhum cliente cadastrado ainda? Cadastrar agora
+              </button>
+            )}
           </div>
 
           <div className="relative">
             <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vendedor / Responsável</label>
+            <div data-guide-anchor="saleForm.vendedor">
             <ComboBox
               options={[
                 ...sellerCollaborators.map(c => ({ id: c.id, name: c.name })),
@@ -1446,6 +1470,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               isDarkMode={isDarkMode}
               icon={<Users size={18} />}
             />
+            </div>
 
             {/* Badges de Sugestão do Cliente */}
             {customerId && (
@@ -1490,7 +1515,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           </div>
 
           <div className="flex flex-col gap-3">
-             <div>
+             <div data-guide-anchor="saleForm.condicao">
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest">Condição</label>
                 <ComboBox
                   options={[
@@ -1514,7 +1539,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                   usePopupModal
                 />
              </div>
-             <div>
+             <div data-guide-anchor="saleForm.pagamento">
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Pagamento</label>
                 <ComboBox
                   options={paymentMethods.map(pm => ({ id: pm.id, name: pm.name }))}
@@ -1526,7 +1551,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                   usePopupModal
                 />
              </div>
-             <div>
+             <div data-guide-anchor="saleForm.tipoPagamento">
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Tipo Pagamento</label>
                 <ComboBox
                   options={[
@@ -1544,7 +1569,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
              {paymentTerm === PaymentTerm.INSTALLMENTS && (
                <div>
                   <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vencimento</label>
-                  <div className="relative">
+                  <div data-guide-anchor="saleForm.vencimento" className="relative">
                     <DatePicker
                       value={dueDate}
                       onChange={setDueDate}
@@ -1555,7 +1580,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
              )}
           </div>
 
-          <div>
+          <div data-guide-anchor="saleForm.contaDestino">
              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Conta de Destino</label>
              <ComboBox
                options={accounts.map(acc => ({ id: acc.id, name: `${acc.name} (Saldo: R$ ${acc.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` }))}
@@ -1570,7 +1595,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
           <div className="mt-4">
               <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Observações</label>
-              <textarea 
+              <textarea
+                data-guide-anchor="saleForm.observacoes"
                 className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[12px] font-medium leading-relaxed outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-200 resize-none h-24"
                 value={notes}
                 aria-label="Observações da venda"
@@ -1601,6 +1627,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           {hasProduction && (
             <button type="button"
               onClick={() => setIsProductionOrder(v => !v)}
+              data-guide-anchor="saleForm.pedidoProducaoOP"
               title={isProductionOrder ? 'Desativar OP' : 'Ativar pedido de produção'}
               className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 transition-all mt-4 ${isProductionOrder
                 ? 'bg-gradient-to-br from-sky-400 to-sky-600 border-sky-400 text-white shadow-lg shadow-sky-400/25'
@@ -1632,7 +1659,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div data-guide-anchor="saleForm.prioridade" className="flex flex-wrap gap-2">
               {priorityOptions.map(p => {
                 const isActive = prioridade === p;
                 const days = getDefaultDaysForDeadline(p);
@@ -1650,7 +1677,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 );
               })}
             </div>
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div data-guide-anchor="saleForm.prazoEntrega" className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <Calendar size={13} className="text-indigo-400 shrink-0" />
               <DatePicker
                 raw
@@ -1686,6 +1713,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               <MessageSquare size={11} /> Observação Geral — todos os modelos
             </label>
             <textarea
+              data-guide-anchor="saleForm.observacaoOP"
               className={`w-full rounded-xl border px-3 py-2.5 text-[11px] font-bold resize-none h-14 focus:ring-2 focus:ring-amber-400/20 transition-all placeholder:text-slate-300 dark:placeholder:text-slate-600 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-amber-100 text-slate-800'}`}
               value={productionGlobalNote}
               onChange={(e) => setProductionGlobalNote(e.target.value)}
@@ -1702,8 +1730,9 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                <p className="text-[8px] text-slate-300 font-bold uppercase tracking-widest mt-1">Selecione os produtos e variações</p>
             </div>
             <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setShowProductModal(true)} 
+              <button
+                onClick={() => setShowProductModal(true)}
+                data-guide-anchor="saleForm.adicionarModelo"
                 className={`flex items-center gap-2 font-black text-[10px] uppercase tracking-widest bg-slate-900 dark:bg-indigo-600 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all`}
                 aria-label="Adicionar modelo à cesta"
                 title="Adicionar Modelo"
@@ -1744,16 +1773,18 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                    </div>
                    
                    <div className="flex items-center gap-2">
-                     <button 
-                       onClick={() => toggleBlockExpanded(block.id)} 
+                     <button
+                       onClick={() => toggleBlockExpanded(block.id)}
+                       data-guide-anchor="saleForm.blockExpandir"
                        className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"
                        aria-label="Expandir/Recolher item"
                        title="Ver Detalhes"
                      >
                        {isExpanded ? <ChevronUp size={20} strokeWidth={2.5} /> : <ChevronDown size={20} strokeWidth={2.5} />}
                      </button>
-                     <button 
-                       onClick={() => removeBlock(index)} 
+                     <button
+                       onClick={() => removeBlock(index)}
+                       data-guide-anchor="saleForm.blockRemover"
                        className="p-2 text-slate-200 dark:text-slate-700 hover:text-rose-500 transition-colors transform active:scale-90"
                        aria-label="Remover item da cesta"
                        title="Remover"
@@ -1769,7 +1800,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                         produto é híbrido (vendido em Atacado E Varejo). Produto não-híbrido
                         mantém o saleType fixo definido na hora de adicionar o item. */}
                     {isHybridProduct(product) && (
-                      <div className="flex flex-col gap-1.5 mt-4 mb-3">
+                      <div data-guide-anchor="saleForm.blockModalidade" className="flex flex-col gap-1.5 mt-4 mb-3">
                         <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">Modalidade</label>
                         <button
                           onClick={() => {
@@ -1803,7 +1834,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                     {isProductionOrder && (
                     <div className="flex flex-col gap-3 mt-4 mb-5">
                       {/* Preço Grade */}
-                      <div className="flex flex-col gap-1.5">
+                      <div data-guide-anchor="saleForm.blockPrecoGrade" className="flex flex-col gap-1.5">
                         <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">
                           Preço Grade (R$)
                         </label>
@@ -1819,7 +1850,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                       </div>
 
                       {/* Preço Unitário */}
-                      <div className="flex flex-col gap-1.5">
+                      <div data-guide-anchor="saleForm.blockPrecoUnitario" className="flex flex-col gap-1.5">
                         <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">
                           Preço Unitário (R$/par)
                         </label>
@@ -1910,7 +1941,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                       );
                     })()}
 
-                    <div className="flex flex-col gap-3">
+                    <div data-guide-anchor="saleForm.blockVariacoes" className="flex flex-col gap-3">
                       <h4 className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest mb-1">Variações Disponíveis</h4>
                       
                       {product.variations.map(v => {
@@ -2340,7 +2371,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           </div>
         </div>
 
-        <div className="p-5 flex flex-col gap-4">
+        <div data-guide-anchor="saleForm.acrescimoItemAvulso" className="p-5 flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
             <div className="flex flex-col gap-1 flex-1">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Descrição</p>
@@ -2433,14 +2464,29 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         initialValue={Number(extraItemValue) || 0}
       />
 
+      <PersonModal
+        isOpen={isQuickPersonModalOpen}
+        onClose={() => setIsQuickPersonModalOpen(false)}
+        onSave={async (p) => {
+          const created = await onQuickAddPerson(p);
+          setCustomerId(created.id);
+          setIsQuickPersonModalOpen(false);
+        }}
+        sellers={people.filter(p => p.isSeller)}
+        allPeople={people}
+        initialData={{ isCustomer: true }}
+        isDarkMode={isDarkMode}
+      />
+
       {/* Summary and Payments near Finalize area */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Payments Section */}
         <div className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
            <div className="flex justify-between items-center px-2">
               <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">Recebimentos</h3>
-              <button 
+              <button
                 onClick={() => setShowPaymentModal(true)}
+                data-guide-anchor="saleForm.adicionarRecebimento"
                 className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
                 title="Adicionar Recebimento"
               >
@@ -2449,7 +2495,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
            </div>
 
            <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div data-guide-anchor="saleForm.resumoRecebimentos" className="grid grid-cols-2 gap-3">
                  <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Pago</p>
                     <p className="text-sm font-black text-emerald-500">R$ {amountPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -2517,7 +2563,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               </div>
            </div>
            
-           <div className="flex items-center gap-3 mt-4">
+           <div data-guide-anchor="saleForm.desconto" className="flex items-center gap-3 mt-4">
               <div className="flex-1 flex flex-col gap-1.5">
                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest pl-1">Desconto ({discountType === 'percentage' ? '%' : 'R$'})</label>
                  <div className="relative">
@@ -2568,6 +2614,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
            <button
              type="button"
              onClick={() => setIsAccounting(v => !v)}
+             data-guide-anchor="saleForm.naoContabil"
              className={`w-full mt-4 flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98] text-left ${!isAccounting
                ? (isDarkMode ? 'bg-amber-900/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
                : (isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100')
@@ -2633,6 +2680,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                <button
                  type="button"
                  onClick={() => setShowDeliveryModal(true)}
+                 data-guide-anchor="saleForm.enderecoEntrega"
                  className={`w-full mt-2 flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98] text-left ${isActive
                    ? (isDarkMode ? 'bg-rose-900/20 border-rose-700/40' : 'bg-rose-50 border-rose-200')
                    : (isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100')
@@ -3302,6 +3350,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             <button
               onClick={handleSave}
               disabled={isSaving}
+              data-guide-anchor="saleForm.finalizar"
               className={`w-full xl:flex-1 h-12 px-2 rounded-full text-white font-black uppercase tracking-tight text-[11px] flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 ${isSaving ? 'bg-slate-500 cursor-wait' : 'bg-indigo-600 active:bg-indigo-700 hover:bg-indigo-500'}`}
             >
               <Save size={16} strokeWidth={3} className={`shrink-0 ${isSaving ? 'animate-spin' : ''}`} /> <span className="text-center leading-none mt-0.5">{isSaving ? 'Salvando...' : status === SaleStatus.QUOTE ? 'Salvar' : 'Concluir'}</span>

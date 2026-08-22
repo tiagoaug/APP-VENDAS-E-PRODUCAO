@@ -425,6 +425,13 @@ interface ProductionConfigViewProps {
   lots?: ProductionLot[];
   products?: Product[];
   soleStock?: SoleStockEntry[];
+  // true = acesso restrito só à tela Embalagens — pensado pra contas sem o módulo de Produção
+  // (revendedor) que ainda assim precisam cadastrar grade/composição por tamanho de caixa (ver
+  // "Converter em Pares" em Estoque e "Transformar em Varejo ao Receber" em Compras). Com isso
+  // ligado, sair da tela de Embalagens (fechar o modal ou "Voltar" dentro dela) chama `onBack`
+  // direto em vez de `setCurrentScreen('MENU')` — o menu com Facas/Matrizes/Fichas etc. (tudo
+  // que só faz sentido com Produção) nunca chega a renderizar.
+  restrictToPackaging?: boolean;
 }
 
 // Quando a conjugação é < 1, a faca precisa de mais de 1 batida para formar 1 par
@@ -459,7 +466,8 @@ export default function ProductionConfigView({
   onNavigateGrids,
   lots = [],
   products = [],
-  soleStock = []
+  soleStock = [],
+  restrictToPackaging = false,
 }: ProductionConfigViewProps) {
 
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
@@ -1008,7 +1016,7 @@ export default function ProductionConfigView({
 
       <Modal
         isOpen={currentScreen === 'EMBALAGENS'}
-        onClose={() => setCurrentScreen('MENU')}
+        onClose={restrictToPackaging ? onBack : () => setCurrentScreen('MENU')}
         title="Padrão de Embalagens"
         zIndex={60000}
       >
@@ -1021,12 +1029,12 @@ export default function ProductionConfigView({
           isDarkMode={isDarkMode}
           onSave={onSaveConfigItem}
           onDelete={onDeleteConfigItem}
-          onBack={() => setCurrentScreen('MENU')}
+          onBack={restrictToPackaging ? onBack : () => setCurrentScreen('MENU')}
           placeholderLabel="Nenhum padrão de embalagem"
           productionConfigs={productionConfigs}
           people={people}
           grids={grids}
-          onNavigateToScreen={handleNavigateShortcut}
+          onNavigateToScreen={restrictToPackaging ? undefined : handleNavigateShortcut}
           zIndex={60000}
         />
       </Modal>
@@ -1753,6 +1761,7 @@ function GenericConfigList({
           }}
           title={`Adicionar Novo Registro em ${label}`}
           aria-label={`Adicionar novo registro na categoria ${label}`}
+          data-guide-anchor="prodcfg.addRegistro"
           className={`flex-1 py-4 px-6 rounded-[2rem] flex items-center gap-4 transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-indigo-600 text-white shadow-indigo-200/80'}`}
         >
           <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
@@ -3438,7 +3447,7 @@ function GenericConfigList({
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Descrição Completa</label><input type="text" value={editingItem?.description || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Ex: Unidade, Quilograma, Metro..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} /></div>
             </div>
           )}
-          <button type="submit" disabled={isLoading} className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50 disabled:cursor-not-allowed">{isLoading ? (<><Loader2 size={18} className="animate-spin" />SALVANDO...</>) : (<><Check size={18} strokeWidth={3} />{editingItem?.id ? 'Salvar Alterações' : 'Confirmar Cadastro'}</>)}</button>
+          <button type="submit" disabled={isLoading} data-guide-anchor="prodcfg.salvarRegistro" className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50 disabled:cursor-not-allowed">{isLoading ? (<><Loader2 size={18} className="animate-spin" />SALVANDO...</>) : (<><Check size={18} strokeWidth={3} />{editingItem?.id ? 'Salvar Alterações' : 'Confirmar Cadastro'}</>)}</button>
         </form>
       </Modal>
 

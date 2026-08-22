@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ShoppingBag, Factory, Plus, Tag, Maximize2, X } from 'lucide-react';
+import { ShoppingBag, Factory, Plus, Tag, Maximize2, X, ChevronLeft, Ruler } from 'lucide-react';
 import Modal from './Modal';
 import { LabelFile, Sector } from '../types';
 import { renderLabelElementsToCanvas } from '../utils/labelCanvasRenderer';
@@ -12,10 +12,27 @@ interface LabelProfilePickerModalProps {
   labelFiles: LabelFile[];
   sectors: Sector[];
   onSelectProfile: (file: LabelFile) => void;
-  onCreateNew: () => void;
+  // Chamado só depois de escolher o tamanho (preset ou manual) na etapa "Tamanho da Etiqueta"
+  // abaixo — nenhum tamanho fica implícito/hardcoded mais (ver TAMANHO_PRESETS).
+  onCreateNew: (widthMm: number, heightMm: number) => void;
 }
 
 const NO_SECTOR_KEY = '__none__';
+
+// Mesmos presets de PrintLabelEditorModal.tsx/PrintOSModal.tsx (THERMAL_SIZES) — duplicado de
+// propósito (mesmo padrão já usado nesses dois arquivos) já que aqui é só a etapa "Criar Novo
+// Perfil" escolhendo o tamanho inicial da etiqueta em branco, sem nenhuma outra dependência.
+const SIZE_PRESETS: { label: string; widthMm: number; heightMm: number; star?: boolean }[] = [
+  { label: '75 × 24 mm',  widthMm: 75,  heightMm: 24, star: true },
+  { label: '38 × 25 mm',  widthMm: 38,  heightMm: 25 },
+  { label: '50 × 30 mm',  widthMm: 50,  heightMm: 30 },
+  { label: '57 × 40 mm',  widthMm: 57,  heightMm: 40 },
+  { label: '80 × 40 mm',  widthMm: 80,  heightMm: 40 },
+  { label: '80 × 50 mm',  widthMm: 80,  heightMm: 50 },
+  { label: '100 × 50 mm', widthMm: 100, heightMm: 50 },
+  { label: '100 × 40 mm', widthMm: 100, heightMm: 40 },
+  { label: '40 × 30 mm',  widthMm: 40,  heightMm: 30 },
+];
 
 // Tela 1 do fluxo de impressão de etiquetas (Vendas e PCP) — lista os perfis já criados, com uma
 // prévia real (renderizada a partir dos elementos salvos, com placeholders nos campos vinculados
@@ -35,6 +52,19 @@ export default function LabelProfilePickerModal({
   // miniatura de 64px só parecia "baixa resolução" por estar pequena na tela, não por ter sido
   // renderizada em baixa qualidade — só precisa de um jeito de mostrar ela maior.
   const [expandedFile, setExpandedFile] = useState<LabelFile | null>(null);
+  // Etapa "Tamanho da Etiqueta" — aberta ao tocar "Criar Novo Perfil", antes de navegar pro
+  // editor de verdade (ver onCreateNew). Reseta sempre que o modal fecha/reabre.
+  const [pickingSize, setPickingSize] = useState(false);
+  const [customWidth, setCustomWidth] = useState('');
+  const [customHeight, setCustomHeight] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) { setPickingSize(false); setCustomWidth(''); setCustomHeight(''); }
+  }, [isOpen]);
+
+  const customWidthNum = Number(customWidth.replace(',', '.'));
+  const customHeightNum = Number(customHeight.replace(',', '.'));
+  const customSizeValid = customWidthNum > 0 && customHeightNum > 0;
 
   const productionGroups = useMemo(() => {
     const bySector = new Map<string, LabelFile[]>();
@@ -101,9 +131,74 @@ export default function LabelProfilePickerModal({
     );
   };
 
+  const chooseSize = (widthMm: number, heightMm: number) => {
+    setPickingSize(false);
+    onCreateNew(widthMm, heightMm);
+  };
+
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="Escolher Perfil de Etiqueta" icon={<Tag size={20} />} maxWidth="max-w-md" zIndex={96000}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={pickingSize ? 'Tamanho da Etiqueta' : 'Escolher Perfil de Etiqueta'}
+      icon={pickingSize ? <Ruler size={20} /> : <Tag size={20} />}
+      maxWidth="max-w-md"
+      zIndex={96000}
+    >
+      {pickingSize ? (
+        <div className="flex flex-col gap-5">
+          <button
+            type="button"
+            onClick={() => setPickingSize(false)}
+            className={`self-start flex items-center gap-1 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            <ChevronLeft size={14} /> Voltar
+          </button>
+
+          <div className="flex flex-col gap-2">
+            <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tamanhos comuns</span>
+            <div className="grid grid-cols-2 gap-2">
+              {SIZE_PRESETS.map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => chooseSize(p.widthMm, p.heightMm)}
+                  className={`relative flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[11px] font-black transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800/60 hover:bg-slate-800 text-white' : 'bg-slate-50 hover:bg-slate-100 text-slate-800'}`}
+                >
+                  {p.star && <span className="absolute top-1.5 right-2 text-amber-400 text-xs">★</span>}
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tamanho personalizado (mm)</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" inputMode="decimal" min={1} placeholder="Largura"
+                value={customWidth} onChange={e => setCustomWidth(e.target.value)}
+                className={`w-full px-3 py-2.5 rounded-xl text-sm font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'}`}
+              />
+              <span className={`text-xs font-black ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>×</span>
+              <input
+                type="number" inputMode="decimal" min={1} placeholder="Altura"
+                value={customHeight} onChange={e => setCustomHeight(e.target.value)}
+                className={`w-full px-3 py-2.5 rounded-xl text-sm font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'}`}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={!customSizeValid}
+              onClick={() => chooseSize(customWidthNum, customHeightNum)}
+              className="w-full py-3 rounded-2xl bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
+            >
+              Usar Este Tamanho
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
           <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -141,12 +236,13 @@ export default function LabelProfilePickerModal({
 
         <button
           type="button"
-          onClick={onCreateNew}
+          onClick={() => setPickingSize(true)}
           className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
         >
           <Plus size={14} /> Criar Novo Perfil
         </button>
       </div>
+      )}
     </Modal>
 
     {expandedFile && thumbnails[expandedFile.id] && createPortal(

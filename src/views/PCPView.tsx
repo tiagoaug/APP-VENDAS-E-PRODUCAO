@@ -553,11 +553,13 @@ export default function PCPView({
       productionContext: { lot: lot ?? undefined, os, sectors, sectorId: resolveSectorIdFor(lot, os) },
     });
   };
-  const handleCreateNewLabelProfile = () => {
+  // Tamanho escolhido na etapa "Tamanho da Etiqueta" do próprio LabelProfilePickerModal (ver
+  // onCreateNew) — nada mais fica implícito/hardcoded aqui.
+  const handleCreateNewLabelProfile = (widthMm: number, heightMm: number) => {
     const { items, lot, os } = labelProfilePicker;
     setLabelProfilePicker({ open: false, items: [], lot: null, os: null });
     onNavigate(ViewType.LABEL_EDITOR, {
-      widthMm: 75, heightMm: 24, // mesmo tamanho "★" default de SalesView
+      widthMm, heightMm,
       batchContext: { items },
       productionContext: { lot: lot ?? undefined, os, sectors, sectorId: resolveSectorIdFor(lot, os) },
     });
@@ -4216,14 +4218,13 @@ export default function PCPView({
     labelService.printLotLabel(lot, product?.name || 'Produto', variation?.colorName || 'Cor');
   };
 
-  // Botão "Imprimir Etiquetas na Impressora" da Central de Compartilhamento — mesma
-  // resolução produto/variação/grade já usada pelo botão "Imprimir/Compartilhar" de um
-  // item só (ver onClick da "Etiqueta Deste Pedido"), só que aplicada a TODOS os itens
-  // selecionados de uma vez, abrindo o Editor de Etiqueta em modo lote (batchItems) —
-  // que já sabe imprimir uma etiqueta por item na Ablemark.
-  const handlePrintLabelsFromShare = () => {
+  // Resolução produto/variação/grade compartilhada pelos botões de impressão em lote (Central
+  // de Compartilhamento e menu de ações do "Ver Fichas") — monta os BatchLabelItem a partir de
+  // qualquer lista de fichas selecionadas, pra abrir o Editor de Etiqueta em modo lote
+  // (batchItems), que já sabe imprimir uma etiqueta por item na Ablemark.
+  const buildLabelBatchFromFichas = (fichas: any[]) => {
     const batch: { product: Product; variation: Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] = [];
-    for (const f of shareModal.selectedItems) {
+    for (const f of fichas) {
       const resolvedProductId = f.si.productId || f.orderItem?.productId;
       const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
       const itemProduct = products.find(p => p.id === resolvedProductId);
@@ -4240,6 +4241,12 @@ export default function PCPView({
         }
       }
     }
+    return batch;
+  };
+
+  // Botão "Imprimir Etiquetas na Impressora" da Central de Compartilhamento.
+  const handlePrintLabelsFromShare = () => {
+    const batch = buildLabelBatchFromFichas(shareModal.selectedItems);
     if (batch.length === 0) {
       toast.show('Nenhuma etiqueta válida entre os itens selecionados.');
       return;
@@ -6465,6 +6472,23 @@ export default function PCPView({
                                     className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-orange-500/15 text-orange-400 hover:bg-orange-500/25' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
                                   >
                                     <Share2 size={13} /> Compartilhar {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
+                                  </button>
+
+                                  <button type="button"
+                                    onClick={() => {
+                                      const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                      const batch = buildLabelBatchFromFichas(selectedFichasData);
+                                      if (batch.length === 0) {
+                                        toast.show('Nenhuma etiqueta válida entre os itens selecionados.');
+                                        return;
+                                      }
+                                      const uniqueLotIds = new Set(selectedFichasData.map(f => f.lot?.id).filter(Boolean));
+                                      const singleLot = uniqueLotIds.size === 1 ? selectedFichasData[0]?.lot ?? null : null;
+                                      openLabelPicker(batch, singleLot, null);
+                                    }}
+                                    className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                                  >
+                                    <Printer size={13} /> Imprimir Etiquetas — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
                                   </button>
 
                                   <button type="button"
@@ -11058,7 +11082,7 @@ export default function PCPView({
                       </div>
 
                       {item.type === 'SOLE' && item.sizeShortages && (
-                        <div className={`grid grid-cols-5 px-4 py-2 border-t text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900 text-slate-500' : 'border-slate-200 bg-white text-slate-400'}`}>
+                        <div className={`grid grid-cols-5 gap-1 px-4 py-2.5 border-t text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900 text-slate-500' : 'border-slate-200 bg-white text-slate-400'}`}>
                           <span>Grade</span>
                           <span className="text-center">Estoque</span>
                           <span className="text-center">Necess.</span>
@@ -11073,7 +11097,7 @@ export default function PCPView({
                         const transit = Math.min(inTransitByGrade[grade] || 0, gross);
                         const falta = gross - transit;
                         return (
-                          <div key={grade} className={`grid grid-cols-5 px-4 py-1.5 border-t text-[11px] font-black ${isDarkMode ? 'border-slate-800/60' : 'border-slate-100'}`}>
+                          <div key={grade} className={`grid grid-cols-5 gap-1 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800/60' : 'border-slate-100'}`}>
                             <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
                             <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
                             <span className="text-center text-slate-400">{req}</span>

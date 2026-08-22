@@ -357,6 +357,15 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [newAssemblyServiceNote, setNewAssemblyServiceNote] = useState('');
   const [showAssemblyServiceCalc, setShowAssemblyServiceCalc] = useState(false);
   const [showProductionRoute, setShowProductionRoute] = useState(false);
+  // Popup "Valores de Serviço por Setor" — valores sugeridos de R$/par por setor deste modelo
+  // (Product.sectorPrices), usados como default ao emitir uma OS terceirizada pra esse setor
+  // (ver ServiceOrderFormView.tsx/CuttingProjectionPanel.tsx). Rascunho local separado do
+  // sectorPrices "de verdade" — só aplica no state principal ao confirmar.
+  const [showSectorPricesModal, setShowSectorPricesModal] = useState(false);
+  const [sectorPricesDraft, setSectorPricesDraft] = useState<Record<string, string>>({});
+  // Setor cujo campo a CalculatorModal está alimentando no momento — um único popup de
+  // calculadora reaproveitado pra todos os setores da lista, em vez de um por linha.
+  const [calcTargetSectorId, setCalcTargetSectorId] = useState<string | null>(null);
   const [showCuttingPieces, setShowCuttingPieces] = useState(false);
   const [showCostSummary, setShowCostSummary] = useState(false);
   const [openCategoryIds, setOpenCategoryIds] = useState<Set<string>>(new Set());
@@ -2757,6 +2766,114 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             )}
           </div>
         )}
+
+        {/* Valores de Serviço por Setor — abaixo do Roteiro de Produção, só faz sentido com pelo
+            menos 1 setor selecionado ali. Abre um popup com um campo de R$/par sugerido por
+            setor (Product.sectorPrices) — usado como default ao emitir OS terceirizada. */}
+        {module === 'PRODUCTION' && productionRoute.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              const draft: Record<string, string> = {};
+              productionRoute.forEach(sectorId => {
+                if (sectorPrices[sectorId] !== undefined) draft[sectorId] = String(sectorPrices[sectorId]);
+              });
+              setSectorPricesDraft(draft);
+              setShowSectorPricesModal(true);
+            }}
+            className={`mt-4 w-full flex items-center gap-3 p-5 rounded-[2.5rem] border-2 transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-emerald-500/40' : 'bg-white border-slate-100 hover:border-emerald-300'}`}
+          >
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
+              <DollarSign size={20} />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">Valores de Serviço por Setor</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">
+                {Object.keys(sectorPrices).length > 0 ? `${Object.keys(sectorPrices).length} setor${Object.keys(sectorPrices).length > 1 ? 'es' : ''} com valor sugerido` : 'R$/par sugerido ao emitir OS terceirizada'}
+              </p>
+            </div>
+            <ChevronRight size={18} className="text-slate-300 shrink-0" />
+          </button>
+        )}
+
+        <Modal
+          isOpen={showSectorPricesModal}
+          onClose={() => setShowSectorPricesModal(false)}
+          title="Valores de Serviço por Setor"
+          icon={<DollarSign size={20} />}
+          maxWidth="max-w-sm"
+          zIndex={97000}
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest -mt-2">
+              R$/par sugerido pra cada setor deste modelo — preenche o valor automaticamente ao emitir uma OS terceirizada, sem travar edição manual.
+            </p>
+            <div className="flex flex-col gap-2">
+              {productionRoute.map(sectorId => {
+                const sector = sectors.find(s => s.id === sectorId);
+                if (!sector) return null;
+                return (
+                  <div key={sectorId} className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                    <span className="text-[11px] font-black uppercase tracking-widest truncate">{sector.name}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-[10px] font-black text-slate-400">R$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        inputMode="decimal"
+                        value={sectorPricesDraft[sectorId] ?? ''}
+                        onChange={(e) => setSectorPricesDraft(prev => ({ ...prev, [sectorId]: e.target.value }))}
+                        placeholder="0,00"
+                        className={`w-20 px-2 py-1.5 rounded-xl border text-right text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-700 text-white placeholder:text-slate-600' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-300'}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCalcTargetSectorId(sectorId)}
+                        className={`p-1.5 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-emerald-400 hover:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                        aria-label={`Abrir calculadora pro valor de ${sector.name}`}
+                        title="Calculadora"
+                      >
+                        <Calculator size={15} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <CalculatorModal
+              isOpen={!!calcTargetSectorId}
+              onClose={() => setCalcTargetSectorId(null)}
+              isDarkMode={isDarkMode}
+              zIndex={97500}
+              initialValue={calcTargetSectorId ? (parseFloat((sectorPricesDraft[calcTargetSectorId] || '0').replace(',', '.')) || 0) : 0}
+              onResult={(res) => {
+                if (calcTargetSectorId) setSectorPricesDraft(prev => ({ ...prev, [calcTargetSectorId]: res.toString() }));
+                setCalcTargetSectorId(null);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setSectorPrices(prev => {
+                  const next = { ...prev };
+                  productionRoute.forEach(sectorId => {
+                    const raw = sectorPricesDraft[sectorId];
+                    const parsed = raw !== undefined && raw !== '' ? parseFloat(raw.replace(',', '.')) : NaN;
+                    if (!isNaN(parsed) && parsed >= 0) next[sectorId] = parsed;
+                    else delete next[sectorId];
+                  });
+                  return next;
+                });
+                setShowSectorPricesModal(false);
+                toast.show('Valores de serviço salvos!');
+              }}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-emerald-500 text-white"
+            >
+              <Check size={16} /> Salvar
+            </button>
+          </div>
+        </Modal>
 
         {/* CARD DEDICADO PARA CORES E VARIAÇÕES */}
         {showSection('variacoes') && (

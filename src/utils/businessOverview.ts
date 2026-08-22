@@ -4,6 +4,11 @@ import { getStockValue } from './stockPools';
 
 export type OverviewPeriodType = 'MONTH' | 'QUARTER' | 'SEMESTER' | 'YEAR';
 
+// Rótulos curtos dos seletores de período (Mês/Trim/Sem/Ano) — compartilhado entre várias telas
+// que usam OverviewPeriodType (FinancialView.tsx e os cards extraídos dela, CommissionToSellersCard
+// e ProviderServiceOrdersCard) pra não duplicar a mesma constante em cada arquivo.
+export const STATS_PERIOD_LABELS: Record<OverviewPeriodType, string> = { MONTH: 'Mês', QUARTER: 'Trim', SEMESTER: 'Sem', YEAR: 'Ano' };
+
 // Mesma lógica de "getRange" da Análise de Lucro do Dashboard — mantém as duas
 // telas consistentes sobre o que significa "este trimestre/semestre/ano".
 // `dateStr` no formato "yyyy-MM" (mesmo valor de um <input type="month">).

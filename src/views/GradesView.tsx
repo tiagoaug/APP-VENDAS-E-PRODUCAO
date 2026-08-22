@@ -162,6 +162,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
 
         <button
           onClick={() => { setEditingGrid(null); setIsModalOpen(true); }}
+          data-guide-anchor="grade.novo"
           className="bg-slate-50 dark:bg-slate-900 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2.5rem] py-10 flex flex-col items-center justify-center gap-3 text-slate-300 dark:text-slate-700 hover:text-cyan-600 dark:hover:text-cyan-400 hover:border-cyan-100 dark:hover:border-cyan-900/30 hover:bg-cyan-50/30 dark:hover:bg-cyan-900/10 transition-all cursor-pointer"
         >
           <Plus size={32} strokeWidth={1.5} />

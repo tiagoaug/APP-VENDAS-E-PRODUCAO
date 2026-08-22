@@ -39,9 +39,7 @@ import {
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
-import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import AIAssistantSettings from '../components/AIAssistantSettings';
-import AblemarkPrinterTestModal from '../components/AblemarkPrinterTestModal';
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
@@ -69,6 +67,9 @@ interface SettingsViewProps {
   setHideFinancialValues?: (v: boolean) => void;
   onOpenOnboardingWizard: () => void;
   onOpenProductCreationChoice: () => void;
+  // Abre a Impressão de Etiquetas (Ablemark) — antes era um ícone fixo no topo do app; agora
+  // vive só aqui e no card do Painel Inicial (ver App.tsx handleOpenLabelPrintStudio).
+  onOpenLabelPrintStudio: () => void;
 }
 
 export default function SettingsView({
@@ -97,9 +98,9 @@ export default function SettingsView({
   setHideFinancialValues,
   onOpenOnboardingWizard,
   onOpenProductCreationChoice,
+  onOpenLabelPrintStudio,
 }: SettingsViewProps) {
   const [showA11y, setShowA11y] = useState(false);
-  const [showAblemarkTest, setShowAblemarkTest] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showCollabSwitcher, setShowCollabSwitcher] = useState(false);
@@ -107,6 +108,7 @@ export default function SettingsView({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  const [expandedCollabPhoto, setExpandedCollabPhoto] = useState<{ url: string; name: string } | null>(null);
 
   const isItemAllowed = (itemId: ViewType | string) => {
     if (itemId === 'SOLE_MATRIX_DIRECT') return isSectorAllowed(activeCollaborator, 'cadastro_insumos');
@@ -156,6 +158,7 @@ export default function SettingsView({
         { id: 'SOLE_MATRIX_DIRECT', label: "Solados", icon: <Footprints size={22} />, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/20", module: 'production' },
         { id: ViewType.GRIDS, label: "Grades de Tamanho", icon: <Grid3X3 size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/30", module: 'production' },
         { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Fábrica", icon: <Factory size={22} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'production' },
+        { id: 'LABEL_PRINT_STUDIO', label: "Impressão de Etiquetas", icon: <Printer size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'production' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
     },
     {
@@ -203,6 +206,8 @@ export default function SettingsView({
                       onOpenOnboardingWizard();
                     } else if (item.id === ViewType.PRODUCT_FORM) {
                       onOpenProductCreationChoice();
+                    } else if (item.id === 'LABEL_PRINT_STUDIO') {
+                      onOpenLabelPrintStudio();
                     } else {
                       onNavigate(item.id as ViewType);
                     }
@@ -460,20 +465,6 @@ export default function SettingsView({
                 </div>
               )}
 
-              {/* Teste da impressora Ablemark BR-L100 — ferramenta temporária de validação do
-                  protocolo (transporte SPP + JBIG), não é uma tela final de impressão. Só faz
-                  sentido no Android — no iOS o Bluetooth Classic/SPP nem funciona (bloqueio de
-                  MFi do fabricante, fora do nosso controle). */}
-              {isAblemarkPlatform() && (
-              <button
-                type="button"
-                onClick={() => setShowAblemarkTest(true)}
-                className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                Teste — Impressora Ablemark
-              </button>
-              )}
-
               {/* Tema */}
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center gap-2 px-1">
@@ -612,7 +603,6 @@ export default function SettingsView({
       )}
 
       <AIAssistantSettings isOpen={showAISettings} onClose={() => setShowAISettings(false)} isDarkMode={isDarkMode} />
-      <AblemarkPrinterTestModal isOpen={showAblemarkTest} onClose={() => setShowAblemarkTest(false)} isDarkMode={isDarkMode} />
 
       {/* ── QUEM ESTÁ USANDO — TROCA DE COLABORADOR ── */}
       {showCollabSwitcher && (
@@ -652,21 +642,37 @@ export default function SettingsView({
                 const isActive = activeCollaborator?.id === collab.id;
                 return (
                   <div key={collab.id} className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { setSwitchTargetId(isTarget ? null : collab.id); setPinInput(''); setPinError(false); }}
+                    <div
                       className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${isTarget ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'}`}
                     >
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm shrink-0" style={{ backgroundColor: collab.colorHex }}>
-                        {collab.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="text-left flex-1">
-                        <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
-                        {isActive && <p className="text-[9px] font-black uppercase tracking-wider text-emerald-500">Ativo agora</p>}
-                        {collab.locked && <p className="text-[9px] font-black uppercase tracking-wider text-rose-500">Bloqueado</p>}
-                      </div>
-                      {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
-                    </button>
+                      {collab.photoUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCollabPhoto({ url: collab.photoUrl!, name: collab.name })}
+                          title="Ampliar foto"
+                          aria-label={`Ampliar foto de ${collab.name}`}
+                          className="w-9 h-9 rounded-xl overflow-hidden shrink-0"
+                        >
+                          <img src={collab.photoUrl} alt={collab.name} className="w-full h-full object-cover" />
+                        </button>
+                      ) : (
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm shrink-0" style={{ backgroundColor: collab.colorHex }}>
+                          {collab.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setSwitchTargetId(isTarget ? null : collab.id); setPinInput(''); setPinError(false); }}
+                        className="flex-1 flex items-center gap-3 text-left"
+                      >
+                        <div className="text-left flex-1">
+                          <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
+                          {isActive && <p className="text-[9px] font-black uppercase tracking-wider text-emerald-500">Ativo agora</p>}
+                          {collab.locked && <p className="text-[9px] font-black uppercase tracking-wider text-rose-500">Bloqueado</p>}
+                        </div>
+                        {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
+                      </button>
+                    </div>
 
                     {isTarget && collab.locked && (
                       <div className="flex flex-col gap-2 px-1 py-1 animate-in fade-in slide-in-from-top-1 duration-150">
@@ -714,6 +720,27 @@ export default function SettingsView({
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FOTO DO COLABORADOR AMPLIADA ── */}
+      {expandedCollabPhoto && (
+        <div
+          className="fixed inset-0 z-[220] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setExpandedCollabPhoto(null)}
+        >
+          <div className="relative max-w-sm w-full flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
+            <img src={expandedCollabPhoto.url} alt={expandedCollabPhoto.name} className="w-full max-h-[70vh] object-contain rounded-[2rem] shadow-2xl" />
+            <p className="text-sm font-black uppercase tracking-wider text-white">{expandedCollabPhoto.name}</p>
+            <button
+              type="button"
+              onClick={() => setExpandedCollabPhoto(null)}
+              className="absolute -top-3 -right-3 w-9 h-9 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-md hover:bg-slate-100 transition-all"
+              aria-label="Fechar" title="Fechar"
+            >
+              <X size={18} strokeWidth={2.5} />
+            </button>
           </div>
         </div>
       )}

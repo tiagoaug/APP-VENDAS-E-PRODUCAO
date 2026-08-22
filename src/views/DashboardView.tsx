@@ -1,6 +1,6 @@
-import { useState, useMemo, ReactNode } from "react";
+import { useState, useMemo, useRef, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder, ProductionConfigItem } from "../types";
+import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder, ProductionConfigItem, CompanyProfile, GeneralPurchaseItem } from "../types";
 import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell, HelpCircle } from "lucide-react";
 import { format, differenceInDays, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -19,6 +19,9 @@ import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
 import DatePicker from '../components/DatePicker';
 import BusinessOverviewCard from '../components/BusinessOverviewCard';
+import CommissionToSellersCard from '../components/CommissionToSellersCard';
+import ProviderServiceOrdersCard from '../components/ProviderServiceOrdersCard';
+import { getPeriodRange, OverviewPeriodType, STATS_PERIOD_LABELS } from '../utils/businessOverview';
 
 type DashboardScanItem = ScanHistoryEntry;
 
@@ -38,6 +41,13 @@ interface DashboardViewProps {
   purchaseRequests?: any[];
   serviceOrders?: ServiceOrder[];
   productionOrders?: ProductionOrder[];
+  /** Só pros cards Comissão a Vendedores / Ordens de Serviço a Fornecedores (ver
+   * CommissionToSellersCard.tsx/ProviderServiceOrdersCard.tsx) — mesmos dados/callbacks já
+   * usados na versão desses cards em Financeiro. */
+  collaborators?: Collaborator[];
+  companyProfile?: CompanyProfile | null;
+  onPayCommission?: (params: { supplierId?: string; initialGeneralItems: { id: string; description: string; quantity: number; value: number; kind: 'general' }[]; initialDescription: string }) => void;
+  onPayProviderServiceOrders?: (params: { supplierId?: string; initialGeneralItems: GeneralPurchaseItem[]; initialDescription: string }) => void;
   onAddSale: () => void;
   onUpdateCheckStatus: (
     purchaseId: string,
@@ -51,6 +61,8 @@ interface DashboardViewProps {
   onAddTransaction: (type: TransactionType) => void;
   onDeleteTransaction?: (id: string) => Promise<void> | void;
   onOpenAIAssistant: () => void;
+  // Abre a Impressão de Etiquetas (Ablemark) — usado pelo card "print_labels" abaixo.
+  onOpenLabelPrintStudio: () => void;
   aiEnabled?: boolean;
   isDarkMode: boolean;
   dashboardConfig: DashboardConfig;
@@ -72,6 +84,10 @@ export default function DashboardView({
   purchaseRequests = [],
   serviceOrders = [],
   productionOrders = [],
+  collaborators = [],
+  companyProfile = null,
+  onPayCommission,
+  onPayProviderServiceOrders,
   onAddSale,
   onUpdateCheckStatus,
   onNavigate,
@@ -81,6 +97,7 @@ export default function DashboardView({
   onAddTransaction,
   onDeleteTransaction,
   onOpenAIAssistant,
+  onOpenLabelPrintStudio,
   aiEnabled = true,
   isDarkMode,
   dashboardConfig,
@@ -97,6 +114,18 @@ export default function DashboardView({
   const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
   const [isRecentActivityExpanded, setIsRecentActivityExpanded] = useState(false);
   const [topProductsRankMode, setTopProductsRankMode] = useState<'model' | 'color'>('model');
+  // Período do card "Rankings de Performance" — antes os Top Clientes/Produtos somavam TODAS as
+  // vendas de sempre, sem filtro nenhum (dado "travado"); agora segue o mesmo seletor
+  // Mês/Trim/Sem/Ano já usado nos outros cards com período (ver getPeriodRange), com um botão
+  // extra "Total" pra voltar ao acumulado de sempre (comportamento original) quando quiser.
+  const [rankingsPeriodType, setRankingsPeriodType] = useState<OverviewPeriodType | 'TOTAL'>('MONTH');
+  const [rankingsPeriodDate, setRankingsPeriodDate] = useState(() => format(new Date(), 'yyyy-MM'));
+  const rankingsDateInputRef = useRef<HTMLInputElement>(null);
+  const openRankingsMonthPicker = () => {
+    const el = rankingsDateInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!el) return;
+    try { el.showPicker ? el.showPicker() : el.focus(); } catch { el.focus(); }
+  };
   const [showBalanceInfo, setShowBalanceInfo] = useState(false);
   const hidePrivacy = usePrivacyMode();
 
@@ -568,7 +597,11 @@ export default function DashboardView({
   }, [purchases, people, categories, debtSupplierFilter, debtCategoryFilter, debtStatusFilter, debtStartDate, debtEndDate]);
 
   const topRankings = useMemo(() => {
-    const accountableSales = sales.filter(s => s.status === SaleStatus.SALE && s.isAccounting !== false);
+    const range = rankingsPeriodType === 'TOTAL' ? null : getPeriodRange(rankingsPeriodType, rankingsPeriodDate);
+    const accountableSales = sales.filter(s =>
+      s.status === SaleStatus.SALE && s.isAccounting !== false &&
+      (!range || (s.date >= range.start && s.date <= range.end)),
+    );
 
     // Top Customers
     const customerTotals: Record<string, { name: string, total: number }> = {};
@@ -600,15 +633,13 @@ export default function DashboardView({
         colorQty[colorKey].qty += item.quantity;
       });
     });
-    const topProducts = Object.values(productQty)
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 3);
-    const topColors = Object.values(colorQty)
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 3);
+    // Sem slice — mostra todos os produtos/cores vendidos no período, não só os 3 primeiros
+    // (ver rolagem própria na lista, JSX do card "dashboard_rankings").
+    const topProducts = Object.values(productQty).sort((a, b) => b.qty - a.qty);
+    const topColors = Object.values(colorQty).sort((a, b) => b.qty - a.qty);
 
     return { topCustomers, topProducts, topColors };
-  }, [sales, products]);
+  }, [sales, products, rankingsPeriodType, rankingsPeriodDate]);
 
   const sortedCards = useMemo(() => {
     return [...dashboardConfig.cards]
@@ -668,6 +699,37 @@ export default function DashboardView({
                   <Sparkles size={13} /> Abrir Assistente IA
                 </button>
               </div>
+            );
+
+          // Mesmos cards de Financeiro (ver CommissionToSellersCard.tsx/ProviderServiceOrdersCard.tsx),
+          // extraídos de lá pra serem reutilizados aqui — cada um já se esconde sozinho quando
+          // não há vendedor/OS lançada, então não precisa de checagem extra aqui.
+          case "commission_to_sellers":
+            return (
+              <CommissionToSellersCard
+                key="commission_to_sellers"
+                isDarkMode={isDarkMode}
+                sales={sales}
+                collaborators={collaborators}
+                people={people}
+                companyProfile={companyProfile}
+                onPayCommission={onPayCommission}
+                onOpenSale={(id) => onNavigate(ViewType.SALE_FORM, id)}
+              />
+            );
+
+          case "provider_service_orders":
+            return (
+              <ProviderServiceOrdersCard
+                key="provider_service_orders"
+                isDarkMode={isDarkMode}
+                serviceOrders={serviceOrders}
+                transactions={transactions}
+                people={people}
+                products={products}
+                companyProfile={companyProfile}
+                onPayProviderServiceOrders={onPayProviderServiceOrders}
+              />
             );
 
           case "sales_products":
@@ -845,7 +907,7 @@ export default function DashboardView({
                     </div>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "clientes-mais-compram")}
                     title="Ver Ranking de Clientes"
                     aria-label="Ranking dos clientes com maior volume de compra"
@@ -857,6 +919,21 @@ export default function DashboardView({
                     <div>
                       <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest leading-none mb-1">Ranking</p>
                       <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Top Clientes</p>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "produtos-curva-a")}
+                    title="Ver Ranking de Produtos"
+                    aria-label="Ranking dos produtos mais vendidos (Curva A/B/C)"
+                    className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-sky-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-sky-50'}`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center shadow-lg shadow-sky-500/20">
+                      <Footprints size={16} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest leading-none mb-1">Ranking</p>
+                      <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Top Produtos</p>
                     </div>
                   </button>
                 </div>
@@ -922,6 +999,54 @@ export default function DashboardView({
                   </div>
                 </div>
 
+                {/* Período — "Total" volta ao acumulado de vendas de sempre (comportamento
+                    original); os outros filtram pelo mês/trimestre/semestre/ano escolhido. */}
+                <div className="flex items-center gap-1.5">
+                  <div className={`flex gap-0.5 p-0.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                    {(Object.keys(STATS_PERIOD_LABELS) as OverviewPeriodType[]).map((pt) => (
+                      <button
+                        key={pt}
+                        type="button"
+                        onClick={() => setRankingsPeriodType(pt)}
+                        className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                          rankingsPeriodType === pt ? 'bg-indigo-600 text-white' : 'text-slate-400'
+                        }`}
+                      >
+                        {STATS_PERIOD_LABELS[pt]}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setRankingsPeriodType('TOTAL')}
+                      className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                        rankingsPeriodType === 'TOTAL' ? 'bg-indigo-600 text-white' : 'text-slate-400'
+                      }`}
+                    >
+                      Total
+                    </button>
+                  </div>
+                  {rankingsPeriodType === 'TOTAL' ? (
+                    <div className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <TrendingUp size={12} className="text-indigo-500 shrink-0" />
+                      <span className={`text-[10px] font-black ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Acumulado de todas as vendas</span>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={openRankingsMonthPicker}
+                      className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                    >
+                      <Calendar size={12} className="text-indigo-500 shrink-0" />
+                      <input
+                        ref={rankingsDateInputRef}
+                        type="month"
+                        value={rankingsPeriodDate}
+                        onChange={(e) => setRankingsPeriodDate(e.target.value)}
+                        className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Top Customers */}
                   <div className="flex flex-col gap-4">
@@ -964,7 +1089,7 @@ export default function DashboardView({
                         </button>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 max-h-[320px] overflow-y-auto pr-0.5 custom-scrollbar">
                       {(topProductsRankMode === 'model' ? topRankings.topProducts : topRankings.topColors).map((p: any, i) => (
                         <div key={`rank-prod-${i}`} className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-3 min-w-0">
@@ -2043,6 +2168,30 @@ export default function DashboardView({
                   className={`w-full py-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                   <span className="text-[10px] font-black tracking-[0.2em]">Abrir Central de Impressões</span>
                   <ChevronRight size={14} strokeWidth={3}/>
+                </button>
+              </div>
+            );
+
+          // Etiquetas térmicas (Ablemark) — separado da Central de Impressões acima, que é só
+          // documentos (OS/Mapas/Pedidos/Fichas). Antes só existia como ícone no topo do app.
+          case "print_labels":
+            return (
+              <div key="print_labels" className={`p-6 rounded-[2rem] border shadow-sm flex items-center justify-between gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <Printer size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Impressão de Etiquetas</h3>
+                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.15em] mt-0.5">Etiquetas térmicas (Ablemark)</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenLabelPrintStudio}
+                  className="shrink-0 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
+                >
+                  Abrir
                 </button>
               </div>
             );

@@ -24,6 +24,7 @@ import {
   Building2,
   LayoutDashboard,
   Percent,
+  Camera,
 } from 'lucide-react';
 import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel } from '../types';
 import { SECTORS, isDashboardCardAllowed, getTaskLevel } from '../utils/collaborators';
@@ -71,6 +72,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [sectorPopup, setSectorPopup] = useState<SectorId | null>(null);
+  const [expandedPhoto, setExpandedPhoto] = useState<{ url: string; name: string } | null>(null);
 
   const startNew = () => { setDraft(emptyDraft()); setShowPin(false); };
   const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); };
@@ -197,7 +199,21 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl shrink-0" style={{ backgroundColor: collab.colorHex }} />
+                    {collab.photoUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedPhoto({ url: collab.photoUrl!, name: collab.name })}
+                        title="Ampliar foto"
+                        aria-label={`Ampliar foto de ${collab.name}`}
+                        className="w-10 h-10 rounded-2xl shrink-0 overflow-hidden"
+                      >
+                        <img src={collab.photoUrl} alt={collab.name} className="w-full h-full object-cover" />
+                      </button>
+                    ) : (
+                      <div className="w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center text-white font-black text-sm" style={{ backgroundColor: collab.colorHex }}>
+                        {collab.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -285,6 +301,59 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             <button type="button" onClick={() => setDraft(null)} aria-label="Cancelar" title="Cancelar" className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
+          </div>
+
+          <div className="flex justify-center">
+            <label className="relative cursor-pointer group" title="Toque para adicionar foto do colaborador">
+              <div className={`w-24 h-24 rounded-3xl overflow-hidden border-2 flex items-center justify-center transition-all ${draft.photoUrl ? 'border-indigo-300 dark:border-indigo-600' : 'border-dashed border-slate-200 dark:border-slate-700'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                {draft.photoUrl
+                  ? <img src={draft.photoUrl} alt="Foto do colaborador" className="w-full h-full object-cover" />
+                  : <div className="flex flex-col items-center gap-1">
+                      <Camera size={28} className="text-slate-300 dark:text-slate-600" />
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Foto</span>
+                    </div>
+                }
+              </div>
+              {draft.photoUrl && (
+                <button
+                  type="button"
+                  onClick={e => { e.preventDefault(); setDraft({ ...draft, photoUrl: undefined }); }}
+                  className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
+                  title="Remover foto"
+                >
+                  <X size={12} strokeWidth={3} />
+                </button>
+              )}
+              <div className="absolute inset-0 rounded-3xl bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Camera size={22} className="text-white" />
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    const result = ev.target?.result as string;
+                    const img = new Image();
+                    img.onload = () => {
+                      const maxSide = 400;
+                      const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
+                      const canvas = document.createElement('canvas');
+                      canvas.width = img.width * ratio;
+                      canvas.height = img.height * ratio;
+                      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                      setDraft(d => d ? { ...d, photoUrl: canvas.toDataURL('image/jpeg', 0.82) } : d);
+                    };
+                    img.src = result;
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -589,6 +658,26 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
         onCancel={() => setDeleteTarget(null)}
         isDanger
       />
+
+      {expandedPhoto && (
+        <div
+          className="fixed inset-0 z-[220] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setExpandedPhoto(null)}
+        >
+          <div className="relative max-w-sm w-full flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
+            <img src={expandedPhoto.url} alt={expandedPhoto.name} className="w-full max-h-[70vh] object-contain rounded-[2rem] shadow-2xl" />
+            <p className="text-sm font-black uppercase tracking-wider text-white">{expandedPhoto.name}</p>
+            <button
+              type="button"
+              onClick={() => setExpandedPhoto(null)}
+              className="absolute -top-3 -right-3 w-9 h-9 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-md hover:bg-slate-100 transition-all"
+              aria-label="Fechar" title="Fechar"
+            >
+              <X size={18} strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

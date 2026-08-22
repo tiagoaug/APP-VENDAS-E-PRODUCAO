@@ -59,6 +59,7 @@ import { format, addMonths } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
 import Modal from '../components/Modal';
 import ComboBox from "../components/ComboBox";
+import PersonModal from "../components/PersonModal";
 import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
@@ -116,6 +117,14 @@ interface PurchaseFormViewProps {
   isDarkMode: boolean;
   initialParams?: any;
   modulesConfig?: AppModulesConfig;
+  // Atalho pra cadastrar uma grade de embalagem (composição por tamanho) direto do popup
+  // "Transformar em Varejo ao Receber" — chega mesmo sem o módulo de Produção ligado (ver
+  // restrictToPackaging em ProductionConfigView.tsx).
+  onNavigateToPackagingConfig?: () => void;
+  // Cadastro rápido de Fornecedor sem sair da tela de compra (mirror de
+  // SaleFormView.onQuickAddPerson) — usado quando não há nenhum fornecedor/prestador
+  // cadastrado ainda.
+  onQuickAddPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
 }
 
 export default function PurchaseFormView({
@@ -139,6 +148,8 @@ export default function PurchaseFormView({
   isDarkMode,
   initialParams,
   modulesConfig,
+  onNavigateToPackagingConfig,
+  onQuickAddPerson,
 }: PurchaseFormViewProps) {
   const DEFAULT_COLORS: ColorValue[] = [
     { id: 'BRANCO', name: 'BRANCO', hex: '#FFFFFF' } as ColorValue,
@@ -213,6 +224,8 @@ export default function PurchaseFormView({
     return "";
   });
   const [sellerId, setSellerId] = useState(existing?.sellerId || '');
+  // Cadastro rápido de Fornecedor sem sair da tela de compra — ver onQuickAddPerson.
+  const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
   interface PurchaseBlock {
     id: string;
     productId: string;
@@ -222,6 +235,12 @@ export default function PurchaseFormView({
     blockPkgId?: string;
     saleType?: SaleType; // pool de estoque a reabastecer (produtos híbridos)
     variations: Record<string, { quantity: number; size?: string; note?: string }>;
+    // Só Atacado + produto híbrido + fora de Pedido de Produção: explode as caixas compradas
+    // direto em pares no pool Varejo ao salvar, usando a grade escolhida em `convertPkgId`
+    // (ver handleSave) — sem isso, cai no Atacado como sempre (comportamento de sempre,
+    // preservado quando este campo está ausente/false).
+    convertToRetail?: boolean;
+    convertPkgId?: string; // id do ProductionConfigItem (PACKAGING) usado pra fatiar por tamanho
   }
 
   const [blocks, setBlocks] = useState<PurchaseBlock[]>(() => {
@@ -784,27 +803,64 @@ export default function PurchaseFormView({
     const finalItemsByBlockVar = new Map<string, PurchaseItem>();
     if (type === PurchaseType.REPLENISHMENT) {
       blocks.forEach((b) => {
+        // Atacado + "Transformar em Varejo ao Receber" ligado + grade escolhida: em vez de 1
+        // item Atacado (caixas), gera 1 item Varejo por tamanho da grade, já multiplicado pela
+        // quantidade de caixas — cada item cai no pool por tamanho certinho (mesmo código de
+        // aplicação de estoque de sempre em App.tsx, sem precisar mudar nada lá). Fora daqui
+        // (toggle desligado, ou Pedido de Produção, que tem seu próprio fluxo de embalagem),
+        // comportamento 100% igual ao de sempre — só um item Atacado por variação.
+        const convertPkg = (!isProductionOrder && b.saleType === SaleType.WHOLESALE && b.convertToRetail && b.convertPkgId)
+          ? productionConfigs.find(c => c.id === b.convertPkgId && c.type === 'PACKAGING')
+          : undefined;
+        const convertSizeQtys: Record<string, number> = convertPkg?.metadata?.sizeQuantities || {};
+        const convertCapacity = Object.values(convertSizeQtys).reduce((s: number, q) => s + (Number(q) || 0), 0);
+        // Custo por par pra creditar nos itens explodidos: usa o Custo Unitário do bloco (já
+        // auto-calculado quando há grade — ver updatePackagingForBlock), senão o preço por par
+        // cadastrado no produto, senão divide o custo da grade pela capacidade da embalagem.
+        const convertUnitCost = convertPkg
+          ? (b.unitCost || products.find(p => p.id === b.productId)?.unitCostPrice || (convertCapacity > 0 ? b.cost / convertCapacity : 0))
+          : 0;
+
         Object.entries(b.variations).forEach(([varKey, data]) => {
           const typedData = data as { quantity: number; size?: string };
-          if (typedData.quantity > 0) {
-            // Varejo (grade por tamanho) usa chave composta `${variationId}-${size}`;
-            // Atacado usa a chave simples (variationId). IDs gerados por generateId()
-            // nunca têm hífen, então o split é seguro.
-            const variationId = typedData.size ? varKey.split('-')[0] : varKey;
-            finalItems.push({
-              productId: b.productId,
-              variationId,
-              quantity: typedData.quantity,
-              size: typedData.size,
-              // Deriva sempre de saleType (não da flag isBox armazenada no bloco), pra
-              // nunca dessincronizar com a Modalidade (Varejo/Atacado) escolhida acima.
-              isBox: b.saleType === SaleType.WHOLESALE,
-              cost: b.cost,
-              unitCost: b.unitCost,
-              saleType: b.saleType,
-              blockTag: b.id,
+          if (typedData.quantity <= 0) return;
+          // Varejo (grade por tamanho) usa chave composta `${variationId}-${size}`;
+          // Atacado usa a chave simples (variationId). IDs gerados por generateId()
+          // nunca têm hífen, então o split é seguro.
+          const variationId = typedData.size ? varKey.split('-')[0] : varKey;
+
+          if (convertPkg && convertCapacity > 0 && !typedData.size) {
+            Object.entries(convertSizeQtys).forEach(([size, qtyPerBox]) => {
+              const q = Number(qtyPerBox) || 0;
+              if (q <= 0) return;
+              finalItems.push({
+                productId: b.productId,
+                variationId,
+                quantity: q * typedData.quantity,
+                size,
+                isBox: false,
+                cost: convertUnitCost,
+                saleType: SaleType.RETAIL,
+                blockTag: b.id,
+                note: `Convertido de ${typedData.quantity} caixa(s) — grade ${convertPkg.name}`,
+              });
             });
+            return;
           }
+
+          finalItems.push({
+            productId: b.productId,
+            variationId,
+            quantity: typedData.quantity,
+            size: typedData.size,
+            // Deriva sempre de saleType (não da flag isBox armazenada no bloco), pra
+            // nunca dessincronizar com a Modalidade (Varejo/Atacado) escolhida acima.
+            isBox: b.saleType === SaleType.WHOLESALE,
+            cost: b.cost,
+            unitCost: b.unitCost,
+            saleType: b.saleType,
+            blockTag: b.id,
+          });
         });
       });
       if (finalItems.length === 0) {
@@ -1258,6 +1314,7 @@ export default function PurchaseFormView({
         <div className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700 gap-1">
           <button
             onClick={() => setType(PurchaseType.REPLENISHMENT)}
+            data-guide-anchor="purchaseForm.tipoEstoque"
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
               type === PurchaseType.REPLENISHMENT
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
@@ -1270,6 +1327,7 @@ export default function PurchaseFormView({
           </button>
           <button
             onClick={() => setType(PurchaseType.GENERAL)}
+            data-guide-anchor="purchaseForm.tipoGeral"
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
               type === PurchaseType.GENERAL
                 ? 'bg-amber-500 text-white shadow-lg shadow-amber-400/25'
@@ -1287,6 +1345,7 @@ export default function PurchaseFormView({
             <button
               type="button"
               onClick={() => setType(PurchaseType.SOLE)}
+              data-guide-anchor="purchaseForm.tipoSolados"
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 type === PurchaseType.SOLE
                   ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-400/25'
@@ -1305,7 +1364,7 @@ export default function PurchaseFormView({
           <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
             Identificação da Compra/Lote
           </label>
-          <div className={`flex items-center gap-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl pl-4 pr-5`}>
+          <div data-guide-anchor="purchaseForm.autoLote" className={`flex items-center gap-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl pl-4 pr-5`}>
             {/* Toggle AUTO */}
             <label className="flex items-center gap-2 cursor-pointer shrink-0">
               <div className="relative">
@@ -1351,34 +1410,47 @@ export default function PurchaseFormView({
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Fornecedor ou Prestador de Serviços
             </label>
-            <ComboBox
-              options={availableThirdParties.map(s => ({ id: s.id, name: s.name }))}
-              value={supplierId}
-              onChange={setSupplierId}
-              placeholder=""
-              isDarkMode={isDarkMode}
-              compact
-              variant="outline"
-              arrowColor="red"
-            />
+            <div data-guide-anchor="purchaseForm.fornecedor">
+              <ComboBox
+                options={availableThirdParties.map(s => ({ id: s.id, name: s.name }))}
+                value={supplierId}
+                onChange={setSupplierId}
+                placeholder=""
+                isDarkMode={isDarkMode}
+                compact
+                variant="outline"
+                arrowColor="red"
+              />
+            </div>
+            {availableThirdParties.length === 0 && (
+              <button
+                type="button"
+                onClick={() => setIsQuickPersonModalOpen(true)}
+                className="mt-2 px-3 text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600"
+              >
+                Nenhum fornecedor cadastrado ainda? Cadastrar agora
+              </button>
+            )}
           </div>
 
           <div className="relative col-span-2">
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">Comprador / Representante</label>
-            <ComboBox 
-              options={[
-                ...people.filter(p => p.isSeller || p.isBuyer).map(p => ({ id: p.id, name: p.name })),
-                ...(availableThirdParties.find(s => s.id === supplierId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
-              ]}
-              value={sellerId}
-              onChange={setSellerId}
-              placeholder=""
-              isDarkMode={isDarkMode}
-              icon={<Users size={18} />}
-              compact
-              variant="outline"
-              arrowColor="red"
-            />
+            <div data-guide-anchor="purchaseForm.comprador">
+              <ComboBox
+                options={[
+                  ...people.filter(p => p.isSeller || p.isBuyer).map(p => ({ id: p.id, name: p.name })),
+                  ...(availableThirdParties.find(s => s.id === supplierId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
+                ]}
+                value={sellerId}
+                onChange={setSellerId}
+                placeholder=""
+                isDarkMode={isDarkMode}
+                icon={<Users size={18} />}
+                compact
+                variant="outline"
+                arrowColor="red"
+              />
+            </div>
 
             {/* Badges de Sugestão do Fornecedor */}
             {supplierId && (
@@ -1426,7 +1498,7 @@ export default function PurchaseFormView({
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Lançamento Financeiro
             </label>
-            <div className={`p-1.5 rounded-2xl border flex items-center gap-2 transition-all ${generateTransaction ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/50' : 'bg-slate-50 border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
+            <div data-guide-anchor="purchaseForm.lancamentoFinanceiro" className={`p-1.5 rounded-2xl border flex items-center gap-2 transition-all ${generateTransaction ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/50' : 'bg-slate-50 border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
               <button
                 type="button"
                 onClick={() => setGenerateTransaction(true)}
@@ -1459,7 +1531,7 @@ export default function PurchaseFormView({
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Data de Vencimento
             </label>
-            <div className={`flex items-center gap-3 px-4 py-3 rounded-[1.5rem] border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-amber-500/50' : 'bg-white border-slate-200 hover:border-amber-300'} shadow-sm`}>
+            <div data-guide-anchor="purchaseForm.vencimento" className={`flex items-center gap-3 px-4 py-3 rounded-[1.5rem] border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-amber-500/50' : 'bg-white border-slate-200 hover:border-amber-300'} shadow-sm`}>
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-900/30' : 'bg-amber-50'}`}>
                 <CalendarIcon size={17} className="text-amber-500" strokeWidth={2.5} />
               </div>
@@ -1481,7 +1553,7 @@ export default function PurchaseFormView({
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Pagamento
             </label>
-            <div className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700">
+            <div data-guide-anchor="purchaseForm.condicaoPagamento" className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700">
               <button
                 onClick={() => setPaymentTerm(PaymentTerm.CASH)}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentTerm === PaymentTerm.CASH ? "bg-emerald-500 shadow-lg shadow-emerald-500/20 text-white" : "text-slate-600 dark:text-slate-300"}`}
@@ -1532,30 +1604,34 @@ export default function PurchaseFormView({
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Categoria Financeira
             </label>
-            <ComboBox
-              options={type === PurchaseType.SOLE
-                ? categories.filter(c => c.type === CategoryType.EXPENSE)
-                : categories}
-              value={categoryId}
-              onChange={setCategoryId}
-              isDarkMode={isDarkMode}
-              usePopupModal
-              placeholder="Categoria Financeira"
-            />
+            <div data-guide-anchor="purchaseForm.categoriaFinanceira">
+              <ComboBox
+                options={type === PurchaseType.SOLE
+                  ? categories.filter(c => c.type === CategoryType.EXPENSE)
+                  : categories}
+                value={categoryId}
+                onChange={setCategoryId}
+                isDarkMode={isDarkMode}
+                usePopupModal
+                placeholder="Categoria Financeira"
+              />
+            </div>
           </div>
 
           <div className="relative col-span-2">
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Conta para Pagamento
             </label>
-            <ComboBox
-              options={accounts.map((a) => ({ id: a.id, name: a.name }))}
-              value={accountId}
-              onChange={setAccountId}
-              isDarkMode={isDarkMode}
-              usePopupModal
-              placeholder="Conta para Pagamento"
-            />
+            <div data-guide-anchor="purchaseForm.contaPagamento">
+              <ComboBox
+                options={accounts.map((a) => ({ id: a.id, name: a.name }))}
+                value={accountId}
+                onChange={setAccountId}
+                isDarkMode={isDarkMode}
+                usePopupModal
+                placeholder="Conta para Pagamento"
+              />
+            </div>
           </div>
           </>)}
         </div>
@@ -1591,6 +1667,7 @@ export default function PurchaseFormView({
                     <button
                       type="button"
                       onClick={() => updateGeneralItem(index, { kind: 'material', personId: undefined })}
+                      data-guide-anchor="purchaseForm.itemTipoMaterial"
                       className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${itemKind === 'material' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       Material
@@ -1598,6 +1675,7 @@ export default function PurchaseFormView({
                     <button
                       type="button"
                       onClick={() => updateGeneralItem(index, { kind: 'person', materialId: undefined, colorId: undefined, colorName: undefined, unit: undefined })}
+                      data-guide-anchor="purchaseForm.itemTipoFornecedor"
                       className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${isPersonItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       Fornecedor / Terceirizado
@@ -1605,6 +1683,7 @@ export default function PurchaseFormView({
                     <button
                       type="button"
                       onClick={() => updateGeneralItem(index, { kind: 'general', materialId: undefined, personId: undefined, colorId: undefined, colorName: undefined, unit: undefined })}
+                      data-guide-anchor="purchaseForm.itemTipoGeral"
                       className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all ${isGeneralItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       Gerais
@@ -1618,7 +1697,7 @@ export default function PurchaseFormView({
                         {isPersonItem ? 'Fornecedor / Terceirizado' : isGeneralItem ? 'Descrição' : 'Material'}
                       </p>
                       {isPersonItem ? (
-                        <>
+                        <div data-guide-anchor="purchaseForm.itemFornecedorTerceirizado">
                           <ComboBox
                             options={availableThirdParties.map(p => ({ id: p.id, name: p.name }))}
                             value={item.personId || ''}
@@ -1640,18 +1719,19 @@ export default function PurchaseFormView({
                             value={item.description}
                             onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
                           />
-                        </>
+                        </div>
                       ) : isGeneralItem ? (
                         <input
                           type="text"
                           placeholder="Descreva a despesa..."
                           title="Descrição da despesa"
+                          data-guide-anchor="purchaseForm.itemDescricaoGeral"
                           className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[12px] font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none`}
                           value={item.description}
                           onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
                         />
                       ) : (
-                        <>
+                        <div data-guide-anchor="purchaseForm.itemMaterial">
                           <ComboBox
                             options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
                             value={item.materialId || ''}
@@ -1694,13 +1774,14 @@ export default function PurchaseFormView({
                               })}
                             </select>
                           )}
-                        </>
+                        </div>
                       )}
                     </div>
                     <div className="mt-5 flex flex-col gap-2 shrink-0">
                       <button
                         type="button"
                         onClick={() => duplicateGeneralItem(index, 1)}
+                        data-guide-anchor="purchaseForm.itemDuplicar"
                         className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 transition-colors"
                         aria-label="Duplicar item"
                         title="Duplicar item"
@@ -1710,6 +1791,7 @@ export default function PurchaseFormView({
                       <button
                         type="button"
                         onClick={() => removeGeneralItem(index)}
+                        data-guide-anchor="purchaseForm.itemRemover"
                         className="p-3 bg-rose-50 dark:bg-rose-900/30 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors"
                         aria-label="Remover item"
                         title="Remover"
@@ -1726,7 +1808,7 @@ export default function PurchaseFormView({
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">
                         Qtd{unitLabel ? ` (${unitLabel})` : ''}
                       </p>
-                      <div className="flex gap-2">
+                      <div data-guide-anchor="purchaseForm.itemQtd" className="flex gap-2">
                         <input
                           type="number"
                           min={0}
@@ -1752,7 +1834,7 @@ export default function PurchaseFormView({
                     {/* Valor Unitário */}
                     <div className="flex flex-col gap-1 flex-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">Valor Unit. (R$)</p>
-                      <div className="flex gap-2">
+                      <div data-guide-anchor="purchaseForm.itemValorUnit" className="flex gap-2">
                         <div className="relative flex-1">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-black text-slate-400">R$</span>
                           <input
@@ -1780,7 +1862,7 @@ export default function PurchaseFormView({
                   </div>
 
                   {/* Linha 2: Total do item */}
-                  <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${total > 0 ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
+                  <div data-guide-anchor="purchaseForm.itemTotal" className={`flex items-center justify-between px-4 py-3 rounded-2xl ${total > 0 ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white">Total do Item</p>
                     <p className={`text-sm font-black ${total > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-600'}`}>
                       R$ {total.toFixed(2)}
@@ -1800,6 +1882,7 @@ export default function PurchaseFormView({
 
             <button
               onClick={addGeneralItem}
+              data-guide-anchor="purchaseForm.adicionarItem"
               className={`flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all ${isDarkMode ? "shadow-none" : "shadow-slate-200"}`}
               aria-label="Adicionar item geral"
               title="Adicionar Item"
@@ -2047,7 +2130,7 @@ export default function PurchaseFormView({
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div data-guide-anchor="purchaseForm.prioridade" className="flex flex-wrap gap-2">
               {priorityOptions.map(p => {
                 const isActive = prioridade === p;
                 const days = getDefaultDaysForDeadline(p);
@@ -2065,7 +2148,7 @@ export default function PurchaseFormView({
                 );
               })}
             </div>
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div data-guide-anchor="purchaseForm.prazoEntrega" className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <CalendarIcon size={13} className="text-indigo-400 shrink-0" />
               <DatePicker
                 raw
@@ -2082,6 +2165,7 @@ export default function PurchaseFormView({
           <button
             type="button"
             onClick={() => setIsProductionOrder(v => !v)}
+            data-guide-anchor="purchaseForm.pedidoProducaoOP"
             title={isProductionOrder ? 'Desativar OP de Estoque' : 'Ativar Pedido de Produção para Estoque'}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all mb-4 ${
               isProductionOrder
@@ -2162,6 +2246,7 @@ export default function PurchaseFormView({
                 <MessageSquare size={11} /> Observação Geral — todos os modelos
               </label>
               <textarea
+                data-guide-anchor="purchaseForm.observacaoOP"
                 className={`w-full rounded-xl border px-3 py-2.5 text-[11px] font-bold resize-none h-14 focus:ring-2 focus:ring-amber-400/20 transition-all placeholder:text-slate-300 dark:placeholder:text-slate-600 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-amber-100 text-slate-800'}`}
                 value={productionGlobalNote}
                 onChange={(e) => setProductionGlobalNote(e.target.value)}
@@ -2183,6 +2268,7 @@ export default function PurchaseFormView({
             </div>
             <button
               onClick={() => setShowProductModal(true)}
+              data-guide-anchor="purchaseForm.adicionarModelo"
               className={`flex items-center gap-2 font-black text-[10px] uppercase tracking-widest bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all ${isDarkMode ? "shadow-none" : "shadow-slate-200"}`}
               aria-label="Adicionar modelo"
               title="Adicionar Modelo"
@@ -2235,6 +2321,7 @@ export default function PurchaseFormView({
                       <button
                         type="button"
                         onClick={() => toggleBlockExpanded(block.id)}
+                        data-guide-anchor="purchaseForm.blockExpandir"
                         className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all"
                         aria-label="Expandir/Recolher item"
                         title="Ver detalhes"
@@ -2244,6 +2331,7 @@ export default function PurchaseFormView({
                       <button
                         type="button"
                         onClick={() => { setDuplicateTarget({ index }); setDuplicateCount(1); setDuplicateMode('separate'); }}
+                        data-guide-anchor="purchaseForm.blockDuplicar"
                         className="w-9 h-9 rounded-xl flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 active:scale-90 transition-all"
                         aria-label="Duplicar item"
                         title="Duplicar"
@@ -2253,6 +2341,7 @@ export default function PurchaseFormView({
                       <button
                         type="button"
                         onClick={() => removeBlock(index)}
+                        data-guide-anchor="purchaseForm.blockRemover"
                         className="w-9 h-9 rounded-xl flex items-center justify-center bg-rose-50 dark:bg-rose-900/30 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 active:scale-90 transition-all"
                         aria-label="Remover item da lista"
                         title="Remover"
@@ -2278,6 +2367,7 @@ export default function PurchaseFormView({
                             <button
                               type="button"
                               onClick={() => setPkgPickerBlockIndex(index)}
+                              data-guide-anchor="purchaseForm.blockEmbalagem"
                               title="Escolher padrão de embalagem"
                               aria-label="Escolher padrão de embalagem"
                               className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all text-left ${selectedPkg ? isDarkMode ? 'bg-violet-900/20 border-violet-700' : 'bg-violet-50 border-violet-300' : isDarkMode ? 'bg-slate-800 border-slate-700 border-dashed' : 'bg-slate-50 border-dashed border-slate-300'}`}>
@@ -2302,7 +2392,7 @@ export default function PurchaseFormView({
                       })()}
 
                       {/* Modalidade */}
-                      <div className="flex flex-col gap-1.5">
+                      <div data-guide-anchor="purchaseForm.blockModalidade" className="flex flex-col gap-1.5">
                         <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">Modalidade</label>
                         {isHybridProduct(product) ? (
                           <button
@@ -2329,7 +2419,7 @@ export default function PurchaseFormView({
                         <label className="text-[8px] uppercase font-black text-slate-400 tracking-widest px-1">
                           {blockIsWholesale ? 'Custo Grade (R$)' : 'Custo Unitário (R$/par)'}
                         </label>
-                        <div className="flex gap-2">
+                        <div data-guide-anchor="purchaseForm.blockCusto" className="flex gap-2">
                           <input type="number" step="0.01"
                             className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-indigo-600 dark:text-indigo-400 focus:ring-2 focus:ring-indigo-500/10"
                             value={block.cost} onChange={(e) => updateBlock(index, { cost: parseFloat(e.target.value) || 0 })}
@@ -2343,7 +2433,7 @@ export default function PurchaseFormView({
 
                       {/* Custo Unitário — só em Atacado (preço por par avulso de uma caixa fechada) */}
                       {blockIsWholesale && (
-                        <div className="flex flex-col gap-1.5">
+                        <div data-guide-anchor="purchaseForm.blockCustoUnitario" className="flex flex-col gap-1.5">
                           <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">Custo Unitário (R$/par)</label>
                           <input type="number" step="0.01"
                             className="w-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-sky-600 dark:text-sky-400 focus:ring-2 focus:ring-sky-500/10 transition-all"
@@ -2356,8 +2446,79 @@ export default function PurchaseFormView({
                         </div>
                       )}
 
+                      {/* Transformar em Varejo ao Receber — só Atacado + produto híbrido + fora
+                          de Pedido de Produção (que já tem seu próprio fluxo de embalagem/grade
+                          lá embaixo, em "Variações"). Ao ligar e escolher a grade, a compra em
+                          caixas já cai fatiada em pares no pool Varejo (ver handleSave), sem
+                          precisar passar pelo PCP — pensado pra quem vende sem produção. */}
+                      {blockIsWholesale && isHybridProduct(product) && !isProductionOrder && (() => {
+                        const packagingConfigs = productionConfigs.filter(c => c.type === 'PACKAGING');
+                        const selectedPkg = block.convertPkgId ? packagingConfigs.find(c => c.id === block.convertPkgId) : null;
+                        const sizeQtys: Record<string, number> = selectedPkg?.metadata?.sizeQuantities || {};
+                        const capacity = Object.values(sizeQtys).reduce((s: number, q) => s + (Number(q) || 0), 0);
+                        return (
+                          <div data-guide-anchor="purchaseForm.blockConverterVarejo" className={`flex flex-col gap-2 p-3 rounded-2xl border-2 transition-all ${block.convertToRetail ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/10' : isDarkMode ? 'border-slate-800 bg-slate-800/30' : 'border-slate-100 bg-slate-50'}`}>
+                            <button
+                              type="button"
+                              onClick={() => updateBlock(index, { convertToRetail: !block.convertToRetail })}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 text-left">
+                                <Layers size={14} className={block.convertToRetail ? 'text-emerald-500' : 'text-slate-400'} />
+                                Transformar em Varejo ao Receber
+                              </span>
+                              <div className={`w-10 h-5 rounded-full relative shrink-0 transition-colors duration-200 ${block.convertToRetail ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all duration-200 ${block.convertToRetail ? 'left-5' : 'left-0.5'}`} />
+                              </div>
+                            </button>
+                            {block.convertToRetail && (
+                              <div className="flex flex-col gap-1.5">
+                                <select
+                                  value={block.convertPkgId || ''}
+                                  onChange={(e) => updateBlock(index, { convertPkgId: e.target.value || undefined })}
+                                  aria-label="Grade da caixa"
+                                  title="Grade da caixa"
+                                  className={`w-full px-3 py-2.5 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                                >
+                                  <option value="">Selecione a grade da caixa…</option>
+                                  {packagingConfigs.map(pkg => (
+                                    <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.metadata?.capacity || Object.values(pkg.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} pares)</option>
+                                  ))}
+                                </select>
+                                {selectedPkg && capacity > 0 ? (
+                                  <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold px-1">
+                                    1 caixa = {capacity} pares — cada caixa comprada já entra como pares no Varejo, nessa grade.
+                                  </p>
+                                ) : packagingConfigs.length === 0 ? (
+                                  <div className="flex flex-col gap-1.5 px-1">
+                                    <p className="text-[9px] text-amber-500 font-bold">Nenhuma grade cadastrada ainda.</p>
+                                    {onNavigateToPackagingConfig && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (confirm('Deseja sair desta compra pra cadastrar a grade? Itens ainda não salvos aqui serão perdidos.')) {
+                                            onNavigateToPackagingConfig();
+                                          }
+                                        }}
+                                        className="self-start text-[9px] font-black uppercase tracking-widest text-indigo-500 underline"
+                                      >
+                                        Cadastrar grade agora
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="text-[9px] text-amber-500 font-bold px-1">
+                                    Escolha uma grade — sem ela, a compra continua caindo como caixa no Atacado.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       {/* Variações */}
-                      <div className="flex flex-col gap-3">
+                      <div data-guide-anchor="purchaseForm.blockVariacoes" className="flex flex-col gap-3">
                         <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Variações Disponíveis</h4>
                         {product.variations.map((v) => {
                           const varState = block.variations[v.id] || { quantity: 0 };
@@ -2696,6 +2857,7 @@ export default function PurchaseFormView({
       )}
 
       <div
+        data-guide-anchor="purchaseForm.observacoesPedido"
         className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
       >
         <div className="flex items-center justify-between px-2">
@@ -2726,6 +2888,7 @@ export default function PurchaseFormView({
       </div>
 
       <div
+        data-guide-anchor="purchaseForm.lancamentoFinanceiro"
         className={`p-6 rounded-[2.5rem] border shadow-sm flex items-center justify-between mt-2 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
       >
         <div className="flex items-center gap-3">
@@ -2862,6 +3025,20 @@ export default function PurchaseFormView({
         }}
       />
 
+      <PersonModal
+        isOpen={isQuickPersonModalOpen}
+        onClose={() => setIsQuickPersonModalOpen(false)}
+        onSave={async (p) => {
+          const created = await onQuickAddPerson(p);
+          setSupplierId(created.id);
+          setIsQuickPersonModalOpen(false);
+        }}
+        sellers={people.filter(p => p.isSeller)}
+        allPeople={people}
+        initialData={{ isSupplier: true }}
+        isDarkMode={isDarkMode}
+      />
+
       {/* Cesta de Compras */}
       {type === PurchaseType.REPLENISHMENT && cartItems.length > 0 && (
         <section className={`rounded-[2rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
@@ -2939,6 +3116,7 @@ export default function PurchaseFormView({
             type="button"
             onClick={handleSave}
             disabled={isSaving}
+            data-guide-anchor="purchaseForm.finalizar"
             className={`h-12 px-6 rounded-full font-black uppercase tracking-widest text-[11px] flex items-center gap-2 transition-all ${isSaving ? 'bg-slate-400 text-white cursor-wait' : 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white'}`}
             aria-label="Finalizar compra"
             title="Finalizar"

@@ -50,6 +50,7 @@ export default function PaymentMethodModal({ isOpen, onClose, onSave, method }: 
               setValue('');
               onClose();
             }}
+            data-guide-anchor="paymethod.salvar"
             className="flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg"
           >
             Salvar

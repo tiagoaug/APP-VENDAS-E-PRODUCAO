@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Users, KeyRound, LogOut, Eye, EyeOff, Lock, Fingerprint } from "lucide-react";
+import { Users, KeyRound, LogOut, Eye, EyeOff, Lock, Fingerprint, X } from "lucide-react";
 import { Collaborator } from "../types";
 
 interface CollaboratorGateViewProps {
@@ -30,6 +30,7 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
   const [rememberBiometric, setRememberBiometric] = useState(false);
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [biometricError, setBiometricError] = useState(false);
+  const [expandedPhoto, setExpandedPhoto] = useState<{ url: string; name: string } | null>(null);
 
   const selectCollaborator = (id: string) => {
     setSelectedId(id);
@@ -81,17 +82,33 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
 
             return (
               <div key={collab.id} className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => selectCollaborator(collab.id)}
+                <div
                   className={`w-full flex items-center p-4 rounded-2xl border-2 transition group text-left ${isSelected ? 'border-indigo-300 bg-indigo-50' : 'border-slate-100 bg-[#f8f9fc] hover:border-indigo-200'}`}
                 >
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black shadow-inner flex-shrink-0 mr-4" style={{ backgroundColor: collab.colorHex }}>
-                    {collab.name.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-sm font-black text-slate-800 uppercase tracking-tight truncate flex-1">{collab.name}</span>
-                  {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : biometricEnabledForThis && biometricLabel ? <Fingerprint size={16} className="text-indigo-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
-                </button>
+                  {collab.photoUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPhoto({ url: collab.photoUrl!, name: collab.name })}
+                      title="Ampliar foto"
+                      aria-label={`Ampliar foto de ${collab.name}`}
+                      className="w-12 h-12 rounded-full overflow-hidden shadow-inner flex-shrink-0 mr-4"
+                    >
+                      <img src={collab.photoUrl} alt={collab.name} className="w-full h-full object-cover" />
+                    </button>
+                  ) : (
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black shadow-inner flex-shrink-0 mr-4" style={{ backgroundColor: collab.colorHex }}>
+                      {collab.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => selectCollaborator(collab.id)}
+                    className="flex items-center flex-1 text-left"
+                  >
+                    <span className="text-sm font-black text-slate-800 uppercase tracking-tight truncate flex-1">{collab.name}</span>
+                    {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : biometricEnabledForThis && biometricLabel ? <Fingerprint size={16} className="text-indigo-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
+                  </button>
+                </div>
 
                 {isSelected && collab.locked && (
                   <div className="flex flex-col gap-2 px-1 py-2 animate-in fade-in slide-in-from-top-1 duration-150">
@@ -196,6 +213,26 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
           </button>
         </div>
       </div>
+
+      {expandedPhoto && (
+        <div
+          className="fixed inset-0 z-[220] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setExpandedPhoto(null)}
+        >
+          <div className="relative max-w-sm w-full flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
+            <img src={expandedPhoto.url} alt={expandedPhoto.name} className="w-full max-h-[70vh] object-contain rounded-[2rem] shadow-2xl" />
+            <p className="text-sm font-black uppercase tracking-wider text-white">{expandedPhoto.name}</p>
+            <button
+              type="button"
+              onClick={() => setExpandedPhoto(null)}
+              className="absolute -top-3 -right-3 w-9 h-9 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-md hover:bg-slate-100 transition-all"
+              aria-label="Fechar" title="Fechar"
+            >
+              <X size={18} strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

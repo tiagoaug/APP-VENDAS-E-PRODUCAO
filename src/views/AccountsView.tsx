@@ -73,6 +73,7 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
       <div className="grid grid-cols-2 gap-3">
          <button
            onClick={onAdd}
+           data-guide-anchor="account.novo"
            className="py-4 px-6 rounded-3xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
          >
             <Plus size={16} /> Nova Conta

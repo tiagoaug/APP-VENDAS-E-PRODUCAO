@@ -120,7 +120,7 @@ export type LabelElement = {
   lockWidth?: boolean;
   lockHeight?: boolean;
   lockRotation?: boolean;
-  lockFontSize?: boolean; // só relevante pro type 'text'
+  lockFontSize?: boolean; // relevante pros types 'text' e 'grade' (tamanho da fonte das células)
   lockPosition?: boolean; // trava arrastar (mover x/y) — vale pra todos os tipos, inclusive linha
   // Quando presente, o conteúdo do elemento (texto/imagem/qr/grade) vem de
   // `resolveLabelBinding` em vez do conteúdo estático abaixo — usado pelo modo de teste de
@@ -157,6 +157,11 @@ export type LabelElement = {
   // type 'line' | 'shape': usa x/y/w/h/rotation acima; 'shape' desenha um retângulo
   // type 'grade': tabela tamanho×quantidade (só faz sentido com dataBinding: 'grade'); usa
   // `fontSize` pro texto das células, igual 'text'.
+  // Só type 'grade': estilo da PÍLULA DA NUMERAÇÃO (tamanho) — 'filled'/ausente = fundo preto
+  // com número branco (padrão de sempre); 'inverted' = fundo branco com contorno preto e número
+  // preto; 'plain' = sem pílula nenhuma, só o número preto direto sobre o fundo da etiqueta. Não
+  // afeta a quantidade abaixo de cada pílula, que continua sempre preta, independente deste campo.
+  gradeSizeStyle?: 'filled' | 'inverted' | 'plain';
   // Raio dos cantos, em mm — 'shape' (retângulo, contorno) e o chip do 'text' com invert=true.
   // Ausente: 'shape' fica com cantos retos (comportamento de sempre); o chip do invert usa um
   // raio automático (metade da altura, até 1.2mm) até o usuário mexer explicitamente.
@@ -1201,6 +1206,10 @@ export type Collaborator = {
   name: string;
   pin: string;
   colorHex: string;
+  // Foto do colaborador (base64), mesmo padrão de Product.photoUrl — usada no lugar do
+  // círculo com a inicial nas telas de seleção/troca de colaborador. Ausente = mostra a
+  // inicial do nome sobre colorHex, comportamento de sempre.
+  photoUrl?: string;
   isUnrestricted: boolean;
   sectors: SectorId[];
   // Refinamento por função dentro de um setor liberado — chave "sectorId:taskId" (ver
@@ -1657,6 +1666,11 @@ export interface ServiceOrder {
   notes?: string;
   status: 'PENDING' | 'COMPLETED';
   transactionId?: string; // Reference to financial transaction
+  // Fechado (saiu do "Em Aberto" de Ordens de Serviço a Fornecedores) por uma Compra marcada
+  // "Não Contábil" (Purchase.generateTransaction === false) — esse tipo de compra nunca gera
+  // Transaction (não entra no fluxo de contas a pagar), então não tem como usar transactionId
+  // pra fechar o saldo; ver isOsPaid em FinancialView.tsx, que trata os dois casos como "pago".
+  paidNaoContabil?: boolean;
   createdAt: number;
   finishedAt?: number;
   sourceOrderIds?: string[]; // Order IDs covered by this OS (for per-order OS tracking)

@@ -130,22 +130,32 @@ export async function renderLabelElementsToCanvas(
       // (ver computeGradeLayout), em mm relativos à própria caixa do elemento (0,0 = canto
       // superior esquerdo antes de recentralizar, por isso o -wPx/2/-hPx/2 abaixo).
       const gridEntries = resolved?.kind === 'grade' ? resolved.gridEntries : [];
-      const cells = computeGradeLayout(gridEntries, 0, 0, el.w, el.h);
+      const cells = computeGradeLayout(gridEntries, 0, 0, el.w, el.h, el.fontSize || 3.5);
       const fontPx = Math.max(6, (el.fontSize || 3.5) * DOTS_PER_MM);
+      // Estilo da pílula da numeração (não afeta a quantidade abaixo, que continua sempre
+      // preta) — ver LabelElement.gradeSizeStyle.
+      const sizeStyle = el.gradeSizeStyle || 'filled';
       cells.forEach(c => {
         const pillX = -wPx / 2 + c.pillXmm * DOTS_PER_MM;
         const pillY = -hPx / 2 + c.pillYmm * DOTS_PER_MM;
         const pillW = c.pillWmm * DOTS_PER_MM;
         const pillH = c.pillHmm * DOTS_PER_MM;
-        ctx.fillStyle = '#000000';
-        ctx.beginPath();
-        if (typeof (ctx as any).roundRect === 'function') {
-          (ctx as any).roundRect(pillX, pillY, pillW, pillH, Math.min(pillH / 2, DOTS_PER_MM * 0.5));
-        } else {
-          ctx.rect(pillX, pillY, pillW, pillH);
+        if (sizeStyle !== 'plain') {
+          ctx.beginPath();
+          if (typeof (ctx as any).roundRect === 'function') {
+            (ctx as any).roundRect(pillX, pillY, pillW, pillH, Math.min(pillH / 2, DOTS_PER_MM * 0.5));
+          } else {
+            ctx.rect(pillX, pillY, pillW, pillH);
+          }
+          ctx.fillStyle = sizeStyle === 'inverted' ? '#ffffff' : '#000000';
+          ctx.fill();
+          if (sizeStyle === 'inverted') {
+            ctx.lineWidth = Math.max(1, DOTS_PER_MM * 0.25);
+            ctx.strokeStyle = '#000000';
+            ctx.stroke();
+          }
         }
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = sizeStyle === 'filled' ? '#ffffff' : '#000000';
         ctx.font = `900 ${fontPx}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
