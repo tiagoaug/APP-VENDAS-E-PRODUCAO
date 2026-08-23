@@ -6402,6 +6402,7 @@ export default function App() {
                     <button
                       key={item.id}
                       onClick={() => navigateTo(item.id)}
+                      data-guide-anchor={item.id === ViewType.PRODUCTION_PCP ? 'prodmenu.pcp' : undefined}
                       className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
                     >
                       <div className="flex items-center gap-4">
@@ -6541,6 +6542,11 @@ export default function App() {
               const result = await firebaseService.saveDocument("people", person);
               toast.show('Fornecedor cadastrado!');
               return result as Person;
+            }}
+            onQuickAddMaterial={async (item: any) => {
+              const result = await firebaseService.saveDocument("productionConfigs", item);
+              toast.show('Insumo cadastrado!');
+              return result as ProductionConfigItem;
             }}
             onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
             onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
@@ -7094,6 +7100,11 @@ export default function App() {
               const result = await firebaseService.saveDocument("people", person);
               toast.show('Fornecedor cadastrado!');
               return result as Person;
+            }}
+            onQuickAddMaterial={async (item: any) => {
+              const result = await firebaseService.saveDocument("productionConfigs", item);
+              toast.show('Insumo cadastrado!');
+              return result as ProductionConfigItem;
             }}
             onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
             onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
@@ -7955,6 +7966,7 @@ export default function App() {
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.production}
               monoColor={navMonoColor}
+              anchorKey="nav.producao"
             />
           )}
           {modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) && (

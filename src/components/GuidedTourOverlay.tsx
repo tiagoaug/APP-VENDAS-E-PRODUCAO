@@ -58,6 +58,20 @@ export default function GuidedTourOverlay({ title, steps, stepIndex, currentView
     return () => cancelAnimationFrame(raf);
   }, [isHighlight, screenMatches, step]);
 
+  // Traz o alvo pra dentro da viewport quando o passo muda — sem isso, num alvo fora de tela
+  // (ex.: botão "Criar Nova Grade" empurrado pra baixo por grades já cadastradas), o recorte do
+  // spotlight cai fora da área visível e a tela inteira aparece escurecida sem nenhum destaque
+  // visível pro usuário tocar. Roda só uma vez por passo (não a cada frame do loop de medição
+  // acima), pra não brigar com um scroll manual do usuário depois.
+  useEffect(() => {
+    if (!isHighlight || !screenMatches) return;
+    const el = document.querySelector(`[data-guide-anchor="${step.anchorKey}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const outOfView = r.top < 0 || r.bottom > window.innerHeight || r.left < 0 || r.right > window.innerWidth;
+    if (outOfView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [isHighlight, screenMatches, step]);
+
   // Avança sozinho quando o usuário toca no elemento real do anchorKey atual.
   useEffect(() => {
     if (!isHighlight || !screenMatches) return;

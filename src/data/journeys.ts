@@ -82,6 +82,17 @@ export const JOURNEYS: Journey[] = [
     ],
   },
   {
+    id: 'tour_criar_mapa_producao',
+    title: 'Como criar um Mapa de Produção',
+    productionOnly: true,
+    entryScreen: ViewType.PRODUCTION_PCP,
+    entryParams: { initialTab: 'orders' },
+    steps: [
+      { type: 'message', text: 'Aqui em "Pedidos" ficam os itens ainda sem mapa. Toque nos que você quer agrupar — eles vão se acumulando no Carrinho, à direita (ou embaixo, no celular).' },
+      { type: 'highlight_tap', anchorKey: 'pcp.criarMapa', text: 'Depois de selecionar os itens, toque aqui para criar o Mapa de Produção com eles.' },
+    ],
+  },
+  {
     id: 'tour_cadastrar_embalagem',
     title: 'Como cadastrar um padrão de embalagem',
     productionOnly: true,

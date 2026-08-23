@@ -85,6 +85,7 @@ import {
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot } from '../types';
 import Modal from '../components/Modal';
 import PersonModal from '../components/PersonModal';
+import MaterialFormFields from '../components/MaterialFormFields';
 import ComboBox from '../components/ComboBox';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import CalculatorModal from '../components/CalculatorModal';
@@ -418,6 +419,9 @@ interface ProductionConfigViewProps {
   // Cadastro rápido de Fornecedor sem sair do cadastro de Solados — mesmo padrão já usado em
   // PurchaseFormView/SaleFormView (PersonModal + onQuickAddPerson).
   onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
+  // Cadastro rápido de Insumo (Material) sem sair do cadastro de Solados — mesmo padrão
+  // (retorna o item criado, com id) já usado por onQuickAddFlowTag/onQuickAddCategory.
+  onQuickAddMaterial?: (item: Omit<ProductionConfigItem, 'id'>) => Promise<ProductionConfigItem>;
   onSaveSector: (sector: Sector) => Promise<void>;
   onDeleteSector: (id: string) => Promise<void>;
   onSaveConfigItem: (item: ProductionConfigItem) => Promise<void>;
@@ -467,6 +471,7 @@ export default function ProductionConfigView({
   onQuickAddFlowTag,
   onQuickAddCategory,
   onQuickAddPerson,
+  onQuickAddMaterial,
   onSaveSector,
   onDeleteSector,
   onSaveConfigItem,
@@ -1144,6 +1149,7 @@ export default function ProductionConfigView({
             moldCategoryNames={moldCategoryNames}
             onQuickAddCategory={onQuickAddCategory}
             onQuickAddPerson={onQuickAddPerson}
+            onQuickAddMaterial={onQuickAddMaterial}
             productionConfigs={productionConfigs}
             onNavigateToScreen={handleNavigateShortcut}
             soleStock={soleStock}
@@ -1372,6 +1378,7 @@ function GenericConfigList({
   moldCategoryNames = [],
   onQuickAddCategory,
   onQuickAddPerson,
+  onQuickAddMaterial,
   supplyCategoryNames = [],
   toolCategoryNames = [],
   products = [],
@@ -1404,6 +1411,7 @@ function GenericConfigList({
   moldCategoryNames?: string[];
   onQuickAddCategory?: (category: Omit<Category, 'id'>) => Promise<Category>;
   onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
+  onQuickAddMaterial?: (item: Omit<ProductionConfigItem, 'id'>) => Promise<ProductionConfigItem>;
   supplyCategoryNames?: string[];
   toolCategoryNames?: string[];
   products?: Product[];
@@ -1415,10 +1423,6 @@ function GenericConfigList({
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
-  // Ajuda a lançar Estoque Atual em nº de embalagens (ex: "3 latas") em vez do peso total —
-  // converte pro estoque em KG (unidade base rastreada na Necessidade de Compras) usando o
-  // Peso da Embalagem cadastrado. Campo só de entrada, não é persistido.
-  const [stockPackagesInput, setStockPackagesInput] = useState('');
   // Categorias de Insumo (Catálogo de Insumos) vêm minimizadas por padrão — Set vazio = tudo
   // fechado; guarda só as que o usuário abriu manualmente.
   const [openMaterialCategories, setOpenMaterialCategories] = useState<Set<string>>(new Set());
@@ -1451,6 +1455,8 @@ function GenericConfigList({
   const [isMaterialPickerOpen, setIsMaterialPickerOpen] = useState(false);
   const [materialPickerTarget, setMaterialPickerTarget] = useState<'base' | number | null>(null);
   const [materialPickerSearch, setMaterialPickerSearch] = useState('');
+  const [isCreatingMaterialInline, setIsCreatingMaterialInline] = useState(false);
+  const [newMaterialItem, setNewMaterialItem] = useState<ProductionConfigItem | null>(null);
   const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState('');
   const [isCreatingCategoryInline, setIsCreatingCategoryInline] = useState(false);
@@ -1473,24 +1479,7 @@ function GenericConfigList({
   const [percValue, setPercValue] = useState(10);
   const [percField, setPercField] = useState<'sizeAreas' | 'sizeWeights' | 'colorSizeWeights'>('sizeAreas');
   const [percTargetId, setPercTargetId] = useState<string | null>(null);
-  const [isStockColorModalOpen, setIsStockColorModalOpen] = useState(false);
-  const [editingStockColors, setEditingStockColors] = useState<Record<string, number>>({});
-  const [editingPriceColors, setEditingPriceColors] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const openStockColorModal = (colorIds: string[]) => {
-    const stockMap = editingItem?.metadata?.stockByColor || {};
-    const priceMap = editingItem?.metadata?.priceByColor || {};
-    const newStock: Record<string, number> = {};
-    const newPrice: Record<string, number> = {};
-    colorIds.forEach(id => {
-      newStock[id] = stockMap[id] ?? 0;
-      newPrice[id] = priceMap[id] ?? (editingItem?.metadata?.baseCost || 0);
-    });
-    setEditingStockColors(newStock);
-    setEditingPriceColors(newPrice);
-    setIsStockColorModalOpen(true);
-  };
 
   const applyPercentageScale = (baseSize: string, percentage: number, field: string = 'sizeAreas', targetId: string | null = null) => {
     const sizes = editingItem?.metadata?.sizes || [];
@@ -1591,8 +1580,6 @@ function GenericConfigList({
 
   const units = useMemo(() => productionConfigs.filter(c => c.type === 'UNIT'), [productionConfigs]);
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
-  const selectedUnitName = units.find(u => u.id === editingItem?.metadata?.unitId)?.name || '';
-  const isKgMaterialUnit = selectedUnitName.trim().toUpperCase() === 'KG';
 
   const filteredItems = useMemo(() => {
     return items
@@ -1896,26 +1883,61 @@ function GenericConfigList({
     setIsMaterialPickerOpen(true);
   };
 
-  const selectMaterialForTarget = (materialId: string) => {
+  // Aplica um insumo (já existente ou recém-criado) no alvo certo do picker — separado de
+  // selectMaterialForTarget pra não depender de reencontrar o item em `productionConfigs`
+  // (prop só atualiza depois que o listener do Firestore refletir o novo insumo, o que não
+  // acontece a tempo logo após criar um novo — ver handleQuickCreateMaterial).
+  const applyMaterialToTarget = (material: ProductionConfigItem) => {
     if (materialPickerTarget === 'base') {
-      const material = productionConfigs.find(m => m.id === materialId);
-      if (material) {
-        const pricePerKg = material.metadata?.baseCost || 0;
-        const avgW = averageWeightLive || 0;
-        const calcUnitCost = avgW > 0 ? parseFloat(((avgW / 1000) * pricePerKg).toFixed(4)) : 0;
-        setEditingItem(prev => prev ? {
-          ...prev,
-          metadata: { ...prev.metadata, price: pricePerKg, baseMaterialId: materialId, unitCost: calcUnitCost }
-        } : null);
-      }
+      const pricePerKg = material.metadata?.baseCost || 0;
+      const avgW = averageWeightLive || 0;
+      const calcUnitCost = avgW > 0 ? parseFloat(((avgW / 1000) * pricePerKg).toFixed(4)) : 0;
+      setEditingItem(prev => prev ? {
+        ...prev,
+        metadata: { ...prev.metadata, price: pricePerKg, baseMaterialId: material.id, unitCost: calcUnitCost }
+      } : null);
     } else if (typeof materialPickerTarget === 'number') {
       const index = materialPickerTarget;
       const newComp = [...(editingItem?.metadata?.composition || [])];
-      newComp[index] = { ...newComp[index], materialId };
+      newComp[index] = { ...newComp[index], materialId: material.id };
       setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
     }
     setIsMaterialPickerOpen(false);
     setMaterialPickerTarget(null);
+    setIsCreatingMaterialInline(false);
+  };
+
+  const selectMaterialForTarget = (materialId: string) => {
+    const material = productionConfigs.find(m => m.id === materialId);
+    if (material) applyMaterialToTarget(material);
+  };
+
+  const existingMaterialReferences = productionConfigs
+    .filter(c => c.type === 'MATERIAL')
+    .map(c => (c.metadata?.reference || '').toUpperCase().trim())
+    .filter(c => c !== '');
+
+  const startCreateMaterial = () => {
+    let counter = 1;
+    let code = `MAT-${counter.toString().padStart(3, '0')}`;
+    while (existingMaterialReferences.includes(code)) { counter++; code = `MAT-${counter.toString().padStart(3, '0')}`; }
+    setNewMaterialItem({
+      id: '',
+      name: '',
+      description: '',
+      type: 'MATERIAL',
+      createdAt: Date.now(),
+      metadata: { masterCategory: '', reference: code, unitId: '', baseCost: 0, width: 0, colorIds: [], flowTagId: '', supplierId: '' },
+    });
+    setIsCreatingMaterialInline(true);
+  };
+
+  const handleQuickCreateMaterial = async () => {
+    if (!newMaterialItem?.name.trim() || !onQuickAddMaterial) return;
+    const { id, ...payload } = newMaterialItem;
+    const created = await onQuickAddMaterial(payload);
+    applyMaterialToTarget(created);
+    setNewMaterialItem(null);
   };
 
   const handleSaveInlineGrid = async () => {
@@ -2652,38 +2674,81 @@ function GenericConfigList({
                 )}
               </Modal>
 
-              <Modal isOpen={isMaterialPickerOpen} onClose={() => setIsMaterialPickerOpen(false)} title="Selecionar Insumo" icon={<Layers size={20} />} maxWidth="max-w-md" zIndex={80000}>
-                <div className="flex flex-col gap-4">
-                  <div className="relative">
-                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
-                    <input
-                      type="text"
-                      value={materialPickerSearch}
-                      onChange={(e) => setMaterialPickerSearch(e.target.value)}
-                      placeholder="Buscar insumo..."
-                      className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
-                    {productionConfigs.filter(m => m.type === 'MATERIAL' && m.name.toLowerCase().includes(materialPickerSearch.toLowerCase())).map(m => (
+              <Modal isOpen={isMaterialPickerOpen} onClose={() => { setIsMaterialPickerOpen(false); setIsCreatingMaterialInline(false); setNewMaterialItem(null); }} title="Selecionar Insumo" icon={<Layers size={20} />} maxWidth="max-w-md" zIndex={80000}>
+                {!isCreatingMaterialInline ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text"
+                        value={materialPickerSearch}
+                        onChange={(e) => setMaterialPickerSearch(e.target.value)}
+                        placeholder="Buscar insumo..."
+                        className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                      {productionConfigs.filter(m => m.type === 'MATERIAL' && m.name.toLowerCase().includes(materialPickerSearch.toLowerCase())).map(m => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => selectMaterialForTarget(m.id)}
+                          className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                        >
+                          <div className="flex flex-col min-w-0">
+                            <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{m.name}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{m.metadata?.reference} • R$ {m.metadata?.baseCost || 0}/kg</span>
+                          </div>
+                          <ChevronRight size={16} className="text-indigo-400 shrink-0" />
+                        </button>
+                      ))}
+                      {productionConfigs.filter(m => m.type === 'MATERIAL' && m.name.toLowerCase().includes(materialPickerSearch.toLowerCase())).length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum insumo encontrado.</p>
+                      )}
+                    </div>
+                    {onQuickAddMaterial && (
                       <button
-                        key={m.id}
                         type="button"
-                        onClick={() => selectMaterialForTarget(m.id)}
-                        className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                        onClick={startCreateMaterial}
+                        data-guide-anchor="mold.cadastrarMaterial"
+                        className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
                       >
-                        <div className="flex flex-col min-w-0">
-                          <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{m.name}</span>
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{m.metadata?.reference} • R$ {m.metadata?.baseCost || 0}/kg</span>
-                        </div>
-                        <ChevronRight size={16} className="text-indigo-400 shrink-0" />
+                        <Plus size={14} strokeWidth={3} /> Não encontrou? Cadastre um insumo aqui
                       </button>
-                    ))}
-                    {productionConfigs.filter(m => m.type === 'MATERIAL' && m.name.toLowerCase().includes(materialPickerSearch.toLowerCase())).length === 0 && (
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum insumo encontrado.</p>
                     )}
                   </div>
-                </div>
+                ) : newMaterialItem ? (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                      Cadastro completo de Insumo — salvo direto em Insumos, fica disponível pra
+                      qualquer outro cadastro do sistema, sem perder o progresso deste Solado.
+                    </p>
+                    <MaterialFormFields
+                      item={newMaterialItem}
+                      onChange={setNewMaterialItem}
+                      isDarkMode={isDarkMode}
+                      suppliers={suppliers}
+                      flowTags={flowTags}
+                      colors={colors}
+                      units={units}
+                      supplyCategoryNames={supplyCategoryNames}
+                      existingReferences={existingMaterialReferences}
+                    />
+                    <div className="flex gap-2 pt-1">
+                      <button type="button" onClick={() => { setIsCreatingMaterialInline(false); setNewMaterialItem(null); }} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleQuickCreateMaterial}
+                        disabled={!newMaterialItem.name.trim()}
+                        className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                      >
+                        Salvar e Usar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </Modal>
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-4">
@@ -3324,264 +3389,18 @@ function GenericConfigList({
               })()}
             </div>
           ) : type === 'MATERIAL' ? (
-            <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  {renderLabelWithShortcut('mat-master-category', 'Categoria Mestre', ViewType.CATEGORIES, true)}
-                  <ComboBox
-                    options={supplyCategoryNames.map(cat => ({ id: cat, name: cat }))}
-                    value={editingItem?.metadata?.masterCategory || ''}
-                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: val as any } } : null)}
-                    placeholder="Selecionar..."
-                    isDarkMode={isDarkMode}
-                    usePopupModal
-                    popupZIndex={80000}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label htmlFor="mat-reference" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Referência / Código</label>
-                  <div className="relative group">
-                    <input id="mat-reference" type="text" value={editingItem?.metadata?.reference || ''} title="Referência" placeholder="REFERÊNCIA" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, reference: e.target.value.toUpperCase() } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
-                    <button type="button" onClick={generateCode} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all" title="Gerar Código Automático"><Wand2 size={16} /></button>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                <label htmlFor="mat-name" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Nome do Material *</label>
-                <input id="mat-name" type="text" value={editingItem?.name || ''} title="Nome do Material" placeholder="NOME DO MATERIAL" onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
-              </div>
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  {renderLabelWithShortcut('mat-flowtag', 'Flow Tag (Estágio)', 'FLOW_TAGS')}
-                  <ComboBox
-                    options={[{ id: '', name: 'Nenhuma' }, ...flowTags.map(tag => ({ id: tag.id, name: tag.name }))]}
-                    value={editingItem?.metadata?.flowTagId || ''}
-                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: val } } : null)}
-                    placeholder="Nenhuma..."
-                    isDarkMode={isDarkMode}
-                    usePopupModal
-                    popupZIndex={80000}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  {renderLabelWithShortcut('mat-supplier', 'Fornecedor Principal', ViewType.PEOPLE)}
-                  <ComboBox
-                    options={[{ id: '', name: 'Nenhum' }, ...suppliers.map(p => ({ id: p.id, name: p.name }))]}
-                    value={editingItem?.metadata?.supplierId || ''}
-                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: val } } : null)}
-                    placeholder="Nenhum..."
-                    isDarkMode={isDarkMode}
-                    usePopupModal
-                    popupZIndex={80000}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  {renderLabelWithShortcut('mat-unit', 'Unidade', 'UNIDADES', true)}
-                  <ComboBox
-                    options={units.map(u => ({ id: u.id, name: u.name }))}
-                    value={editingItem?.metadata?.unitId || ''}
-                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: val } } : null)}
-                    placeholder="Selecionar..."
-                    isDarkMode={isDarkMode}
-                    usePopupModal
-                    popupZIndex={80000}
-                  />
-                </div>
-                {isKgMaterialUnit ? (
-                  <>
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="mat-pkg-weight" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Peso da Embalagem (kg)</label>
-                      <div className="relative group">
-                        <input
-                          id="mat-pkg-weight"
-                          type="text"
-                          inputMode="decimal"
-                          value={editingItem?.metadata?.packageWeight || ''}
-                          title="Peso da Embalagem"
-                          onChange={(e) => setEditingItem(prev => {
-                            if (!prev) return null;
-                            const packageWeight = Number(e.target.value) || 0;
-                            const packagePrice = prev.metadata?.packagePrice || 0;
-                            const baseCost = packageWeight > 0 ? parseFloat((packagePrice / packageWeight).toFixed(4)) : 0;
-                            return { ...prev, metadata: { ...prev.metadata, packageWeight, baseCost } };
-                          })}
-                          placeholder="0,00"
-                          className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
-                        />
-                        <button
-                          type="button"
-                          title="Abrir Calculadora"
-                          aria-label="Abrir calculadora para definir peso da embalagem"
-                          onClick={() => setActiveCalc({
-                            initialValue: editingItem?.metadata?.packageWeight || 0,
-                            onResult: (val) => setEditingItem(prev => {
-                              if (!prev) return null;
-                              const packagePrice = prev.metadata?.packagePrice || 0;
-                              const baseCost = val > 0 ? parseFloat((packagePrice / val).toFixed(4)) : 0;
-                              return { ...prev, metadata: { ...prev.metadata, packageWeight: val, baseCost } };
-                            })
-                          })}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
-                        ><Calculator size={16} /></button>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="mat-pkg-price" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Preço da Embalagem (R$)</label>
-                      <div className="relative group">
-                        <input
-                          id="mat-pkg-price"
-                          type="text"
-                          inputMode="decimal"
-                          value={editingItem?.metadata?.packagePrice || ''}
-                          title="Preço da Embalagem"
-                          onChange={(e) => setEditingItem(prev => {
-                            if (!prev) return null;
-                            const packagePrice = Number(e.target.value) || 0;
-                            const packageWeight = prev.metadata?.packageWeight || 0;
-                            const baseCost = packageWeight > 0 ? parseFloat((packagePrice / packageWeight).toFixed(4)) : 0;
-                            return { ...prev, metadata: { ...prev.metadata, packagePrice, baseCost } };
-                          })}
-                          placeholder="0,00"
-                          className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
-                        />
-                        <button
-                          type="button"
-                          title="Abrir Calculadora"
-                          aria-label="Abrir calculadora para definir preço da embalagem"
-                          onClick={() => setActiveCalc({
-                            initialValue: editingItem?.metadata?.packagePrice || 0,
-                            onResult: (val) => setEditingItem(prev => {
-                              if (!prev) return null;
-                              const packageWeight = prev.metadata?.packageWeight || 0;
-                              const baseCost = packageWeight > 0 ? parseFloat((val / packageWeight).toFixed(4)) : 0;
-                              return { ...prev, metadata: { ...prev.metadata, packagePrice: val, baseCost } };
-                            })
-                          })}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
-                        ><Calculator size={16} /></button>
-                      </div>
-                    </div>
-                    <div className={`flex items-center justify-between px-5 py-3 rounded-2xl ${isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50'}`}>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Valor por Kg (calculado)</span>
-                      <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">R$ {(editingItem?.metadata?.baseCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
-                    <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
-                  </>
-                )}
-              </div>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  {renderLabelWithShortcut('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = !(editingItem?.metadata?.noColor);
-                      setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, noColor: next, colorIds: next ? [] : prev.metadata?.colorIds } } : null);
-                    }}
-                    title="Este material não usa cor — oculta a seleção de cores no produto"
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.noColor ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
-                  >
-                    Sem Cor
-                  </button>
-                </div>
-                {editingItem?.metadata?.noColor ? (
-                  <p className={`text-[10px] font-bold uppercase tracking-widest px-2 py-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                    Este material não usa cor — a seleção de cor fica oculta e não é obrigatória ao usar este material em um produto.
-                  </p>
-                ) : (
-                  <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); if (!wasSelected) openStockColorModal(newIds); }} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
-                )}
-              </div>
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 ml-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">Estoque Atual</label>
-                    {selectedUnitName && (
-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                        {selectedUnitName}
-                      </span>
-                    )}
-                  </div>
-                  {(editingItem?.metadata?.colorIds?.length || 0) > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => openStockColorModal(editingItem?.metadata?.colorIds || [])}
-                      className={`w-full px-6 py-4 rounded-2xl font-bold text-xs outline-none transition-all border-2 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 hover:border-indigo-200'}`}
-                    >
-                      <span className="tracking-widest">{Object.values(editingItem?.metadata?.stockByColor || {}).reduce((a, b) => a + (b || 0), 0)}</span>
-                      <span className="flex items-center gap-1.5 text-indigo-500 text-[9px] font-black uppercase tracking-widest">
-                        <Settings size={12} /> Estoque e Preço por Cor
-                      </span>
-                    </button>
-                  ) : null}
-                  {(editingItem?.metadata?.colorIds?.length || 0) > 0 && Object.keys(editingItem?.metadata?.stockByColor || {}).length > 0 && (
-                    <div className={`p-3 rounded-xl flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50'}`}>
-                      {Object.entries(editingItem?.metadata?.stockByColor || {}).map(([colorId, qty]) => {
-                        const color = colors.find(c => c.id === colorId);
-                        if (!color) return null;
-                        return (
-                          <div key={colorId} className={`flex items-center gap-1.5 px-2 py-1 rounded-md border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                            <div className="w-2 h-2 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: color.hex || '#ccc' }} />
-                            <span className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase">{color.name}</span>
-                            <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 ml-1">{Number(qty).toLocaleString('pt-BR')}{selectedUnitName ? ` ${selectedUnitName}` : ''}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {!((editingItem?.metadata?.colorIds?.length || 0) > 0) && (
-                    <div className="relative group">
-                      <input
-                        id="mat-stock"
-                        type="number"
-                        step="0.01"
-                        value={editingItem?.metadata?.stock || ''}
-                        title="Estoque Atual"
-                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: Number(e.target.value) } } : null)}
-                        placeholder="0,00"
-                        className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
-                      />
-                      <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.stock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
-                    </div>
-                  )}
-                  {!((editingItem?.metadata?.colorIds?.length || 0) > 0) && isKgMaterialUnit && !!editingItem?.metadata?.packageWeight && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={stockPackagesInput}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setStockPackagesInput(val);
-                          const qty = parseFloat(val.replace(',', '.')) || 0;
-                          const weight = editingItem?.metadata?.packageWeight || 0;
-                          setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: parseFloat((qty * weight).toFixed(4)) } } : null);
-                        }}
-                        placeholder="0"
-                        title="Nº de embalagens em estoque — converte para o estoque em kg usando o Peso da Embalagem"
-                        className={`w-24 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
-                      />
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight">
-                        Embalagens em estoque (× {editingItem?.metadata?.packageWeight || 0}kg = converte pro Estoque Atual)
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label htmlFor="mat-min-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Estoque Mínimo</label>
-                  <div className="relative group">
-                    <input id="mat-min-stock" type="number" step="0.01" value={editingItem?.metadata?.minStock || ''} title="Estoque Mínimo" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, minStock: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
-                    <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque mínimo" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.minStock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, minStock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <MaterialFormFields
+              item={editingItem!}
+              onChange={(updated) => setEditingItem(updated)}
+              isDarkMode={isDarkMode}
+              suppliers={suppliers}
+              flowTags={flowTags}
+              colors={colors}
+              units={units}
+              supplyCategoryNames={supplyCategoryNames}
+              existingReferences={productionConfigs.filter(c => c.type === 'MATERIAL' && c.id !== editingItem?.id).map(c => (c.metadata?.reference || '').toUpperCase()).filter(Boolean)}
+              onNavigateToScreen={onNavigateToScreen}
+            />
           ) : type === 'TOOL' ? (
             <div className="flex flex-col gap-6">
               <div className={`w-full aspect-video rounded-3xl overflow-hidden relative border-2 border-dashed ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'} flex items-center justify-center transition-all`}>
@@ -4176,103 +3995,6 @@ function GenericConfigList({
               className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
             >
               Aplicar Escalonamento
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={isStockColorModalOpen}
-        onClose={() => setIsStockColorModalOpen(false)}
-        title="ESTOQUE E PREÇO POR COR"
-        zIndex={80000}
-      >
-        <div className="flex flex-col gap-6 p-2">
-          <div className={`p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? 'bg-indigo-500/5 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100'}`}>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed text-center">
-              Informe a quantidade em estoque e o custo de cada cor disponível deste insumo. <br/>
-              O estoque global será atualizado com a soma dos estoques por cor.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {(editingItem?.metadata?.colorIds || []).map((colorId: string) => {
-              const color = colors.find(c => c.id === colorId);
-              if (!color) return null;
-              return (
-                <div key={colorId} className={`p-3 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full border shadow-sm shrink-0" style={{ backgroundColor: color.hex || '#ccc' }} />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">
-                      {color.name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 flex flex-col gap-1">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Estoque</span>
-                      <div className="relative group">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={editingStockColors[colorId] ?? ''}
-                          onChange={(e) => setEditingStockColors(prev => ({ ...prev, [colorId]: Number(e.target.value) }))}
-                          placeholder="0,00"
-                          className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-                        />
-                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de estoque" onClick={() => setActiveCalc({ initialValue: editingStockColors[colorId] || 0, onResult: (val) => setEditingStockColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
-                      </div>
-                    </div>
-                    <div className="flex-1 flex flex-col gap-1">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Custo (R$)</span>
-                      <div className="relative group">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={editingPriceColors[colorId] ?? ''}
-                          onChange={(e) => setEditingPriceColors(prev => ({ ...prev, [colorId]: Number(e.target.value) }))}
-                          placeholder="0,00"
-                          className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-                        />
-                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de custo" onClick={() => setActiveCalc({ initialValue: editingPriceColors[colorId] || 0, onResult: (val) => setEditingPriceColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex gap-3 mt-4">
-            <button
-              type="button"
-              onClick={() => setIsStockColorModalOpen(false)}
-              className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all border-2 ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingItem(prev => {
-                  if (!prev) return null;
-                  const newStock = Object.values(editingStockColors).reduce((a, b) => a + (b || 0), 0);
-                  return {
-                    ...prev,
-                    metadata: {
-                      ...prev.metadata,
-                      stockByColor: editingStockColors,
-                      priceByColor: editingPriceColors,
-                      stock: newStock,
-                    }
-                  };
-                });
-                setIsStockColorModalOpen(false);
-              }}
-              className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
-            >
-              Salvar Balanço
             </button>
           </div>
         </div>
