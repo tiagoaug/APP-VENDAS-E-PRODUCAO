@@ -2549,7 +2549,7 @@ export default function App() {
           const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
           transaction.set(ref, deepClean(docItem));
         }
-        transaction.update(saleRef, { items: deepClean(newItems), deliveryStatus: 'PENDING' });
+        transaction.update(saleRef, { items: deepClean(newItems), deliveryStatus: 'PENDING', deliveredAt: null });
       });
 
       toast.show(anyReverted

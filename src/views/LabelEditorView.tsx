@@ -5,9 +5,9 @@ import { toDottedQRDataURL } from '../utils/dottedQRCode';
 import {
   Type, ImagePlus, QrCode, Calendar, Minus, Square, Trash2, Copy, Save, Printer,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Plus, Check, X, ZoomIn, ZoomOut,
-  RotateCwSquare, Contrast, Crop as CropIcon, Download, Eye, EyeOff, Lock, Unlock, Layers as LayersIcon,
+  Contrast, Crop as CropIcon, Download, Eye, EyeOff, Lock, Unlock, Layers as LayersIcon,
   Maximize2, Minimize2, Image as ImageIcon2, ChevronDown, Ruler as RulerIcon, RotateCw, Wrench, Grid3x3, Tag, Radius,
-  FileText, StickyNote,
+  FileText, StickyNote, RectangleVertical, RectangleHorizontal,
 } from 'lucide-react';
 import { LabelElement, LabelDataBinding, BatchLabelItem, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { printAbleMarkLabel2 as printAbleMarkLabel } from '../lib/ablemarkPrinter2';
@@ -437,10 +437,23 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   };
 
   // Gira a área da etiqueta inteira 90° (troca largura por altura) — paisagem ↔ retrato.
-  // Elementos mantêm x/y/w/h em mm; se ficarem fora da nova área, o usuário reposiciona.
+  // Elementos mantêm x/y/w/h em mm; se ficarem fora da nova área, o usuário reposiciona — EXCETO
+  // o(s) elemento(s) que ocupavam a etiqueta inteira (ex.: foto/PDF importado como fundo, caso
+  // mais comum de quem gira depois de importar um arquivo): esses são redimensionados junto,
+  // senão continuam do tamanho antigo e saem cortados na impressão (a tela ainda "parece" ok
+  // porque o container do editor não recorta visualmente, mas o canvas de impressão recorta
+  // de verdade no tamanho físico do papel).
   const handleRotateCanvas = () => {
-    setWidthMm(heightMm);
-    setHeightMm(widthMm);
+    const oldWidthMm = widthMm;
+    const oldHeightMm = heightMm;
+    setElements(prev => prev.map(el =>
+      (el.x === 0 && el.y === 0 && Math.abs(el.w - oldWidthMm) < 0.01 && Math.abs(el.h - oldHeightMm) < 0.01)
+        ? { ...el, w: oldHeightMm, h: oldWidthMm }
+        : el
+    ));
+    setWidthMm(oldHeightMm);
+    setHeightMm(oldWidthMm);
+    toast.show(`Etiqueta girada: ${oldHeightMm > oldWidthMm ? 'Paisagem' : 'Retrato'} (${oldHeightMm} × ${oldWidthMm} mm)`);
     setSelectedId(null);
     setZoom(1);
   };
@@ -1590,10 +1603,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <button
               type="button"
               onClick={handleRotateCanvas}
-              title="Girar área da etiqueta"
-              className={`px-3 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-300 border border-slate-800' : 'bg-white text-slate-600 border border-slate-100 shadow-sm'}`}
+              title={`Girar área da etiqueta (Paisagem ↔ Retrato) — hoje ${widthMm > heightMm ? 'Paisagem' : 'Retrato'}`}
+              className="px-3 rounded-xl shrink-0 bg-purple-800 text-white"
             >
-              <RotateCwSquare size={16} />
+              {widthMm > heightMm ? <RectangleHorizontal size={16} /> : <RectangleVertical size={16} />}
             </button>
           </div>
 

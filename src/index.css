@@ -461,6 +461,21 @@
   .animate-pulse-violet-ring {
     animation: pulse-violet-ring 1.8s infinite;
   }
+
+  @keyframes pulse-blue-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(30, 64, 175, 0.6);
+    }
+    70% {
+      box-shadow: 0 0 0 8px rgba(30, 64, 175, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(30, 64, 175, 0);
+    }
+  }
+  .animate-pulse-blue-ring {
+    animation: pulse-blue-ring 1.8s infinite;
+  }
 }
 
 /* ── Global Print Rules ───────────────────────────────────────────────────── */

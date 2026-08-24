@@ -182,9 +182,9 @@ export default function BlingHealthView({ isDarkMode }: BlingHealthViewProps) {
           isDarkMode={isDarkMode}
         />
         <StatTile
-          label="Taxa de Devolução"
+          label={`Taxa de Devolução · ${PERIOD_LABEL[period]}`}
           value={`${taxaDevolucao.toFixed(1)}%`}
-          sub={`${taxaDevolucao.toFixed(1)} a cada 100 pares vendidos`}
+          sub={`${paresDevolvidos} devolvidos de ${paresVendidos} vendidos no período`}
           icon={<Percent size={18} className="text-white" />}
           color="bg-indigo-600"
           isDarkMode={isDarkMode}

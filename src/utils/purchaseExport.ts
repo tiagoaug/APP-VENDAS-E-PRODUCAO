@@ -143,7 +143,10 @@ function buildItemRows(purchase: Purchase, products: Product[], grouped = false,
   return buildFlatRows(items, products, grouped);
 }
 
-export const exportPurchase = async (data: ExportData, formatType: 'pdf' | 'jpg') => {
+/** Quando `preview` é true, gera o mesmo arquivo mas devolve a data URI em vez de
+ * compartilhar/baixar — usado pelo botão "Visualizar Arquivo" do ExportNoteModal, que abre
+ * essa imagem/PDF num popup de pré-visualização antes do usuário confirmar o compartilhamento. */
+export const exportPurchase = async (data: ExportData, formatType: 'pdf' | 'jpg', preview?: boolean): Promise<string | void> => {
   const { purchase, suppliers } = data;
   const supplier = suppliers.find(s => s.id === purchase.supplierId);
   const supplierFirstName = (supplier?.name || 'Fornecedor').split(' ')[0];
@@ -152,9 +155,9 @@ export const exportPurchase = async (data: ExportData, formatType: 'pdf' | 'jpg'
 
   try {
     if (formatType === 'pdf') {
-      await generatePDF(data, filename, orderNumber);
+      return await generatePDF(data, filename, orderNumber, preview);
     } else {
-      await generateJPG(data, filename, orderNumber);
+      return await generateJPG(data, filename, orderNumber, preview);
     }
   } catch (error) {
     console.error('Export error:', error);
@@ -172,7 +175,7 @@ const ROSE: [number, number, number] = [239, 68, 68];
 
 // ── PDF ───────────────────────────────────────────────────────────────────────
 
-async function generatePDF(data: ExportData, filename: string, orderNumber: string) {
+async function generatePDF(data: ExportData, filename: string, orderNumber: string, preview?: boolean): Promise<string | void> {
   const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped, showItemGrid } = data;
   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
   const supplier = suppliers.find(s => s.id === purchase.supplierId);
@@ -427,12 +430,13 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
   doc.setTextColor(180);
   doc.text(`Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')} - App Vendas e Produção`, 105, 285, { align: 'center' });
 
+  if (preview) return doc.output('datauristring');
   await sharePDF(doc, filename);
 }
 
 // ── JPG ───────────────────────────────────────────────────────────────────────
 
-async function generateJPG(data: ExportData, filename: string, orderNumber: string) {
+async function generateJPG(data: ExportData, filename: string, orderNumber: string, preview?: boolean): Promise<string | void> {
   const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped, showItemGrid } = data;
   const supplier = suppliers.find(s => s.id === purchase.supplierId);
   const rows = buildItemRows(purchase, products, grouped, showItemGrid);
@@ -717,5 +721,7 @@ async function generateJPG(data: ExportData, filename: string, orderNumber: stri
     y += nbH;
   }
 
-  await shareImage(canvas.toDataURL('image/jpeg', 0.95), filename);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  if (preview) return dataUrl;
+  await shareImage(dataUrl, filename);
 }

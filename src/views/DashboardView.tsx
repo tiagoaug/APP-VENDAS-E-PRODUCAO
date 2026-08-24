@@ -1940,7 +1940,7 @@ export default function DashboardView({
                     title="Filtrar Período"
                     aria-label="Abrir filtros de período para análise de lucro"
                     onClick={() => setIsProfitFiltersExpanded(!isProfitFiltersExpanded)}
-                    className={`p-2 rounded-xl transition-all ${isProfitFiltersExpanded ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400')}`}
+                    className={`p-2 rounded-xl transition-all ${isProfitFiltersExpanded ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-blue-800 text-white animate-pulse-blue-ring'}`}
                   >
                     <Calendar size={16} strokeWidth={2.5} />
                   </button>

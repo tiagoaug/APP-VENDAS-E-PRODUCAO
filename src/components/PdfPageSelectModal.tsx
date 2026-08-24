@@ -396,6 +396,16 @@ export default function PdfPageSelectModal({
       setPageOverrides(prev => ({ ...prev, [referenceIndex]: c }));
     } else {
       setActiveCrop(c);
+      // Além de guardar em `groupCrops` (usado pelo indicador "confirmado" e ao salvar preset),
+      // grava o MESMO recorte como override explícito em cada página do grupo sendo editado.
+      // `resolveCropForIndex` sempre confere override de página primeiro — é o caminho já
+      // comprovado que chega certinho até a etiqueta final; sem isso, o recorte "de grupo"
+      // dependia só de `groupCrops` e podia não pegar na hora de gerar o arquivo.
+      setPageOverrides(prev => {
+        const next = { ...prev };
+        groupIndexes.forEach(i => { next[i] = c; });
+        return next;
+      });
     }
   };
   // Arrastar o recorte manualmente (alças/mover) não é nenhum dos 3 atalhos — some o

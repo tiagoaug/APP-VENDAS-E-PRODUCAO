@@ -19,6 +19,9 @@ export type FieldHelpEntry = {
 export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'nav.vendas': { text: 'Abre a área de Vendas — lista de pedidos, orçamentos e o botão pra lançar uma venda nova.' },
   'sales.novoPedido': { text: 'Cria um novo lançamento de venda, pedido ou orçamento.' },
+  'sales.dataEntrega': { text: 'Data em que o pedido foi expedido/entregue por completo — só aparece depois que todos os itens são baixados do estoque (venda inteira expedida).' },
+  'export.visualizarArquivo': { text: 'Gera uma prévia do arquivo com as opções marcadas e abre num popup em tela cheia — nada é compartilhado ainda, é só pra conferir antes de gerar de verdade.' },
+  'export.previewPopup': { text: 'Pré-visualização do arquivo. Toque na imagem ou no X no canto para fechar e voltar às opções de exportação.' },
   'sales.busca': { text: 'Busca um pedido pelo nome do cliente ou pelo número do pedido.' },
   'sales.filtros': { text: 'Filtra a lista por tipo de venda, status de pagamento, status de entrega e mais.' },
   'sales.disponivel': { text: 'Mostra rápido o que tem pronto no estoque (Atacado em caixas, Varejo em pares) — só consulta, não altera nada.' },

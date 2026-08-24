@@ -45,7 +45,10 @@ function loadThumbImage(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
-export const exportSale = async (data: ExportData, formatType: 'pdf' | 'jpg') => {
+/** Quando `preview` é true, gera o mesmo arquivo mas devolve a data URI em vez de
+ * compartilhar/baixar — usado pelo botão "Visualizar Arquivo" do ExportNoteModal, que abre
+ * essa imagem/PDF num popup de pré-visualização antes do usuário confirmar o compartilhamento. */
+export const exportSale = async (data: ExportData, formatType: 'pdf' | 'jpg', preview?: boolean): Promise<string | void> => {
   const { sale, products, people, paymentMethods, additionalNote, isDarkMode } = data;
 
   const customer = people.find(p => p.id === sale.customerId);
@@ -56,9 +59,9 @@ export const exportSale = async (data: ExportData, formatType: 'pdf' | 'jpg') =>
 
   try {
     if (formatType === 'pdf') {
-      await generatePDF(data, filename);
+      return await generatePDF(data, filename, preview);
     } else {
-      await generateJPG(data, filename);
+      return await generateJPG(data, filename, preview);
     }
   } catch (error) {
     console.error('Export error:', error);
@@ -66,7 +69,7 @@ export const exportSale = async (data: ExportData, formatType: 'pdf' | 'jpg') =>
   }
 };
 
-async function generatePDF(data: ExportData, filename: string) {
+async function generatePDF(data: ExportData, filename: string, preview?: boolean): Promise<string | void> {
   const { sale, products, people, paymentMethods, additionalNote, companyProfile } = data;
   const doc = new jsPDF({
     orientation: 'p',
@@ -227,10 +230,11 @@ async function generatePDF(data: ExportData, filename: string) {
 
   if (isFooterBrand && companyProfile) drawCompanyBrandingOnPdf(doc, companyProfile, 297 - brandH, 210);
 
+  if (preview) return doc.output('datauristring');
   await sharePDF(doc, filename);
 }
 
-async function generateJPG(data: ExportData, filename: string) {
+async function generateJPG(data: ExportData, filename: string, preview?: boolean): Promise<string | void> {
   const { sale, products, people, paymentMethods, additionalNote, showThumbnails, companyProfile } = data;
   const customer = people.find(p => p.id === sale.customerId);
   const paymentMethod = paymentMethods.find(pm => pm.id === sale.paymentMethodId);
@@ -450,5 +454,7 @@ async function generateJPG(data: ExportData, filename: string) {
     y += brandH;
   }
 
-  await shareImage(canvas.toDataURL('image/jpeg', 0.95), filename);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  if (preview) return dataUrl;
+  await shareImage(dataUrl, filename);
 }

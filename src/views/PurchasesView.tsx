@@ -258,6 +258,21 @@ export default function PurchasesView({
     }
   };
 
+  const handlePreviewExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', _pcpTotalGrid?: boolean, _showMaterials?: boolean, showItemGrid?: boolean): Promise<string[]> => {
+    if (!exportModal.purchase) return [];
+    const dataUrl = await exportPurchase({
+      purchase: exportModal.purchase,
+      suppliers: availableThirdParties,
+      products,
+      additionalNote: note,
+      isDarkMode,
+      showFinancialValues,
+      grouped: groupMode !== 'none',
+      showItemGrid: !!showItemGrid
+    }, format, true);
+    return dataUrl ? [dataUrl] : [];
+  };
+
   const filteredPurchases = useMemo(() => {
     return effectivePurchases.filter(purchase => {
       // Filter by type
@@ -1057,6 +1072,7 @@ export default function PurchasesView({
         isOpen={exportModal.isOpen}
         onClose={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
         onConfirm={handleConfirmExport}
+        onPreview={handlePreviewExport}
         isDarkMode={isDarkMode}
         initialFormat={exportModal.format}
         title="Exportar Compra"

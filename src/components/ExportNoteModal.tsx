@@ -691,58 +691,6 @@ export default function ExportNoteModal({
         </div>
                 {/* Footer Actions */}
         <div className={`p-4 flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50/50'}`}>
-          {/* Preview Section — navega página a página exatamente como o arquivo final
-              vai ser dividido (ver "Dividir em Páginas"), pra dar pra revisar onde cada
-              corte cai antes de gerar de verdade. */}
-          {previewPages.length > 0 && (
-            <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-3 bg-white dark:bg-slate-800">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <span className="text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300">
-                  Pré-visualização{previewPages.length > 1 ? ` — Pág. ${previewPageIdx + 1}/${previewPages.length}` : ''}
-                </span>
-                <button type="button" onClick={() => setPreviewPages([])} className="text-[10px] font-black uppercase tracking-widest text-white bg-rose-500 hover:bg-rose-600 active:scale-95 transition-all px-3 py-1.5 rounded-full shadow-sm">Fechar Preview</button>
-              </div>
-              <div className="w-full bg-slate-100 dark:bg-slate-900 rounded-xl overflow-hidden shadow-inner max-h-[60vh] overflow-y-auto">
-                {selectedFormat === 'pdf' ? (
-                  <iframe src={previewPages[previewPageIdx] + "#toolbar=0"} className="w-full h-[500px]" />
-                ) : (
-                  <img src={previewPages[previewPageIdx]} className="w-full h-auto" />
-                )}
-              </div>
-              {previewPages.length > 1 && (
-                <div className="flex items-center justify-between gap-2 mt-3">
-                  <button
-                    type="button"
-                    disabled={previewPageIdx === 0}
-                    onClick={() => setPreviewPageIdx(p => Math.max(0, p - 1))}
-                    className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${previewPageIdx === 0 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                  >
-                    <ChevronLeft size={14} /> Anterior
-                  </button>
-                  <div className="flex items-center gap-1">
-                    {previewPages.map((_, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setPreviewPageIdx(idx)}
-                        aria-label={`Ir para página ${idx + 1}`}
-                        className={`w-2 h-2 rounded-full transition-all ${idx === previewPageIdx ? 'bg-indigo-500 w-5' : 'bg-slate-300 dark:bg-slate-600'}`}
-                      />
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={previewPageIdx === previewPages.length - 1}
-                    onClick={() => setPreviewPageIdx(p => Math.min(previewPages.length - 1, p + 1))}
-                    className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${previewPageIdx === previewPages.length - 1 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                  >
-                    Próxima <ChevronRight size={14} />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Cards Actions — agrupadas num acordeão (igual aos demais SectionCard da tela);
               só "Cancelar" fica sempre visível, fora do acordeão. */}
           <div className="flex flex-col gap-2">
@@ -760,6 +708,7 @@ export default function ExportNoteModal({
                       type="button"
                       onClick={handlePreview}
                       disabled={isPreviewLoading}
+                      data-guide-anchor="export.visualizarArquivo"
                       className={`flex-1 py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 shadow-slate-800/20`}
                     >
                       {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
@@ -1639,6 +1588,76 @@ export default function ExportNoteModal({
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Popup de Pré-visualização — imagem/PDF gerado em tela cheia, fecha ao tocar nela
+          mesma ou no X (não é mais uma caixinha dentro do modal de configuração). */}
+      {previewPages.length > 0 && (
+        <div
+          className="fixed inset-0 z-[310000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setPreviewPages([])}
+          data-guide-anchor="export.previewPopup"
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewPages([])}
+            aria-label="Fechar pré-visualização"
+            className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all z-10"
+          >
+            <X size={20} strokeWidth={2.5} />
+          </button>
+
+          {previewPages.length > 1 && (
+            <span className="absolute top-5 left-1/2 -translate-x-1/2 text-white text-[10px] font-black uppercase tracking-widest bg-black/40 px-3 py-1.5 rounded-full">
+              Pág. {previewPageIdx + 1}/{previewPages.length}
+            </span>
+          )}
+
+          <div className="w-full max-w-3xl max-h-[85vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
+            {selectedFormat === 'pdf' ? (
+              <iframe src={previewPages[previewPageIdx] + "#toolbar=0"} className="w-full h-[80vh] rounded-2xl bg-white" />
+            ) : (
+              <img
+                src={previewPages[previewPageIdx]}
+                onClick={() => setPreviewPages([])}
+                alt="Pré-visualização do arquivo exportado"
+                className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl cursor-zoom-out"
+              />
+            )}
+          </div>
+
+          {previewPages.length > 1 && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3" onClick={e => e.stopPropagation()}>
+              <button
+                type="button"
+                disabled={previewPageIdx === 0}
+                onClick={() => setPreviewPageIdx(p => Math.max(0, p - 1))}
+                className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/10 ${previewPageIdx === 0 ? 'text-white/30 cursor-not-allowed' : 'text-white hover:bg-white/20'}`}
+              >
+                <ChevronLeft size={14} /> Anterior
+              </button>
+              <div className="flex items-center gap-1">
+                {previewPages.map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setPreviewPageIdx(idx)}
+                    aria-label={`Ir para página ${idx + 1}`}
+                    className={`w-2 h-2 rounded-full transition-all ${idx === previewPageIdx ? 'bg-white w-5' : 'bg-white/40'}`}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={previewPageIdx === previewPages.length - 1}
+                onClick={() => setPreviewPageIdx(p => Math.min(previewPages.length - 1, p + 1))}
+                className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/10 ${previewPageIdx === previewPages.length - 1 ? 'text-white/30 cursor-not-allowed' : 'text-white hover:bg-white/20'}`}
+              >
+                Próxima <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

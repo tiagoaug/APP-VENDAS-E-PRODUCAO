@@ -731,6 +731,28 @@ export default function SalesView({
     }
   };
 
+  const handlePreviewExport = async (
+    note: string, format: 'pdf' | 'jpg',
+    _showFinancialValues?: boolean, _groupMode?: 'none' | 'ref_color' | 'ref', _pcpTotalGrid?: boolean,
+    _showMaterials?: boolean, _showItemGrid?: boolean, _showSectorNotes?: boolean, _showOrderList?: boolean,
+    _splitPages?: boolean, _showProvider?: boolean, _showOSData?: boolean, _showSoleGrid?: boolean,
+    _selectedSectorIds?: string[], _pageSize?: 'a4' | 'marketplace', _itemsPerPage?: number,
+    exportShowThumbnails?: boolean,
+  ): Promise<string[]> => {
+    if (!exportModal.sale) return [];
+    const dataUrl = await exportSale({
+      sale: exportModal.sale,
+      products,
+      people,
+      paymentMethods,
+      additionalNote: note,
+      isDarkMode,
+      showThumbnails: showThumbnails && exportShowThumbnails,
+      companyProfile,
+    }, format, true);
+    return dataUrl ? [dataUrl] : [];
+  };
+
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (filter !== 'ALL') count++;
@@ -1964,24 +1986,32 @@ export default function SalesView({
                     <h3 className={`font-black text-base tracking-tight leading-none truncate ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       {sale.saleDestination === 'STOCK' ? 'Estoque' : (getCustomerName(sale) || 'Cliente')}
                     </h3>
-                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                      <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 font-black tracking-widest">
-                        <Calendar size={10} strokeWidth={3} />
-                        {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
+                    <div className="flex flex-col gap-1 mt-1.5">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 font-black tracking-widest">
+                          <Calendar size={10} strokeWidth={3} />
+                          {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest">
+                          <Hash size={10} strokeWidth={3} />
+                          {sale.orderNumber}
+                        </div>
+                        {sale.saleDestination === 'STOCK' && (
+                          <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest">
+                            Estoque
+                          </span>
+                        )}
+                        {sale.sellerName && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
+                            {sale.sellerName}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest">
-                        <Hash size={10} strokeWidth={3} />
-                        {sale.orderNumber}
-                      </div>
-                      {sale.saleDestination === 'STOCK' && (
-                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest">
-                          Estoque
-                        </span>
-                      )}
-                      {sale.sellerName && (
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
-                          {sale.sellerName}
-                        </span>
+                      {sale.deliveryStatus === 'DELIVERED' && sale.deliveredAt && (
+                        <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-black tracking-widest" data-guide-anchor="sales.dataEntrega">
+                          <Truck size={10} strokeWidth={3} />
+                          Entregue em {format(sale.deliveredAt, "dd/MM/yyyy", { locale: ptBR })}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2769,6 +2799,7 @@ export default function SalesView({
         isOpen={exportModal.isOpen}
         onClose={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
         onConfirm={handleConfirmExport}
+        onPreview={handlePreviewExport}
         isDarkMode={isDarkMode}
         showThumbnailsToggle={showThumbnails}
         initialFormat={exportModal.format}
