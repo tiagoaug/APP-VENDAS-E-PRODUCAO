@@ -521,6 +521,11 @@ export default function SalesView({
   }[]>([]);
   const [addProductId, setAddProductId] = useState('');
   const [addVariationId, setAddVariationId] = useState('');
+  // Popups de escolha com miniatura (foto do produto / amostra de cor) em vez do <select>
+  // nativo do navegador — mesmo motivo do picker de produto que já existe em SaleFormView.
+  const [alterarProductPickerOpen, setAlterarProductPickerOpen] = useState(false);
+  const [alterarColorPickerOpen, setAlterarColorPickerOpen] = useState(false);
+  const [alterarProductSearch, setAlterarProductSearch] = useState('');
   const [addSaleType, setAddSaleType] = useState<SaleType>(SaleType.RETAIL);
   const [addSize, setAddSize] = useState('');
   const [addQty, setAddQty] = useState(1);
@@ -3568,34 +3573,40 @@ export default function SalesView({
 
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1 pt-2">Adicionar produto</p>
                   <div className={`p-3 rounded-2xl border flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                    <select
-                      value={addProductId}
-                      onChange={e => {
-                        const pid = e.target.value;
-                        setAddProductId(pid);
-                        setAddVariationId('');
-                        setAddSize('');
-                        const p = products.find(pp => pp.id === pid);
-                        const types = p ? ((p.saleTypes && p.saleTypes.length > 0) ? p.saleTypes : [p.type]) : [SaleType.RETAIL];
-                        setAddSaleType(types[0]);
-                      }}
+                    <button
+                      type="button"
+                      onClick={() => setAlterarProductPickerOpen(true)}
                       data-guide-anchor="sales.alterarSelectProduto"
-                      className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold outline-none border text-left ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                     >
-                      <option value="">Selecione um produto...</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.reference} · {p.name}</option>)}
-                    </select>
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                        {alterarProduct?.photoUrl ? (
+                          <img src={alterarProduct.photoUrl} alt={alterarProduct.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package size={14} className="text-slate-400" />
+                        )}
+                      </div>
+                      <span className="flex-1 truncate">
+                        {alterarProduct ? `${alterarProduct.reference} · ${alterarProduct.name}` : 'Selecione um produto...'}
+                      </span>
+                      <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                    </button>
 
                     {alterarProduct && (
-                      <select
-                        value={addVariationId}
-                        onChange={e => setAddVariationId(e.target.value)}
+                      <button
+                        type="button"
+                        onClick={() => setAlterarColorPickerOpen(true)}
                         data-guide-anchor="sales.alterarSelectCor"
-                        className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold outline-none border text-left ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                       >
-                        <option value="">Selecione a cor...</option>
-                        {alterarProduct.variations.map(v => <option key={v.id} value={v.id}>{v.colorName}</option>)}
-                      </select>
+                        {alterarVariation ? (
+                          <span className="w-6 h-6 rounded-full border border-black/10 shrink-0" style={{ backgroundColor: alterarVariation.color }} />
+                        ) : (
+                          <span className="w-6 h-6 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-700 shrink-0" />
+                        )}
+                        <span className="flex-1 truncate">{alterarVariation ? alterarVariation.colorName : 'Selecione a cor...'}</span>
+                        <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                      </button>
                     )}
 
                     {alterarProduct && alterarSaleTypes.length > 1 && (
@@ -3678,6 +3689,108 @@ export default function SalesView({
                       <Plus size={13} strokeWidth={3} /> Adicionar à lista
                     </button>
                   </div>
+
+                  {/* Popup de escolher Produto — com miniatura da foto, busca por nome/referência */}
+                  {alterarProductPickerOpen && (
+                    <div className="fixed inset-0 z-[320000] flex items-center justify-center p-4" onClick={() => setAlterarProductPickerOpen(false)}>
+                      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                      <div
+                        className={`relative w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[80vh] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                          <h2 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Selecionar Produto</h2>
+                          <button onClick={() => setAlterarProductPickerOpen(false)} className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar seleção de produto">
+                            <X size={20} />
+                          </button>
+                        </div>
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+                          <div className="relative">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400" size={16} strokeWidth={3} />
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="Buscar por nome ou referência..."
+                              value={alterarProductSearch}
+                              onChange={e => setAlterarProductSearch(e.target.value)}
+                              className={`w-full pl-11 pr-4 py-3 rounded-2xl text-sm font-bold outline-none border ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
+                          {products
+                            .filter(p => {
+                              const q = alterarProductSearch.trim().toLowerCase();
+                              if (!q) return true;
+                              return p.name.toLowerCase().includes(q) || (p.reference || '').toLowerCase().includes(q);
+                            })
+                            .map(p => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => {
+                                  setAddProductId(p.id);
+                                  setAddVariationId('');
+                                  setAddSize('');
+                                  const types = (p.saleTypes && p.saleTypes.length > 0) ? p.saleTypes : [p.type];
+                                  setAddSaleType(types[0]);
+                                  setAlterarProductPickerOpen(false);
+                                  setAlterarProductSearch('');
+                                }}
+                                className={`flex items-center gap-3 p-3 rounded-2xl transition-all text-left ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
+                              >
+                                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-indigo-50'}`}>
+                                  {p.photoUrl ? (
+                                    <img src={p.photoUrl} alt={p.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <Package size={18} className="text-indigo-400" />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-black uppercase tracking-tight truncate">{p.name}</p>
+                                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">REF: {p.reference || '---'}</p>
+                                </div>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Popup de escolher Cor — amostras de cor (Variation.color) das variações do produto já escolhido */}
+                  {alterarColorPickerOpen && alterarProduct && (
+                    <div className="fixed inset-0 z-[320000] flex items-center justify-center p-4" onClick={() => setAlterarColorPickerOpen(false)}>
+                      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                      <div
+                        className={`relative w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[80vh] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                          <h2 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Selecionar Cor</h2>
+                          <button onClick={() => setAlterarColorPickerOpen(false)} className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar seleção de cor">
+                            <X size={20} />
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 gap-2">
+                          {alterarProduct.variations.map(v => (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() => { setAddVariationId(v.id); setAlterarColorPickerOpen(false); }}
+                              className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all border-2 ${
+                                addVariationId === v.id
+                                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                                  : `border-transparent ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`
+                              }`}
+                            >
+                              <span className="w-10 h-10 rounded-full border-2 border-black/10 shrink-0" style={{ backgroundColor: v.color }} />
+                              <span className="text-[9px] font-black uppercase tracking-widest text-center truncate w-full">{v.colorName}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {alterarAddDrafts.length > 0 && (
                     <div className="flex flex-col gap-2">

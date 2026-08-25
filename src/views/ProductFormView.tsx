@@ -137,6 +137,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [engineeringClipboard, setEngineeringClipboard] = useState<{
     consumptions: ComponentConsumption[];
     soleMapping: { [size: string]: string };
+    // Instruções por Setor (ex.: "SILK 330AX BEGE: CURVIN MARROM SILK BRANCO") — copiadas
+    // junto com a ficha técnica, pra reaproveitar de uma cor pra outra sem redigitar.
+    sectorNotes?: Record<string, SectorNote[]>;
     sourceName: string;
   } | null>(() => {
     try {
@@ -2933,25 +2936,31 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   </button>
                 </div>
 
-                {/* Actions: Buttons */}
+                {/* Actions: Buttons — Copiar/Colar numa linha, Editar Engenharia/Cor em linha
+                    própria embaixo (largura cheia) — 3 botões numa linha só espremia "Editar
+                    Engenharia" até sobrepor o card de baixo. */}
+                <div className="flex flex-col gap-2">
                 <div className="flex flex-row items-center gap-2">
-                  {/* Botão de Copiar (Aparece se houver conteúdo e produção ativa) */}
-                  {modulesConfig.production && (v.consumptions || []).length > 0 && (
+                  {/* Botão de Copiar (Aparece se houver ficha técnica OU instruções por setor,
+                      com produção ativa) — copia os dois juntos, como "config de produção
+                      desta cor". */}
+                  {modulesConfig.production && ((v.consumptions || []).length > 0 || Object.keys(v.sectorNotes || {}).length > 0) && (
                     <button
                       onClick={() => {
                         const clip = {
                           consumptions: JSON.parse(JSON.stringify(v.consumptions || [])),
                           soleMapping: JSON.parse(JSON.stringify(v.soleMapping || {})),
+                          sectorNotes: JSON.parse(JSON.stringify(v.sectorNotes || {})),
                           sourceName: v.colorName
                         };
                         setEngineeringClipboard(clip);
                         try { localStorage.setItem('engineering_clipboard', JSON.stringify(clip)); } catch {}
-                        setCopySuccess(`Engenharia de "${v.colorName}" COPIADA!`);
+                        setCopySuccess(`Engenharia e instruções de "${v.colorName}" COPIADAS!`);
                         setTimeout(() => setCopySuccess(null), 2000);
                       }}
                       className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                      title="Copiar toda a engenharia desta cor"
-                      aria-label={`Copiar engenharia da cor ${v.colorName}`}
+                      title="Copiar ficha técnica e instruções por setor desta cor"
+                      aria-label={`Copiar engenharia e instruções da cor ${v.colorName}`}
                     >
                       <Copy size={12} /> Copiar
                     </button>
@@ -2961,34 +2970,36 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {modulesConfig.production && engineeringClipboard && engineeringClipboard.sourceName !== v.colorName && (
                     <button
                       onClick={() => {
-                        const hasExisting = (v.consumptions || []).length > 0;
-                        if (hasExisting && !confirm(`Substituir a ficha atual de "${v.colorName}" pela de "${engineeringClipboard.sourceName}"?`)) return;
+                        const hasExisting = (v.consumptions || []).length > 0 || Object.keys(v.sectorNotes || {}).length > 0;
+                        if (hasExisting && !confirm(`Substituir a ficha e as instruções atuais de "${v.colorName}" pelas de "${engineeringClipboard.sourceName}"?`)) return;
                         const newVariations = [...variations];
                         newVariations[i] = {
                           ...newVariations[i],
                           consumptions: JSON.parse(JSON.stringify(engineeringClipboard.consumptions)),
-                          soleMapping: JSON.parse(JSON.stringify(engineeringClipboard.soleMapping))
+                          soleMapping: JSON.parse(JSON.stringify(engineeringClipboard.soleMapping)),
+                          sectorNotes: JSON.parse(JSON.stringify(engineeringClipboard.sectorNotes || {}))
                         };
                         setVariations(newVariations);
-                        setCopySuccess(`Ficha de "${engineeringClipboard.sourceName}" colada em "${v.colorName}"!`);
+                        setCopySuccess(`Ficha e instruções de "${engineeringClipboard.sourceName}" coladas em "${v.colorName}"!`);
                         setTimeout(() => setCopySuccess(null), 3000);
                       }}
                       className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all truncate max-w-[40%] ${
-                        (v.consumptions || []).length === 0
+                        (v.consumptions || []).length === 0 && Object.keys(v.sectorNotes || {}).length === 0
                           ? `animate-pulse ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`
                           : isDarkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                       }`}
-                      title={`Colar ficha de ${engineeringClipboard.sourceName}`}
-                      aria-label={`Colar engenharia de ${engineeringClipboard.sourceName} nesta variação`}
+                      title={`Colar ficha e instruções de ${engineeringClipboard.sourceName}`}
+                      aria-label={`Colar engenharia e instruções de ${engineeringClipboard.sourceName} nesta variação`}
                     >
                       <Sparkles size={12} className="shrink-0" /> <span className="truncate">Colar de {engineeringClipboard.sourceName}</span>
                     </button>
                   )}
+                </div>
 
                   {module === 'PRODUCTION' && (
                     <button
                       onClick={() => setActiveVariationIndex(i)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                       aria-label={`Editar ficha técnica ${v.colorName}`}
                       title="Editar Engenharia"
                     >
@@ -2998,7 +3009,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {module === 'SALES' && (
                     <button
                       onClick={() => setActiveVariationIndex(i)}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                       aria-label={`Editar variação ${v.colorName}`}
                       title="Editar Cor"
                     >
