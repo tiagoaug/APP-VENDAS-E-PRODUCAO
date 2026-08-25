@@ -1,8 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation, BatchLabelItem, LabelFile } from '../types';
+import { Share as CapacitorShare } from '@capacitor/share';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation, BatchLabelItem, LabelFile, OrderTextAlias } from '../types';
 import LabelProfilePickerModal from '../components/LabelProfilePickerModal';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer } from 'lucide-react';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer, ClipboardPaste, Image as ImageIcon2 } from 'lucide-react';
+import PasteOrderModal from '../components/PasteOrderModal';
+import { DraftSaleBlockInput } from '../utils/orderTextParser';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
@@ -88,12 +91,16 @@ interface SalesViewProps {
   products: Product[];
   grids: Grid[];
   people: Person[];
+  orderTextAliases: OrderTextAlias[];
   paymentMethods: PaymentMethod[];
   accounts: Account[];
   productionOrders: ProductionOrder[];
   lots: ProductionLot[];
   sectors: Sector[];
   onAdd: () => void;
+  // "Colar Pedido Digitado" — texto livre já revisado/confirmado no PasteOrderModal, pronto
+  // pra virar SaleBlock[] pré-preenchido no SaleFormView (ver App.tsx, navigateTo com params).
+  onOpenPastedOrder: (draft: { draftBlocks: DraftSaleBlockInput[]; draftCustomerId?: string }) => void;
   onEdit: (sale: Sale) => void;
   onCancelOnly: (id: string) => void;
   onCancelAndRevert: (id: string) => void;
@@ -160,12 +167,14 @@ export default function SalesView({
   products,
   grids,
   people,
+  orderTextAliases,
   paymentMethods,
   accounts,
   productionOrders,
   lots,
   sectors,
   onAdd,
+  onOpenPastedOrder,
   onEdit,
   onCancelOnly,
   onCancelAndRevert,
@@ -269,6 +278,13 @@ export default function SalesView({
   // ExportNoteModal de sempre) ou "Imprimir Venda" (sub-escolha entre Etiquetas e Impressão
   // Padrão) — `step` controla qual dos dois níveis do popup está visível.
   const [printChoice, setPrintChoice] = useState<{ sale: Sale; step: 'main' | 'print-sub' } | null>(null);
+  // Popup de escolha do botão "+": "Cadastrar Pedido" (fluxo de sempre, chama onAdd) ou "Colar
+  // Pedido Digitado" (abre o PasteOrderModal) — ver "Colar Pedido Digitado" (orderTextParser.ts).
+  const [addChoiceOpen, setAddChoiceOpen] = useState(false);
+  const [pasteOrderOpen, setPasteOrderOpen] = useState(false);
+  // "Colar Print" (atalho do "+") abre o mesmo PasteOrderModal já disparando a leitura da
+  // área de transferência, em vez de esperar o usuário tocar num botão lá dentro.
+  const [pasteOrderAutoOcr, setPasteOrderAutoOcr] = useState(false);
   // Etiquetas da Venda — abre o Editor de Etiquetas livre (LabelEditorView), em modo lote
   // (batchItems): uma etiqueta por CAIXA no Atacado (item.quantity caixas => item.quantity
   // etiquetas iguais, grade de UMA caixa cada), uma etiqueta por linha (tamanho) no Varejo.
@@ -458,6 +474,16 @@ export default function SalesView({
   // endereço principal (Sale.deliveryItems), presente = de um endereço adicional.
   const [itemsPickerTarget, setItemsPickerTarget] = useState<{ saleId: string; addressIndex?: number } | null>(null);
   const [simplePreviewSale, setSimplePreviewSale] = useState<Sale | null>(null);
+  // Popup de configuração do "Exportar para Google Keep" — abre a partir do Resumo do Pedido,
+  // deixa escolher quais campos entram na nota antes de mandar pro share sheet nativo.
+  const [keepExportSale, setKeepExportSale] = useState<Sale | null>(null);
+  const [keepFields, setKeepFields] = useState({
+    reference: true,
+    nameColor: true,
+    boxQty: true,
+    unitValue: true,
+    totalValue: true,
+  });
   // Quantidades de separação por índice de item dentro do popup de itens
   const [popupSepQtys, setPopupSepQtys] = useState<Record<number, number>>({});
   // Quantidades de reversão parcial (itens já separados que o usuário quer "des-separar")
@@ -1060,6 +1086,48 @@ export default function SalesView({
     return `Olá ${customer?.name || sale.customerName || 'Cliente'}!\n\nSeu ${statusText} #${sale.orderNumber}.\n\n*ITENS:*\n${itemsText}\n\n------------------\n💰 *Subtotal:* R$ ${sale.subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${discountText}\n💎 *TOTAL: R$ ${sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}*\n------------------\nStatus: ${statusText}${paymentInfo}\n\nAguardamos sua confirmação!`;
   };
 
+  // Texto da nota do Google Keep — cada referência em sua própria linha (com espaçamento entre
+  // elas), campos ligados/desligados conforme `keepFields`; cabeçalho sempre com pedido/cliente/
+  // id/data pra identificar a nota mesmo fora do app.
+  const generateKeepMessage = (sale: Sale, fields: typeof keepFields) => {
+    const customer = people.find(p => p.id === sale.customerId);
+    const shortId = sale.id.slice(-6).toUpperCase();
+    const dateStr = format(new Date(sale.date), 'dd/MM/yyyy', { locale: ptBR });
+    const header = `PEDIDO #${sale.orderNumber} · ID ${shortId}\nCliente: ${customer?.name || sale.customerName || 'Cliente'}\nData: ${dateStr}`;
+
+    const itemsText = sale.items.map(item => {
+      const p = getProductInfo(item.productId);
+      const v = getVariationInfo(item.productId, item.variationId);
+      const unit = item.saleType === SaleType.RETAIL ? 'pares' : 'cx';
+
+      const titleParts: string[] = [];
+      if (fields.reference && p?.reference) titleParts.push(p.reference);
+      if (fields.nameColor) titleParts.push(`${p?.name || ''}${v?.colorName ? ` ${v.colorName}` : ''}`.trim());
+      const title = titleParts.join(' · ') || p?.name || 'Item';
+
+      const detailParts: string[] = [];
+      if (fields.boxQty) detailParts.push(`${item.quantity} ${unit}`);
+      if (fields.unitValue) detailParts.push(`Un: R$ ${item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+      if (fields.totalValue) detailParts.push(`Total: R$ ${(item.price * item.quantity).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+      return detailParts.length > 0 ? `${title}\n   ${detailParts.join(' · ')}` : title;
+    }).join('\n\n');
+
+    return `${header}\n\n${itemsText}\n\n------------------\nTOTAL: R$ ${sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const handleExportKeep = async () => {
+    if (!keepExportSale) return;
+    const text = generateKeepMessage(keepExportSale, keepFields);
+    try {
+      await CapacitorShare.share({ title: `Pedido #${keepExportSale.orderNumber}`, text, dialogTitle: 'Enviar para o Google Keep' });
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (!/cancel/i.test(msg)) toast.show('Erro ao compartilhar: ' + msg);
+    }
+    setKeepExportSale(null);
+  };
+
   const handleCopyMessage = (sale: Sale) => {
     const message = generateMessage(sale);
     navigator.clipboard.writeText(message);
@@ -1122,6 +1190,7 @@ export default function SalesView({
         <button
           type="button"
           onClick={onNavigateStockReconcile}
+          data-guide-anchor="sales.bannerReconciliar"
           className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/15' : 'bg-rose-50 border-rose-200 hover:bg-rose-100'}`}
         >
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
@@ -1142,6 +1211,7 @@ export default function SalesView({
         <button
           type="button"
           onClick={onNavigateStockOrphaned}
+          data-guide-anchor="sales.bannerCaixasPresas"
           className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-violet-500/10 border-violet-500/30 hover:bg-violet-500/15' : 'bg-violet-50 border-violet-200 hover:bg-violet-100'}`}
         >
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-100 text-violet-600'}`}>
@@ -1162,6 +1232,7 @@ export default function SalesView({
         <button
           type="button"
           onClick={onNavigateStockDiagnostic}
+          data-guide-anchor="sales.bannerDuplicidade"
           className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/15' : 'bg-rose-50 border-rose-200 hover:bg-rose-100'}`}
         >
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
@@ -1182,6 +1253,7 @@ export default function SalesView({
         <button
           type="button"
           onClick={() => setShowDiagnosticsModal(true)}
+          data-guide-anchor="sales.bannerOpIncorreta"
           className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/15' : 'bg-orange-50 border-orange-200 hover:bg-orange-100'}`}
         >
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>
@@ -1263,7 +1335,7 @@ export default function SalesView({
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Escolha uma ferramenta</p>
                 </div>
               </div>
-              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all">
+              <button onClick={() => setShowManagementCard(false)} data-guide-anchor="sales.mgmtFechar" className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all">
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -1396,6 +1468,7 @@ export default function SalesView({
                   onClick={() => setManagementView('chooser')}
                   title="Voltar pro Gerenciamento"
                   aria-label="Voltar pro Gerenciamento"
+                  data-guide-anchor="sales.mgmtVoltar"
                   className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0"
                 >
                   <ArrowLeft size={16} strokeWidth={2.5} />
@@ -1408,7 +1481,7 @@ export default function SalesView({
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Vendas vs Físico vs Produção</p>
                 </div>
               </div>
-              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
+              <button onClick={() => setShowManagementCard(false)} data-guide-anchor="sales.mgmtFechar" className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -1424,6 +1497,7 @@ export default function SalesView({
               type="button"
               onClick={handleExportStockShortage}
               disabled={isExportingShortage}
+              data-guide-anchor="sales.mgmtExportarFalta"
               className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-60 mb-3 ${isDarkMode ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/20' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
             >
               <Share2 size={14} strokeWidth={2.5} />
@@ -1492,6 +1566,7 @@ export default function SalesView({
                                 setTimeout(() => el.classList.remove('ring-4', 'ring-indigo-500'), 2000);
                             }
                           }}
+                          data-guide-anchor="sales.crossCheckPill"
                           className={`text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded-md flex items-center gap-1 transition-all hover:scale-105 active:scale-95 cursor-pointer ${
                             s.status === SaleStatus.QUOTE ? 'bg-indigo-50 text-indigo-600 border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800/50 dark:text-indigo-400' :
                             s.status === SaleStatus.CONFIRMED ? 'bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-400' :
@@ -1549,6 +1624,7 @@ export default function SalesView({
                   onClick={() => setManagementView('chooser')}
                   title="Voltar pro Gerenciamento"
                   aria-label="Voltar pro Gerenciamento"
+                  data-guide-anchor="sales.mgmtVoltar"
                   className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0"
                 >
                   <ArrowLeft size={16} strokeWidth={2.5} />
@@ -1561,7 +1637,7 @@ export default function SalesView({
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Pedidos de Clientes</p>
                 </div>
               </div>
-              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
+              <button onClick={() => setShowManagementCard(false)} data-guide-anchor="sales.mgmtFechar" className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -1573,6 +1649,7 @@ export default function SalesView({
                 placeholder="Buscar cliente ou pedido..."
                 value={managementSearchTerm}
                 onChange={(e) => setManagementSearchTerm(e.target.value)}
+                data-guide-anchor="sales.mgmtBusca"
                 className={`w-full border rounded-xl py-3 pl-11 pr-4 text-[11px] font-bold uppercase tracking-widest outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
               />
             </div>
@@ -1600,6 +1677,7 @@ export default function SalesView({
                   onClick={() => setManagementView('chooser')}
                   title="Voltar pro Gerenciamento"
                   aria-label="Voltar pro Gerenciamento"
+                  data-guide-anchor="sales.mgmtVoltar"
                   className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0"
                 >
                   <ArrowLeft size={16} strokeWidth={2.5} />
@@ -1612,7 +1690,7 @@ export default function SalesView({
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Registro de Produção</p>
                 </div>
               </div>
-              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
+              <button onClick={() => setShowManagementCard(false)} data-guide-anchor="sales.mgmtFechar" className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -1624,6 +1702,7 @@ export default function SalesView({
                 placeholder="Buscar produto ou cliente..."
                 value={managementSearchTerm}
                 onChange={(e) => setManagementSearchTerm(e.target.value)}
+                data-guide-anchor="sales.mgmtBusca"
                 className={`w-full border rounded-xl py-3 pl-11 pr-4 text-[11px] font-bold uppercase tracking-widest outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
               />
             </div>
@@ -1662,6 +1741,7 @@ export default function SalesView({
             type="button"
             onClick={handleLoadFullHistory}
             disabled={isLoadingHistory}
+            data-guide-anchor="sales.carregarHistorico"
             className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-indigo-950/30 text-indigo-400 border border-indigo-900/50' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
           >
             {isLoadingHistory ? 'Carregando...' : 'Carregar histórico completo de vendas'}
@@ -1672,7 +1752,7 @@ export default function SalesView({
         {showSummaryBar && (deliveryStats.delivered > 0 || deliveryStats.pending > 0 || deliveryStats.totalPendingAmount > 0) && (
           <div className={`flex items-stretch justify-between px-2 py-3 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             
-            <div className="flex-1 flex flex-col items-center justify-center gap-1.5 border-r border-slate-100 dark:border-slate-800">
+            <div data-guide-anchor="sales.statEntregues" className="flex-1 flex flex-col items-center justify-center gap-1.5 border-r border-slate-100 dark:border-slate-800">
               <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                 <Truck size={14} strokeWidth={2.5} />
               </div>
@@ -1680,7 +1760,7 @@ export default function SalesView({
               <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 text-center">Entregues</p>
             </div>
 
-            <div className="flex-1 flex flex-col items-center justify-center gap-1.5 border-r border-slate-100 dark:border-slate-800">
+            <div data-guide-anchor="sales.statAguardando" className="flex-1 flex flex-col items-center justify-center gap-1.5 border-r border-slate-100 dark:border-slate-800">
               <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                 <Clock size={14} strokeWidth={2.5} />
               </div>
@@ -1688,7 +1768,7 @@ export default function SalesView({
               <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 text-center px-1">Aguardando<br/>Entrega</p>
             </div>
 
-            <div className="flex-1 flex flex-col items-center justify-center gap-1.5">
+            <div data-guide-anchor="sales.statAReceber" className="flex-1 flex flex-col items-center justify-center gap-1.5">
               <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
                 <DollarSign size={14} strokeWidth={2.5} />
               </div>
@@ -1708,6 +1788,7 @@ export default function SalesView({
           <button
             type="button"
             onClick={onNavigateStockGlance}
+            data-guide-anchor="sales.cardDisponivelEstoque"
             className={`w-full text-left p-4 rounded-[2rem] border shadow-sm transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800/60' : 'bg-white border-slate-100 hover:bg-slate-50'}`}
             title="Disponível em Estoque"
           >
@@ -1758,7 +1839,7 @@ export default function SalesView({
                 (ver Período abaixo, o motivo do popup ter passado a precisar rolar). */}
             <div className="flex items-center justify-between px-6 pt-6 pb-1 shrink-0">
               <h3 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Filtros e Configurações</h3>
-              <button onClick={() => setShowFilters(false)} className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white">
+              <button onClick={() => setShowFilters(false)} data-guide-anchor="sales.filtrosFechar" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
@@ -1766,7 +1847,7 @@ export default function SalesView({
             <div className="flex flex-col gap-5 px-6 pb-6 pt-4 overflow-y-auto force-scrollbar">
 
             {/* Tipo de Venda */}
-            <div className="flex flex-col gap-2">
+            <div data-guide-anchor="sales.filtroTipoVenda" className="flex flex-col gap-2">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Tipo de Venda</p>
               <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
                 {(['ALL', 'RETAIL', 'WHOLESALE'] as const).map((v) => {
@@ -1787,7 +1868,7 @@ export default function SalesView({
             </div>
 
             {/* Status de Pagamento */}
-            <div className="flex flex-col gap-2 mt-2">
+            <div data-guide-anchor="sales.filtroPagamento" className="flex flex-col gap-2 mt-2">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Pagamento</p>
               <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
                 {(['ALL', 'PENDING', 'PAID'] as const).map((v) => {
@@ -1808,7 +1889,7 @@ export default function SalesView({
             </div>
 
             {/* Status de Entrega */}
-            <div className="flex flex-col gap-2 mt-2">
+            <div data-guide-anchor="sales.filtroEntrega" className="flex flex-col gap-2 mt-2">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Entrega</p>
               <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
                 {(['ALL', 'PENDING', 'DELIVERED'] as const).map((v) => {
@@ -1829,7 +1910,7 @@ export default function SalesView({
             </div>
 
             {/* Status do Pedido */}
-            <div className="flex flex-col gap-2 mt-2">
+            <div data-guide-anchor="sales.filtroStatusPedido" className="flex flex-col gap-2 mt-2">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Status do Pedido</p>
               <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
                 {([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE, SaleStatus.CANCELLED] as const).map((s) => {
@@ -1860,7 +1941,7 @@ export default function SalesView({
             </div>
 
             {/* Período */}
-            <div className="flex flex-col gap-2 mt-2">
+            <div data-guide-anchor="sales.filtroPeriodo" className="flex flex-col gap-2 mt-2">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Período</p>
               <div className="grid grid-cols-3 gap-1.5">
                 {([
@@ -1916,34 +1997,41 @@ export default function SalesView({
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Visualização</p>
               <div className="flex gap-2">
                 <button onClick={() => setExpandedCards(v => !v)}
+                  data-guide-anchor="sales.vizCardsExpandidos"
                   className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${expandedCards ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                   {expandedCards ? 'Cards Expandidos' : 'Cards Compactos'}
                 </button>
                 <button onClick={() => setShowProducts(v => !v)}
+                  data-guide-anchor="sales.vizMostrarProdutos"
                   className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showProducts ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                   {showProducts ? 'Mostrar Produtos' : 'Ocultar Produtos'}
                 </button>
               </div>
               <button onClick={() => setShowGradeBreakdown(v => !v)}
+                data-guide-anchor="sales.vizPadraoEmbalagem"
                 className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showGradeBreakdown ? 'bg-gradient-to-b from-violet-500 to-violet-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(139,92,246,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 {showGradeBreakdown ? 'Ocultar Padrão de Embalagem' : 'Mostrar Padrão de Embalagem'}
               </button>
               <button onClick={() => setShowSeparationInfo(v => !v)}
+                data-guide-anchor="sales.vizAvisosSeparacao"
                 className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationInfo ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(99,102,241,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 <Boxes size={14} strokeWidth={2.5} />
                 {showSeparationInfo ? 'Avisos de Separação Visíveis' : 'Avisos de Separação Ocultos'}
               </button>
               <button onClick={() => setShowSeparationThumbnails(v => !v)}
+                data-guide-anchor="sales.vizMiniaturasSeparacao"
                 className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationThumbnails ? 'bg-gradient-to-b from-sky-500 to-sky-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(14,165,233,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 <Package size={14} strokeWidth={2.5} />
                 {showSeparationThumbnails ? 'Miniaturas na Separação Visíveis' : 'Miniaturas na Separação Ocultas'}
               </button>
               <button onClick={() => setShowSummaryBar(v => !v)}
+                data-guide-anchor="sales.vizBarraValores"
                 className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSummaryBar ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 <DollarSign size={14} strokeWidth={2.5} />
                 {showSummaryBar ? 'Barra de Valores Visível' : 'Barra de Valores Oculta'}
               </button>
               <button onClick={() => setShowStockGlanceCard(v => !v)}
+                data-guide-anchor="sales.vizCardDisponivel"
                 className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showStockGlanceCard ? 'bg-gradient-to-b from-sky-500 to-sky-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(14,165,233,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 <Eye size={14} strokeWidth={2.5} />
                 {showStockGlanceCard ? 'Card Disponível em Estoque Visível' : 'Card Disponível em Estoque Oculto'}
@@ -1952,6 +2040,7 @@ export default function SalesView({
 
             <button
               onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setDeliveryFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); setShowStockGlanceCard(true); }}
+              data-guide-anchor="sales.limparFiltros"
               className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all shadow-sm bg-white dark:bg-slate-900"
             >
               Limpar Filtros
@@ -1988,21 +2077,21 @@ export default function SalesView({
                     </h3>
                     <div className="flex flex-col gap-1 mt-1.5">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 font-black tracking-widest">
+                        <div data-guide-anchor="sales.cardDataPedido" className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 font-black tracking-widest">
                           <Calendar size={10} strokeWidth={3} />
                           {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
                         </div>
-                        <div className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest">
+                        <div data-guide-anchor="sales.cardNumeroPedido" className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest">
                           <Hash size={10} strokeWidth={3} />
                           {sale.orderNumber}
                         </div>
                         {sale.saleDestination === 'STOCK' && (
-                          <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest">
+                          <span data-guide-anchor="sales.cardBadgeEstoque" className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest">
                             Estoque
                           </span>
                         )}
                         {sale.sellerName && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
+                          <span data-guide-anchor="sales.cardBadgeVendedor" className="text-[10px] font-black px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
                             {sale.sellerName}
                           </span>
                         )}
@@ -2036,29 +2125,29 @@ export default function SalesView({
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {sale.isAccounting === false && (
-                      <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-500 border border-rose-200 dark:border-rose-800 uppercase tracking-widest">
+                      <span data-guide-anchor="sales.cardBadgeNC" className="text-[8px] font-black px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-500 border border-rose-200 dark:border-rose-800 uppercase tracking-widest">
                         NC
                       </span>
                     )}
                     {sale.status === SaleStatus.CANCELLED ? (
-                      <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-slate-900 text-rose-500 border border-rose-500/20 shadow-sm">
+                      <span data-guide-anchor="sales.cardBadgeStatus" className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-slate-900 text-rose-500 border border-rose-500/20 shadow-sm">
                         Cancelada
                       </span>
                     ) : sale.status === SaleStatus.QUOTE ? (
-                      <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-orange-500 text-white">
+                      <span data-guide-anchor="sales.cardBadgeStatus" className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-orange-500 text-white">
                         Orçamento
                       </span>
                     ) : sale.status === SaleStatus.CONFIRMED ? (
-                      <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-sky-500 text-white">
+                      <span data-guide-anchor="sales.cardBadgeStatus" className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-sky-500 text-white">
                         Pedido
                       </span>
                     ) : (
-                      <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-[#7c3aed] text-white">
+                      <span data-guide-anchor="sales.cardBadgeStatus" className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-[#7c3aed] text-white">
                         Venda
                       </span>
                     )}
                     {sale.deliveryStatus === 'DELIVERED' && sale.status !== SaleStatus.CANCELLED && (
-                      <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-emerald-500 text-white uppercase flex items-center gap-1">
+                      <span data-guide-anchor="sales.cardBadgeEntregue" className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-emerald-500 text-white uppercase flex items-center gap-1">
                         <Truck size={10} /> Pedido Entregue
                       </span>
                     )}
@@ -2079,7 +2168,7 @@ export default function SalesView({
                     const readyQty = sale.items.reduce((s, it) => s + getEffectiveSeparated(it), 0);
                     if (readyQty === 0) return null;
                     return (
-                      <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 flex items-center gap-1">
+                      <span data-guide-anchor="sales.cardBadgePronta" className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 flex items-center gap-1">
                         <PackageCheck size={9} /> {readyQty} pronta(s)
                       </span>
                     );
@@ -2096,7 +2185,7 @@ export default function SalesView({
                 const poLots = lots.filter(l => po.lotIds.includes(l.id));
                 const pendingLots = poLots.filter(l => !l.finishedAt);
                 return (
-                  <div className="w-full flex items-start gap-2 px-3 py-2 rounded-2xl bg-orange-50 dark:bg-orange-900/20 z-10">
+                  <div data-guide-anchor="sales.cardBannerProducao" className="w-full flex items-start gap-2 px-3 py-2 rounded-2xl bg-orange-50 dark:bg-orange-900/20 z-10">
                     <Factory size={14} className="text-orange-500 shrink-0 mt-0.5" />
                     <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 leading-relaxed">
                       {label} · #{po.orderNumber}
@@ -2133,6 +2222,7 @@ export default function SalesView({
                                 setSentToDeliveryIds(prev => prev.filter(id => id !== sale.id));
                               }, 2500);
                             }}
+                            data-guide-anchor="sales.entregaEnviar"
                             className={`flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
                               sentToDeliveryIds.includes(sale.id)
                                 ? 'bg-amber-500 text-white'
@@ -2151,6 +2241,7 @@ export default function SalesView({
                               <button
                                 type="button"
                                 onClick={() => setExpandedCarrierCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id])}
+                                data-guide-anchor="sales.entregaTransportadoraAccordion"
                                 className="flex items-center justify-between gap-2 w-full px-4 py-3"
                               >
                                 <span className="flex items-center gap-2">
@@ -2169,6 +2260,7 @@ export default function SalesView({
                                   <button
                                     type="button"
                                     onClick={() => { setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id }); }}
+                                    data-guide-anchor="sales.entregaEscolherTransportadora"
                                     className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-white'} border-2 border-transparent hover:border-sky-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                                   >
                                     <span className="truncate">{selectedCarrier ? selectedCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
@@ -2192,6 +2284,7 @@ export default function SalesView({
                               <button
                                 type="button"
                                 onClick={() => setExpandedAddressCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id])}
+                                data-guide-anchor="sales.entregaEnderecoAccordion"
                                 className="flex items-center justify-between gap-2 w-full px-4 py-3"
                               >
                                 <span className="flex items-center gap-2">
@@ -2214,6 +2307,7 @@ export default function SalesView({
                                       <button
                                         type="button"
                                         onClick={() => onUpdateDeliveryInfo(sale.id, { deliveryAddress: customer.defaultDeliveryAddress })}
+                                        data-guide-anchor="sales.entregaUsarCadastrado"
                                         className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-orange-500 text-white hover:bg-orange-600"
                                       >
                                         <MapPin size={12} />
@@ -2242,6 +2336,7 @@ export default function SalesView({
                             <button
                               type="button"
                               onClick={() => setItemsPickerTarget({ saleId: sale.id })}
+                              data-guide-anchor="sales.entregaItensPicker"
                               className={`flex items-center gap-2 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left border ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}`}
                             >
                               <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
@@ -2281,6 +2376,7 @@ export default function SalesView({
                                     onUpdateDeliveryInfo(sale.id, { additionalDeliveryAddresses: next });
                                   }}
                                   title="Remover este endereço"
+                                  data-guide-anchor="sales.entregaRemoverAdicional"
                                   className={`p-1.5 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
                                 >
                                   <X size={14} />
@@ -2292,6 +2388,7 @@ export default function SalesView({
                                   <button
                                     type="button"
                                     onClick={() => { setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id, addressIndex: idx }); }}
+                                    data-guide-anchor="sales.entregaEscolherTransportadora"
                                     className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-white'} border-2 border-transparent hover:border-sky-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                                   >
                                     <span className="truncate">{entryCarrier ? entryCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
@@ -2323,6 +2420,7 @@ export default function SalesView({
                                   <button
                                     type="button"
                                     onClick={() => setItemsPickerTarget({ saleId: sale.id, addressIndex: idx })}
+                                    data-guide-anchor="sales.entregaItensPicker"
                                     className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-amber-900/20 border border-amber-700' : 'bg-amber-50 border border-amber-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-amber-800 text-amber-400 hover:bg-amber-900/20' : 'border-amber-200 text-amber-700 hover:bg-amber-50'}`}`}
                                   >
                                     {items.length > 0 ? <Pencil size={13} className="shrink-0 text-amber-600" /> : <ListChecks size={13} className="shrink-0" />}
@@ -2346,6 +2444,7 @@ export default function SalesView({
                         <button
                           type="button"
                           onClick={() => onUpdateDeliveryInfo(sale.id, { additionalDeliveryAddresses: [...(sale.additionalDeliveryAddresses || []), { address: {} }] })}
+                          data-guide-anchor="sales.entregaAdicionarPonto"
                           className="flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.98]"
                         >
                           <Plus size={13} />
@@ -2366,7 +2465,7 @@ export default function SalesView({
                 if (allSeparated && sale.deliveryStatus !== 'DELIVERED') {
                   const unit = sale.items.some(it => it.saleType === SaleType.WHOLESALE) ? 'cx' : 'pares';
                   return (
-                    <div className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between gap-3 z-10">
+                    <div data-guide-anchor="sales.cardSeparacaoOk" className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between gap-3 z-10">
                       <div className="flex items-center gap-2 min-w-0">
                         <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
                         <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-snug">
@@ -2388,7 +2487,7 @@ export default function SalesView({
                 
                 if (stockStatus.allReady) {
                   return (
-                    <div className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-start gap-2.5 z-10">
+                    <div data-guide-anchor="sales.cardSeparacaoOk" className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-start gap-2.5 z-10">
                       <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
                       <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-snug">
                         <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Status de Separação</span>
@@ -2401,7 +2500,7 @@ export default function SalesView({
                 if (stockStatus.ready > 0) {
                   return (
                     <div className="mb-4 flex flex-col gap-2 z-10">
-                      <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 flex items-start gap-2.5">
+                      <div data-guide-anchor="sales.cardAvisoEstoque" className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 flex items-start gap-2.5">
                         <span className="relative shrink-0 mt-0.5">
                           <Clock size={16} className="text-amber-500" />
                           <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -2414,8 +2513,8 @@ export default function SalesView({
                           Aguardando estoque para este pedido. ({stockStatus.ready}/{stockStatus.total})
                         </p>
                       </div>
-                      
-                      <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-start gap-2.5">
+
+                      <div data-guide-anchor="sales.cardProdutosDisponiveis" className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-start gap-2.5">
                         <Boxes size={16} className="text-emerald-500 shrink-0 mt-0.5" />
                         <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-snug">
                           <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Produtos Disponíveis</span>
@@ -2427,7 +2526,7 @@ export default function SalesView({
                 }
 
                 return (
-                  <div className="mb-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 flex items-start gap-2.5 z-10">
+                  <div data-guide-anchor="sales.cardAvisoEstoque" className="mb-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 flex items-start gap-2.5 z-10">
                     <span className="relative shrink-0 mt-0.5">
                       <Clock size={16} className="text-slate-400" />
                       <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -2444,7 +2543,7 @@ export default function SalesView({
               })()}
 
               {/* Financial Summary Card */}
-              <div className={`flex items-center justify-between px-4 py-2.5 rounded-2xl z-10 ${
+              <div data-guide-anchor="sales.cardResumoFinanceiro" className={`flex items-center justify-between px-4 py-2.5 rounded-2xl z-10 ${
                 sale.status === SaleStatus.CANCELLED
                   ? 'bg-slate-800/30'
                   : isDarkMode ? 'bg-slate-800' : 'bg-slate-50'
@@ -2477,6 +2576,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={() => setDeliveryDetailsSaleId(sale.id)}
+                    data-guide-anchor="sales.cardDetalhesEntrega"
                     className={`flex items-center justify-between gap-2 w-full px-4 py-3 rounded-2xl transition-all active:scale-[0.99] ${isDarkMode ? 'bg-sky-900/10 border border-sky-800/30 hover:bg-sky-900/20' : 'bg-sky-50/60 border border-sky-100 hover:bg-sky-100/60'}`}
                   >
                     <span className="flex items-center gap-2">
@@ -2515,6 +2615,7 @@ export default function SalesView({
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setItemsPopupSale(sale); }}
+                      data-guide-anchor="sales.acaoVerItens"
                       className="w-8 h-8 flex items-center justify-center bg-sky-50 dark:bg-sky-500/10 text-sky-500 rounded-full active:scale-90 transition-all"
                       title="Visualizar pedido"
                     >
@@ -2540,6 +2641,7 @@ export default function SalesView({
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setRevertSale(sale); }}
+                            data-guide-anchor="sales.acaoExpedirReverter"
                             className="w-8 h-8 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-600 rounded-full active:scale-90 transition-all"
                             title="Pedido entregue — reverter expedição"
                           >
@@ -2556,6 +2658,7 @@ export default function SalesView({
                             e.stopPropagation();
                             setExpediteSale(sale);
                           }}
+                          data-guide-anchor="sales.acaoExpedirReverter"
                           className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
                             canExpedite
                               ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 active:scale-90 animate-pulse-dispatch'
@@ -2580,6 +2683,7 @@ export default function SalesView({
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setSimplePreviewSale(sale); }}
+                      data-guide-anchor="sales.acaoVerResumo"
                       className="w-8 h-8 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-500 rounded-full active:scale-90 transition-all"
                       title="Visualizar resumo do pedido"
                     >
@@ -2591,6 +2695,7 @@ export default function SalesView({
                     <button
                       type="button"
                       onClick={(e) => handleOpenPrintChoice(e, sale)}
+                      data-guide-anchor="sales.acaoExportarImprimir"
                       className="w-8 h-8 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full active:scale-90 transition-all"
                       title="Exportar ou Imprimir"
                     >
@@ -2605,6 +2710,7 @@ export default function SalesView({
                           setPaymentModalMode(totalPaid >= sale.total ? 'HISTORY' : 'PAYMENT');
                           setPaymentModalSale(sale);
                         }}
+                        data-guide-anchor="sales.acaoPagamento"
                         className="w-8 h-8 flex items-center justify-center bg-purple-50 dark:bg-purple-500/10 text-purple-500 rounded-full active:scale-90 transition-all"
                         title="Pagamento"
                       >
@@ -2623,6 +2729,7 @@ export default function SalesView({
                           type="button"
                           disabled={isDelivered}
                           onClick={(e) => { e.stopPropagation(); if (isDelivered) return; onEdit(sale); }}
+                          data-guide-anchor="sales.acaoEditar"
                           className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
                             isDelivered
                               ? 'bg-slate-100 dark:bg-slate-700/50 text-slate-400 dark:text-slate-400 cursor-not-allowed'
@@ -2642,6 +2749,7 @@ export default function SalesView({
                           e.stopPropagation();
                           setActiveMenuId(activeMenuId === sale.id ? null : sale.id);
                         }}
+                        data-guide-anchor="sales.acaoMaisOpcoes"
                         className={`w-8 h-8 flex items-center justify-center bg-rose-50 dark:bg-slate-700/50 text-slate-500 rounded-full active:scale-90 transition-all ${activeMenuId === sale.id ? 'bg-rose-100' : ''}`}
                         title="Mais Opções"
                       >
@@ -2662,7 +2770,7 @@ export default function SalesView({
                                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Opções</p>
                                 <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pedido #{sale.orderNumber}</p>
                               </div>
-                              <button onClick={() => setActiveMenuId(null)} title="Fechar" aria-label="Fechar" className={`p-2 rounded-xl ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}>
+                              <button onClick={() => setActiveMenuId(null)} title="Fechar" aria-label="Fechar" data-guide-anchor="sales.maisOpcoesFechar" className={`p-2 rounded-xl ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}>
                                 <X size={20} strokeWidth={2.5} />
                               </button>
                             </div>
@@ -2741,6 +2849,7 @@ export default function SalesView({
                 {sale.status === SaleStatus.QUOTE && (
                   <button 
                     onClick={(e) => { e.stopPropagation(); if(confirm('Confirmar orçamento como venda?')) onConvert(sale.id); }}
+                    data-guide-anchor="sales.confirmarVenda"
                     className="w-full py-4 flex items-center justify-center bg-emerald-600 text-white rounded-2xl shadow-lg shadow-emerald-500/20 font-black text-[11px] tracking-widest gap-3"
                   >
                     <CheckCircle2 size={18} strokeWidth={3} /> Confirmar como Venda
@@ -2762,12 +2871,94 @@ export default function SalesView({
       <button
         type="button"
         title="Nova venda"
-        onClick={onAdd}
+        onClick={() => setAddChoiceOpen(true)}
         data-guide-anchor="sales.novoPedido"
         className="fixed bottom-24 right-6 w-16 h-16 bg-slate-900 dark:bg-indigo-600 text-white rounded-[2rem] shadow-2xl flex items-center justify-center active:scale-95 transition-all z-50 border-4 border-white dark:border-slate-800"
       >
          <Plus size={36} strokeWidth={2.5} />
       </button>
+
+      {/* Popup — escolha ao tocar no "+": Cadastrar do zero × Colar texto digitado */}
+      {addChoiceOpen && (
+        <div
+          className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+          onClick={() => setAddChoiceOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-xs rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className={`flex items-center justify-between px-6 py-5 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`} data-guide-anchor="sales.novoPedidoEscolha">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Plus size={18} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Nova Venda</h3>
+              </div>
+              <button type="button" onClick={() => setAddChoiceOpen(false)} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 p-6">
+              <button
+                type="button"
+                onClick={() => { setAddChoiceOpen(false); onAdd(); }}
+                data-guide-anchor="sales.optCadastrarPedido"
+                className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+              >
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Plus size={18} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Cadastrar Pedido</p>
+                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">Preencher o pedido do zero</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAddChoiceOpen(false); setPasteOrderAutoOcr(false); setPasteOrderOpen(true); }}
+                data-guide-anchor="sales.optColarPedido"
+                className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <ClipboardPaste size={18} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Colar Pedido Digitado</p>
+                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cole um texto com os itens e revise antes de criar</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAddChoiceOpen(false); setPasteOrderAutoOcr(true); setPasteOrderOpen(true); }}
+                data-guide-anchor="sales.optColarPrint"
+                className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <ImageIcon2 size={18} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Colar Print</p>
+                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cole um print copiado — reconhece o texto e revise antes de criar</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <PasteOrderModal
+        isOpen={pasteOrderOpen}
+        onClose={() => setPasteOrderOpen(false)}
+        products={products}
+        grids={grids}
+        people={people}
+        orderTextAliases={orderTextAliases}
+        isDarkMode={isDarkMode}
+        autoOcr={pasteOrderAutoOcr}
+        onConfirm={(draft) => { setPasteOrderOpen(false); onOpenPastedOrder(draft); }}
+      />
 
       {/* Modals */}
       <StockEntryHistoryModal
@@ -2825,7 +3016,7 @@ export default function SalesView({
                   {printChoice.step === 'main' ? 'Exportar ou Imprimir' : 'Imprimir Venda'}
                 </h3>
               </div>
-              <button type="button" onClick={() => setPrintChoice(null)} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+              <button type="button" onClick={() => setPrintChoice(null)} data-guide-anchor="sales.printChoiceFechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -2836,6 +3027,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={(e) => { const s = printChoice.sale; setPrintChoice(null); handleOpenExport(e, s, 'jpg'); }}
+                    data-guide-anchor="sales.printChoiceExportar"
                     className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
                   >
                     <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
@@ -2849,6 +3041,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={() => setPrintChoice(prev => prev ? { ...prev, step: 'print-sub' } : prev)}
+                    data-guide-anchor="sales.printChoiceImprimir"
                     className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
                   >
                     <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
@@ -2865,6 +3058,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={() => { const s = printChoice.sale; setPrintChoice(null); handleOpenSaleLabels(s); }}
+                    data-guide-anchor="sales.printChoiceEtiquetas"
                     className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
                   >
                     <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
@@ -2879,6 +3073,7 @@ export default function SalesView({
                     type="button"
                     disabled={isQuickPrinting}
                     onClick={() => handleStandardPrint(printChoice.sale)}
+                    data-guide-anchor="sales.printChoiceImpressaoPadrao"
                     className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
                   >
                     <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
@@ -2892,6 +3087,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={() => setPrintChoice(prev => prev ? { ...prev, step: 'main' } : prev)}
+                    data-guide-anchor="sales.printChoiceVoltar"
                     className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-center py-2"
                   >
                     ← Voltar
@@ -2942,6 +3138,7 @@ export default function SalesView({
                   type="button"
                   title="Fechar"
                   onClick={() => setSimplePreviewSale(null)}
+                  data-guide-anchor="sales.resumoFechar"
                   className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}
                 >
                   <X size={20} strokeWidth={2.5} />
@@ -3012,9 +3209,99 @@ export default function SalesView({
                 <button
                   type="button"
                   onClick={() => handleShareWhatsApp(s)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all hover:bg-emerald-700"
+                  data-guide-anchor="sales.resumoWhatsapp"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all hover:bg-emerald-700 mb-2"
                 >
                   <MessageSquare size={16} /> Compartilhar via WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKeepExportSale(s)}
+                  data-guide-anchor="sales.exportarKeep"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-amber-400 text-amber-950 shadow-lg shadow-amber-400/30 active:scale-[0.98] transition-all hover:bg-amber-300"
+                >
+                  <Lightbulb size={16} /> Exportar para Google Keep
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Popup — Configuração do "Exportar para Google Keep" — escolhe quais campos entram na
+          nota antes de abrir o share sheet nativo (Keep aparece lá se estiver instalado). */}
+      {keepExportSale && (() => {
+        const fieldOptions: { key: keyof typeof keepFields; label: string }[] = [
+          { key: 'reference', label: 'Referência' },
+          { key: 'nameColor', label: 'Nome e Cor' },
+          { key: 'boxQty', label: 'Quantidade de Caixas' },
+          { key: 'unitValue', label: 'Valor Unitário' },
+          { key: 'totalValue', label: 'Valor Total' },
+        ];
+        return (
+          <div
+            className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setKeepExportSale(null)}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              className={`w-full max-w-sm max-h-[85vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+            >
+              <div className="px-5 py-4 flex items-center justify-between bg-amber-400">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-950/10 text-amber-950 flex items-center justify-center shrink-0">
+                    <Lightbulb size={18} strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-950/70">Exportar para</p>
+                    <p className="text-[15px] font-black leading-tight text-amber-950">Google Keep</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  title="Fechar"
+                  onClick={() => setKeepExportSale(null)}
+                  data-guide-anchor="sales.keepFechar"
+                  className="p-2 rounded-xl text-amber-950/70 hover:bg-amber-950/10 transition-all"
+                >
+                  <X size={20} strokeWidth={2.5} />
+                </button>
+              </div>
+
+              <div data-guide-anchor="sales.keepChecklist" className="overflow-y-auto flex-1 p-5 flex flex-col gap-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">O que incluir na nota</p>
+                {fieldOptions.map(opt => {
+                  const isChecked = keepFields[opt.key];
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setKeepFields(prev => ({ ...prev, [opt.key]: !prev[opt.key] }))}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${
+                        isChecked
+                          ? isDarkMode ? 'bg-amber-400/10 border-amber-400/40' : 'bg-amber-50 border-amber-200'
+                          : isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-100'
+                      }`}
+                    >
+                      <span className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 border-2 ${
+                        isChecked ? 'bg-amber-400 border-amber-400 text-amber-950' : isDarkMode ? 'border-slate-600 text-transparent' : 'border-slate-300 text-transparent'
+                      }`}>
+                        <Check size={13} strokeWidth={3.5} />
+                      </span>
+                      <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className={`px-5 py-4 border-t shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <button
+                  type="button"
+                  onClick={handleExportKeep}
+                  data-guide-anchor="sales.keepExportar"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-amber-400 text-amber-950 shadow-lg shadow-amber-400/30 active:scale-[0.98] transition-all hover:bg-amber-300"
+                >
+                  <Lightbulb size={16} /> Exportar
                 </button>
               </div>
             </div>
@@ -3172,6 +3459,7 @@ export default function SalesView({
                   onClick={() => setItemsPopupSale(null)}
                   title="Fechar"
                   aria-label="Fechar"
+                  data-guide-anchor="sales.popupFechar"
                   className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}
                 >
                   <X size={20} strokeWidth={2.5} />
@@ -3225,7 +3513,7 @@ export default function SalesView({
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] font-black uppercase tracking-widest text-rose-500 shrink-0">Remover</span>
-                          <div className={`flex items-center flex-1 rounded-xl p-1 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
+                          <div data-guide-anchor="sales.alterarRemoverStepper" className={`flex items-center flex-1 rounded-xl p-1 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
                             <button
                               type="button"
                               onClick={() => setAlterarRemoveQtys(prev => ({ ...prev, [row.idx]: Math.max(0, removeQty - 1) }))}
@@ -3275,6 +3563,7 @@ export default function SalesView({
                         const types = p ? ((p.saleTypes && p.saleTypes.length > 0) ? p.saleTypes : [p.type]) : [SaleType.RETAIL];
                         setAddSaleType(types[0]);
                       }}
+                      data-guide-anchor="sales.alterarSelectProduto"
                       className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                     >
                       <option value="">Selecione um produto...</option>
@@ -3285,6 +3574,7 @@ export default function SalesView({
                       <select
                         value={addVariationId}
                         onChange={e => setAddVariationId(e.target.value)}
+                        data-guide-anchor="sales.alterarSelectCor"
                         className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                       >
                         <option value="">Selecione a cor...</option>
@@ -3293,7 +3583,7 @@ export default function SalesView({
                     )}
 
                     {alterarProduct && alterarSaleTypes.length > 1 && (
-                      <div className="grid grid-cols-2 gap-2">
+                      <div data-guide-anchor="sales.alterarTipoVenda" className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => { setAddSaleType(SaleType.RETAIL); setAddSize(''); }}
@@ -3315,6 +3605,7 @@ export default function SalesView({
                       <select
                         value={addSize}
                         onChange={e => setAddSize(e.target.value)}
+                        data-guide-anchor="sales.alterarSelectTamanho"
                         className={`w-full px-3 py-2.5 rounded-xl text-xs font-bold outline-none border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                       >
                         <option value="">Selecione o tamanho...</option>
@@ -3324,7 +3615,7 @@ export default function SalesView({
 
                     {alterarProduct && alterarVariation && (addSaleType === SaleType.WHOLESALE || addSize) && (
                       <div className="flex items-center gap-2">
-                        <div className="flex flex-col shrink-0">
+                        <div data-guide-anchor="sales.alterarAdicionarQtd" className="flex flex-col shrink-0">
                           <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Qtd.</span>
                           <div className={`flex items-center rounded-xl p-1 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
                             <button type="button" onClick={() => setAddQty(q => Math.max(1, q - 1))} className={`w-7 h-7 rounded-lg flex items-center justify-center active:scale-90 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`} aria-label="Diminuir quantidade">
@@ -3343,7 +3634,7 @@ export default function SalesView({
                             </button>
                           </div>
                         </div>
-                        <div className="flex-1">
+                        <div data-guide-anchor="sales.alterarAdicionarPreco" className="flex-1">
                           <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Preço {addSaleType === SaleType.WHOLESALE ? '(grade)' : '(par)'}</span>
                           <div className={`flex items-center rounded-xl px-3 py-1.5 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
                             <span className="text-xs font-bold text-slate-400 mr-1">R$</span>
@@ -3365,6 +3656,7 @@ export default function SalesView({
                       type="button"
                       disabled={!canAddDraft}
                       onClick={handleAddDraft}
+                      data-guide-anchor="sales.alterarAdicionarLista"
                       className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${!canAddDraft ? (isDarkMode ? 'bg-slate-800/50 text-slate-600 cursor-not-allowed' : 'bg-slate-100 text-slate-300 cursor-not-allowed') : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                     >
                       <Plus size={13} strokeWidth={3} /> Adicionar à lista
@@ -3388,7 +3680,7 @@ export default function SalesView({
                                 {d.size ? `Nº ${d.size} · ` : ''}{d.quantity} {unit} · R$ {d.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                             </div>
-                            <button type="button" onClick={() => handleRemoveDraft(d.id)} className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 shrink-0" aria-label="Remover da lista">
+                            <button type="button" onClick={() => handleRemoveDraft(d.id)} data-guide-anchor="sales.alterarRemoverRascunho" className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 shrink-0" aria-label="Remover da lista">
                               <X size={14} strokeWidth={2.5} />
                             </button>
                           </div>
@@ -3650,6 +3942,7 @@ export default function SalesView({
                           setPopupRevertQtys({});
                           setRevertChoiceMode('partial');
                         }}
+                        data-guide-anchor="sales.reverterParcial"
                         className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all active:scale-95 ${isDarkMode ? 'bg-amber-900/20 border-amber-700/40 text-amber-400 hover:bg-amber-900/30' : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'}`}
                       >
                         <RotateCcw size={18} strokeWidth={2.5} />
@@ -3663,6 +3956,7 @@ export default function SalesView({
                           setItemsPopupSale(null);
                           setRevertSale(s);
                         }}
+                        data-guide-anchor="sales.reverterTotal"
                         className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all active:scale-95 ${isDarkMode ? 'bg-rose-900/20 border-rose-700/40 text-rose-400 hover:bg-rose-900/30' : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'}`}
                       >
                         <RotateCcw size={18} strokeWidth={2.5} />
@@ -3705,6 +3999,7 @@ export default function SalesView({
                       type="button"
                       disabled={processingAlterar}
                       onClick={() => { setEditProdutosMode(false); setAlterarRemoveQtys({}); setAlterarAddDrafts([]); }}
+                      data-guide-anchor="sales.alterarCancelar"
                       className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
                     >
                       Cancelar
@@ -3713,6 +4008,7 @@ export default function SalesView({
                       type="button"
                       disabled={processingAlterar || !canSaveAlterar}
                       onClick={handleConfirmAlterar}
+                      data-guide-anchor="sales.alterarSalvar"
                       className={`flex-[1.5] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
                         !canSaveAlterar
                           ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
@@ -3735,6 +4031,7 @@ export default function SalesView({
                               type="button"
                               disabled={processingPopupSep}
                               onClick={() => { setRevertChoiceMode(null); setPopupRevertQtys({}); }}
+                              data-guide-anchor="sales.reverterParcialCancelar"
                               className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
                             >
                               Cancelar
@@ -3743,6 +4040,7 @@ export default function SalesView({
                               type="button"
                               disabled={processingPopupSep || totalToRevert === 0}
                               onClick={handleConfirmPartialRevert}
+                              data-guide-anchor="sales.reverterParcialConfirmar"
                               className={`flex-[1.5] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
                                 totalToRevert === 0
                                   ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
@@ -3857,7 +4155,7 @@ export default function SalesView({
                   <p className="text-xs font-black uppercase tracking-widest text-slate-400">Expedir Pedido</p>
                   <p className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>#{s.orderNumber} — baixa no estoque</p>
                 </div>
-                <button onClick={() => setExpediteSale(null)} title="Fechar" aria-label="Fechar" className={`p-2 rounded-xl ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}><X size={20} strokeWidth={2.5} /></button>
+                <button onClick={() => setExpediteSale(null)} title="Fechar" aria-label="Fechar" data-guide-anchor="sales.confirmFechar" className={`p-2 rounded-xl ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}><X size={20} strokeWidth={2.5} /></button>
               </div>
               <div className="overflow-y-auto max-h-[55vh] p-4 flex flex-col gap-2 custom-scrollbar">
                 {rows.map(r => (
@@ -3881,11 +4179,12 @@ export default function SalesView({
                 ))}
               </div>
               <div className={`p-5 border-t flex gap-3 ${isDarkMode ? 'border-slate-800 bg-slate-900/80' : 'border-slate-100 bg-slate-50'}`}>
-                <button type="button" onClick={() => setExpediteSale(null)} disabled={processingExpedite} className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}>Cancelar</button>
+                <button type="button" onClick={() => setExpediteSale(null)} disabled={processingExpedite} data-guide-anchor="sales.confirmCancelar" className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}>Cancelar</button>
                 <button
                   type="button"
                   disabled={processingExpedite || !canConfirm}
                   onClick={async () => { setProcessingExpedite(true); try { await onExpediteSale(s.id); setExpediteSale(null); } finally { setProcessingExpedite(false); } }}
+                  data-guide-anchor="sales.confirmarExpedicao"
                   className={`flex-[1.5] py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${!canConfirm ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'}`}
                 >
                   <Truck size={16} strokeWidth={3} /> {processingExpedite ? 'Expedindo...' : allAlreadyFulfilled ? 'Confirmar Expedição' : `Confirmar (${toDeduct.length})`}
@@ -3918,7 +4217,7 @@ export default function SalesView({
                   <p className="text-xs font-black uppercase tracking-widest text-slate-400">Reverter Expedição</p>
                   <p className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>#{s.orderNumber} — devolver ao estoque</p>
                 </div>
-                <button onClick={() => setRevertSale(null)} title="Fechar" aria-label="Fechar" className={`p-2 rounded-xl ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}><X size={20} strokeWidth={2.5} /></button>
+                <button onClick={() => setRevertSale(null)} title="Fechar" aria-label="Fechar" data-guide-anchor="sales.confirmFechar" className={`p-2 rounded-xl ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}><X size={20} strokeWidth={2.5} /></button>
               </div>
               <div className="overflow-y-auto max-h-[55vh] p-4 flex flex-col gap-2 custom-scrollbar">
                 {rows.length === 0 && (
@@ -3944,11 +4243,12 @@ export default function SalesView({
                 ))}
               </div>
               <div className={`p-5 border-t flex gap-3 ${isDarkMode ? 'border-slate-800 bg-slate-900/80' : 'border-slate-100 bg-slate-50'}`}>
-                <button type="button" onClick={() => setRevertSale(null)} disabled={processingExpedite} className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}>Cancelar</button>
+                <button type="button" onClick={() => setRevertSale(null)} disabled={processingExpedite} data-guide-anchor="sales.confirmCancelar" className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}>Cancelar</button>
                 <button
                   type="button"
                   disabled={processingExpedite || (rows.length === 0 && s.deliveryStatus !== 'DELIVERED')}
                   onClick={async () => { setProcessingExpedite(true); try { await onRevertExpedition(s.id); setRevertSale(null); } finally { setProcessingExpedite(false); } }}
+                  data-guide-anchor="sales.confirmarReversao"
                   className="flex-[1.5] py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-amber-500 text-white shadow-lg shadow-amber-500/20"
                 >
                   <RotateCcw size={16} strokeWidth={3} /> {processingExpedite ? 'Revertendo...' : 'Confirmar Reversão'}
@@ -3993,6 +4293,7 @@ export default function SalesView({
             placeholder="Buscar transportadora..."
             value={carrierSearch}
             onChange={(e) => setCarrierSearch(e.target.value)}
+            data-guide-anchor="sales.transportadoraBusca"
             className={`w-full h-12 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-violet-500 rounded-2xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
           />
           <div className="flex flex-col gap-2 max-h-80 overflow-y-auto force-scrollbar">
@@ -4017,6 +4318,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={() => applyCarrier(null)}
+                    data-guide-anchor="sales.transportadoraOpcao"
                     className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-violet-700' : 'bg-white border-slate-100 hover:border-violet-200'}`}
                   >
                     <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Nenhuma — entregar pela rota do app</p>
@@ -4026,6 +4328,7 @@ export default function SalesView({
                       key={c.id}
                       type="button"
                       onClick={() => applyCarrier(c.id)}
+                      data-guide-anchor="sales.transportadoraOpcao"
                       className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-violet-700' : 'bg-white border-slate-100 hover:border-violet-200'}`}
                     >
                       <div className={`p-2 rounded-lg shrink-0 ${isDarkMode ? 'bg-violet-900/30 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>

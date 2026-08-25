@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import jsPDF from 'jspdf';
 import {
   Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, ChevronLeft, ChevronRight, Pencil,
-  Download, Share2,
+  Download, FileText, Image as ImageIcon,
 } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import Modal from './Modal';
@@ -9,7 +10,7 @@ import PrinterConnectionCard from './PrinterConnectionCard';
 import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import { isAbleMarkPrinterConnected2 } from '../lib/ablemarkPrinter2';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
-import { shareImages } from '../utils/pdfExport';
+import { shareImages, sharePDF } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
 
 export type PrintDirection = 'down' | 'up' | 'left' | 'right';
@@ -112,7 +113,7 @@ export default function LabelPrintPreviewModal({
 
   // Compartilha o lote inteiro numa única ação nativa (ver shareImages) — com 1 etiqueta só,
   // vira um compartilhamento normal de imagem única.
-  const handleShare = async () => {
+  const handleShareJpg = async () => {
     setSharing(true);
     try {
       await shareImages(previewDataUrls, 'etiqueta');
@@ -120,6 +121,27 @@ export default function LabelPrintPreviewModal({
       toast.show('Erro ao compartilhar: ' + (err?.message || err));
     } finally {
       setSharing(false);
+    }
+  };
+
+  // Junta todas as etiquetas do lote num PDF só (1 página por etiqueta, no tamanho físico real
+  // widthMm×heightMm) e compartilha — mesmo mecanismo de exportação em PDF já usado em
+  // Vendas/Compras (ver sharePDF), só que a partir das imagens já renderizadas do preview.
+  const [sharingPdf, setSharingPdf] = useState(false);
+  const handleSharePdf = async () => {
+    setSharingPdf(true);
+    try {
+      const orientation = widthMm > heightMm ? 'landscape' : 'portrait';
+      const doc = new jsPDF({ unit: 'mm', format: [widthMm, heightMm], orientation });
+      previewDataUrls.forEach((url, i) => {
+        if (i > 0) doc.addPage([widthMm, heightMm], orientation);
+        doc.addImage(url, 'PNG', 0, 0, widthMm, heightMm);
+      });
+      await sharePDF(doc, 'etiquetas');
+    } catch (err: any) {
+      toast.show('Erro ao gerar PDF: ' + (err?.message || err));
+    } finally {
+      setSharingPdf(false);
     }
   };
 
@@ -297,11 +319,19 @@ export default function LabelPrintPreviewModal({
           )}
           <button
             type="button"
-            onClick={handleShare}
+            onClick={handleShareJpg}
             disabled={sharing}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
-            <Share2 size={14} /> {sharing ? 'Compartilhando...' : 'Compartilhar'}
+            <ImageIcon size={14} /> {sharing ? '...' : 'JPG'}
+          </button>
+          <button
+            type="button"
+            onClick={handleSharePdf}
+            disabled={sharingPdf}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <FileText size={14} /> {sharingPdf ? '...' : 'PDF'}
           </button>
         </div>
 

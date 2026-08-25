@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import jsPDF from 'jspdf';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { toDottedQRDataURL } from '../utils/dottedQRCode';
@@ -12,6 +13,7 @@ import {
 import { LabelElement, LabelDataBinding, BatchLabelItem, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { printAbleMarkLabel2 as printAbleMarkLabel } from '../lib/ablemarkPrinter2';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
+import { shareImages, sharePDF } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
 import LabelPrintPreviewModal, { PrintOptions } from '../components/LabelPrintPreviewModal';
 import ImageSourcePickerModal from '../components/ImageSourcePickerModal';
@@ -595,11 +597,11 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
     bindingCtx: LabelBindingContext | null = activeBindingContext,
   ): Promise<HTMLCanvasElement> => renderLabelElementsToCanvas(elements, widthMm, heightMm, printOptions, bindingCtx);
 
-  // Compartilhado pelo botão "Imprimir" (rodapé) e "Visualizar etiqueta de impressão" (Área do
-  // Editor) — a própria modal de preview já deixa fechar sem imprimir, então serve pros dois.
-  // Em modo lote (session.batch, vindo de Vendas), renderiza uma prévia por item — cada uma já
-  // com os campos vinculados resolvidos pro dado real daquela caixa/tamanho.
-  const handleOpenPrintPreview = async () => {
+  // Renderiza a etiqueta atual pra PNG — uma imagem só, ou uma por item em modo lote
+  // (session.batch, vindo de Vendas, cada uma já com os campos vinculados resolvidos pro dado
+  // real daquela caixa/tamanho). Base pro preview de impressão E pros botões de compartilhar
+  // (JPG/PDF) do rodapé — todos precisam do mesmo conjunto de imagens renderizadas.
+  const renderAllFrames = async (): Promise<string[]> => {
     const batchItems = session.batch?.items;
     if (batchItems && batchItems.length > 0) {
       const urls: string[] = [];
@@ -607,12 +609,53 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 }, { item, lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors });
         urls.push(canvas.toDataURL('image/png'));
       }
-      setPrintPreviewImages(urls);
-    } else {
-      const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 });
-      setPrintPreviewImages([canvas.toDataURL('image/png')]);
+      return urls;
     }
+    const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 });
+    return [canvas.toDataURL('image/png')];
+  };
+
+  // Compartilhado pelo botão "Imprimir" (rodapé) e "Visualizar etiqueta de impressão" (Área do
+  // Editor) — a própria modal de preview já deixa fechar sem imprimir, então serve pros dois.
+  const handleOpenPrintPreview = async () => {
+    setPrintPreviewImages(await renderAllFrames());
     setShowPrintPreview(true);
+  };
+
+  const [sharingJpg, setSharingJpg] = useState(false);
+  const [sharingPdf, setSharingPdf] = useState(false);
+
+  const handleShareJpg = async () => {
+    setSharingJpg(true);
+    try {
+      const urls = await renderAllFrames();
+      await shareImages(urls, name || 'etiqueta');
+    } catch (err: any) {
+      toast.show('Erro ao compartilhar: ' + (err?.message || err));
+    } finally {
+      setSharingJpg(false);
+    }
+  };
+
+  // Junta todas as etiquetas (1 em modo normal, 1 por item em modo lote) num PDF só, 1 página
+  // por etiqueta, no tamanho físico real widthMm×heightMm — mesmo mecanismo do preview de
+  // impressão (ver LabelPrintPreviewModal.tsx).
+  const handleSharePdf = async () => {
+    setSharingPdf(true);
+    try {
+      const urls = await renderAllFrames();
+      const orientation = widthMm > heightMm ? 'landscape' : 'portrait';
+      const doc = new jsPDF({ unit: 'mm', format: [widthMm, heightMm], orientation });
+      urls.forEach((url, i) => {
+        if (i > 0) doc.addPage([widthMm, heightMm], orientation);
+        doc.addImage(url, 'PNG', 0, 0, widthMm, heightMm);
+      });
+      await sharePDF(doc, name || 'etiqueta');
+    } catch (err: any) {
+      toast.show('Erro ao gerar PDF: ' + (err?.message || err));
+    } finally {
+      setSharingPdf(false);
+    }
   };
 
   const handlePrint = async (options: PrintOptions) => {
@@ -1558,6 +1601,24 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           className="flex-[2] flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
         >
           <Printer size={14} /> Imprimir
+        </button>
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={handleShareJpg}
+          disabled={sharingJpg}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+        >
+          <ImageIcon2 size={14} /> {sharingJpg ? '...' : 'Compartilhar JPG'}
+        </button>
+        <button
+          type="button"
+          onClick={handleSharePdf}
+          disabled={sharingPdf}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+        >
+          <FileText size={14} /> {sharingPdf ? '...' : 'Compartilhar PDF'}
         </button>
       </div>
     </div>

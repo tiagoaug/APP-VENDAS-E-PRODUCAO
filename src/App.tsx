@@ -76,6 +76,7 @@ import {
   Person,
   Category,
   ColorValue,
+  OrderTextAlias,
   PaymentMethod,
   SaleStatus,
   Transaction,
@@ -726,6 +727,8 @@ export default function App() {
   const [people, setPeople] = useState<Person[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [colors, setColors] = useState<ColorValue[]>([]);
+  // Correspondências "ensinadas" no Colar Pedido Digitado (Vendas) — ver orderTextParser.ts.
+  const [orderTextAliases, setOrderTextAliases] = useState<OrderTextAlias[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [personalContacts, setPersonalContacts] = useState<Person[]>([]);
@@ -1071,6 +1074,10 @@ export default function App() {
       "colors",
       setColors,
     );
+    const unsubOrderTextAliases = firebaseService.subscribeToCollection<OrderTextAlias>(
+      "orderTextAliases",
+      setOrderTextAliases,
+    );
     const unsubPaymentMethods =
       firebaseService.subscribeToCollection<PaymentMethod>(
         "paymentMethods",
@@ -1247,6 +1254,7 @@ export default function App() {
       unsubCollaborators();
       unsubCategories();
       unsubColors();
+      unsubOrderTextAliases();
       unsubPaymentMethods();
       unsubFamilyMembers();
       unsubPersonalContacts();
@@ -5412,9 +5420,11 @@ export default function App() {
             products={products}
             grids={grids}
             people={people}
+            orderTextAliases={orderTextAliases}
             paymentMethods={paymentMethods}
             accounts={accounts}
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
+            onOpenPastedOrder={(draft) => navigateTo(ViewType.SALE_FORM, draft)}
             onEdit={(sale) => navigateTo(ViewType.SALE_FORM, sale.id)}
             onCancelOnly={handleCancelOnlySale}
             onCancelAndRevert={handleCancelSaleWithRevert}
@@ -6169,6 +6179,7 @@ export default function App() {
             activeCollaborator={activeCollaborator}
             collaborators={collaborators}
             saleId={selectedSaleId}
+            initialParams={currentParams}
             sales={sales}
             products={products}
             grids={grids}

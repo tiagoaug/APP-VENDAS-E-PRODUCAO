@@ -17,6 +17,9 @@ project(':capacitor-firebase-authentication').projectDir = new File('../node_mod
 include ':capacitor-mlkit-barcode-scanning'
 project(':capacitor-mlkit-barcode-scanning').projectDir = new File('../node_modules/@capacitor-mlkit/barcode-scanning/android')
 
+include ':capacitor-mlkit-text-recognition'
+project(':capacitor-mlkit-text-recognition').projectDir = new File('../node_modules/@capacitor-mlkit/text-recognition/android')
+
 include ':capacitor-camera'
 project(':capacitor-camera').projectDir = new File('../node_modules/@capacitor/camera/android')
 

@@ -393,35 +393,61 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
  * documento pai existir, só das subcoleções — e como não tem nenhum filtro/orderBy, não precisa
  * de índice composto extra no Firestore.
  */
+// Teto de sincronizações simultâneas — sem limite nenhum, uma janela com muitas contas
+// vencendo ao mesmo tempo abriria centenas/milhares de chamadas de rede de uma vez só
+// (API do Bling + Firestore), arriscando esgotar memória/conexões da function. Um número
+// baixo já resolve o gargalo real (que era rodar 1 de cada vez), sem criar um problema novo.
+const AUTO_SYNC_CONCURRENCY = 10;
+
 export async function runAutoSyncForDueUsers(db: firestore.Firestore): Promise<void> {
   const connsSnap = await db.collectionGroup("blingConnections").get();
   const now = Date.now();
-  let notConnected = 0, noInterval = 0, notDue = 0, ran = 0;
+  let notConnected = 0, noInterval = 0, notDue = 0;
 
+  // 1ª passada: só classifica (síncrono, sem I/O) — separa quem está "na hora" de quem não
+  // está, sem ainda disparar nenhuma sincronização.
+  const dueUids: string[] = [];
   for (const connDoc of connsSnap.docs) {
     if (connDoc.id !== "bling") continue; // só o doc fixo de conexão, não outros docs futuros na mesma subcoleção
     const uid = connDoc.ref.parent.parent?.id;
     if (!uid) continue;
-    try {
-      const conn = connDoc.data() as { connected?: boolean; autoSyncIntervalMinutes?: number | null; lastOrderSyncAt?: number };
-      if (!conn.connected) { notConnected++; continue; }
-      if (!conn.autoSyncIntervalMinutes) { noInterval++; continue; }
+    const conn = connDoc.data() as { connected?: boolean; autoSyncIntervalMinutes?: number | null; lastOrderSyncAt?: number };
+    if (!conn.connected) { notConnected++; continue; }
+    if (!conn.autoSyncIntervalMinutes) { noInterval++; continue; }
 
-      const dueAt = (conn.lastOrderSyncAt || 0) + conn.autoSyncIntervalMinutes * 60_000;
-      if (now < dueAt) {
-        notDue++;
-        console.log(`[blingAutoSync] uid=${uid} ainda não é hora — faltam ${Math.round((dueAt - now) / 60_000)}min (intervalo=${conn.autoSyncIntervalMinutes}min, último sync=${conn.lastOrderSyncAt ? new Date(conn.lastOrderSyncAt).toISOString() : "nunca"}).`);
-        continue;
-      }
-
-      ran++;
-      await syncBlingOrders(db, uid);
-      console.log(`[blingAutoSync] Sincronização automática executada pra uid=${uid}.`);
-    } catch (err: any) {
-      console.error(`[blingAutoSync] Falha ao sincronizar uid=${uid}:`, err?.message || err);
+    const dueAt = (conn.lastOrderSyncAt || 0) + conn.autoSyncIntervalMinutes * 60_000;
+    if (now < dueAt) {
+      notDue++;
+      console.log(`[blingAutoSync] uid=${uid} ainda não é hora — faltam ${Math.round((dueAt - now) / 60_000)}min (intervalo=${conn.autoSyncIntervalMinutes}min, último sync=${conn.lastOrderSyncAt ? new Date(conn.lastOrderSyncAt).toISOString() : "nunca"}).`);
+      continue;
     }
+    dueUids.push(uid);
   }
-  console.log(`[blingAutoSync] Resumo: ${connsSnap.docs.length} conexão(ões) Bling encontrada(s), ${notConnected} desconectada(s), ${noInterval} sem intervalo configurado (Manual), ${notDue} com intervalo mas ainda não venceu, ${ran} sincronizada(s) agora.`);
+
+  // 2ª passada: sincroniza as contas vencidas em paralelo (até AUTO_SYNC_CONCURRENCY por vez),
+  // não uma de cada vez — com muitas contas vencendo perto da mesma janela de 5min, o jeito
+  // sequencial antigo passava do próprio intervalo entre disparos e ia atrasando sincronizações
+  // cada vez mais. Cada "worker" abaixo puxa o próximo uid da fila assim que termina o anterior.
+  let ran = 0;
+  let failed = 0;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < dueUids.length) {
+      const uid = dueUids[cursor++];
+      try {
+        await syncBlingOrders(db, uid);
+        ran++;
+        console.log(`[blingAutoSync] Sincronização automática executada pra uid=${uid}.`);
+      } catch (err: any) {
+        failed++;
+        console.error(`[blingAutoSync] Falha ao sincronizar uid=${uid}:`, err?.message || err);
+      }
+    }
+  };
+  const workerCount = Math.min(AUTO_SYNC_CONCURRENCY, dueUids.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  console.log(`[blingAutoSync] Resumo: ${connsSnap.docs.length} conexão(ões) Bling encontrada(s), ${notConnected} desconectada(s), ${noInterval} sem intervalo configurado (Manual), ${notDue} com intervalo mas ainda não venceu, ${ran} sincronizada(s) agora, ${failed} falharam.`);
 }
 
 export interface BlingEmissionResult {

@@ -38,6 +38,11 @@ interface SaleBlock {
 
 interface SaleFormViewProps {
   saleId: string | null;
+  // Pré-preenchimento vindo de "Colar Pedido Digitado" (Vendas) — `{ draftBlocks, draftCustomerId }`,
+  // ver src/utils/orderTextParser.ts e src/components/PasteOrderModal.tsx. Só é aplicado numa
+  // venda NOVA (saleId null); mesmo mecanismo de navegação com params já usado por outras telas
+  // (ex.: PurchaseFormView.initialParams).
+  initialParams?: any;
   sales: Sale[];
   products: Product[];
   grids: Grid[];
@@ -69,7 +74,7 @@ interface SaleFormViewProps {
   onQuickAddPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
 }
 
-export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [], onQuickAddPerson }: SaleFormViewProps) {
+export default function SaleFormView({ saleId, initialParams, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [], onQuickAddPerson }: SaleFormViewProps) {
   const sellerCollaborators = useMemo(() => collaborators.filter(c => c.isSeller), [collaborators]);
   const hasProduction = modulesConfig.production;
   // Refinamento por função dentro do setor Vendas (ver taskPermissions em Collaborator) — 'Vender'
@@ -234,13 +239,40 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
         setIsInitialized(true);
       }
+    } else if (!saleId && !isInitialized && initialParams?.draftBlocks?.length) {
+      // Pré-preenchimento vindo de "Colar Pedido Digitado" — molde do ramo de edição acima,
+      // só que a partir de DraftSaleBlockInput[] já revisado (nunca aplica numa edição em
+      // andamento, só numa venda nova). Preço default vem do próprio produto, igual addBlock().
+      const draftBlocks: SaleBlock[] = (initialParams.draftBlocks as { productId: string; saleType: SaleType; variations: { variationId: string; size?: string; quantity: number }[] }[])
+        .map(db => {
+          const product = products.find(p => p.id === db.productId);
+          const variations: SaleBlock['variations'] = {};
+          db.variations.forEach(v => {
+            const key = v.size ? `${v.variationId}-${v.size}` : v.variationId;
+            variations[key] = { quantity: v.quantity, price: db.saleType === SaleType.WHOLESALE ? (product?.salePrice || 0) : (product?.unitSalePrice || product?.salePrice || 0), size: v.size };
+          });
+          return {
+            id: generateId(),
+            productId: db.productId,
+            saleType: db.saleType,
+            price: product?.salePrice || 0,
+            unitPrice: product?.unitSalePrice || product?.salePrice || 0,
+            variations,
+          };
+        });
+      setBlocks(draftBlocks);
+      if (initialParams.draftCustomerId) setCustomerId(initialParams.draftCustomerId);
+      const defaultDays = getDefaultDaysForDeadline('NORMAL');
+      const calculatedDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      setDeliveryDate(calculatedDate);
+      setIsInitialized(true);
     } else if (!saleId && !isInitialized) {
       const defaultDays = getDefaultDaysForDeadline('NORMAL');
       const calculatedDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       setDeliveryDate(calculatedDate);
       setIsInitialized(true);
     }
-  }, [saleId, sales, products, isInitialized]);
+  }, [saleId, sales, products, isInitialized, initialParams]);
 
   const [paymentTerm, setPaymentTerm] = useState<PaymentTerm>(PaymentTerm.CASH);
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || '');

@@ -151,5 +151,36 @@ service cloud.firestore {
         && incoming().createdAt is number;
       allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
     }
+
+    // Modelos de grade compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
+    match /gridTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().createdBy == request.auth.uid
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
+        && incoming().type is string
+        && incoming().createdAt is number;
+      allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+    }
+
+    // Modelos de flow tag compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
+    match /flowTagTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().createdBy == request.auth.uid
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
+        && incoming().createdAt is number;
+      allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+    }
+
+    // Modelos de setor compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
+    match /sectorTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().createdBy == request.auth.uid
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
+        && incoming().createdAt is number;
+      allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+    }
   }
 }

@@ -81,6 +81,17 @@ export type Grid = {
   configuration: { [size: string]: number }; // e.g., { "37": 2, "38": 4, "39": 4, "40": 2 }
 };
 
+// Modelo de grade compartilhado ENTRE CONTAS — mesmo desenho de CategoryTemplate.
+// Não carrega configuration: já é morto/não usado hoje (uma grade nova sempre entra com {}).
+export type GridTemplate = {
+  id: string;
+  name: string;
+  type: GridType;
+  sizes: string[];
+  createdBy: string;
+  createdAt: number;
+};
+
 // Tamanho de papel/etiqueta pra impressão térmica (Print Studio Ablemark). Não reaproveita
 // `Grid` — aqueles campos (sizes/configuration) são pra grade de numeração, não fazem sentido
 // pra dimensão de papel. Presets fixos (THERMAL_SIZES) não viram documento — só os cadastrados
@@ -1016,6 +1027,31 @@ export type Sector = {
   hidden?: boolean; // oculta o setor do PCP (dashboard, seletor de setor etc.) — só pode ser ativado se não houver pedidos pendentes nele
 };
 
+// Modelo de flow tag compartilhado ENTRE CONTAS — mesmo desenho de CategoryTemplate.
+// Não carrega isCuttingFlowTag: é um flag singleton por conta (só uma tag pode ser "a de
+// corte"), então uma tag puxada de modelo sempre entra desligada.
+export type FlowTagTemplate = {
+  id: string;
+  name: string;
+  subcategories: string[];
+  createdBy: string;
+  createdAt: number;
+};
+
+// Modelo de setor compartilhado ENTRE CONTAS — mesmo desenho de CategoryTemplate.
+// Guarda flowTagNames (não flowTagIds): os IDs são da conta de origem e não existem no
+// destino, então a resolução pra FlowTag real acontece por nome na hora de puxar o modelo.
+export type SectorTemplate = {
+  id: string;
+  name: string;
+  color: string;
+  flowTagNames: string[];
+  isProductionCycleEnd?: boolean;
+  defaultServiceValue?: number;
+  createdBy: string;
+  createdAt: number;
+};
+
 export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES' | 'PECAS';
 
 // Production sub-screens moved to types.ts
@@ -1089,6 +1125,23 @@ export type BlingProductMapping = {
   size?: string; // ausente = mapeado como ATACADO (stock['WHOLESALE'])
   saleType: SaleType;
   origem: BlingMatchOrigin;
+  createdAt: number;
+  updatedAt?: number;
+};
+
+// "Ensinar" o parser de Pedido Digitado (ver src/utils/orderTextParser.ts): uma frase (ex.:
+// "preto dourado") que deve sempre resolver pra um produto+variação específicos, sem depender
+// do fuzzy match de novo. `productId` ausente = alias GLOBAL (a frase sozinha já basta, sem
+// precisar de referência reconhecida na mesma linha) — hoje só o caso COM productId é criável
+// pela UI (PasteOrderModal.tsx), mas o tipo já suporta os dois.
+export type OrderTextAlias = {
+  id: string;
+  phraseNorm: string; // normalizeText() — chave de busca
+  phraseRaw: string; // texto original digitado pelo usuário, só exibição
+  productId?: string; // presente = escopado a este produto (caso de uso principal: apelido de cor)
+  productName?: string; // denormalizado, só exibição
+  variationId: string;
+  variationName?: string; // denormalizado, só exibição
   createdAt: number;
   updatedAt?: number;
 };
