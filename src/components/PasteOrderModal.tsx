@@ -22,6 +22,10 @@ interface PasteOrderModalProps {
   // Quando true, ao abrir já dispara a leitura de imagem da área de transferência (atalho
   // "Colar Print" do "+"  de Vendas) — em vez de esperar o usuário tocar num botão aqui dentro.
   autoOcr?: boolean;
+  // Texto já pronto pra entrar no campo ao abrir — usado pelo "Exportar para Vendas" do
+  // Extrator de Texto (OCR), que manda o texto lido lá pra cá pra revisar antes de criar o
+  // pedido (mesmo texto que o usuário colaria manualmente aqui).
+  initialText?: string;
   onConfirm: (payload: { draftBlocks: DraftSaleBlockInput[]; draftCustomerId?: string }) => void;
 }
 
@@ -60,7 +64,7 @@ const statusMeta: Record<ParsedOrderLine['status'], { label: string; dot: string
   unmatched: { label: 'Não reconhecida', dot: 'bg-rose-500', badgeLight: 'bg-rose-50 text-rose-700 border-rose-200', badgeDark: 'bg-rose-500/10 text-rose-400 border-rose-500/30' },
 };
 
-export default function PasteOrderModal({ isOpen, onClose, products, grids, people, orderTextAliases, isDarkMode, autoOcr, onConfirm }: PasteOrderModalProps) {
+export default function PasteOrderModal({ isOpen, onClose, products, grids, people, orderTextAliases, isDarkMode, autoOcr, initialText, onConfirm }: PasteOrderModalProps) {
   const [step, setStep] = useState<'paste' | 'review'>('paste');
   const [text, setText] = useState('');
   const [result, setResult] = useState<ParsedOrderResult | null>(null);
@@ -107,6 +111,13 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
     if (isOpen && autoOcr) handlePasteFromClipboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, autoOcr]);
+
+  // "Exportar para Vendas" do Extrator de Texto (OCR) — abre já com o texto lido lá, pronto
+  // pra revisar/editar e tocar em "Processar Texto" (nunca processa sozinho).
+  useEffect(() => {
+    if (isOpen && initialText) setText(initialText);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialText]);
 
   if (!isOpen) return null;
 

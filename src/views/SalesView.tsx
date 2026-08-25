@@ -101,6 +101,10 @@ interface SalesViewProps {
   // "Colar Pedido Digitado" — texto livre já revisado/confirmado no PasteOrderModal, pronto
   // pra virar SaleBlock[] pré-preenchido no SaleFormView (ver App.tsx, navigateTo com params).
   onOpenPastedOrder: (draft: { draftBlocks: DraftSaleBlockInput[]; draftCustomerId?: string }) => void;
+  // "Exportar para Vendas" do Extrator de Texto (OCR, tela em Configurações > Extras) — chega
+  // via navigateTo(ViewType.SALES, { prefillPasteText }), abre o PasteOrderModal direto com
+  // esse texto pronto pra revisar (ver App.tsx).
+  initialPasteText?: string;
   onEdit: (sale: Sale) => void;
   onCancelOnly: (id: string) => void;
   onCancelAndRevert: (id: string) => void;
@@ -175,6 +179,7 @@ export default function SalesView({
   sectors,
   onAdd,
   onOpenPastedOrder,
+  initialPasteText,
   onEdit,
   onCancelOnly,
   onCancelAndRevert,
@@ -285,6 +290,16 @@ export default function SalesView({
   // "Colar Print" (atalho do "+") abre o mesmo PasteOrderModal já disparando a leitura da
   // área de transferência, em vez de esperar o usuário tocar num botão lá dentro.
   const [pasteOrderAutoOcr, setPasteOrderAutoOcr] = useState(false);
+  // "Exportar para Vendas" do Extrator de Texto (OCR) — ver initialPasteText acima.
+  const [pasteOrderInitialText, setPasteOrderInitialText] = useState('');
+  useEffect(() => {
+    if (initialPasteText) {
+      setPasteOrderInitialText(initialPasteText);
+      setPasteOrderAutoOcr(false);
+      setPasteOrderOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPasteText]);
   // Etiquetas da Venda — abre o Editor de Etiquetas livre (LabelEditorView), em modo lote
   // (batchItems): uma etiqueta por CAIXA no Atacado (item.quantity caixas => item.quantity
   // etiquetas iguais, grade de UMA caixa cada), uma etiqueta por linha (tamanho) no Varejo.
@@ -2950,14 +2965,15 @@ export default function SalesView({
 
       <PasteOrderModal
         isOpen={pasteOrderOpen}
-        onClose={() => setPasteOrderOpen(false)}
+        onClose={() => { setPasteOrderOpen(false); setPasteOrderInitialText(''); }}
         products={products}
         grids={grids}
         people={people}
         orderTextAliases={orderTextAliases}
         isDarkMode={isDarkMode}
         autoOcr={pasteOrderAutoOcr}
-        onConfirm={(draft) => { setPasteOrderOpen(false); onOpenPastedOrder(draft); }}
+        initialText={pasteOrderInitialText}
+        onConfirm={(draft) => { setPasteOrderOpen(false); setPasteOrderInitialText(''); onOpenPastedOrder(draft); }}
       />
 
       {/* Modals */}

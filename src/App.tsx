@@ -5426,6 +5426,7 @@ export default function App() {
             accounts={accounts}
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
             onOpenPastedOrder={(draft) => navigateTo(ViewType.SALE_FORM, draft)}
+            initialPasteText={currentParams?.prefillPasteText}
             onEdit={(sale) => navigateTo(ViewType.SALE_FORM, sale.id)}
             onCancelOnly={handleCancelOnlySale}
             onCancelAndRevert={handleCancelSaleWithRevert}
@@ -7329,6 +7330,7 @@ export default function App() {
           <OcrTextExtractorView
             onBack={goBack}
             isDarkMode={isDarkMode}
+            onExportToSales={(text) => navigateTo(ViewType.SALES, { prefillPasteText: text })}
           />
         );
       default:
