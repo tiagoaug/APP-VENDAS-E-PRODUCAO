@@ -3580,7 +3580,12 @@ export default function SalesView({
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold outline-none border text-left ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                     >
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-                        {alterarProduct?.photoUrl ? (
+                        {/* Depois de escolher a cor, mostra a foto DA VARIANTE em vez da foto
+                            genérica do produto — evita duas imagens diferentes pro mesmo item
+                            (produto × cor) confundindo na hora de conferir. */}
+                        {alterarVariation?.photoUrl ? (
+                          <img src={alterarVariation.photoUrl} alt={alterarVariation.colorName} className="w-full h-full object-cover" />
+                        ) : alterarProduct?.photoUrl ? (
                           <img src={alterarProduct.photoUrl} alt={alterarProduct.name} className="w-full h-full object-cover" />
                         ) : (
                           <Package size={14} className="text-slate-400" />
@@ -3600,7 +3605,11 @@ export default function SalesView({
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold outline-none border text-left ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
                       >
                         {alterarVariation ? (
-                          <span className="w-6 h-6 rounded-full border border-black/10 shrink-0" style={{ backgroundColor: alterarVariation.color }} />
+                          alterarVariation.photoUrl ? (
+                            <img src={alterarVariation.photoUrl} alt={alterarVariation.colorName} className="w-6 h-6 rounded-full object-cover border border-black/10 shrink-0" />
+                          ) : (
+                            <span className="w-6 h-6 rounded-full border border-black/10 shrink-0" style={{ backgroundColor: alterarVariation.color }} />
+                          )
                         ) : (
                           <span className="w-6 h-6 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-700 shrink-0" />
                         )}
@@ -3783,7 +3792,11 @@ export default function SalesView({
                                   : `border-transparent ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`
                               }`}
                             >
-                              <span className="w-10 h-10 rounded-full border-2 border-black/10 shrink-0" style={{ backgroundColor: v.color }} />
+                              {v.photoUrl ? (
+                                <img src={v.photoUrl} alt={v.colorName} className="w-10 h-10 rounded-full object-cover border-2 border-black/10 shrink-0" />
+                              ) : (
+                                <span className="w-10 h-10 rounded-full border-2 border-black/10 shrink-0" style={{ backgroundColor: v.color }} />
+                              )}
                               <span className="text-[9px] font-black uppercase tracking-widest text-center truncate w-full">{v.colorName}</span>
                             </button>
                           ))}
