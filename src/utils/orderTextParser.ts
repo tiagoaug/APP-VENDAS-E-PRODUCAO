@@ -36,6 +36,48 @@ function scoreAgainst(queryTokens: string[], targetTokens: string[]): number {
 
 const NAME_MATCH_THRESHOLD = 0.34; // mesmo limiar de helpMatching.ts
 const CUSTOMER_MATCH_THRESHOLD = 0.5; // mais rígido — nome de cliente é achado "por eliminação"
+const CUSTOMER_MATCH_THRESHOLD_OCR = 0.65; // 2ª passada (linhas com dígito colado) — mais exigente
+
+// Distância de edição (Levenshtein) — usada só na correspondência de nome de cliente, pra
+// tolerar erro típico de OCR (uma letra trocada/faltando/a mais), ex.: "Jonathan" lido como
+// "Jonathon" ou "Jonatlnan".
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+function tokensAreClose(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 3 || b.length < 3) return false;
+  const maxDist = a.length <= 5 || b.length <= 5 ? 1 : 2;
+  return levenshtein(a, b) <= maxDist;
+}
+
+// Mesma ideia de scoreAgainst, mas tolerante a erro de OCR (ver tokensAreClose) — só usada pra
+// nome de cliente, não mexe no reconhecimento de produto/cor (scoreAgainst continua igual lá).
+function scoreCustomerName(queryTokens: string[], targetTokens: string[]): number {
+  if (queryTokens.length === 0 || targetTokens.length === 0) return 0;
+  let score = 0;
+  for (const t of queryTokens) {
+    if (targetTokens.some(h => h === t)) score += 1;
+    else if (targetTokens.some(h => tokensAreClose(h, t) || h.includes(t) || t.includes(h))) score += 0.75;
+  }
+  return score / queryTokens.length;
+}
 
 function uniqueBy<T, K>(items: T[], key: (item: T) => K): T[] {
   const seen = new Set<K>();
@@ -306,7 +348,7 @@ function parseItemLine(raw: string, lineIndex: number, index: OrderLineCandidate
 }
 
 // ── Detecção de cliente ──────────────────────────────────────────────────────────────────────
-function detectCustomer(explicitName: string | null, leftoverLines: string[], people: Person[]): { detected?: ParsedOrderResult['detectedCustomer']; consumedLine?: string } {
+function detectCustomer(explicitName: string | null, leftoverLines: string[], people: Person[], noisyLines: string[] = []): { detected?: ParsedOrderResult['detectedCustomer']; consumedLine?: string } {
   const customers = people.filter(p => p.isCustomer);
 
   const matchAgainst = (rawName: string) => {
@@ -315,7 +357,7 @@ function detectCustomer(explicitName: string | null, leftoverLines: string[], pe
     if (exact) return { personId: exact.id, rawName, confidence: 'exact' as const };
     const nameTokens = tokenize(rawName);
     const scored = customers
-      .map(p => ({ person: p, score: scoreAgainst(nameTokens, tokenize(p.name)) }))
+      .map(p => ({ person: p, score: scoreCustomerName(nameTokens, tokenize(p.name)) }))
       .filter(r => r.score >= CUSTOMER_MATCH_THRESHOLD)
       .sort((a, b) => b.score - a.score);
     if (scored.length > 0) return { personId: scored[0].person.id, rawName, confidence: 'fuzzy' as const };
@@ -332,11 +374,27 @@ function detectCustomer(explicitName: string | null, leftoverLines: string[], pe
     if (!norm) continue;
     const nameTokens = tokenize(line);
     const scored = customers
-      .map(p => ({ person: p, score: scoreAgainst(nameTokens, tokenize(p.name)) }))
+      .map(p => ({ person: p, score: scoreCustomerName(nameTokens, tokenize(p.name)) }))
       .filter(r => r.score >= CUSTOMER_MATCH_THRESHOLD)
       .sort((a, b) => b.score - a.score);
     if (scored.length > 0) {
       return { detected: { personId: scored[0].person.id, rawName: line, confidence: normalizeText(scored[0].person.name) === norm ? 'exact' : 'fuzzy' }, consumedLine: line };
+    }
+  }
+
+  // 2ª passada, reforço pra texto de OCR: um print de WhatsApp/lista costuma colar hora,
+  // marcação de lida ou numeração na mesma linha do nome do cliente — essas linhas foram
+  // descartadas acima por terem dígito. Tenta de novo aqui ignorando tokens 100% numéricos,
+  // com limiar mais alto (não reivindica a linha, pode ser mesmo um item de verdade).
+  for (const line of noisyLines) {
+    const nameTokens = tokenize(line).filter(t => !/^\d+$/.test(t));
+    if (nameTokens.length === 0) continue;
+    const scored = customers
+      .map(p => ({ person: p, score: scoreCustomerName(nameTokens, tokenize(p.name)) }))
+      .filter(r => r.score >= CUSTOMER_MATCH_THRESHOLD_OCR)
+      .sort((a, b) => b.score - a.score);
+    if (scored.length > 0) {
+      return { detected: { personId: scored[0].person.id, rawName: line, confidence: 'fuzzy' } };
     }
   }
   return {};
@@ -364,7 +422,7 @@ export function parseOrderText(text: string, products: Product[], people: Person
 
   const lines = itemCandidateLines.map((line, i) => parseItemLine(line, i, index, aliases));
 
-  const { detected, consumedLine } = detectCustomer(explicitCustomerName, nonItemLines, people);
+  const { detected, consumedLine } = detectCustomer(explicitCustomerName, nonItemLines, people, itemCandidateLines);
   const unparsedRawLines = nonItemLines.filter(l => l !== consumedLine);
 
   return { lines, unparsedRawLines, detectedCustomer: detected };

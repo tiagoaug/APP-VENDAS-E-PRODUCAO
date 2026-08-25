@@ -163,6 +163,7 @@ const CollaboratorsConfigView = lazy(() => import("./views/CollaboratorsConfigVi
 const CompanyProfileView = lazy(() => import("./views/CompanyProfileView"));
 const CollaboratorGateView = lazy(() => import("./views/CollaboratorGateView"));
 const ManualView = lazy(() => import("./views/ManualView"));
+const OcrTextExtractorView = lazy(() => import("./views/OcrTextExtractorView"));
 const WeighingView = lazy(() => import("./views/WeighingView"));
 const SoleProcurement = lazy(() => import("./views/SolePurchaseView"));
 const SoleStockView = lazy(() => import("./views/SoleStockView"));
@@ -7319,6 +7320,13 @@ export default function App() {
       case ViewType.MANUAL:
         return (
           <ManualView
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+          />
+        );
+      case ViewType.OCR_TEXT_EXTRACTOR:
+        return (
+          <OcrTextExtractorView
             onBack={goBack}
             isDarkMode={isDarkMode}
           />

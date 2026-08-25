@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Clipboard } from '@capacitor/clipboard';
 import { ClipboardPaste, X, Check, AlertTriangle, HelpCircle, Trash2, Plus, User, Camera as CameraIcon, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { Product, Grid, Person, SaleType, Variation, OrderTextAlias } from '../types';
 import ComboBox from './ComboBox';
@@ -75,26 +76,20 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
   // tanto pelo botão "Colar Print" aqui dentro quanto pelo atalho "Colar Print" do "+" de
   // Vendas (autoOcr, disparado uma vez ao abrir, ver useEffect abaixo). Mesmo comportamento de
   // "anexa, nunca substitui" e "não avança sozinho pra revisão" do OCR por foto.
+  //
+  // Usa o plugin nativo @capacitor/clipboard (não a Clipboard API do navegador): o WebView do
+  // Android nega permissão pra navigator.clipboard.read() ("Read permission denied") sem nunca
+  // pedir a permissão de fato, então essa via ficava sempre quebrada — o plugin acessa o
+  // ClipboardManager nativo do Android direto, sem esse bloqueio.
   const handlePasteFromClipboard = async () => {
     setOcrLoading(true);
     try {
-      const clipboardItems = await navigator.clipboard.read();
-      let blob: Blob | null = null;
-      for (const item of clipboardItems) {
-        const imageType = item.types.find(t => t.startsWith('image/'));
-        if (imageType) { blob = await item.getType(imageType); break; }
-      }
-      if (!blob) {
+      const { value, type } = await Clipboard.read();
+      if (!value || !type?.startsWith('image/')) {
         toast.show('Nenhuma imagem encontrada na área de transferência. Copie um print e tente de novo.');
         return;
       }
-      const dataUrl: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Falha ao ler a imagem colada'));
-        reader.readAsDataURL(blob as Blob);
-      });
-      const base64 = dataUrl.split('base64,')[1];
+      const base64 = value.includes('base64,') ? value.split('base64,')[1] : value;
       const written = await Filesystem.writeFile({ path: `paste_ocr_${Date.now()}.png`, data: base64, directory: Directory.Cache });
       const extracted = await textRecognitionService.extractText(written.uri);
       if (!extracted) return; // serviço já avisou (toast)

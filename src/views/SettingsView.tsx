@@ -34,7 +34,8 @@ import {
   Sparkles,
   Truck,
   Rocket,
-  Building2
+  Building2,
+  ScanText
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
@@ -158,7 +159,6 @@ export default function SettingsView({
         { id: 'SOLE_MATRIX_DIRECT', label: "Solados", icon: <Footprints size={22} />, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/20", module: 'production' },
         { id: ViewType.GRIDS, label: "Grades de Tamanho", icon: <Grid3X3 size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/30", module: 'production' },
         { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Fábrica", icon: <Factory size={22} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'production' },
-        { id: 'LABEL_PRINT_STUDIO', label: "Impressão de Etiquetas", icon: <Printer size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'production' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
     },
     {
@@ -179,6 +179,13 @@ export default function SettingsView({
         { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'ai' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
         { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
+      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+    },
+    {
+      title: "Extras",
+      items: [
+        { id: ViewType.OCR_TEXT_EXTRACTOR, label: "Extrator de Texto (OCR)", icon: <ScanText size={22} />, color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-50 dark:bg-cyan-900/20", module: 'any' },
+        { id: 'LABEL_PRINT_STUDIO', label: "Ajustes de PDF e JPG", icon: <Printer size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'production' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
     }
   ];
