@@ -225,6 +225,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const [heightMm, setHeightMm] = useState(session.heightMm);
   const [elements, setElements] = useState<LabelElement[]>(() => initialElements(session));
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Travado = a área do editor para de capturar o toque pra arrastar elemento, e o arrasto em
+  // cima dela volta a rolar a tela normalmente (o mesmo gesto de sempre no celular) — sem isso,
+  // dá pra ficar "preso" dentro do editor sem conseguir rolar até Ferramentas/Salvar embaixo.
+  const [canvasLocked, setCanvasLocked] = useState(false);
   const [name, setName] = useState(session.name || 'Nova etiqueta');
   // Marca o modelo salvo como reutilizável no popup de impressão de Vendas (ver
   // LabelPrintStudioView "filterSalesTemplates"). Pré-marcado quando o editor já abriu vindo de
@@ -831,18 +835,18 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             </div>
             <div
               ref={canvasRef}
-              onPointerMove={onPointerMove}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
+              onPointerMove={canvasLocked ? undefined : onPointerMove}
+              onPointerUp={canvasLocked ? undefined : endDrag}
+              onPointerCancel={canvasLocked ? undefined : endDrag}
               onClick={() => setSelectedId(null)}
-              className="relative bg-white rounded-lg border-2 border-dashed border-slate-300 touch-none select-none shrink-0"
-              style={{ width: canvasWidthPx, height: canvasHeightPx }}
+              className={`relative bg-white rounded-lg border-2 border-dashed border-slate-300 select-none shrink-0 ${canvasLocked ? '' : 'touch-none'}`}
+              style={{ width: canvasWidthPx, height: canvasHeightPx, touchAction: canvasLocked ? 'pan-x pan-y' : 'none' }}
             >
               {elements.filter(el => !el.hidden).map(el => (
                 <div
                   key={el.id}
-                  onPointerDown={e => { if (!el.lockPosition) beginDrag(e, el.id, 'move'); }}
-                  onClick={e => { e.stopPropagation(); setSelectedId(el.id); setTextTab('content'); }}
+                  onPointerDown={e => { if (!canvasLocked && !el.lockPosition) beginDrag(e, el.id, 'move'); }}
+                  onClick={e => { e.stopPropagation(); if (!canvasLocked) { setSelectedId(el.id); setTextTab('content'); } }}
                   className={`absolute flex items-center justify-center ${selectedId === el.id ? 'outline outline-2 outline-indigo-500' : ''}`}
                   style={{
                     left: el.x * pxPerMmX,
@@ -850,7 +854,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     width: el.w * pxPerMmX,
                     height: el.h * pxPerMmY,
                     transform: `rotate(${el.rotation}deg)`,
-                    cursor: el.lockPosition ? 'default' : 'move',
+                    cursor: canvasLocked ? 'default' : el.lockPosition ? 'default' : 'move',
                   }}
                 >
                   {el.type === 'text' ? (
@@ -904,7 +908,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     />
                   ) : null}
 
-                  {selectedId === el.id && (
+                  {selectedId === el.id && !canvasLocked && (
                     <>
                       {/* Canto — redimensiona largura E altura juntas, só quando nenhuma das
                           duas está travada (senão mudaria a que está travada também) */}
@@ -960,17 +964,35 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   // como vai sair impressa sem precisar chegar até o botão "Imprimir" lá embaixo.
   const editorAreaCard = (
     <div className={`flex flex-col gap-3 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Área do Editor</span>
-        <button
-          type="button"
-          onClick={handleOpenPrintPreview}
-          title="Visualizar etiqueta de impressão"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-        >
-          <Eye size={13} /> Visualizar
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setCanvasLocked(v => !v)}
+            title={canvasLocked ? 'Destravar pra editar' : 'Travar pra rolar a tela'}
+            data-guide-anchor="labelEditor.travarArea"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+              canvasLocked ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {canvasLocked ? <Lock size={13} /> : <Unlock size={13} />} {canvasLocked ? 'Travada' : 'Travar'}
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenPrintPreview}
+            title="Visualizar etiqueta de impressão"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <Eye size={13} /> Visualizar
+          </button>
+        </div>
       </div>
+      <p className="text-[7px] text-black dark:text-white font-bold uppercase tracking-wider leading-relaxed -mt-1">
+        {canvasLocked
+          ? 'Área travada: arraste com o dedo pra rolar a tela — os elementos não se movem.'
+          : 'Arrastar aqui move os elementos. Trave se só quiser rolar a tela até os controles abaixo.'}
+      </p>
       {zoomControls}
       {canvasArea}
     </div>

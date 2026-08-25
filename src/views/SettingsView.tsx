@@ -35,7 +35,8 @@ import {
   Truck,
   Rocket,
   Building2,
-  ScanText
+  ScanText,
+  Calculator
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
@@ -186,6 +187,7 @@ export default function SettingsView({
       items: [
         { id: ViewType.OCR_TEXT_EXTRACTOR, label: "Extrator de Texto (OCR)", icon: <ScanText size={22} />, color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-50 dark:bg-cyan-900/20", module: 'any' },
         { id: 'LABEL_PRINT_STUDIO', label: "Ajustes de PDF e JPG", icon: <Printer size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'production' },
+        { id: ViewType.RULE_OF_THREE, label: "Calculadora de Regra de Três", icon: <Calculator size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'any' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
     }
   ];

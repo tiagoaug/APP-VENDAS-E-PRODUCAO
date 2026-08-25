@@ -208,6 +208,11 @@ export default function LabelPrintStudioView({
     setSelectedSize({ ...selectedSize, widthMm: selectedSize.heightMm, heightMm: selectedSize.widthMm });
   };
   const [sizesExpanded, setSizesExpanded] = useState(false);
+  // Fechado por padrão de propósito: conexão de impressora só importa pra quem vai IMPRIMIR de
+  // verdade — quem só vai exportar/compartilhar (JPG/PDF) nem precisa abrir. Fechado também
+  // evita checar o estado do Bluetooth logo ao abrir a tela (PrinterConnectionCard só monta,
+  // e só aí roda a checagem, quando expandido).
+  const [printerExpanded, setPrinterExpanded] = useState(false);
   const [showAddSize, setShowAddSize] = useState(false);
   const [editingSizeId, setEditingSizeId] = useState<string | null>(null);
   const [newSizeName, setNewSizeName] = useState('');
@@ -376,11 +381,6 @@ export default function LabelPrintStudioView({
     <>
     <div className={outerCardCls}>
     <div className="flex flex-col gap-4">
-      {/* Conexão — extraído pra PrinterConnectionCard.tsx, reaproveitado também dentro do
-          preview de impressão (LabelPrintPreviewModal) quando a impressora ainda não está
-          conectada na hora de imprimir. */}
-      <PrinterConnectionCard isDarkMode={isDarkMode} />
-
       {/* Tamanhos de etiqueta */}
       <div className={miniCardCls}>
         <button
@@ -598,6 +598,20 @@ export default function LabelPrintStudioView({
           </div>
         )}
       </div>
+
+      {/* Conexão de impressora — deixada pro final de propósito: só importa pra quem vai
+          IMPRIMIR de verdade (quem só vai exportar/compartilhar JPG/PDF nem precisa abrir).
+          Fechada por padrão também evita checar o Bluetooth logo ao abrir a tela — o
+          PrinterConnectionCard só monta (e só aí roda essa checagem) quando expandido. */}
+      <button
+        type="button"
+        onClick={() => setPrinterExpanded(v => !v)}
+        className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+      >
+        <span className="text-[10px] font-black uppercase tracking-widest">Configurar Impressora (só se for imprimir)</span>
+        {printerExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+      {printerExpanded && <PrinterConnectionCard isDarkMode={isDarkMode} />}
     </div>
     </div>
 

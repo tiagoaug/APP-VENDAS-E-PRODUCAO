@@ -164,6 +164,7 @@ const CompanyProfileView = lazy(() => import("./views/CompanyProfileView"));
 const CollaboratorGateView = lazy(() => import("./views/CollaboratorGateView"));
 const ManualView = lazy(() => import("./views/ManualView"));
 const OcrTextExtractorView = lazy(() => import("./views/OcrTextExtractorView"));
+const RuleOfThreeView = lazy(() => import("./views/RuleOfThreeView"));
 const WeighingView = lazy(() => import("./views/WeighingView"));
 const SoleProcurement = lazy(() => import("./views/SolePurchaseView"));
 const SoleStockView = lazy(() => import("./views/SoleStockView"));
@@ -7333,6 +7334,14 @@ export default function App() {
             onExportToSales={(text) => navigateTo(ViewType.SALES, { prefillPasteText: text })}
           />
         );
+      case ViewType.RULE_OF_THREE:
+        return (
+          <RuleOfThreeView
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+            units={productionConfigs.filter(c => c.type === 'UNIT')}
+          />
+        );
       default:
         return (
           <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
@@ -7447,13 +7456,13 @@ export default function App() {
       case ViewType.PRINT_CENTER:
         return "Central de Impressões";
       case ViewType.LABEL_PRINT_STUDIO:
-        return "Impressão de Etiquetas";
+        return "Etiquetas";
       case ViewType.LABEL_EDITOR:
         return "Editor de Etiqueta";
       case ViewType.BACKUP:
         return "Ajustes Técnicos";
       case ViewType.PURCHASES:
-        return "Compras";
+        return "Despesas Gerais";
       case ViewType.SALES:
         return "Loja Virtual & Vendas";
       case ViewType.FINANCIAL:
@@ -7611,7 +7620,7 @@ export default function App() {
       switch (lastNonModalView) {
         case ViewType.ONBOARDING_WELCOME: return "Configuração Inicial";
         case ViewType.DASHBOARD: return "LIM.O APP";
-        case ViewType.PURCHASES: return "Compras";
+        case ViewType.PURCHASES: return "Despesas Gerais";
         case ViewType.SALES: return "Vendas";
         case ViewType.PRODUCTION_MENU: return "Módulo de Produção";
         case ViewType.FINANCIAL: return "Financeiro";

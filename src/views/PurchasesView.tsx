@@ -588,7 +588,7 @@ export default function PurchasesView({
       <div className="flex items-center justify-between pt-4">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Compras
+            Despesas Gerais
           </h2>
           <p className="text-xs text-slate-500 font-medium">
             Histórico de entradas
