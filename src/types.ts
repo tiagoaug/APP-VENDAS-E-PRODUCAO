@@ -177,6 +177,9 @@ export type LabelElement = {
   // Ausente: 'shape' fica com cantos retos (comportamento de sempre); o chip do invert usa um
   // raio automático (metade da altura, até 1.2mm) até o usuário mexer explicitamente.
   borderRadius?: number;
+  // Espessura do contorno, em mm — só 'shape' (retângulo). Ausente = 0.5mm (mínimo). 'line' usa
+  // `h` diretamente como espessura (a barra já é sólida, não um contorno) — ver handleAddLine.
+  strokeWidth?: number;
 };
 
 // Arquivo de etiqueta salvo (Print Studio Ablemark) — design reutilizável, reabrível/reeditável.

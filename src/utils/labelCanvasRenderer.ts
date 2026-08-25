@@ -116,7 +116,7 @@ export async function renderLabelElementsToCanvas(
       ctx.fillRect(-wPx / 2, -hPx / 2, wPx, hPx);
     } else if (el.type === 'shape') {
       ctx.strokeStyle = '#000000';
-      ctx.lineWidth = Math.max(1, DOTS_PER_MM * 0.25);
+      ctx.lineWidth = Math.max(1, (el.strokeWidth || 0.5) * DOTS_PER_MM);
       const shapeRadius = (el.borderRadius || 0) * DOTS_PER_MM;
       if (shapeRadius > 0 && typeof (ctx as any).roundRect === 'function') {
         ctx.beginPath();

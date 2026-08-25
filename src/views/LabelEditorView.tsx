@@ -274,6 +274,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const [sizeAccordionOpen, setSizeAccordionOpen] = useState(false);
   const [angleAccordionOpen, setAngleAccordionOpen] = useState(false);
   const [cornerAccordionOpen, setCornerAccordionOpen] = useState(false);
+  const [thicknessAccordionOpen, setThicknessAccordionOpen] = useState(false);
   const [toolsAccordionOpen, setToolsAccordionOpen] = useState(false);
   // Fechado por padrão — minimizado, mostra só a camada selecionada (ver cabeçalho do
   // layersPanel abaixo); abrir revela a lista completa de camadas.
@@ -356,7 +357,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
 
   const handleAddLine = () => {
     addElement({
-      id: newId(), type: 'line', x: widthMm * 0.1, y: heightMm * 0.5, w: widthMm * 0.8, h: Math.max(0.3, heightMm * 0.02),
+      id: newId(), type: 'line', x: widthMm * 0.1, y: heightMm * 0.5, w: widthMm * 0.8, h: Math.max(0.5, heightMm * 0.02),
       rotation: 0,
     });
   };
@@ -364,7 +365,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const handleAddShape = () => {
     addElement({
       id: newId(), type: 'shape', x: widthMm * 0.2, y: heightMm * 0.2, w: widthMm * 0.6, h: heightMm * 0.6,
-      rotation: 0,
+      rotation: 0, strokeWidth: 0.5,
     });
   };
 
@@ -811,7 +812,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   );
 
   const canvasArea = (
-    <div className="overflow-auto pb-2">
+    // Travado: overflow-hidden tira até a rolagem interna dessa caixa (a barra que aparece
+    // quando dá zoom) — assim o arrasto do dedo não fica "preso" rolando só a etiqueta, e
+    // passa a rolar a tela do celular inteira, de ponta a ponta da área.
+    <div className={canvasLocked ? 'overflow-hidden pb-2' : 'overflow-auto pb-2'} style={canvasLocked ? { touchAction: 'pan-y' } : undefined}>
         <div className="inline-flex flex-col mx-auto" style={{ minWidth: canvasWidthPx + 22 }}>
           <div className="flex">
             <div style={{ width: 22 }} />
@@ -878,7 +882,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   ) : el.type === 'line' ? (
                     <div className="w-full h-full bg-black pointer-events-none" />
                   ) : el.type === 'shape' ? (
-                    <div className="w-full h-full border-2 border-black pointer-events-none" style={{ borderRadius: (el.borderRadius || 0) * pxPerMmX }} />
+                    <div
+                      className="w-full h-full border-black pointer-events-none"
+                      style={{ borderRadius: (el.borderRadius || 0) * pxPerMmX, borderWidth: (el.strokeWidth || 0.5) * pxPerMmX, borderStyle: 'solid' }}
+                    />
                   ) : el.type === 'grade' ? (
                     <GradePreview el={el} ctx={activeBindingContext} pxPerMmX={pxPerMmX} pxPerMmY={pxPerMmY} />
                   ) : el.type === 'qr' && el.dataBinding === 'qr' ? (
@@ -1441,6 +1448,58 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               </div>
             )}
           </div>
+
+          {/* Espessura — acordeão separado, mesmo padrão de Arredondamento de Cantos abaixo.
+              'line': a barra já é sólida, então a espessura é a própria altura (h) da caixa não
+              rotacionada — ver renderização e handleAddLine. 'shape': espessura do contorno
+              (strokeWidth), independente do tamanho w/h da caixa. Mínimo de 0,5mm nos dois —
+              as alças de redimensionar (arrastar) têm piso de 3mm, grosso demais pra isso. */}
+          {(selected.type === 'line' || selected.type === 'shape') && (
+            <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+              <button
+                type="button"
+                onClick={() => setThicknessAccordionOpen(v => !v)}
+                className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
+              >
+                <span className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  <Minus size={13} className="text-fuchsia-500" /> Espessura
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="text-[9px] font-bold text-slate-400">
+                    {(selected.type === 'line' ? selected.h : (selected.strokeWidth || 0.5)).toFixed(1)}mm
+                  </span>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${thicknessAccordionOpen ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+              {thicknessAccordionOpen && (
+                <div className="p-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selected.type === 'line') updateElement(selected.id, { h: Math.max(0.5, selected.h - 0.5) });
+                      else updateElement(selected.id, { strokeWidth: Math.max(0.5, (selected.strokeWidth || 0.5) - 0.5) });
+                    }}
+                    className={`p-2 rounded-lg ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    <Minus size={13} />
+                  </button>
+                  <span className={`flex-1 text-center text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {(selected.type === 'line' ? selected.h : (selected.strokeWidth || 0.5)).toFixed(1)} mm
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selected.type === 'line') updateElement(selected.id, { h: selected.h + 0.5 });
+                      else updateElement(selected.id, { strokeWidth: (selected.strokeWidth || 0.5) + 0.5 });
+                    }}
+                    className={`p-2 rounded-lg ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Arredondamento de Cantos — acordeão separado, igual Tamanho/Ângulo, fechado por
               padrão. Vale pra Formas/Retângulo (contorno) e pra Texto com Inverter ativo (chip
