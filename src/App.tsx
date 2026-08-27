@@ -2672,13 +2672,14 @@ export default function App() {
   // "Alterar Produtos" — acrescenta/remove itens de um pedido já lançado, direto do
   // popup "Pedido & Separação". Mesmo padrão de transação de handleSepararCaixas/
   // handlePartialRevertSeparacao (ver comentários lá) — não é o mesmo caminho de
-  // "Editar Venda" (SaleFormView): aquela tela não devolve estoque/StockLot de itens já
-  // separados e apaga os campos de separação de TODOS os itens a cada salvamento, então
-  // não serve pra este caso. Remover reaproveita revertSeparationSupply (a mesma função
-  // que o botão "Reverter" já usa) pra devolver o que estava separado antes de encolher/
-  // apagar a linha; adicionar só entra como item comum "não separado" — o próprio
-  // usuário separa depois pelo stepper que já existe neste popup, sem lógica de estoque
-  // nova pro caminho de adição.
+  // "Editar Venda" (SaleFormView): aquela tela reconstrói `items` do zero a partir dos
+  // blocos do formulário a cada salvamento, então precisa da sua própria reconciliação
+  // (ver reconcileWholesaleSeparationOnEdit, chamada no onSave do SaleFormView) — este
+  // handler aqui não serve pra aquele caso. Remover reaproveita revertSeparationSupply (a
+  // mesma função que o botão "Reverter" já usa) pra devolver o que estava separado antes
+  // de encolher/apagar a linha; adicionar só entra como item comum "não separado" — o
+  // próprio usuário separa depois pelo stepper que já existe neste popup, sem lógica de
+  // estoque nova pro caminho de adição.
   const handleAlterarProdutosVenda = async (
     saleId: string,
     changes: (
@@ -2800,6 +2801,129 @@ export default function App() {
       console.error(e);
       toast.show('Erro ao alterar produtos do pedido: ' + (e.message || e));
     }
+  };
+
+  // Reconcilia separações de ATACADO já feitas (StockLot RESERVADO + separatedStockLotIds)
+  // antes de uma reedição completa via SaleFormView salvar por cima. Aquela tela reconstrói
+  // `items` do zero a partir dos blocos do formulário e nunca carrega boxesSeparated/
+  // separatedStockLotIds de volta — sem isso a caixa ficava RESERVADO pra sempre (órfã: a
+  // venda salva deixa de referenciar o StockLot, mas ele continua com saleId apontando pra
+  // ela), sintoma "caixa presa" detectado em src/utils/stockOrphanedReservations.ts. Casa
+  // cada item ATACADO já separado do pedido (fresco, relido dentro da transação) com o item
+  // correspondente do formulário editado (por lineId, senão por productId+variationId) e:
+  //  - nova quantidade cobre o que já estava separado → carrega os campos de separação de
+  //    volta pro item editado, StockLot intocado;
+  //  - cobre só parte, ou a linha sumiu do pedido → devolve a diferença ao estoque via
+  //    revertSeparationSupply (mesma função usada por "Reverter"/handleAlterarProdutosVenda).
+  const reconcileWholesaleSeparationOnEdit = async (saleId: string, editedItems: SaleItem[]): Promise<SaleItem[]> => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return editedItems;
+
+    let resultItems = editedItems;
+    await firebaseService.runAtomic(async (transaction: any) => {
+      const saleRef = doc(db, `users/${uid}/sales`, saleId);
+      const saleSnap = await transaction.get(saleRef);
+      if (!saleSnap.exists()) return;
+      const freshSale = { id: saleSnap.id, ...saleSnap.data() } as Sale;
+
+      const separatedItems = freshSale.items.filter(it => it.saleType === SaleType.WHOLESALE && (it.boxesSeparated || 0) > 0);
+      if (separatedItems.length === 0) return;
+
+      const candidateProductIds = new Set(separatedItems.map(it => it.productId));
+      const candidateStockLotIds = new Set<string>();
+      separatedItems.forEach(it => (it.separatedStockLotIds || []).forEach(id => candidateStockLotIds.add(id)));
+
+      const productRefs = new Map<string, any>();
+      const productData = new Map<string, any>();
+      for (const pid of candidateProductIds) {
+        const ref = doc(db, `users/${uid}/products`, pid);
+        const snap = await transaction.get(ref);
+        if (snap.exists()) { productRefs.set(pid, ref); productData.set(pid, { id: pid, ...snap.data() }); }
+      }
+
+      const stockLotRefs = new Map<string, any>();
+      const freshStockLots: StockLot[] = [];
+      for (const id of candidateStockLotIds) {
+        const ref = doc(db, `users/${uid}/stockLots`, id);
+        const snap = await transaction.get(ref);
+        if (snap.exists()) { stockLotRefs.set(id, ref); freshStockLots.push({ id: snap.id, ...snap.data() } as StockLot); }
+      }
+
+      const productUpdates = new Map<string, any>();
+      const getProd = (id: string) => {
+        if (productUpdates.has(id)) return productUpdates.get(id);
+        const p = productData.get(id);
+        if (!p) return null;
+        const cloned = JSON.parse(JSON.stringify(p));
+        productUpdates.set(id, cloned);
+        return cloned;
+      };
+      const stockLotWrites = new Map<string, any>();
+      const stockLotCreates: any[] = [];
+
+      const newItems = [...editedItems];
+      const usedNewIdx = new Set<number>();
+      const findMatch = (oldItem: SaleItem): number => {
+        if (oldItem.lineId) {
+          const idx = newItems.findIndex((it, i) => !usedNewIdx.has(i) && it.lineId === oldItem.lineId);
+          if (idx >= 0) return idx;
+        }
+        return newItems.findIndex((it, i) => !usedNewIdx.has(i) &&
+          it.saleType === SaleType.WHOLESALE && it.productId === oldItem.productId && it.variationId === oldItem.variationId);
+      };
+
+      separatedItems.forEach(oldItem => {
+        const oldSeparated = oldItem.boxesSeparated || 0;
+        const matchIdx = findMatch(oldItem);
+        if (matchIdx >= 0) usedNewIdx.add(matchIdx);
+        const newQty = matchIdx >= 0 ? newItems[matchIdx].quantity : 0;
+        const qtyToRevert = Math.max(0, oldSeparated - newQty);
+
+        if (qtyToRevert > 0) {
+          const reverted = revertSeparationSupply(oldItem, qtyToRevert, getProd, stockLotWrites, stockLotCreates, freshStockLots);
+          if (matchIdx >= 0) {
+            newItems[matchIdx] = {
+              ...newItems[matchIdx],
+              boxesSeparated: reverted.boxesSeparated,
+              separatedStockLotIds: reverted.separatedStockLotIds,
+              separatedPkgAllocations: reverted.separatedPkgAllocations,
+              manuallySeparated: (reverted.boxesSeparated || 0) > 0 ? oldItem.manuallySeparated : undefined,
+              fulfilled: (reverted.boxesSeparated || 0) >= newItems[matchIdx].quantity,
+            };
+          }
+        } else if (matchIdx >= 0) {
+          // newQty pode ter aumentado além do que já estava separado (usuário elevou a
+          // quantidade da linha) — boxesSeparated continua o mesmo (nada de novo reservado
+          // automaticamente aqui, o usuário separa o restante depois), mas `fulfilled` tem
+          // que refletir a quantidade NOVA, não reaproveitar o flag do item antigo.
+          newItems[matchIdx] = {
+            ...newItems[matchIdx],
+            boxesSeparated: oldItem.boxesSeparated,
+            separatedStockLotIds: oldItem.separatedStockLotIds,
+            separatedPkgAllocations: oldItem.separatedPkgAllocations,
+            manuallySeparated: oldItem.manuallySeparated,
+            fulfilled: oldSeparated >= newItems[matchIdx].quantity,
+          };
+        }
+      });
+
+      for (const [pid, prod] of productUpdates) {
+        const ref = productRefs.get(pid);
+        if (ref) transaction.set(ref, deepClean(prod), { merge: true });
+      }
+      for (const [id, data] of stockLotWrites.entries()) {
+        const ref = stockLotRefs.get(id);
+        if (ref) transaction.update(ref, deepClean(data));
+      }
+      for (const docItem of stockLotCreates) {
+        const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
+        transaction.set(ref, deepClean(docItem));
+      }
+
+      resultItems = newItems;
+    });
+
+    return resultItems;
   };
 
   // "Separar Caixas" — registra a separação física por item.
@@ -6250,6 +6374,15 @@ export default function App() {
             onSave={async (sale) => {
               try {
                 const prevSale = selectedSaleId ? sales.find(s => s.id === selectedSaleId) : null;
+
+                // Reeditar um pedido que já tinha caixas de ATACADO separadas (StockLot
+                // RESERVADO) e salvar por cima apagaria esse vínculo sem devolver a reserva —
+                // ver comentário de reconcileWholesaleSeparationOnEdit acima. Faz isso ANTES do
+                // saveDocument abaixo pra já persistir o pedido com os campos corretos.
+                if (prevSale && prevSale.id === sale.id) {
+                  sale = { ...sale, items: await reconcileWholesaleSeparationOnEdit(sale.id, sale.items) };
+                }
+
                 let updatedSale = sale; // will be updated with per-item fulfilled flags
 
                 await firebaseService.saveDocument("sales", sale);
