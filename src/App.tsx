@@ -2843,11 +2843,30 @@ export default function App() {
   // reversões tocavam o mesmo StockLot compartilhado quase ao mesmo tempo (reproduzido
   // ao vivo em 23/07/2026, pedido T599). A descoberta de candidatos abaixo usa o state
   // local só pra saber QUAIS documentos olhar — o conteúdo deles é sempre relido fresco.
+  // Confirmação manual do operador de estoque (SaleItem.manuallySeparated) — puramente
+  // informativa, não mexe em StockLot/Product.stock, por isso não precisa de transação
+  // atômica como handleSepararCaixas/handlePartialRevertSeparacao abaixo.
+  const handleToggleItemSeparated = async (saleId: string, itemIdx: number, value: boolean) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+    const newItems = sale.items.map((item, idx) => idx === itemIdx ? { ...item, manuallySeparated: value } : item);
+    try {
+      await firebaseService.updateDocument('sales', saleId, { items: newItems });
+    } catch (err: any) {
+      toast.show('Erro ao marcar separação: ' + (err.message || err));
+    }
+  };
+
   const handleSepararCaixas = async (
     saleId: string,
-    separations: { itemIdx: number; quantity: number }[]
+    separations: { itemIdx: number; quantity: number }[],
+    // Usado só pelo toggle "Reservar Estoque Disponível" do SaleFormView, chamado logo
+    // depois de criar a venda: o doc já existe no Firestore (onSave já salvou), mas o
+    // listener local de `sales` ainda não sincronizou de volta — sem isso o `sales.find`
+    // abaixo não acha a venda recém-criada e a chamada vira um no-op silencioso.
+    saleOverride?: Sale,
   ) => {
-    const sale = sales.find(s => s.id === saleId);
+    const sale = sales.find(s => s.id === saleId) || saleOverride;
     if (!sale) return;
     const uid = auth.currentUser?.uid;
     if (!uid) { toast.show('Usuário não autenticado.'); return; }
@@ -5909,6 +5928,7 @@ export default function App() {
             onExpediteSale={handleExpediteSale}
             onRevertExpedition={handleRevertExpedition}
             onSepararCaixas={handleSepararCaixas}
+            onToggleItemSeparated={handleToggleItemSeparated}
             onPartialRevertSeparacao={handlePartialRevertSeparacao}
             onAlterarProdutosVenda={handleAlterarProdutosVenda}
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
@@ -6193,6 +6213,7 @@ export default function App() {
             lots={productionLots}
             sectors={sectors}
             productionConfigs={productionConfigs}
+            onSepararCaixas={handleSepararCaixas}
             onQuickAddPerson={async (person) => {
               const result = await firebaseService.saveDocument("people", person);
               toast.show('Cliente cadastrado!');

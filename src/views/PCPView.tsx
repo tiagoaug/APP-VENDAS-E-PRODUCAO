@@ -608,6 +608,11 @@ export default function PCPView({
     os: ServiceOrder;
     items: (LotAdvanceItem & { included: boolean; lotId: string; currentSectorId: string })[];
   } | null>(null);
+  // Popup centralizado de escolha de Setor Destino dentro do painel "Dar Baixa" — guarda a
+  // "key" do item cujo seletor está aberto (em vez do <select> nativo invisível por cima da
+  // cápsula, que abria o picker genérico do Android em vez de um popup no visual do app).
+  // 'ALL' = modo em lote, aplica o setor escolhido em todos os pedidos marcados de uma vez.
+  const [osBaixaSectorPickerFor, setOsBaixaSectorPickerFor] = useState<string | 'ALL' | null>(null);
   // Painel de "Fracionar Pedido": divide uma ficha (sourceItem) em N sub-fichas
   // nomeadas A, B, C... cada uma virando uma ficha independente (própria OS, próprio
   // avanço de setor). A última fração da lista é sempre o "resto" — recalculada
@@ -2046,13 +2051,14 @@ export default function PCPView({
     });
 
     if (os) {
+      // Concluir a OS é só status de produção — NÃO liquida o financeiro sozinho (pedido
+      // explícito do usuário: pagar é um passo manual e separado, feito depois em Financeiro >
+      // Ordens de Serviço a Fornecedores, inclusive agrupando várias OS do mesmo fornecedor
+      // num pagamento só — ver ProviderServiceOrdersCard.handlePayProvider).
       await firebaseService.updateDocument('serviceOrders', os.id, {
         status: 'COMPLETED',
         finishedAt: Date.now(),
       });
-      if (os.transactionId) {
-        try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
-      }
     }
   };
 
@@ -2900,13 +2906,12 @@ export default function PCPView({
     const { destSectorName, isFinished } = await applyLotAdvance(lot, items, currentSectorId, nextStatusId, notes, stockWrites);
 
     if (os) {
+      // Concluir a OS é só status de produção — não liquida o financeiro sozinho, ver
+      // comentário equivalente acima (handleFinalizeSelectedSourceItems).
       await firebaseService.updateDocument('serviceOrders', os.id, {
         status: 'COMPLETED',
         finishedAt: Date.now(),
       });
-      if (os.transactionId) {
-        try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
-      }
     }
 
     setSectorChangeConfirm(null);
@@ -3986,7 +3991,10 @@ export default function PCPView({
         items.push({
           ...it,
           key: `${lotObj.id}::${it.key}`,
-          chosenSectorId: it.suggestedSectorId,
+          // Não sugere nenhum setor de propósito (pedido explícito do usuário: ele sempre
+          // escolhe manualmente) — começa "pendente de escolha", igual ao mesmo sentinel já
+          // usado no fluxo de fracionamento (ver linha ~2177/13115).
+          chosenSectorId: '__PENDING_SELECTION__',
           included: true,
           lotId: lotObj.id,
           currentSectorId,
@@ -4014,6 +4022,12 @@ export default function PCPView({
     setOsBaixaPanel(prev => prev ? { ...prev, items: prev.items.map(it => it.key === key ? { ...it, chosenSectorId: sectorId } : it) } : prev);
   };
 
+  // "Mover Selecionados Para" — aplica o mesmo setor destino em todos os pedidos marcados
+  // (item.included) de uma vez, em vez de escolher um por um.
+  const updateOsBaixaSectorForIncluded = (sectorId: string) => {
+    setOsBaixaPanel(prev => prev ? { ...prev, items: prev.items.map(it => it.included ? { ...it, chosenSectorId: sectorId } : it) } : prev);
+  };
+
   // Confirma a baixa do painel: avança SÓ os pedidos incluídos (os desmarcados ficam
   // parados, sem nenhuma chamada de avanço/estoque sobre eles). Agrupa por Mapa, já que
   // applyLotAdvance opera um lote por vez e a OS pode cobrir vários. A OS só é marcada
@@ -4028,6 +4042,11 @@ export default function PCPView({
 
     if (includedItems.length === 0) {
       toast.show('Selecione ao menos um pedido para dar baixa.');
+      return;
+    }
+
+    if (includedItems.some(it => it.chosenSectorId === '__PENDING_SELECTION__')) {
+      toast.show('Escolha o setor destino (ou "Concluído") de cada pedido marcado antes de dar baixa.');
       return;
     }
 
@@ -4076,17 +4095,16 @@ export default function PCPView({
       }
 
       if (stayedItems.length === 0) {
-        // Baixa completa: fecha a OS e liquida o financeiro, como no fluxo antigo.
+        // Baixa completa: fecha a OS — só status de produção, NÃO liquida o financeiro
+        // sozinho (pedido explícito do usuário: pagar é manual, depois, em Financeiro >
+        // Ordens de Serviço a Fornecedores, podendo agrupar várias OS num pagamento só).
         await firebaseService.updateDocument('serviceOrders', os.id, {
           status: 'COMPLETED',
           finishedAt: Date.now(),
         });
-        if (os.transactionId) {
-          try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
-        }
       } else {
         // Baixa parcial: a OS continua a MESMA, PENDENTE, agora só com os pedidos que
-        // ficaram de fora — valor e liquidação financeira só acontecem na última baixa.
+        // ficaram de fora.
         const remainingKeys = os.sourceItemKeys && os.sourceItemKeys.length > 0
           ? stayedItems.map(it => `${it.lotId}::${it.orderId}::${it.siIdx}`)
           : undefined;
@@ -4173,6 +4191,20 @@ export default function PCPView({
         console.error(e);
         toast.show("Erro ao excluir Ordem de Serviço: " + (e instanceof Error ? e.message : String(e)));
       }
+    }
+  };
+
+  // Ferramenta de correção (tela "OS Concluídas"): volta uma OS já marcada "Pago" pra
+  // "Pendente" — desfaz a baixa financeira sem excluir nada (reaproveita updateTransaction,
+  // que já sabe reverter o saldo da conta corretamente quando o status sai de COMPLETED).
+  const handleRevertOsPayment = async (os: ServiceOrder) => {
+    if (!os.transactionId) return;
+    try {
+      await financeService.updateTransaction(os.transactionId, { status: 'PENDING' });
+      toast.show(`Pagamento da OS ${os.osNumber} revertido — voltou a aparecer em aberto no Financeiro.`);
+    } catch (e) {
+      console.error(e);
+      toast.show("Erro ao reverter pagamento: " + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -11885,6 +11917,7 @@ export default function PCPView({
         onShareOS={(os) => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })}
         onPrintOS={(os) => { setPrintOSData({ os, nextSectorName: 'CONCLUÍDO' }); setIsPrintOSModalOpen(true); }}
         onOpenReminders={(os) => setOsNotesPopup(os)}
+        onRevertPayment={handleRevertOsPayment}
         osBadgeBg={osBadgeBg}
         osBadgeText={osBadgeText}
         osBadgeBold={osBadgeBold}
@@ -12211,9 +12244,22 @@ export default function PCPView({
               </span>
             </button>
 
+            {osBaixaPanel.items.some(it => it.included) && (
+              <button
+                type="button"
+                onClick={() => setOsBaixaSectorPickerFor('ALL')}
+                data-guide-anchor="pcp.osBaixaMoverSelecionados"
+                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-orange-900/20 text-orange-400 hover:bg-orange-900/40' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
+              >
+                <ChevronDown size={12} /> Mover Selecionados Para ({osBaixaPanel.items.filter(it => it.included).length})
+              </button>
+            )}
+
             <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
               {osBaixaPanel.items.map(item => {
-                const isOverridden = item.included && item.chosenSectorId !== item.suggestedSectorId;
+                // Sem sugestão automática de propósito (pedido do usuário: ele sempre escolhe
+                // manualmente) — cada pedido começa "pendente de escolha" (ver handleCompleteOS).
+                const isPending = item.chosenSectorId === '__PENDING_SELECTION__';
                 return (
                   <div
                     key={item.key}
@@ -12244,45 +12290,34 @@ export default function PCPView({
                     {item.included ? (
                       <div className="flex items-center gap-2 pl-7">
                         <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Mover para</span>
-                        {/* Cápsula estilizada com nome do setor em laranja + ponto pulsante.
-                            O <select> nativo fica invisível sobre a cápsula para capturar o
-                            toque e abrir o picker nativo do Android sem perder o visual custom. */}
-                        <div className="relative flex-1 min-w-0">
-                          <div className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${isOverridden
-                            ? 'border-orange-400 bg-orange-500/15'
+                        {/* Cápsula estilizada com nome do setor em laranja + ponto pulsante —
+                            toque abre um popup centralizado no visual do app (ver
+                            osBaixaSectorPickerFor), não mais o picker nativo do Android. */}
+                        <button
+                          type="button"
+                          title={`Setor de destino para ${item.productName}`}
+                          onClick={() => setOsBaixaSectorPickerFor(item.key)}
+                          className={`flex-1 min-w-0 flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${isPending
+                            ? `border-dashed ${isDarkMode ? 'border-slate-600 bg-slate-900/50' : 'border-slate-300 bg-slate-100'}`
                             : 'border-orange-300 bg-orange-50 dark:border-orange-700/50 dark:bg-orange-900/20'
-                            }`}>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 truncate">
-                              {item.chosenSectorId === ''
+                            }`}
+                        >
+                          <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isPending ? (isDarkMode ? 'text-slate-400' : 'text-slate-500') : 'text-orange-500'}`}>
+                            {isPending
+                              ? ''
+                              : item.chosenSectorId === ''
                                 ? 'CONCLUÍDO'
                                 : (visibleSectors.find(s => s.id === item.chosenSectorId)?.name || item.chosenSectorId)}
-                            </span>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-                              <ChevronDown size={13} className="text-orange-500" />
-                            </div>
+                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isPending && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />}
+                            <ChevronDown size={13} className={isPending ? (isDarkMode ? 'text-slate-500' : 'text-slate-400') : 'text-orange-500'} />
                           </div>
-                          <select
-                            title={`Setor de destino para ${item.productName}`}
-                            value={item.chosenSectorId}
-                            onChange={(e) => updateOsBaixaItemSector(item.key, e.target.value)}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          >
-                            <option value="">CONCLUÍDO (finalizar)</option>
-                            {visibleSectors.map(sector => (
-                              <option key={sector.id} value={sector.id}>{sector.name}</option>
-                            ))}
-                          </select>
-                        </div>
+                        </button>
                       </div>
                     ) : (
                       <p className={`text-[8px] font-bold uppercase tracking-widest pl-7 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                         Permanece nesta OS — não baixado agora
-                      </p>
-                    )}
-                    {item.included && isOverridden && (
-                      <p className="text-[8px] font-bold uppercase tracking-widest pl-7 text-orange-500">
-                        Ajustado manualmente — sugestão original: {item.suggestedSectorName}
                       </p>
                     )}
                   </div>
@@ -12312,6 +12347,76 @@ export default function PCPView({
             </div>
           </div>
         </div>,
+        document.body
+      )}
+
+      {/* Popup centralizado de escolha de Setor Destino, aberto pela cápsula "Mover para" de
+          um item OU pelo botão "Mover Selecionados Para" (modo 'ALL', aplica em todos os
+          pedidos marcados de uma vez) — mesmo padrão de popup do resto do app. */}
+      {osBaixaSectorPickerFor && osBaixaPanel && createPortal(
+        (() => {
+          const isBulk = osBaixaSectorPickerFor === 'ALL';
+          const item = isBulk ? null : osBaixaPanel.items.find(it => it.key === osBaixaSectorPickerFor);
+          if (!isBulk && !item) return null;
+          const includedCount = osBaixaPanel.items.filter(it => it.included).length;
+          const applySector = (sectorId: string) => {
+            if (isBulk) updateOsBaixaSectorForIncluded(sectorId);
+            else updateOsBaixaItemSector(item!.key, sectorId);
+            setOsBaixaSectorPickerFor(null);
+          };
+          return (
+            <div
+              className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
+              style={{ zIndex: 60010 }}
+              onClick={() => setOsBaixaSectorPickerFor(null)}
+            >
+              <div
+                className={`relative w-full max-w-sm max-h-[80vh] flex flex-col rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <div>
+                    <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Setor Destino</h2>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
+                      {isBulk ? `${includedCount} pedido${includedCount === 1 ? '' : 's'} marcado${includedCount === 1 ? '' : 's'}` : `${item!.productName}${item!.colorName ? ` · ${item!.colorName}` : ''}`}
+                    </p>
+                  </div>
+                  <button onClick={() => setOsBaixaSectorPickerFor(null)} className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} title="Fechar" aria-label="Fechar seleção de setor">
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => applySector('')}
+                    className={`flex items-center justify-between gap-2 px-4 py-3 rounded-2xl transition-all border-2 ${
+                      !isBulk && item!.chosenSectorId === ''
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                        : `border-transparent ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`
+                    }`}
+                  >
+                    <span className="text-xs font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Concluído (finalizar)</span>
+                  </button>
+                  {visibleSectors.map(sector => (
+                    <button
+                      key={sector.id}
+                      type="button"
+                      onClick={() => applySector(sector.id)}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all border-2 ${
+                        !isBulk && item!.chosenSectorId === sector.id
+                          ? 'border-orange-400 bg-orange-50 dark:bg-orange-900/20'
+                          : `border-transparent ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: sector.color || '#6366f1' }} />
+                      <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sector.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })(),
         document.body
       )}
 

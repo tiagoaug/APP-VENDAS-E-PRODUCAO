@@ -6,7 +6,7 @@ import { notificationService } from '../services/notificationService';
 import ComboBox from '../components/ComboBox';
 import ReminderPickerModal from '../components/ReminderPickerModal';
 import DeliveryAddressForm from '../components/DeliveryAddressForm';
-import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator, MapPin } from 'lucide-react';
+import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator, MapPin, PackageCheck } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import PersonModal from '../components/PersonModal';
 import jsPDF from 'jspdf';
@@ -59,6 +59,10 @@ interface SaleFormViewProps {
   onCancelAndRevert: (id: string) => void;
   onCancel: () => void;
   onCreateProductionOrder: (order: ProductionOrder, lots: ProductionLot[], deductions: { productId: string; variationId: string; size?: string; quantity: number }[]) => Promise<void>;
+  // Toggle "Reservar Estoque Disponível": roda a mesma transação de "Separar Caixas" (ver
+  // App.tsx/handleSepararCaixas) logo depois de salvar, pra caixas de Atacado que já têm
+  // estoque livre — sem esperar o usuário abrir a venda de novo e separar manualmente.
+  onSepararCaixas: (saleId: string, separations: { itemIdx: number; quantity: number }[], saleOverride?: Sale) => Promise<void>;
   modulesConfig: AppModulesConfig;
   isDarkMode: boolean;
   activeCollaborator?: Collaborator | null;
@@ -74,7 +78,7 @@ interface SaleFormViewProps {
   onQuickAddPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
 }
 
-export default function SaleFormView({ saleId, initialParams, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [], onQuickAddPerson }: SaleFormViewProps) {
+export default function SaleFormView({ saleId, initialParams, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, onSepararCaixas, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [], onQuickAddPerson }: SaleFormViewProps) {
   const sellerCollaborators = useMemo(() => collaborators.filter(c => c.isSeller), [collaborators]);
   const hasProduction = modulesConfig.production;
   // Refinamento por função dentro do setor Vendas (ver taskPermissions em Collaborator) — 'Vender'
@@ -356,6 +360,9 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [showProductionOrderModal, setShowProductionOrderModal] = useState(false);
   const [isProductionOrder, setIsProductionOrder] = useState(false);
+  // Reserva na hora, as caixas de Atacado que já tiverem estoque livre — em vez de deixar
+  // 100% pendente pra separação manual depois (ver handleSave, chamada de onSepararCaixas).
+  const [reserveAvailableStock, setReserveAvailableStock] = useState(false);
   const [productionGlobalNote, setProductionGlobalNote] = useState<string>(() => {
     const existingSaleId = saleId;
     if (!existingSaleId) return '';
@@ -1085,6 +1092,29 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
         }
       } else {
         await onSave(saleToSave);
+      }
+
+      // Toggle "Reservar Estoque Disponível": só cobre itens de Atacado (caixa) — os de
+      // Varejo já são auto-abatidos direto no onSave acima quando há estoque (ver App.tsx).
+      // Pula quando a venda ficou atrelada a um Pedido de Produção: aí a caixa só pode vir
+      // de um lote reservado especificamente pra ela (ainda não existe nesse momento), não
+      // do estoque geral — mesma regra de buildSeparationRows (separationRows.ts).
+      if (reserveAvailableStock && !saleToSave.productionOrderId) {
+        const separations = saleToSave.items.reduce<{ itemIdx: number; quantity: number }[]>((acc, item, idx) => {
+          if (item.saleType !== SaleType.WHOLESALE) return acc;
+          const already = item.boxesSeparated || 0;
+          const remaining = Math.max(0, item.quantity - already);
+          if (remaining <= 0) return acc;
+          const product = products.find(p => p.id === item.productId);
+          const variation = product?.variations.find(v => v.id === item.variationId);
+          const available = (variation?.stock as any)?.['WHOLESALE'] || 0;
+          const qty = Math.min(remaining, available);
+          if (qty > 0) acc.push({ itemIdx: idx, quantity: qty });
+          return acc;
+        }, []);
+        if (separations.length > 0) {
+          await onSepararCaixas(saleToSave.id, separations, saleToSave);
+        }
       }
 
       setShowSuccessModal(true);
@@ -2739,6 +2769,38 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                </button>
              );
            })()}
+
+           {/* Reservar Estoque Disponível — só aparece havendo caixa de Atacado no pedido
+               (Varejo já é auto-abatido sozinho quando é Venda). Liga a separação automática
+               do que já tem estoque livre, sem precisar abrir o pedido de novo depois pra
+               clicar em "Separar Caixas" manualmente. */}
+           {wholesaleBoxCartItems.length > 0 && (
+             <button
+               type="button"
+               onClick={() => setReserveAvailableStock(v => !v)}
+               data-guide-anchor="saleForm.reservarEstoqueDisponivel"
+               className={`w-full mt-2 flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98] text-left ${reserveAvailableStock
+                 ? (isDarkMode ? 'bg-emerald-900/20 border-emerald-700/40' : 'bg-emerald-50 border-emerald-200')
+                 : (isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100')
+               }`}
+               aria-label="Alternar reserva automática de estoque disponível"
+             >
+               <PackageCheck size={16} className={reserveAvailableStock ? 'text-emerald-500 shrink-0' : 'text-slate-400 shrink-0'} />
+               <div className="flex-1 min-w-0">
+                 <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${reserveAvailableStock ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                   Reservar Estoque Disponível
+                 </p>
+                 <p className={`text-[8px] font-bold mt-1 leading-tight ${reserveAvailableStock ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                   {reserveAvailableStock
+                     ? 'Ativado: separa na hora as caixas que já têm estoque livre'
+                     : 'Separar já as caixas com estoque livre, sem esperar depois'}
+                 </p>
+               </div>
+               <div className={`relative w-11 h-6 rounded-full shrink-0 transition-all ${reserveAvailableStock ? 'bg-emerald-500' : (isDarkMode ? 'bg-slate-700' : 'bg-slate-200')}`}>
+                 <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all duration-200 ${reserveAvailableStock ? 'left-6' : 'left-1'}`} />
+               </div>
+             </button>
+           )}
         </div>
       </div>
 

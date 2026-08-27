@@ -543,6 +543,10 @@ export type SaleItem = {
   // permitida); caixas não cobertas saem sem destinatário nas etiquetas. Ver
   // SalesView.handleOpenSaleLabels, que consome isso pra atribuir recipientName por caixa.
   boxRecipients?: { name: string; quantity: number }[];
+  // Confirmação manual do operador de estoque: "a caixa já foi fisicamente separada e
+  // etiquetada" — independente de boxesSeparated (que é a RESERVA de quantidade no sistema,
+  // rótulo "Reservar" na tela). Puramente informativo, não mexe em estoque/StockLot.
+  manuallySeparated?: boolean;
 };
 
 export type SaleExtraItem = {

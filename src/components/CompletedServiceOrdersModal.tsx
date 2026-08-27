@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Filter, Download, Eye, Trash2, Share2, Printer, Bell, CheckSquare, Search, Send, FileText, Check, ListChecks,
+  X, Filter, Download, Eye, Trash2, Share2, Printer, Bell, CheckSquare, Search, Send, FileText, Check, ListChecks, Undo2,
 } from 'lucide-react';
 import { ServiceOrder, ProductionLot, Sector, Transaction, Product, ProductionOrder } from '../types';
 import DatePicker from './DatePicker';
@@ -55,6 +55,11 @@ interface CompletedServiceOrdersModalProps {
   onShareOS: (os: ServiceOrder) => void;
   onPrintOS: (os: ServiceOrder) => void;
   onOpenReminders: (os: ServiceOrder) => void;
+  // Ferramenta de correção: volta uma OS já marcada "Pago" pra "Pendente" — usado quando a
+  // conclusão da OS liquidou o financeiro sozinha por engano (ver PCPView.tsx, comportamento
+  // já corrigido pra concluir NÃO pagar mais automaticamente; isso aqui conserta o que já
+  // tinha sido marcado como pago antes da correção).
+  onRevertPayment: (os: ServiceOrder) => Promise<void>;
   osBadgeBg: string;
   osBadgeText: string;
   osBadgeBold: boolean;
@@ -65,7 +70,7 @@ interface CompletedServiceOrdersModalProps {
 
 export default function CompletedServiceOrdersModal({
   isOpen, onClose, serviceOrders, lots, sectors, transactions, isDarkMode,
-  onViewOS, onDeleteOS, onShareOS, onPrintOS, onOpenReminders,
+  onViewOS, onDeleteOS, onShareOS, onPrintOS, onOpenReminders, onRevertPayment,
   osBadgeBg, osBadgeText, osBadgeBold, osBadgeItalic,
   products, productionOrders,
 }: CompletedServiceOrdersModalProps) {
@@ -80,6 +85,7 @@ export default function CompletedServiceOrdersModal({
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isReverting, setIsReverting] = useState(false);
 
   // Filtros persistem entre aberturas da tela (não resetam ao fechar) — salvos como um
   // único objeto JSON, igual ao padrão já usado pra outras preferências do PCP.
@@ -190,6 +196,23 @@ export default function CompletedServiceOrdersModal({
   // as marcadas como Não Contábil ficam de fora do relatório (e dos totais), embora
   // continuem aparecendo normalmente na lista da tela.
   const exportableOS = useMemo(() => selectedFilteredOS.filter(os => !isNonAccounting(os)), [selectedFilteredOS]);
+
+  // Ferramenta de correção em lote: das OS marcadas, quais já estão "Pago" (as únicas que
+  // fazem sentido reverter — Pendente/Não Contábil não têm o que desfazer).
+  const paidSelected = useMemo(() => selectedFilteredOS.filter(os => getPaymentStatus(os) === 'COMPLETED'), [selectedFilteredOS, transactions]);
+
+  const handleBatchRevert = async () => {
+    if (paidSelected.length === 0) return;
+    if (!confirm(`Reverter o pagamento de ${paidSelected.length} OS pra "Pendente"? O valor volta a aparecer em aberto no Financeiro (Ordens de Serviço a Fornecedores).`)) return;
+    setIsReverting(true);
+    try {
+      for (const os of paidSelected) {
+        await onRevertPayment(os);
+      }
+    } finally {
+      setIsReverting(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -315,20 +338,29 @@ export default function CompletedServiceOrdersModal({
           </div>
 
           {isSelectionMode && (
-            <div className="px-6 py-2 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <span className="text-[10px] font-black uppercase tracking-widest text-violet-500">
-                {selectedIds.size} selecionada{selectedIds.size === 1 ? '' : 's'}
-              </span>
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={() => setSelectedIds(new Set(filtered.map(os => os.id)))}
-                  className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600">
-                  Selecionar Todas
-                </button>
-                <button type="button" onClick={() => setSelectedIds(new Set())}
-                  className="text-[9px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-600">
-                  Limpar
-                </button>
+            <div className="px-6 py-2 flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-violet-500">
+                  {selectedIds.size} selecionada{selectedIds.size === 1 ? '' : 's'}
+                </span>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setSelectedIds(new Set(filtered.map(os => os.id)))}
+                    className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600">
+                    Selecionar Todas
+                  </button>
+                  <button type="button" onClick={() => setSelectedIds(new Set())}
+                    className="text-[9px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-600">
+                    Limpar
+                  </button>
+                </div>
               </div>
+              {paidSelected.length > 0 && (
+                <button type="button" onClick={handleBatchRevert} disabled={isReverting}
+                  data-guide-anchor="pcp.osConcluidasReverterPagamentoLote"
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-all active:scale-95">
+                  <Undo2 size={13} /> {isReverting ? 'Revertendo...' : `Reverter Pagamento (${paidSelected.length})`}
+                </button>
+              )}
             </div>
           )}
 
@@ -417,6 +449,20 @@ export default function CompletedServiceOrdersModal({
                       <Bell size={12} className="text-amber-500" /> Lembretes
                       {(os.notes || os.reminderTitle || os.reminderAt) && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
                     </button>
+                    {paymentStatus === 'COMPLETED' && (
+                      <button
+                        type="button"
+                        title="Reverter pagamento pra Pendente"
+                        data-guide-anchor="pcp.osConcluidasReverterPagamento"
+                        onClick={async () => {
+                          if (!confirm(`Reverter o pagamento da OS ${os.osNumber} pra "Pendente"? O valor volta a aparecer em aberto no Financeiro.`)) return;
+                          await onRevertPayment(os);
+                        }}
+                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-amber-900/20 text-amber-400 hover:bg-amber-900/40' : 'bg-amber-50 text-amber-600 hover:bg-amber-100'}`}
+                      >
+                        <Undo2 size={12} /> Reverter Pagamento
+                      </button>
+                    )}
                   </div>
                 </div>
               );

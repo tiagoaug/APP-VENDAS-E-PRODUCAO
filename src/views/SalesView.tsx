@@ -123,6 +123,9 @@ interface SalesViewProps {
   onExpediteSale: (saleId: string) => Promise<void>;
   onRevertExpedition: (saleId: string) => Promise<void>;
   onSepararCaixas: (saleId: string, separations: { itemIdx: number; quantity: number }[]) => Promise<void>;
+  // Confirmação manual do operador ("Separado" — etiqueta colocada), independente da
+  // quantidade reservada em sistema (ver "Reservar" no popup Pedido & Separação).
+  onToggleItemSeparated: (saleId: string, itemIdx: number, value: boolean) => Promise<void>;
   onPartialRevertSeparacao: (saleId: string, reverts: { itemIdx: number; quantity: number }[]) => Promise<void>;
   // "Alterar Produtos" (popup Pedido & Separação) — remover devolve o que já estava
   // separado pro estoque antes de encolher/apagar a linha; adicionar entra como item
@@ -198,6 +201,7 @@ export default function SalesView({
   onExpediteSale,
   onRevertExpedition,
   onSepararCaixas,
+  onToggleItemSeparated,
   onPartialRevertSeparacao,
   onAlterarProdutosVenda,
   onNavigateStock,
@@ -514,6 +518,9 @@ export default function SalesView({
   const [editProdutosMode, setEditProdutosMode] = useState(false);
   // Quantidade a remover por índice de item (posição em sale.items)
   const [alterarRemoveQtys, setAlterarRemoveQtys] = useState<Record<number, number>>({});
+  // Popup centralizado de confirmação do botão "remover produto inteiro" (lixeira) — em vez
+  // do confirm() nativo do navegador, que não segue o visual do resto do app.
+  const [removeAllConfirm, setRemoveAllConfirm] = useState<{ rowIdx: number; qty: number; unit: string; name: string; releaseQty: number; resultingStock: number; hasReserved: boolean } | null>(null);
   // Itens novos ainda não salvos, aguardando o toque em "Salvar Alterações"
   const [alterarAddDrafts, setAlterarAddDrafts] = useState<{
     id: string; productId: string; variationId: string; saleType: SaleType; size?: string;
@@ -3332,7 +3339,11 @@ export default function SalesView({
 
       {/* Popup — Itens da Venda + Separação Inline */}
       {itemsPopupSale && (() => {
-        const s = itemsPopupSale;
+        // Sempre pega a venda AO VIVO da lista (não o snapshot congelado de quando o popup
+        // abriu) — sem isso, toques que atualizam o Firestore sem fechar o popup (ex.:
+        // "Separado", que não fecha de propósito pra marcar vários itens seguidos) gravam
+        // certo mas a tela continua mostrando o valor antigo até reabrir o popup.
+        const s = sales.find(x => x.id === itemsPopupSale.id) || itemsPopupSale;
         const separationRows = buildSeparationRows(s, products, stockLots);
 
         const rows = s.items.map((item, idx) => {
@@ -3563,9 +3574,26 @@ export default function SalesView({
                             </button>
                           </div>
                           <span className="text-[9px] font-black uppercase text-slate-400 w-8 text-center shrink-0">{row.unit}</span>
+                          <button
+                            type="button"
+                            title="Remover o produto inteiro do pedido"
+                            aria-label={`Remover ${row.item.quantity} ${row.unit} — o produto inteiro`}
+                            data-guide-anchor="sales.alterarRemoverTudo"
+                            onClick={() => {
+                              const nome = `${row.product?.reference ? `${row.product.reference} · ` : ''}${row.product?.name || ''}${row.variation?.colorName ? ` · ${row.variation.colorName}` : ''}`;
+                              const releaseQty = Math.min(row.item.quantity, row.separated);
+                              setRemoveAllConfirm({ rowIdx: row.idx, qty: row.item.quantity, unit: row.unit, name: nome, releaseQty, resultingStock: row.stockAvailable + releaseQty, hasReserved: row.hasReserved });
+                            }}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 active:scale-90 transition-all ${isDarkMode ? 'bg-rose-900/20 text-rose-400 hover:bg-rose-900/40' : 'bg-rose-50 text-rose-500 hover:bg-rose-100'}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                         {willRelease > 0 && (
                           <p className="text-[9px] font-bold text-emerald-500 mt-2">Libera {willRelease} {row.unit} de volta pro estoque disponível</p>
+                        )}
+                        {removeQty > 0 && removeQty >= row.item.quantity && (
+                          <p className="text-[9px] font-bold text-rose-500 mt-2 uppercase tracking-widest">Produto inteiro será removido do pedido</p>
                         )}
                       </div>
                     );
@@ -3805,6 +3833,79 @@ export default function SalesView({
                     </div>
                   )}
 
+                  {/* Popup centralizado de confirmação da lixeira "remover produto inteiro" —
+                      em vez do confirm() nativo, pra seguir o visual do resto do app. */}
+                  {removeAllConfirm && (
+                    <div className="fixed inset-0 z-[320000] flex items-center justify-center p-4" onClick={() => setRemoveAllConfirm(null)}>
+                      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                      <div
+                        className={`relative w-full max-w-sm rounded-[2.5rem] shadow-2xl p-6 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        {removeAllConfirm.hasReserved ? (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-900/20 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
+                                <AlertCircle size={20} />
+                              </div>
+                              <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Item Reservado</h2>
+                            </div>
+                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                              "<span className={isDarkMode ? 'text-white' : 'text-slate-900'}>{removeAllConfirm.name}</span>" tem produção casada reservada pra este pedido — não dá pra excluir direto por aqui. Reverta a separação primeiro em "Separar Caixas" (des-separar) e só depois volte aqui pra excluir o produto.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setRemoveAllConfirm(null)}
+                              className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-600 hover:bg-amber-700 active:scale-95 transition-all"
+                            >
+                              Entendi
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-900/20 text-rose-400' : 'bg-rose-50 text-rose-500'}`}>
+                                <Trash2 size={20} />
+                              </div>
+                              <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Remover Produto do Pedido</h2>
+                            </div>
+                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                              Remover <span className="text-rose-500">{removeAllConfirm.qty} {removeAllConfirm.unit}</span> de "<span className={isDarkMode ? 'text-white' : 'text-slate-900'}>{removeAllConfirm.name}</span>" deste pedido? Isso marca o produto inteiro pra sair — só é efetivado de verdade quando você tocar em "Salvar Alterações".
+                            </p>
+                            {removeAllConfirm.releaseQty > 0 ? (
+                              <p className="text-xs font-bold text-emerald-500 leading-relaxed -mt-1">
+                                Volta <span className="font-black">{removeAllConfirm.releaseQty} {removeAllConfirm.unit}</span> pro estoque disponível — o estoque desse item fica com <span className="font-black">{removeAllConfirm.resultingStock} {removeAllConfirm.unit}</span> depois da volta.
+                              </p>
+                            ) : (
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed -mt-1">
+                                Nada a devolver ao estoque — esse item ainda não tinha caixa separada.
+                              </p>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setRemoveAllConfirm(null)}
+                                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAlterarRemoveQtys(prev => ({ ...prev, [removeAllConfirm.rowIdx]: removeAllConfirm.qty }));
+                                  setRemoveAllConfirm(null);
+                                }}
+                                className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-rose-600 hover:bg-rose-700 active:scale-95 transition-all"
+                              >
+                                Remover
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {alterarAddDrafts.length > 0 && (
                     <div className="flex flex-col gap-2">
                       <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">A adicionar</p>
@@ -3926,9 +4027,11 @@ export default function SalesView({
                         </div>
                       )}
 
-                      {/* Quantity stepper */}
+                      {/* Quantity stepper — "Reservar": reserva a quantidade no sistema (abate
+                          do estoque disponível pra outros pedidos). Diferente de "Separado"
+                          logo abaixo, que é só a confirmação manual do operador. */}
                       <div data-guide-anchor="sales.popupSepararStepper" className={`flex items-center gap-2 ${isDelivered ? 'pointer-events-none' : ''}`}>
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 shrink-0">Separar</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 shrink-0">Reservar</span>
                         <div className={`flex items-center flex-1 rounded-xl p-1 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
                           <button
                             type="button"
@@ -3962,13 +4065,37 @@ export default function SalesView({
                         </div>
                         <span className="text-[9px] font-black uppercase text-slate-400 w-8 text-center shrink-0">{row.unit}</span>
                       </div>
+
+                      {/* "Separado" — confirmação manual do operador de estoque (colocou a
+                          etiqueta física na caixa), independente da quantidade reservada
+                          acima. Salva na hora, sem precisar do botão "Reservar (N)" lá embaixo. */}
+                      <button
+                        type="button"
+                        onClick={() => onToggleItemSeparated(s.id, row.idx, !row.item.manuallySeparated)}
+                        data-guide-anchor="sales.popupItemSeparado"
+                        className={`w-full flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-xl border-2 transition-all ${
+                          row.item.manuallySeparated
+                            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                            : 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
+                          {row.item.manuallySeparated ? (
+                            <CheckCircle2 size={14} />
+                          ) : (
+                            <span className="w-3.5 h-3.5 rounded-full border-2 border-amber-400" />
+                          )}
+                          Separado (etiqueta colocada)
+                        </span>
+                        <span className="text-[9px] font-black uppercase tracking-widest">{row.item.manuallySeparated ? 'Sim' : 'Não'}</span>
+                      </button>
                     </div>
                   );
                 })}
 
                 {/* Already fully separated items */}
                 {doneRows.length > 0 && pendingRows.length > 0 && (
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center pt-1">Já separados</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center pt-1">Já reservados</p>
                 )}
                 {doneRows.map(row => {
                   const revertQty = popupRevertQtys[row.idx] ?? 0;
@@ -4023,12 +4150,36 @@ export default function SalesView({
                         </div>
                       </div>
 
+                      {/* "Separado" — mesma confirmação manual do operador, ver bloco pendente acima */}
+                      {revertChoiceMode !== 'partial' && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleItemSeparated(s.id, row.idx, !row.item.manuallySeparated)}
+                          data-guide-anchor="sales.popupItemSeparado"
+                          className={`w-full flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-xl border-2 transition-all ${
+                            row.item.manuallySeparated
+                              ? 'border-emerald-500 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                              : 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
+                            {row.item.manuallySeparated ? (
+                              <CheckCircle2 size={14} />
+                            ) : (
+                              <span className="w-3.5 h-3.5 rounded-full border-2 border-amber-400" />
+                            )}
+                            Separado (etiqueta colocada)
+                          </span>
+                          <span className="text-[9px] font-black uppercase tracking-widest">{row.item.manuallySeparated ? 'Sim' : 'Não'}</span>
+                        </button>
+                      )}
+
                       {/* Partial revert stepper — only in partial mode */}
                       {revertChoiceMode === 'partial' && !isDelivered && (
                         <div className="flex items-center gap-2.5 mt-0.5">
                           <div className="flex flex-col shrink-0 min-w-[60px]">
                             <span className="text-[11px] font-black uppercase tracking-wide text-rose-500 leading-tight">Remover</span>
-                            <span className="text-[10px] font-bold text-slate-400 leading-tight">{row.separated} separados</span>
+                            <span className="text-[10px] font-bold text-slate-400 leading-tight">{row.separated} reservados</span>
                           </div>
                           <div className={`flex-1 flex items-center rounded-xl px-1 py-0.5 gap-0.5 ${isDarkMode ? 'bg-slate-900 border border-amber-800/30' : 'bg-white border border-amber-200'}`}>
                             <button
@@ -4237,7 +4388,7 @@ export default function SalesView({
                             }`}
                           >
                             <Boxes size={14} strokeWidth={2.5} />
-                            {processingPopupSep ? '...' : `Separar (${totalToSeparate})`}
+                            {processingPopupSep ? '...' : `Reservar (${totalToSeparate})`}
                           </button>
                         </div>
                       );
