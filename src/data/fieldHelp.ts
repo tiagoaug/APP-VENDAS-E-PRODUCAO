@@ -124,7 +124,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
 
   // ── Card de venda — cabeçalho e badges ───────────────────────────────────────────────
   'sales.cardDataPedido': { text: 'Data em que o pedido foi cadastrado no app.' },
-  'sales.cardNumeroPedido': { text: 'Número do pedido — usado pra buscar, identificar em etiquetas e conferir com o cliente.' },
+  'sales.cardNumeroPedido': { text: 'Número do pedido — usado pra buscar, identificar em etiquetas e conferir com o cliente. Toque pra copiar o número.' },
   'sales.cardBadgeEstoque': { text: 'Esse "pedido" na verdade é uma saída direto pro Estoque geral (sem cliente vinculado), não uma venda de verdade.' },
   'sales.cardBadgeVendedor': { text: 'Vendedor ou colaborador responsável por este pedido — usado no cálculo de comissão.' },
   'sales.cardBadgeNC': { text: '"Não Contábil" — esse pedido não entra nos relatórios financeiros/fiscais, mesmo aparecendo normalmente na lista.' },
@@ -238,6 +238,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'saleForm.adicionarRecebimento': { text: 'Registra um recebimento parcial ou total dessa venda — útil quando o cliente paga em mais de uma vez.' },
   'saleForm.resumoRecebimentos': { text: '"Total Pago" soma tudo que já foi recebido. "Restante" é o que ainda falta receber dessa venda.' },
   'saleForm.naoContabil': { text: 'Ligado, a venda abate o estoque normalmente mas NÃO gera nenhum lançamento no Financeiro — use pra vendas que você já controla o dinheiro fora do sistema. Desligado (padrão), a venda gera receita no Financeiro normalmente.' },
+  'saleForm.dividirCaixas': { text: 'Só aparece quando o pedido tem item de Atacado (caixa fechada). Serve pra quando o cliente do pedido é um revendedor/atacadista que já sabe pra quem vai repassar cada caixa: você informa aqui os clientes FINAIS dele (nome + quantas caixas cada um leva), sem trocar o cliente do pedido em si (continua sendo o revendedor) nem o valor cobrado. É só rastreabilidade — aparece na etiqueta e no romaneio, e alimenta a divisão por "Endereços de Entrega" quando as caixas vão pra lugares diferentes. Deixe em branco se não precisar dessa divisão.' },
   'saleForm.reservarEstoqueDisponivel': { text: 'Ligado, ao salvar o pedido já separa (reserva/abate) as caixas de Atacado que já têm estoque livre — o mesmo que você faria depois clicando em "Separar Caixas". O que não tiver estoque suficiente continua pendente pra separar mais tarde. Só aparece quando o pedido tem algum item de Atacado.' },
   'stock.disponivelFiltro': { text: 'Filtra a lista por cor, referência e outras opções — inclusive mostrar/ocultar o badge de pares por caixa.' },
   'stock.disponivelAtacado': { text: 'Mostra o estoque disponível em caixas fechadas (Atacado).' },
@@ -245,6 +246,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'stock.disponivelReposicao': { text: 'Planejamento de reposição: junta Atacado e Varejo, mostrando qualquer produto que vende em um dos dois — inclui também o que ainda está em produção (não finalizado).' },
   'nav.compras': { text: 'Abre a área de Compras — lista de compras lançadas e o botão pra lançar uma compra nova.' },
   'purchases.novaCompra': { text: 'Lança uma compra nova de mercadoria, matéria-prima ou serviço.' },
+  'purchases.novaCompraFixo': { text: 'Mesmo atalho de "Nova Compra", só que fixo na tela — não precisa rolar até o topo pra lançar uma compra nova.' },
   'purchaseForm.finalizar': { text: 'Confirma a compra. O estoque dos itens entra automaticamente e a despesa entra no Financeiro.' },
   'purchaseForm.fornecedor': {
     text: 'Escolha de quem você está comprando. O fornecedor (ou prestador de serviço) precisa estar cadastrado antes.',

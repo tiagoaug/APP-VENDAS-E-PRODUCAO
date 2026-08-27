@@ -4152,7 +4152,10 @@ export default function App() {
     // e as Ordens de Produção num único WriteBatch atômico — antes eram gravações sequenciais
     // separadas, e uma falha entre o crédito de estoque e a marcação do Mapa como finalizado
     // deixava a porta aberta pra um reprocessamento creditar o mesmo estoque de novo.
-    extraWrites: Array<{ type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }> = []
+    extraWrites: Array<
+      | { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }
+      | { type: 'increment_stock'; path: 'products'; id: string; deltas: { variationId: string; key: string; delta: number; pkgId?: string; pkgDelta?: number }[] }
+    > = []
   ) => {
     try {
       // 0. Pegar o estado anterior do lote para detectar remoções

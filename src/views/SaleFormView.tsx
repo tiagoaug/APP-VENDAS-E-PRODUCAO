@@ -2688,7 +2688,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
              }`}
              aria-label="Alternar modo não contábil"
            >
-             <Ban size={16} className={!isAccounting ? 'text-amber-500 shrink-0' : 'text-slate-400 shrink-0'} />
+             <Ban size={16} className="text-amber-500 shrink-0" />
              <div className="flex-1 min-w-0">
                <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${!isAccounting ? 'text-amber-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                  Não Contábil
@@ -2716,13 +2716,14 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                <button
                  type="button"
                  onClick={() => setShowBoxSplitModal(true)}
+                 data-guide-anchor="saleForm.dividirCaixas"
                  className={`w-full mt-2 flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98] text-left ${isActive
                    ? (isDarkMode ? 'bg-pink-900/20 border-pink-700/40' : 'bg-pink-50 border-pink-200')
                    : (isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100')
                  }`}
                  aria-label="Dividir caixas entre clientes finais"
                >
-                 <Users size={16} className={isActive ? 'text-pink-500 shrink-0' : 'text-slate-400 shrink-0'} />
+                 <Users size={16} className="text-pink-500 shrink-0" />
                  <div className="flex-1 min-w-0">
                    <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isActive ? 'text-pink-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                      Dividir Caixas entre Clientes
@@ -2754,7 +2755,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                  }`}
                  aria-label="Endereços de entrega do pedido"
                >
-                 <MapPin size={16} className={isActive ? 'text-rose-500 shrink-0' : 'text-slate-400 shrink-0'} />
+                 <MapPin size={16} className="text-rose-500 shrink-0" />
                  <div className="flex-1 min-w-0">
                    <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isActive ? 'text-rose-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                      Endereços de Entrega
@@ -2785,7 +2786,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                }`}
                aria-label="Alternar reserva automática de estoque disponível"
              >
-               <PackageCheck size={16} className={reserveAvailableStock ? 'text-emerald-500 shrink-0' : 'text-slate-400 shrink-0'} />
+               <PackageCheck size={16} className="text-emerald-500 shrink-0" />
                <div className="flex-1 min-w-0">
                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${reserveAvailableStock ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                    Reservar Estoque Disponível
@@ -2824,6 +2825,12 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             </div>
 
             <div className="overflow-y-auto flex-1 p-6 flex flex-col gap-4">
+              <div className={`rounded-2xl border p-4 flex gap-3 ${isDarkMode ? 'bg-pink-900/10 border-pink-900/30' : 'bg-pink-50 border-pink-100'}`}>
+                <Info size={16} className="text-pink-500 shrink-0 mt-0.5" />
+                <p className={`text-[11px] font-bold leading-relaxed ${isDarkMode ? 'text-pink-200' : 'text-pink-900'}`}>
+                  Para quando o cliente deste pedido é um <span className="font-black">revendedor/atacadista</span> que já sabe pra quem vai repassar cada caixa. Em vez de uma caixa fechada "genérica", você informa aqui os <span className="font-black">clientes finais dele</span> (nome + quantas caixas cada um leva) — a soma não pode passar da quantidade do item. Isso não muda o valor nem o cliente do pedido (continua sendo o revendedor); serve só pra deixar registrado quem recebe o quê, útil na etiqueta, no romaneio de entrega e se depois for preciso separar/entregar em endereços diferentes (ver "Endereços de Entrega", que reaproveita essa mesma divisão). Deixe em branco se não precisar dessa rastreabilidade — o pedido funciona normalmente sem isso.
+                </p>
+              </div>
               {wholesaleBoxCartItems.length === 0 && (
                 <p className="text-center text-xs font-bold text-slate-400 py-8">Nenhum item de atacado (caixa fechada) no carrinho.</p>
               )}

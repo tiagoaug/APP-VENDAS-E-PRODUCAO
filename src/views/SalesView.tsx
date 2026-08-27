@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Share as CapacitorShare } from '@capacitor/share';
+import { Clipboard } from '@capacitor/clipboard';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation, BatchLabelItem, LabelFile, OrderTextAlias } from '../types';
 import LabelProfilePickerModal from '../components/LabelProfilePickerModal';
 import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer, ClipboardPaste, Image as ImageIcon2 } from 'lucide-react';
@@ -2108,10 +2109,22 @@ export default function SalesView({
                           <Calendar size={10} strokeWidth={3} />
                           {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
                         </div>
-                        <div data-guide-anchor="sales.cardNumeroPedido" className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest">
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await Clipboard.write({ string: String(sale.orderNumber) });
+                            toast.show(`Número #${sale.orderNumber} copiado!`);
+                          }}
+                          title="Copiar número do pedido"
+                          aria-label="Copiar número do pedido"
+                          data-guide-anchor="sales.cardNumeroPedido"
+                          className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest active:scale-95 transition-all"
+                        >
                           <Hash size={10} strokeWidth={3} />
                           {sale.orderNumber}
-                        </div>
+                          <Copy size={9} strokeWidth={3} className="opacity-60" />
+                        </button>
                         {sale.saleDestination === 'STOCK' && (
                           <span data-guide-anchor="sales.cardBadgeEstoque" className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest">
                             Estoque

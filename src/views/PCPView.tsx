@@ -114,7 +114,14 @@ type LotAdvanceItem = {
 // combinar suas gravações (estoque/StockLot/solado + marcação de finalização do Mapa) num
 // único WriteBatch atômico, fechando o mesmo gap de "crédito duplicado se a última
 // gravação falhar" já corrigido em Separar Caixas/Expedir Venda.
-type BatchWrite = { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any };
+type BatchWrite =
+  | { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }
+  // Crédito de estoque de produto por delta, não por array `variations` já calculado —
+  // firebaseService.runBatchWrites relê o produto fresco dentro de uma transação real
+  // antes de aplicar, então duas baixas do MESMO produto próximas uma da outra (ex.:
+  // dois Mapas em Acabamento) não se sobrescrevem mais. Ver comentário lá e em
+  // applyExpedicaoStockUpdate.
+  | { type: 'increment_stock'; path: 'products'; id: string; deltas: { variationId: string; key: string; delta: number; pkgId?: string; pkgDelta?: number }[] };
 
 interface PCPViewProps {
   lots: ProductionLot[];
@@ -3534,15 +3541,15 @@ export default function PCPView({
       }
     }
 
-    // Pedidos destino "Estoque": mantém o incremento de variation.stock e registra
-    // um StockLot EM_ESTOQUE com a composição exata da caixa produzida.
+    // Pedidos destino "Estoque": credita variation.stock (por delta — ver comentário no
+    // tipo BatchWrite/firebaseService.runBatchWrites, fecha a corrida de duas baixas do
+    // mesmo produto quase juntas sobrescrevendo uma a outra) e registra um StockLot
+    // EM_ESTOQUE com a composição exata da caixa produzida.
     if (stockItems.length > 0) {
       const stockSI = lotSI.filter((si: any) => stockItems.some(it => matchesItem(si, it)));
       // Vários sourceItems (cores diferentes) podem pertencer ao MESMO produto — acumula
-      // os incrementos de `variations` aqui e grava uma única vez por produto ao final.
-      // Gravar a cada iteração a partir do snapshot original de `prod.variations` faria
-      // a última cor processada sobrescrever (perder) o incremento das cores anteriores.
-      const productVariationsMap = new Map<string, Product['variations']>();
+      // os deltas aqui e grava uma única escrita `increment_stock` por produto ao final.
+      const productDeltasMap = new Map<string, { variationId: string; key: string; delta: number; pkgId?: string; pkgDelta?: number }[]>();
       for (const si of stockSI) {
         const resolved = resolveSourceItem(si);
         if (!resolved || resolved.totalQty <= 0) continue;
@@ -3551,50 +3558,40 @@ export default function PCPView({
         let entryBoxQty: number | undefined;
         let entryPkg: ProductionConfigItem | undefined;
 
-        const baseVariations = productVariationsMap.get(prod.id) || prod.variations;
-        const variIdx = baseVariations.findIndex(v => v.id === vari.id);
-        const updVars = baseVariations.map((v, idx) => {
-          if (idx !== variIdx) return v;
-          const newStock = { ...v.stock };
-          if ((ordItem?.saleType ?? prod.type) === SaleType.WHOLESALE) {
-            // ATACADO: "Estoque Global" (CAIXAS) é incrementado convertendo os pares
-            // produzidos pela embalagem cujo "Grade de Produção Padrão" corresponde à
-            // grade de produção do produto (pares por caixa). Mesma prioridade de
-            // resolveSourceItem: sizeQuantities → capacity → grid.configuration sum.
-            const gridId = prod.productionGridId || prod.defaultGridId;
-            const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && c.metadata?.productionGradeId === gridId);
-            const pkgSizeQtys = (defaultPkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
-            const sizeQtysSum = pkgSizeQtys ? Object.values(pkgSizeQtys).reduce((s, q) => s + (q || 0), 0) : 0;
-            let pairsPerBox: number = sizeQtysSum > 0
-              ? sizeQtysSum
-              : ((defaultPkg?.metadata?.capacity as number | undefined) || 0);
-            if (!pairsPerBox) {
-              const grid = grids.find(gr => gr.id === gridId);
-              pairsPerBox = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
-            }
-            const boxesProduced = Math.round(totalQty / Math.max(1, pairsPerBox));
-            newStock['WHOLESALE'] = (newStock['WHOLESALE'] || 0) + boxesProduced;
-            entryBoxQty = boxesProduced;
-            entryPkg = defaultPkg;
-
-            if (defaultPkg && boxesProduced > 0) {
-              const allocations = [...(v.stockPkgAllocations || [])];
-              const allocIdx = allocations.findIndex(a => a.pkgId === defaultPkg.id);
-              if (allocIdx >= 0) {
-                allocations[allocIdx] = { ...allocations[allocIdx], qty: allocations[allocIdx].qty + boxesProduced };
-              } else {
-                allocations.push({ pkgId: defaultPkg.id, qty: boxesProduced });
-              }
-              return { ...v, stock: newStock, stockPkgAllocations: allocations };
-            }
-          } else {
-            Object.entries(pairs).forEach(([size, qty]) => {
-              newStock[size] = (newStock[size] || 0) + qty;
-            });
+        const deltas = productDeltasMap.get(prod.id) || [];
+        if ((ordItem?.saleType ?? prod.type) === SaleType.WHOLESALE) {
+          // ATACADO: "Estoque Global" (CAIXAS) é incrementado convertendo os pares
+          // produzidos pela embalagem cujo "Grade de Produção Padrão" corresponde à
+          // grade de produção do produto (pares por caixa). Mesma prioridade de
+          // resolveSourceItem: sizeQuantities → capacity → grid.configuration sum.
+          const gridId = prod.productionGridId || prod.defaultGridId;
+          const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && c.metadata?.productionGradeId === gridId);
+          const pkgSizeQtys = (defaultPkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+          const sizeQtysSum = pkgSizeQtys ? Object.values(pkgSizeQtys).reduce((s, q) => s + (q || 0), 0) : 0;
+          let pairsPerBox: number = sizeQtysSum > 0
+            ? sizeQtysSum
+            : ((defaultPkg?.metadata?.capacity as number | undefined) || 0);
+          if (!pairsPerBox) {
+            const grid = grids.find(gr => gr.id === gridId);
+            pairsPerBox = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
           }
-          return { ...v, stock: newStock };
-        });
-        productVariationsMap.set(prod.id, updVars);
+          const boxesProduced = Math.round(totalQty / Math.max(1, pairsPerBox));
+          entryBoxQty = boxesProduced;
+          entryPkg = defaultPkg;
+          const delta: { variationId: string; key: string; delta: number; pkgId?: string; pkgDelta?: number } = {
+            variationId: vari.id, key: 'WHOLESALE', delta: boxesProduced,
+          };
+          if (defaultPkg && boxesProduced > 0) {
+            delta.pkgId = defaultPkg.id;
+            delta.pkgDelta = boxesProduced;
+          }
+          deltas.push(delta);
+        } else {
+          Object.entries(pairs).forEach(([size, qty]) => {
+            deltas.push({ variationId: vari.id, key: size, delta: qty as number });
+          });
+        }
+        productDeltasMap.set(prod.id, deltas);
 
         const stockLot: Omit<StockLot, 'id'> = {
           productId: prod.id,
@@ -3625,8 +3622,8 @@ export default function PCPView({
         writes.push({ type: 'set', path: 'stockLots', id: generateId(), data: stockLot });
       }
 
-      for (const [productId, variations] of productVariationsMap.entries()) {
-        writes.push({ type: 'update', path: 'products', id: productId, data: { variations } });
+      for (const [productId, deltas] of productDeltasMap.entries()) {
+        writes.push({ type: 'increment_stock', path: 'products', id: productId, deltas });
       }
     }
 
@@ -3953,11 +3950,15 @@ export default function PCPView({
       if (item.kind === 'fix_boxqty') {
         await firebaseService.updateDocument('stockLots', item.stockLotId, { repairAcknowledged: true });
       } else {
-        const lot = lots.find(l => l.id === item.lotId);
-        if (!lot) return;
         const key = getSourceItemKey({ orderId: item.orderId, itemIdx: item.itemIdx, productId: item.productId, variationId: item.variationId, fractionLabel: item.fractionLabel, lineId: (item as any).lineId });
-        const repairAcknowledged = { ...((lot as any).metadata?.repairAcknowledged || {}), [key]: true };
-        await firebaseService.updateDocument('productionLots', lot.id, { metadata: { ...(lot as any).metadata, repairAcknowledged } });
+        // Relê o Mapa fresco na hora de gravar (mergeFieldAtomic) — descartar mais de um
+        // item do MESMO Mapa em sequência rápida usando o `lot` local (cache, pode estar
+        // desatualizado) fazia a segunda gravação sobrescrever `metadata` inteiro com uma
+        // base sem o reconhecimento que a primeira acabara de gravar, e o item "resolvido"
+        // reaparecia na próxima abertura do painel.
+        await firebaseService.mergeFieldAtomic('productionLots', item.lotId, (fresh) => ({
+          metadata: { ...(fresh.metadata || {}), repairAcknowledged: { ...(fresh.metadata?.repairAcknowledged || {}), [key]: true } },
+        }));
       }
       setStockRepairModal(prev => prev ? { ...prev, items: prev.items.filter(it => it !== item) } : prev);
       toast.show('Marcado como já resolvido — não vai mais aparecer aqui.');

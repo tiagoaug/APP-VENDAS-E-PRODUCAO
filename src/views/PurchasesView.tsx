@@ -1036,6 +1036,21 @@ export default function PurchasesView({
         )}
       </div>
 
+      {/* Botão fixo de nova compra — mesmo padrão do "+" de Nova Venda em Vendas, pra não
+          precisar rolar até o topo pra lançar uma compra nova. */}
+      {canLancarPedidos && (
+        <button
+          type="button"
+          title="Nova Compra"
+          aria-label="Adicionar nova compra"
+          onClick={onAdd}
+          data-guide-anchor="purchases.novaCompraFixo"
+          className="fixed bottom-24 right-6 w-16 h-16 bg-slate-900 dark:bg-indigo-600 text-white rounded-[2rem] shadow-2xl flex items-center justify-center active:scale-95 transition-all z-50 border-4 border-white dark:border-slate-800"
+        >
+          <Plus size={36} strokeWidth={2.5} />
+        </button>
+      )}
+
       {(() => {
         const p = selectedPurchaseForChecks;
         if (!p) return null;

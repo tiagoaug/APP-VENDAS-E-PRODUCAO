@@ -89,6 +89,33 @@ export const firebaseService = {
     }
   },
 
+  // Lê o documento fresco e grava só o que `mergeFn` devolver, dentro de uma transação real
+  // — pra mesclar uma chave dentro de um campo tipo mapa (ex.: `metadata.repairAcknowledged`,
+  // `metadata.orderSectors`) sem perder outras chaves gravadas por uma ação concorrente entre
+  // a leitura local (possivelmente desatualizada) e a escrita. `updateDocument`/`saveDocument`
+  // comuns gravam o objeto já calculado em cima do estado local do componente — se duas ações
+  // no MESMO documento acontecerem próximas (ex.: descartar 2 itens de "Reparar Caixas" do
+  // mesmo Mapa em sequência rápida), a segunda pode sobrescrever o campo inteiro com uma base
+  // desatualizada e apagar o que a primeira acabou de gravar. `mergeFn` recebe o documento
+  // como está no servidor NESTE exato momento, então isso não acontece.
+  mergeFieldAtomic: async (path: string, id: string, mergeFn: (fresh: any) => any): Promise<void> => {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    const uid = auth.currentUser.uid;
+    const ref = doc(db, `users/${uid}/${path}`, id);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(ref);
+        if (!snap.exists()) return;
+        const fresh = { id: snap.id, ...snap.data() };
+        const updates = mergeFn(fresh);
+        if (!updates) return;
+        transaction.update(ref, deepClean(updates));
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.TRANSACTION, `merge-atomic-${path}`);
+    }
+  },
+
   // Contador persistido (users/{uid}/counters/{counterId}) para gerar números
   // sequenciais (OP, OS, Mapa/Lote) sem depender de contar quantos registros já
   // estão carregados em memória — isso evitava duplicidade tanto por carregamento
@@ -272,23 +299,90 @@ export const firebaseService = {
   // Venda, onde estoque + StockLot + venda precisam mudar juntos ou não mudar nenhum,
   // pra uma falha parcial nunca debitar estoque sem marcar a venda como separada (o que
   // deixava um novo clique repetir o débito).
-  runBatchWrites: async (writes: Array<{ type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }>): Promise<void> => {
+  runBatchWrites: async (writes: Array<
+    | { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }
+    // Crédito de estoque "seguro contra corrida": em vez de mandar o array `variations`
+    // já calculado em cima do cache local (que pode estar desatualizado se duas baixas
+    // do MESMO produto acontecerem próximas — ver applyExpedicaoStockUpdate em
+    // PCPView.tsx), manda só o delta. Quando há pelo menos 1 escrita desse tipo, o método
+    // roda tudo dentro de uma transação real que relê o produto na hora de gravar —
+    // fecha a corrida que causou o incidente de 26/08/2026 (duas baixas de Acabamento do
+    // mesmo produto quase juntas, a segunda sobrescrevendo o array inteiro e apagando o
+    // crédito da primeira mesmo os dois StockLots tendo sido criados normalmente).
+    | { type: 'increment_stock'; path: string; id: string; deltas: { variationId: string; key: string; delta: number; pkgId?: string; pkgDelta?: number }[] }
+  >): Promise<void> => {
     if (!auth.currentUser) throw new Error('Not authenticated');
     if (writes.length === 0) return;
     const uid = auth.currentUser.uid;
-    const batch = writeBatch(db);
-    writes.forEach(w => {
-      const fullPath = `users/${uid}/${w.path}`;
-      const ref = doc(db, fullPath, w.id);
-      if (w.type === 'delete') { batch.delete(ref); return; }
-      const clean = deepClean(w.data);
-      if (w.type === 'set') batch.set(ref, clean, { merge: true });
-      else batch.update(ref, clean);
-    });
+
+    const incrementWrites = writes.filter((w): w is Extract<typeof writes[number], { type: 'increment_stock' }> => w.type === 'increment_stock');
+    const plainWrites = writes.filter((w): w is Extract<typeof writes[number], { type: 'set' | 'update' | 'delete' }> => w.type !== 'increment_stock');
+
+    if (incrementWrites.length === 0) {
+      const batch = writeBatch(db);
+      plainWrites.forEach(w => {
+        const fullPath = `users/${uid}/${w.path}`;
+        const ref = doc(db, fullPath, w.id);
+        if (w.type === 'delete') { batch.delete(ref); return; }
+        const clean = deepClean(w.data);
+        if (w.type === 'set') batch.set(ref, clean, { merge: true });
+        else batch.update(ref, clean);
+      });
+      try {
+        await batch.commit();
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, 'batch-write');
+      }
+      return;
+    }
+
     try {
-      await batch.commit();
+      await runTransaction(db, async (transaction) => {
+        // Todos os `get` primeiro (regra de transação do Firestore) — um por produto
+        // distinto, mesmo que ele receba deltas de várias variações/cores no mesmo lote.
+        const productRefs = new Map<string, any>();
+        const freshProducts = new Map<string, any>();
+        for (const w of incrementWrites) {
+          if (productRefs.has(w.id)) continue;
+          const ref = doc(db, `users/${uid}/${w.path}`, w.id);
+          productRefs.set(w.id, ref);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) freshProducts.set(w.id, { id: snap.id, ...snap.data() });
+        }
+
+        for (const w of incrementWrites) {
+          const prod = freshProducts.get(w.id);
+          if (!prod) continue; // produto excluído entre o cálculo e a gravação — nada a incrementar
+          const variations = (prod.variations || []).map((v: any) => ({
+            ...v,
+            stock: { ...(v.stock || {}) },
+            stockPkgAllocations: (v.stockPkgAllocations || []).map((a: any) => ({ ...a })),
+          }));
+          w.deltas.forEach(d => {
+            const idx = variations.findIndex((v: any) => v.id === d.variationId);
+            if (idx < 0) return;
+            const v = variations[idx];
+            v.stock[d.key] = (v.stock[d.key] || 0) + d.delta;
+            if (d.pkgId && d.pkgDelta) {
+              const allocs = v.stockPkgAllocations;
+              const ai = allocs.findIndex((a: any) => a.pkgId === d.pkgId);
+              if (ai >= 0) allocs[ai] = { ...allocs[ai], qty: allocs[ai].qty + d.pkgDelta };
+              else allocs.push({ pkgId: d.pkgId, qty: d.pkgDelta });
+            }
+          });
+          transaction.set(productRefs.get(w.id), deepClean({ variations }), { merge: true });
+        }
+
+        plainWrites.forEach(w => {
+          const ref = doc(db, `users/${uid}/${w.path}`, w.id);
+          if (w.type === 'delete') { transaction.delete(ref); return; }
+          const clean = deepClean(w.data);
+          if (w.type === 'set') transaction.set(ref, clean, { merge: true });
+          else transaction.update(ref, clean);
+        });
+      });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'batch-write');
+      handleFirestoreError(error, OperationType.TRANSACTION, 'batch-write-atomic');
     }
   },
 
