@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig, SectorNote } from '../types';
 import {
@@ -133,6 +134,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [soleMapping, setSoleMapping] = useState<{ [size: string]: string }>(existingProduct?.soleMapping || {});
   const [toolMapping, setToolMapping] = useState<{ [size: string]: string }>(existingProduct?.toolMapping || {});
   const [showSoleMapping, setShowSoleMapping] = useState(false);
+  const [soleSizePickerFor, setSoleSizePickerFor] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [engineeringClipboard, setEngineeringClipboard] = useState<{
     consumptions: ComponentConsumption[];
@@ -3065,6 +3067,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           isOpen={showSoleMapping}
           onClose={() => setShowSoleMapping(false)}
           title="Mapeamento de Solados"
+          closeLabel="Feche após mapear"
           maxWidth="max-w-4xl"
         >
           {(() => {
@@ -3115,17 +3118,14 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         <div className="flex items-center px-3 py-2 gap-1">
                           <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shrink-0">Sola</span>
                           {moldSizes.length > 0 ? (
-                            <select
-                              value={soleMapping[cabedalSize] || ''}
-                              onChange={(e) => setSoleMapping({ ...soleMapping, [cabedalSize]: e.target.value })}
-                              className="w-full bg-transparent border-none text-right text-sm font-black text-slate-900 dark:text-white outline-none p-0 cursor-pointer appearance-none"
+                            <button
+                              type="button"
+                              onClick={() => setSoleSizePickerFor(cabedalSize)}
+                              className="w-full bg-transparent border-none text-right text-sm font-black text-slate-900 dark:text-white outline-none p-0 cursor-pointer"
                               title={`Numeração da sola para o cabedal ${cabedalSize}`}
                             >
-                              <option value="">--</option>
-                              {moldSizes.map(s => (
-                                <option key={s} value={s} className="dark:bg-slate-900">{s}</option>
-                              ))}
-                            </select>
+                              {soleMapping[cabedalSize] || '--'}
+                            </button>
                           ) : (
                             <input
                               type="text"
@@ -3145,6 +3145,40 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             );
           })()}
         </Modal>
+
+        {soleSizePickerFor && createPortal(
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 65000 }}>
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSoleSizePickerFor(null)} />
+            <div className={`relative w-full max-w-sm max-h-[80vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <div className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <h3 className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  Sola para o Cabedal {soleSizePickerFor}
+                </h3>
+                <button type="button" onClick={() => setSoleSizePickerFor(null)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`} aria-label="Fechar">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3">
+                {['', ...(molds.find(m => m.id === moldId)?.metadata?.sizes || [])].map((s: string) => (
+                  <div
+                    key={s || '__none__'}
+                    onClick={() => {
+                      setSoleMapping({ ...soleMapping, [soleSizePickerFor]: s });
+                      setSoleSizePickerFor(null);
+                    }}
+                    className={`flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-black cursor-pointer transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'} ${(soleMapping[soleSizePickerFor] || '') === s ? 'text-emerald-600 dark:text-emerald-400' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}
+                  >
+                    <span>{s || '--'}</span>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${(soleMapping[soleSizePickerFor] || '') === s ? 'border-emerald-500' : (isDarkMode ? 'border-slate-700' : 'border-slate-200')}`}>
+                      {(soleMapping[soleSizePickerFor] || '') === s && <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
         <AnimatePresence>
           {copySuccess && (

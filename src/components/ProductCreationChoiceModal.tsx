@@ -12,7 +12,7 @@ export default function ProductCreationChoiceModal({ isOpen, onClose, onChooseGu
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 z-[999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4" style={{ zIndex: 90000 }}>
       <div className={`rounded-3xl p-6 w-full max-w-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
         <div>
           <h2 className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Novo Modelo</h2>

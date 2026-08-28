@@ -10,7 +10,7 @@ import {
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
-  QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
+  QrCode, ScanLine, Hash, Lock, ChevronDown, ChevronUp, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
   Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell, Wrench, LayoutGrid, ListChecks
 } from 'lucide-react';
 import {
@@ -391,6 +391,15 @@ export default function PCPView({
   // Cards de Necessidades (Materiais/Solados) agora abrem um popup com todos os detalhes do
   // grupo em vez de expandir a lista inline — guarda só a chave do grupo aberto no momento.
   const [openNeedsGroupKey, setOpenNeedsGroupKey] = useState<string | null>(null);
+  // Acordeão de cada variação dentro do popup de grupo — some com o valor bruto (Estoque/
+  // Necess./Trânsito/Falta) até o toque, pra não empilhar 2+ tabelas abertas e espremer/
+  // esconder números em telas de celular estreitas.
+  const [expandedNeedGroupItemIds, setExpandedNeedGroupItemIds] = useState<Set<string>>(new Set());
+  const toggleNeedGroupItemExpand = (id: string) => setExpandedNeedGroupItemIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'finished' | 'urgent'>('active');
   const [isFilterPopupOpen, setIsFilterPopupOpen] = useState(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
@@ -8126,7 +8135,7 @@ export default function PCPView({
                       <button
                         key={item._gk}
                         type="button"
-                        onClick={() => setOpenNeedsGroupKey(item._gk)}
+                        onClick={() => { setOpenNeedsGroupKey(item._gk); setExpandedNeedGroupItemIds(new Set()); }}
                         title={`Ver detalhes do grupo ${item._gBaseName}`}
                         aria-label={`Ver detalhes do grupo ${item._gBaseName}`}
                         data-guide-anchor="pcp.necessidadeCard"
@@ -11186,10 +11195,17 @@ export default function PCPView({
                   const inTransitByGrade = net.inTransitByGrade || {};
                   const itemShortage = net.totalNet;
                   const colorName = item.type === 'SOLE' ? item.name.split(' - ').slice(1).join(' - ') : '';
+                  const isItemExpanded = expandedNeedGroupItemIds.has(item.id);
 
                   return (
                     <div key={item.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
-                      <div className="flex items-center justify-between gap-2 px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleNeedGroupItemExpand(item.id)}
+                        title={isItemExpanded ? 'Recolher grade' : 'Ver grade detalhada'}
+                        aria-label={isItemExpanded ? 'Recolher grade' : 'Ver grade detalhada'}
+                        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left"
+                      >
                         <div className="min-w-0">
                           {colorName && (
                             <p className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>{colorName}</p>
@@ -11198,42 +11214,53 @@ export default function PCPView({
                             {formatContributingSources(item.contributingLots, item.contributingOrders)}
                           </p>
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-[8px] font-black uppercase text-slate-400">Falta Real</p>
-                          <p className={`text-base font-black leading-none ${itemShortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                            {fmtQty(item.unit, itemShortage)} <span className="text-[9px] text-slate-400">{item.unit}</span>
-                          </p>
-                          {net.totalInTransit > 0 && (
-                            <p className="text-[8px] font-bold text-amber-500 mt-0.5">{Math.round(net.totalInTransit)} em trânsito</p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right">
+                            <p className="text-[8px] font-black uppercase text-slate-400">Falta Real</p>
+                            <p className={`text-base font-black leading-none ${itemShortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                              {fmtQty(item.unit, itemShortage)} <span className="text-[9px] text-slate-400">{item.unit}</span>
+                            </p>
+                            {net.totalInTransit > 0 && (
+                              <p className="text-[8px] font-bold text-amber-500 mt-0.5">{Math.round(net.totalInTransit)} em trânsito</p>
+                            )}
+                          </div>
+                          {item.type === 'SOLE' && item.sizeShortages && (
+                            isItemExpanded
+                              ? <ChevronUp size={16} className="text-slate-400 shrink-0" />
+                              : <ChevronDown size={16} className="text-slate-400 shrink-0" />
                           )}
                         </div>
-                      </div>
+                      </button>
 
-                      {item.type === 'SOLE' && item.sizeShortages && (
-                        <div className={`grid grid-cols-5 gap-1 px-4 py-2.5 border-t text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900 text-slate-500' : 'border-slate-200 bg-white text-slate-400'}`}>
-                          <span>Grade</span>
-                          <span className="text-center">Estoque</span>
-                          <span className="text-center">Necess.</span>
-                          <span className="text-center">Trânsito</span>
-                          <span className="text-right">Falta</span>
+                      {isItemExpanded && item.type === 'SOLE' && item.sizeShortages && (
+                        <div className={`overflow-x-auto custom-scrollbar border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                          <div className="min-w-[420px]">
+                            <div className={`grid grid-cols-5 gap-1 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400'}`}>
+                              <span>Grade</span>
+                              <span className="text-center">Estoque</span>
+                              <span className="text-center">Necess.</span>
+                              <span className="text-center">Trânsito</span>
+                              <span className="text-right">Falta</span>
+                            </div>
+                            {Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
+                              const stock = realGradeStock[grade] || 0;
+                              const req = (item.sizeShortages as any)[grade].required;
+                              const gross = Math.max(0, req - stock);
+                              const transit = Math.min(inTransitByGrade[grade] || 0, gross);
+                              const falta = gross - transit;
+                              return (
+                                <div key={grade} className={`grid grid-cols-5 gap-1 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800/60' : 'border-slate-100'}`}>
+                                  <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
+                                  <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
+                                  <span className="text-center text-slate-400">{req}</span>
+                                  <span className={`text-center ${transit > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
+                                  <span className={`text-right ${falta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
-                      {item.type === 'SOLE' && item.sizeShortages && Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
-                        const stock = realGradeStock[grade] || 0;
-                        const req = (item.sizeShortages as any)[grade].required;
-                        const gross = Math.max(0, req - stock);
-                        const transit = Math.min(inTransitByGrade[grade] || 0, gross);
-                        const falta = gross - transit;
-                        return (
-                          <div key={grade} className={`grid grid-cols-5 gap-1 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800/60' : 'border-slate-100'}`}>
-                            <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
-                            <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
-                            <span className="text-center text-slate-400">{req}</span>
-                            <span className={`text-center ${transit > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
-                            <span className={`text-right ${falta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
-                          </div>
-                        );
-                      })}
 
                       {/* Solicitar numa linha própria, abaixo da tabela — junto com "Estoque:"
                           na mesma linha (layout antigo) o botão ficava espremido/escondido no

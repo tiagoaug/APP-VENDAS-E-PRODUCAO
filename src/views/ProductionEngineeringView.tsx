@@ -170,7 +170,7 @@ function EngineeringCard({
       className={`rounded-[2rem] border shadow-sm dark:shadow-none overflow-hidden transition-all hover:shadow-md ${isDarkMode ? "bg-slate-900 border-slate-800 hover:border-slate-700" : "bg-white border-slate-100 hover:border-slate-200"}`}
     >
       {/* Card Header — full width */}
-      <div className={`flex items-center justify-between px-5 py-3.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+      <div className={`flex items-center justify-between py-3.5 ${showThumbnail && product.photoUrl ? 'pl-5 pr-2' : 'px-5'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
         <div className="min-w-0 flex-1">
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">
             REF: {product.reference}
@@ -179,14 +179,15 @@ function EngineeringCard({
             {product.name}
           </h3>
         </div>
-        {showThumbnail && product.photoUrl && (
+        {showThumbnail && product.photoUrl ? (
           <div className={`w-20 h-20 rounded-xl overflow-hidden shrink-0 ml-3 border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
           </div>
+        ) : (
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ml-3 ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+            <Hammer size={16} />
+          </div>
         )}
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ml-3 ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
-          <Hammer size={16} />
-        </div>
       </div>
 
       <div className="px-5 py-4 flex flex-col gap-3">
