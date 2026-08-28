@@ -146,6 +146,7 @@ interface SalesViewProps {
   onApplyStockDuplicateFix?: (plan: StockDuplicateFixPlan) => Promise<void>;
   onRepairOrphanedFinalizedKeys?: () => Promise<{ fixed: number; lotsTouched: number }>;
   onApplyUndercreditFix?: (group: UndercreditGroup) => Promise<void>;
+  onTrimUndercreditExcess?: (group: UndercreditGroup) => Promise<void>;
   onReleaseOrphanedLot?: (entry: OrphanedReservedLot) => Promise<void>;
   onNavigateProducts?: () => void;
   onAddProduct?: () => void;
@@ -219,6 +220,7 @@ export default function SalesView({
   onApplyStockDuplicateFix,
   onRepairOrphanedFinalizedKeys,
   onApplyUndercreditFix,
+  onTrimUndercreditExcess,
   onReleaseOrphanedLot,
   onNavigateProducts,
   onAddProduct,
@@ -3024,6 +3026,7 @@ export default function SalesView({
         onApplyStockDuplicateFix={onApplyStockDuplicateFix}
         onRepairOrphanedFinalizedKeys={onRepairOrphanedFinalizedKeys}
         onApplyUndercreditFix={onApplyUndercreditFix}
+        onTrimUndercreditExcess={onTrimUndercreditExcess}
         onReleaseOrphanedLot={onReleaseOrphanedLot}
       />
 

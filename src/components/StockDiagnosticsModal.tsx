@@ -26,11 +26,12 @@ const StockDiagnosticsModal: React.FC<{
   onApplyStockDuplicateFix?: (plan: StockDuplicateFixPlan) => Promise<void>;
   onRepairOrphanedFinalizedKeys?: () => Promise<{ fixed: number; lotsTouched: number }>;
   onApplyUndercreditFix?: (group: UndercreditGroup) => Promise<void>;
+  onTrimUndercreditExcess?: (group: UndercreditGroup) => Promise<void>;
   onReleaseOrphanedLot?: (entry: OrphanedReservedLot) => Promise<void>;
 }> = ({
   isOpen, onClose, isDarkMode, products, stockLots, lots, sales,
   onFixPkgAllocations, onReconcileSeparationGroup, onApplyStockDuplicateFix,
-  onRepairOrphanedFinalizedKeys, onApplyUndercreditFix, onReleaseOrphanedLot,
+  onRepairOrphanedFinalizedKeys, onApplyUndercreditFix, onTrimUndercreditExcess, onReleaseOrphanedLot,
 }) => {
   const [fixingAlloc, setFixingAlloc] = useState(false);
   const [fixAllocResult, setFixAllocResult] = useState<{ fixed: number; total: number } | null>(null);
@@ -41,6 +42,8 @@ const StockDiagnosticsModal: React.FC<{
   const [showOrphanedModal, setShowOrphanedModal] = useState(false);
   const [fixingFinalizedKeys, setFixingFinalizedKeys] = useState(false);
   const [fixingUndercreditKey, setFixingUndercreditKey] = useState<string | null>(null);
+  const [trimmingUndercreditKey, setTrimmingUndercreditKey] = useState<string | null>(null);
+  const [trimmingAllUndercredit, setTrimmingAllUndercredit] = useState(false);
   const [fixingOrphanedKey, setFixingOrphanedKey] = useState<string | null>(null);
 
   const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots, lots);
@@ -64,10 +67,33 @@ const StockDiagnosticsModal: React.FC<{
       return next;
     });
   };
+  // Mesma ideia do dismiss individual (só esconde neste aparelho, não mexe em estoque) — bom
+  // como último recurso, mas prefira "Descontar dos Lotes" (onTrimUndercreditExcess) quando
+  // disponível: aquele conserta o dado de verdade (pra todo mundo), esse aqui só maquia a
+  // tela de quem clicou.
+  const dismissAllUndercreditGroups = () => {
+    setUndercreditResolved(prev => {
+      const next = { ...prev };
+      undercreditGroups.forEach(g => { next[g.key] = true; });
+      try { localStorage.setItem(UNDERCREDIT_RESOLVED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
   const undercreditGroups = useMemo(
     () => allUndercreditGroups.filter(g => !undercreditResolved[g.key]),
     [allUndercreditGroups, undercreditResolved]
   );
+  const handleTrimAllUndercreditExcess = async () => {
+    if (!onTrimUndercreditExcess) return;
+    setTrimmingAllUndercredit(true);
+    try {
+      for (const g of undercreditGroups) {
+        await onTrimUndercreditExcess(g);
+      }
+    } finally {
+      setTrimmingAllUndercredit(false);
+    }
+  };
 
   const allOrphanedLots = useMemo(() => buildOrphanedReservedLots(stockLots, sales, products), [stockLots, sales, products]);
   const [orphanedResolved, setOrphanedResolved] = useState<Record<string, boolean>>(readResolvedOrphanedLotKeys);
@@ -390,8 +416,27 @@ const StockDiagnosticsModal: React.FC<{
         ) : (
           <div className="flex flex-col gap-3">
             <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1">
-              Produção que entrou no histórico de estoque (Mapa/Pedido), mas nunca somou no contador do produto — o valor abaixo já existe fisicamente, só falta somar. "Corrigir Agora" só soma, nunca desconta.
+              Produção que entrou no histórico de estoque (Mapa/Pedido), mas nunca somou no contador do produto — normalmente porque a caixa/par já existe fisicamente e só falta somar ("Corrigir Agora"). Se o estoque do produto já está certo, o problema é o StockLot antigo sobrando — use "Descontar dos Lotes" pra apagar/encolher só ele, sem tocar no contador.
             </p>
+            {onTrimUndercreditExcess && (
+              <button
+                type="button"
+                disabled={trimmingAllUndercredit}
+                onClick={handleTrimAllUndercreditExcess}
+                title="O estoque do produto já está certo — desconta o excesso direto dos StockLots mais antigos (apaga/encolhe eles). Não altera o contador de estoque. Vale pra todo mundo, não só neste aparelho."
+                className={`self-center flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-4 py-2.5 rounded-full transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+              >
+                <Wrench size={12} strokeWidth={3} /> {trimmingAllUndercredit ? 'Descontando...' : `Descontar dos Lotes — Todos (${undercreditGroups.length})`}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={dismissAllUndercreditGroups}
+              title="Só esconde a lista neste aparelho — não corrige o dado no servidor, então outro colaborador ainda vai ver a pendência. Use só se 'Descontar dos Lotes' não estiver disponível."
+              className={`self-center text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
+            >
+              Marcar Todos como Resolvidos Só Aqui ({undercreditGroups.length})
+            </button>
             {undercreditGroups.map(g => (
               <div key={g.key} className={`rounded-2xl border p-4 flex flex-col gap-2 ${isDarkMode ? 'bg-amber-900/15 border-amber-800/40' : 'bg-amber-50 border-amber-100'}`}>
                 <p className={`text-[12px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -420,13 +465,31 @@ const StockDiagnosticsModal: React.FC<{
                 >
                   <Wrench size={12} strokeWidth={3} /> {fixingUndercreditKey === g.key ? 'Corrigindo...' : 'Corrigir Agora'}
                 </button>
+                {onTrimUndercreditExcess && (
+                  <button
+                    type="button"
+                    disabled={trimmingUndercreditKey === g.key}
+                    onClick={async () => {
+                      setTrimmingUndercreditKey(g.key);
+                      try {
+                        await onTrimUndercreditExcess(g);
+                      } finally {
+                        setTrimmingUndercreditKey(prev => prev === g.key ? null : prev);
+                      }
+                    }}
+                    title="O estoque deste produto já está certo — desconta o excesso direto do(s) StockLot(s) mais antigo(s), sem alterar o contador de estoque"
+                    className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                  >
+                    <Wrench size={12} strokeWidth={3} /> {trimmingUndercreditKey === g.key ? 'Descontando...' : 'Descontar dos Lotes (Estoque Já Está Certo)'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => dismissUndercreditGroup(g)}
-                  title="Já incluí essa caixa no estoque por fora (Balanço/edição direta) — não mexe em estoque, só some daqui"
+                  title="Só esconde este item neste aparelho — não corrige o dado no servidor"
                   className={`self-center text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
                 >
-                  Já Resolvi Manualmente
+                  Marcar Como Resolvido Só Aqui
                 </button>
               </div>
             ))}

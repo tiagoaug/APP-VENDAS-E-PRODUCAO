@@ -61,7 +61,7 @@ import { pickWholesaleStockLots, pickRetailStockLots } from "./utils/stockLotPic
 import { buildSeparationReconcileFixPlan, SeparationReconcileGroup } from "./utils/separationReconcile";
 import { buildOrphanedFinalizedKeyFixes } from "./utils/finalizedKeyRepair";
 import { StockDuplicateFixPlan } from "./utils/stockDuplicateFix";
-import { buildUndercreditFixPlan, UndercreditGroup } from "./utils/stockUndercreditFix";
+import { buildUndercreditFixPlan, buildUndercreditTrimPlan, UndercreditGroup } from "./utils/stockUndercreditFix";
 import { buildReleaseOrphanedLotPlan, OrphanedReservedLot } from "./utils/stockOrphanedReservations";
 import { financeService } from "./services/financeService";
 import {
@@ -4222,6 +4222,47 @@ export default function App() {
     }
   };
 
+  // Contra-parte de handleApplyUndercreditFix — pra quando o contador do produto já está
+  // certo e quem está errado é o StockLot (residual do bug antigo de gravação não-atômica,
+  // já corrigido, que nunca foi limpo). Desconta o excesso direto dos StockLots mais
+  // antigos (mesmo padrão do Diagnóstico de Estoque Duplicado) e NUNCA toca em
+  // `products`/`variation.stock` — reflete os dados frescos dentro da própria transação,
+  // então um lote que já saiu de EM_ESTOQUE (ex.: vendido nesse meio-tempo) é ignorado em
+  // vez de duplicar desconto.
+  const handleTrimUndercreditExcess = async (group: UndercreditGroup) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
+    try {
+      let touched = 0;
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const lotRefs = group.lots.map(l => ({ id: l.id, ref: doc(db, `users/${uid}/stockLots`, l.id) }));
+        const freshLots: StockLot[] = [];
+        for (const { id, ref } of lotRefs) {
+          const snap = await transaction.get(ref);
+          if (snap.exists()) {
+            const data: any = snap.data();
+            if (data.status === 'EM_ESTOQUE') freshLots.push({ id: snap.id, ...data } as StockLot);
+          }
+        }
+        const plan = buildUndercreditTrimPlan({ ...group, lots: freshLots });
+        touched = plan.stockLotDeleteIds.length + Object.keys(plan.stockLotWrites).length;
+        for (const id of plan.stockLotDeleteIds) {
+          const found = lotRefs.find(l => l.id === id);
+          if (found) transaction.delete(found.ref);
+        }
+        for (const [id, data] of Object.entries(plan.stockLotWrites)) {
+          const found = lotRefs.find(l => l.id === id);
+          if (found) transaction.update(found.ref, deepClean({ ...data, updatedAt: Date.now() }));
+        }
+      });
+      toast.show(touched > 0
+        ? `Lotes ajustados — excesso descontado de ${group.productName} · ${group.variationName}. O estoque do produto não foi alterado.`
+        : 'Nada a ajustar — os lotes já não estavam mais em estoque (provavelmente já vendidos/consumidos).');
+    } catch (e) {
+      toast.show('Erro ao ajustar lotes: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
   // Libera um StockLot RESERVADO "órfão" (ver src/utils/stockOrphanedReservations.ts) —
   // caixa presa numa venda que não a referencia mais (ou que já foi excluída), sobra do
   // bug de concorrência da separação já corrigido (transação real em handleSepararCaixas/
@@ -6072,6 +6113,7 @@ export default function App() {
             onApplyStockDuplicateFix={handleApplyStockDuplicateFix}
             onRepairOrphanedFinalizedKeys={handleRepairOrphanedFinalizedKeys}
             onApplyUndercreditFix={handleApplyUndercreditFix}
+            onTrimUndercreditExcess={handleTrimUndercreditExcess}
             onReleaseOrphanedLot={handleReleaseOrphanedLot}
             onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
             onAddProduct={handleOpenProductCreationChoice}

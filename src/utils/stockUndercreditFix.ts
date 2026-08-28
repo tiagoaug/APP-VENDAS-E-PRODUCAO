@@ -1,4 +1,5 @@
 import { Product, StockLot } from '../types';
+import { pickWholesaleStockLots } from './stockLotPicker';
 
 // Detecta produção que creditou um StockLot (status EM_ESTOQUE — prova de que a caixa/par
 // existe fisicamente, com Mapa/OP registrados) mas cujo contador agregado do produto
@@ -121,4 +122,73 @@ export function buildUndercreditFixPlan(group: UndercreditGroup, products: Produ
   }
 
   return { productWrite: cloned };
+}
+
+export interface UndercreditTrimPlan {
+  // id do StockLot -> campos novos a gravar (lote sobrevive, só encolhe).
+  stockLotWrites: Record<string, { sizeBreakdown: Record<string, number>; totalPairs: number; gradeLabel: string; boxQty?: number; boxIds?: string[] }>;
+  // ids de StockLot que zeraram por completo — apagar.
+  stockLotDeleteIds: string[];
+}
+
+const buildGradeLabelFromSizes = (pairs: Record<string, number>): string =>
+  Object.entries(pairs).filter(([, q]) => q > 0).map(([sz, q]) => `${sz}x${q}`).join('-');
+
+// Contra-parte de buildUndercreditFixPlan: em vez de somar a diferença no contador do
+// produto (pra quando a produção de fato nunca foi creditada), aqui a gente assume o
+// contrário — o contador já está certo e sobrou StockLot "fantasma" (residual do bug antigo
+// de gravação não-atômica, já corrigido, que não chegou a ser limpo na época). Desconta o
+// excesso direto dos StockLots (mais antigos primeiro), igual ao Diagnóstico de Estoque
+// Duplicado — nunca toca em `products`/`variation.stock`.
+export function buildUndercreditTrimPlan(group: UndercreditGroup): UndercreditTrimPlan {
+  const stockLotWrites: UndercreditTrimPlan['stockLotWrites'] = {};
+  const stockLotDeleteIds: string[] = [];
+
+  if (group.isWholesale) {
+    const plan = pickWholesaleStockLots(group.lots, group.missingBoxes || 0);
+    plan.fullyConsumed.forEach(lot => stockLotDeleteIds.push(lot.id));
+    plan.splitConsumed.forEach(({ original, remainder }) => {
+      stockLotWrites[original.id] = {
+        sizeBreakdown: remainder.sizeBreakdown, totalPairs: remainder.totalPairs,
+        gradeLabel: remainder.gradeLabel, boxQty: remainder.boxQty, boxIds: remainder.boxIds,
+      };
+    });
+    return { stockLotWrites, stockLotDeleteIds };
+  }
+
+  // Varejo: uma grade cheia (StockLot) pode ter várias numerações — processa uma numeração
+  // de cada vez sobre uma cópia local da composição de cada lote, senão a segunda numeração
+  // sobrescreveria o corte já feito pela primeira no mesmo doc.
+  const working = new Map<string, { sizeBreakdown: Record<string, number>; createdAt: number }>();
+  group.lots.forEach(l => working.set(l.id, { sizeBreakdown: { ...(l.sizeBreakdown || {}) }, createdAt: l.createdAt || 0 }));
+
+  Object.entries(group.missingSizes || {}).forEach(([size, amount]) => {
+    let remaining = amount;
+    const candidates = Array.from(working.entries())
+      .filter(([, w]) => (w.sizeBreakdown[size] || 0) > 0)
+      .sort((a, b) => a[1].createdAt - b[1].createdAt);
+    for (const [, w] of candidates) {
+      if (remaining <= 0) break;
+      const avail = w.sizeBreakdown[size] || 0;
+      const take = Math.min(avail, remaining);
+      w.sizeBreakdown[size] = avail - take;
+      if (w.sizeBreakdown[size] <= 0) delete w.sizeBreakdown[size];
+      remaining -= take;
+    }
+  });
+
+  group.lots.forEach(original => {
+    const w = working.get(original.id);
+    if (!w) return;
+    const totalLeft = Object.values(w.sizeBreakdown).reduce((s, q) => s + (q || 0), 0);
+    if (totalLeft <= 0) { stockLotDeleteIds.push(original.id); return; }
+    if (JSON.stringify(original.sizeBreakdown || {}) !== JSON.stringify(w.sizeBreakdown)) {
+      stockLotWrites[original.id] = {
+        sizeBreakdown: w.sizeBreakdown, totalPairs: totalLeft,
+        gradeLabel: buildGradeLabelFromSizes(w.sizeBreakdown),
+      };
+    }
+  });
+
+  return { stockLotWrites, stockLotDeleteIds };
 }
