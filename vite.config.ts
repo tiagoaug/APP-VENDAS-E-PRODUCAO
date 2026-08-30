@@ -40,6 +40,12 @@ export default defineConfig(({mode}) => {
             // Entregas (import lazy) — misturado no chunk 'vendor' genérico, vira ~1MB extra
             // carregado eager por QUALQUER tela, mesmo quem nunca abre o modo 3D.
             if (id.includes('maplibre-gl')) return 'vendor-maplibre';
+            // Mesmo motivo: só é buscado via import() dinâmico dentro de localLlmService.ts
+            // (provedor "IA local"), quando o usuário realmente carrega um modelo .gguf. Se
+            // caísse no chunk 'vendor' genérico (compartilhado com libs usadas eager), o
+            // Vite injetaria modulepreload dele no boot pra TODO usuário — ~300KB só de JS,
+            // sem nenhum dos que nunca tocam nesse recurso precisar baixar.
+            if (id.includes('@wllama/wllama')) return 'vendor-wllama';
             if (id.includes('/firebase/') || id.includes('@firebase/')) return 'vendor-firebase';
             if (id.includes('/motion/') || id.includes('framer-motion')) return 'vendor-motion';
             if (id.includes('lucide-react')) return 'vendor-icons';

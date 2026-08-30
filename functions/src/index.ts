@@ -6,6 +6,7 @@ import { TOOLS, executeTool } from "./tools";
 import { runAnthropicChat } from "./providers/anthropic";
 import { runOpenAIChat } from "./providers/openai";
 import { runGeminiChat } from "./providers/gemini";
+import { runHuggingFaceChat } from "./providers/huggingface";
 import { AIProviderMessage, RunChatFn } from "./providers/types";
 import { saveBlingCredentials, getBlingAuthUrl, handleBlingOAuthCallback, disconnectBling } from "./bling/auth";
 import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch, refreshBlingInvoiceDetails, runAutoSyncForDueUsers } from "./bling/sync";
@@ -18,18 +19,20 @@ const db = admin.firestore();
 
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 
-type AIProviderId = "anthropic" | "openai" | "gemini";
+type AIProviderId = "anthropic" | "openai" | "gemini" | "huggingface";
 
 const DEFAULT_MODELS: Record<AIProviderId, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-4.1",
   gemini: "gemini-2.0-flash",
+  huggingface: "meta-llama/Llama-3.3-70B-Instruct",
 };
 
 const RUNNERS: Record<AIProviderId, RunChatFn> = {
   anthropic: runAnthropicChat,
   openai: runOpenAIChat,
   gemini: runGeminiChat,
+  huggingface: runHuggingFaceChat,
 };
 
 const MAX_HISTORY_MESSAGES = 20;
@@ -102,7 +105,9 @@ export const aiChat = onCall(
     const configSnap = await db.collection("users").doc(uid).collection("aiSettings").doc("providerConfig").get();
     const config = configSnap.exists ? (configSnap.data() as any) : null;
     const activeProvider: AIProviderId =
-      config?.activeProvider === "openai" || config?.activeProvider === "gemini" ? config.activeProvider : "anthropic";
+      config?.activeProvider === "openai" || config?.activeProvider === "gemini" || config?.activeProvider === "huggingface"
+        ? config.activeProvider
+        : "anthropic";
 
     let apiKey: string;
     let model: string;
@@ -117,6 +122,12 @@ export const aiChat = onCall(
       model = config?.gemini?.model || DEFAULT_MODELS.gemini;
       if (!apiKey) {
         throw new HttpsError("failed-precondition", "Configure a chave do Gemini em Mais Opções > Assistente de IA.");
+      }
+    } else if (activeProvider === "huggingface") {
+      apiKey = config?.huggingface?.apiKey;
+      model = config?.huggingface?.model || DEFAULT_MODELS.huggingface;
+      if (!apiKey) {
+        throw new HttpsError("failed-precondition", "Configure o token do Hugging Face em Mais Opções > Assistente de IA.");
       }
     } else {
       apiKey = anthropicApiKey.value();

@@ -8,8 +8,9 @@ import AIAssistantSettings from "./AIAssistantSettings";
 import SoleNeedsFormModal, { CardExportPreference } from "./SoleNeedsFormModal";
 import ProviderServiceReportFormModal from "./ProviderServiceReportFormModal";
 import { sendAIChatMessage, AIChatMessage, AIChatResponse, AIFormProposal, AIPersonProposalData, AIPurchaseProposalData, AISolePurchaseProposalData, AIProviderServiceReportData } from "../services/aiService";
-import { AIQuickPrompt, SoleStockEntry, Person } from "../types";
-import { subscribeToQuickPrompts, seedDefaultQuickPromptsIfEmpty } from "../services/aiSettingsService";
+import { AIQuickPrompt, SoleStockEntry, Person, AIProvider, AIProviderConfig } from "../types";
+import { subscribeToQuickPrompts, seedDefaultQuickPromptsIfEmpty, subscribeToAIProviderConfig, DEFAULT_PROVIDER_CONFIG } from "../services/aiSettingsService";
+import { isLocalModelLoaded, runLocalChatCompletion } from "../services/localLlmService";
 import { photoToCompressedImage, CompressedImage } from "../utils/aiImageUtils";
 import { formatCurrency } from "../utils/numbers";
 import { isVoiceInputSupported, ensureVoicePermission, startVoiceListening, stopVoiceListening } from "../services/voiceInputService";
@@ -18,6 +19,14 @@ import { exportSoleStockReport, StockShareItem } from "../utils/soleStockExport"
 import { exportProviderServiceReport } from "../utils/serviceOrderReportExport";
 
 type ChatMessage = AIChatMessage & { formProposal?: AIFormProposal };
+
+const PROVIDER_LABELS: Record<AIProvider, string> = {
+  anthropic: "Claude",
+  openai: "ChatGPT",
+  gemini: "Gemini",
+  huggingface: "Hugging Face",
+  local: "IA local",
+};
 
 interface AIAssistantModalProps {
   isOpen: boolean;
@@ -45,9 +54,11 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
   const [isSoleNeedsOpen, setIsSoleNeedsOpen] = useState(false);
   const [isProviderReportOpen, setIsProviderReportOpen] = useState(false);
   const [cardExportPreference, setCardExportPreference] = useState<CardExportPreference>("both");
+  const [providerConfig, setProviderConfig] = useState<AIProviderConfig>(DEFAULT_PROVIDER_CONFIG);
   const scrollRef = useRef<HTMLDivElement>(null);
   const voiceSupported = isVoiceInputSupported();
   const serviceProviders = people.filter((p) => p.isSupplier || p.isServiceProvider);
+  const isLocalActive = providerConfig.activeProvider === "local";
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "unset";
@@ -61,6 +72,11 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
     seedDefaultQuickPromptsIfEmpty();
     const unsubscribe = subscribeToQuickPrompts(setQuickPrompts);
     return unsubscribe;
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    return subscribeToAIProviderConfig(setProviderConfig);
   }, [isOpen]);
 
   useEffect(() => {
@@ -88,6 +104,40 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
   const handleSend = async (text?: string) => {
     const content = (text ?? input).trim();
     if ((!content && !attachedImage) || isLoading) return;
+
+    if (isLocalActive) {
+      if (attachedImage) {
+        toast.show("O modelo local ainda não lê imagens — envie só texto.");
+        return;
+      }
+      if (!isLocalModelLoaded()) {
+        toast.show("Selecione um modelo .gguf em Ajustes antes de conversar offline.");
+        setIsSettingsOpen(true);
+        return;
+      }
+      const userMessage: AIChatMessage = { role: "user", content };
+      const newMessages: AIChatMessage[] = [...messages, userMessage];
+      setMessages([...newMessages, { role: "assistant", content: "" }]);
+      setInput("");
+      setIsLoading(true);
+      const updateLastAssistant = (text: string) => {
+        setMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "assistant", content: text };
+          return next;
+        });
+      };
+      try {
+        const result = await runLocalChatCompletion(newMessages, updateLastAssistant);
+        updateLastAssistant(result.text || "(sem resposta)");
+        setLastUsage(result.usage);
+      } catch (err: any) {
+        updateLastAssistant(err?.message || "Não foi possível gerar a resposta localmente.");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     const userMessage: AIChatMessage = { role: "user", content };
     if (attachedImage) {
@@ -319,11 +369,11 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                   <Sparkles size={13} />
                 </div>
                 <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
-                  Assistente IA · Claude
+                  Assistente IA · {PROVIDER_LABELS[providerConfig.activeProvider]}
                 </h2>
               </div>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
-                Consulta de dados · fotos e voz
+                {isLocalActive ? "Offline, no aparelho · só chat de texto" : "Consulta de dados · fotos e voz"}
               </p>
               <div className="relative">
                 <div className="flex flex-col gap-2">
@@ -370,8 +420,8 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     <button
                       type="button"
                       onClick={() => setIsSoleNeedsOpen(true)}
-                      disabled={isLoading}
-                      title="Planejamento de solados"
+                      disabled={isLoading || isLocalActive}
+                      title={isLocalActive ? "Indisponível no modo offline (precisa consultar dados do app)" : "Planejamento de solados"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-violet-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
                       <ClipboardList size={20} />
@@ -380,8 +430,8 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     <button
                       type="button"
                       onClick={() => setIsProviderReportOpen(true)}
-                      disabled={isLoading}
-                      title="Relatório de serviços terceirizados"
+                      disabled={isLoading || isLocalActive}
+                      title={isLocalActive ? "Indisponível no modo offline (precisa consultar dados do app)" : "Relatório de serviços terceirizados"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-teal-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
                       <Receipt size={20} />
@@ -390,8 +440,8 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     <button
                       type="button"
                       onClick={() => handleCapturePhoto(CameraSource.Camera)}
-                      disabled={isLoading}
-                      title="Tirar foto"
+                      disabled={isLoading || isLocalActive}
+                      title={isLocalActive ? "Indisponível no modo offline (modelo local não lê imagens)" : "Tirar foto"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-sky-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
                       <CameraIcon size={20} />
@@ -400,8 +450,8 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     <button
                       type="button"
                       onClick={() => handleCapturePhoto(CameraSource.Photos)}
-                      disabled={isLoading}
-                      title="Escolher da galeria"
+                      disabled={isLoading || isLocalActive}
+                      title={isLocalActive ? "Indisponível no modo offline (modelo local não lê imagens)" : "Escolher da galeria"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-emerald-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
                       <Images size={20} />
@@ -440,12 +490,16 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
               <div className={`flex items-start gap-2 p-3 rounded-2xl text-[10px] font-bold leading-relaxed ${isDarkMode ? "bg-indigo-900/20 text-indigo-300" : "bg-indigo-50 text-indigo-600"}`}>
                 <Info size={14} className="shrink-0 mt-0.5" />
                 <span>
-                  Envie fotos (ex: etiquetas, fichas, notas) para a IA ler dados de cadastro, ou use o microfone para digitar por voz. Use o ícone de engrenagem para configurar perguntas rápidas e acompanhar o uso de tokens.
+                  {isLocalActive
+                    ? "Modo offline: converso no aparelho, sem internet, mas não consigo consultar os dados do app nem gerar formulários automáticos — só chat de texto. Use o ícone de engrenagem para trocar o modelo local."
+                    : "Envie fotos (ex: etiquetas, fichas, notas) para a IA ler dados de cadastro, ou use o microfone para digitar por voz. Use o ícone de engrenagem para configurar perguntas rápidas e acompanhar o uso de tokens."}
                 </span>
               </div>
 
               <div className={`max-w-[85%] p-4 rounded-2xl text-xs font-semibold leading-relaxed ${isDarkMode ? "bg-slate-800 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
-                Olá! Sou o assistente de IA do LIM.O APP. Posso consultar seus produtos, pedidos, financeiro e estoque de solados para responder perguntas e gerar análises. Use o ícone de raio acima para ver perguntas prontas.
+                {isLocalActive
+                  ? "Olá! Sou um modelo de IA rodando offline, direto no seu aparelho. Posso conversar em texto, mas não tenho acesso aos dados do seu negócio (produtos, pedidos, financeiro)."
+                  : "Olá! Sou o assistente de IA do LIM.O APP. Posso consultar seus produtos, pedidos, financeiro e estoque de solados para responder perguntas e gerar análises. Use o ícone de raio acima para ver perguntas prontas."}
               </div>
 
               {messages.map((m, i) => {

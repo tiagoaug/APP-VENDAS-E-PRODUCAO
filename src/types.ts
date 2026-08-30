@@ -1769,7 +1769,7 @@ export interface AIUsageLimits {
   weeklyTokenLimit: number;
 }
 
-export type AIProvider = 'anthropic' | 'openai' | 'gemini';
+export type AIProvider = 'anthropic' | 'openai' | 'gemini' | 'huggingface' | 'local';
 
 export interface AIProviderKeyConfig {
   apiKey: string;
@@ -1780,6 +1780,7 @@ export interface AIProviderConfig {
   activeProvider: AIProvider;
   openai?: AIProviderKeyConfig;
   gemini?: AIProviderKeyConfig;
+  huggingface?: AIProviderKeyConfig;
 }
 
 export interface AIUsageEntry {

@@ -1,7 +1,7 @@
 import { useState, useEffect, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Plus, Pencil, Trash2, Check, ListChecks, Gauge, ExternalLink, AlertTriangle, Power, Sparkles, KeyRound, Eye, EyeOff, Bot, Cpu } from "lucide-react";
+import { X, Plus, Pencil, Trash2, Check, ListChecks, Gauge, ExternalLink, AlertTriangle, Power, Sparkles, KeyRound, Eye, EyeOff, Bot, Cpu, Gift, Smartphone, FileUp, Loader2 } from "lucide-react";
 import { AIQuickPrompt, AIUsageEntry, AIUsageLimits, AIProvider, AIProviderConfig } from "../types";
 import {
   subscribeToQuickPrompts,
@@ -19,6 +19,13 @@ import {
   saveAIProviderConfig,
   DEFAULT_PROVIDER_CONFIG,
 } from "../services/aiSettingsService";
+import {
+  LocalModelInfo,
+  LocalModelPickCancelledError,
+  getLoadedLocalModelInfo,
+  pickAndLoadLocalModel,
+  unloadLocalModel,
+} from "../services/localLlmService";
 import { AI_PROMPT_ICON_KEYS, getPromptIcon } from "./aiPromptIcons";
 
 interface AIAssistantSettingsProps {
@@ -41,7 +48,15 @@ const PROVIDER_META: Record<AIProvider, { label: string; hint: string; defaultMo
   anthropic: { label: "Claude", hint: "Padrão do sistema — pronto pra usar", defaultModel: "claude-sonnet-4-6", icon: <Sparkles size={16} /> },
   openai: { label: "ChatGPT", hint: "Sua conta OpenAI", defaultModel: "gpt-4.1", icon: <Bot size={16} /> },
   gemini: { label: "Gemini", hint: "Sua conta Google AI", defaultModel: "gemini-2.0-flash", icon: <Cpu size={16} /> },
+  huggingface: { label: "Hugging Face", hint: "Alternativa gratuita (seu token)", defaultModel: "meta-llama/Llama-3.3-70B-Instruct", icon: <Gift size={16} /> },
+  local: { label: "No aparelho", hint: "Modelo baixado no seu celular, 100% offline", defaultModel: "", icon: <Smartphone size={16} /> },
 };
+
+function formatMB(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+}
+
+const KEY_CONFIG_PROVIDERS = ["openai", "gemini", "huggingface"] as const;
 
 function formatTokens(n: number): string {
   return Math.round(n).toLocaleString("pt-BR");
@@ -87,10 +102,18 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
   const [geminiModelInput, setGeminiModelInput] = useState("");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [huggingfaceKeyInput, setHuggingfaceKeyInput] = useState("");
+  const [huggingfaceModelInput, setHuggingfaceModelInput] = useState("");
+  const [showHuggingfaceKey, setShowHuggingfaceKey] = useState(false);
   const [providerSaved, setProviderSaved] = useState<AIProvider | null>(null);
+  const [localModelInfo, setLocalModelInfo] = useState<LocalModelInfo | null>(null);
+  const [isLocalModelLoading, setIsLocalModelLoading] = useState(false);
+  const [localModelError, setLocalModelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
+    setLocalModelInfo(getLoadedLocalModelInfo());
+    setLocalModelError(null);
     const unsubPrompts = subscribeToQuickPrompts(setPrompts);
     const unsubUsage = subscribeToUsageEntries(setUsageEntries);
     const unsubGeneral = subscribeToAIGeneralSettings((s) => setAiEnabled(s.enabled));
@@ -100,6 +123,8 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
       setOpenaiModelInput(c.openai?.model || "");
       setGeminiKeyInput(c.gemini?.apiKey || "");
       setGeminiModelInput(c.gemini?.model || "");
+      setHuggingfaceKeyInput(c.huggingface?.apiKey || "");
+      setHuggingfaceModelInput(c.huggingface?.model || "");
     });
     getUsageLimits().then((l) => {
       setLimits(l);
@@ -162,9 +187,11 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
     await saveAIProviderConfig(next);
   };
 
-  const handleSaveProviderKey = async (provider: "openai" | "gemini") => {
-    const key = provider === "openai" ? openaiKeyInput.trim() : geminiKeyInput.trim();
-    const model = provider === "openai" ? openaiModelInput.trim() : geminiModelInput.trim();
+  const handleSaveProviderKey = async (provider: (typeof KEY_CONFIG_PROVIDERS)[number]) => {
+    const key =
+      provider === "openai" ? openaiKeyInput.trim() : provider === "gemini" ? geminiKeyInput.trim() : huggingfaceKeyInput.trim();
+    const model =
+      provider === "openai" ? openaiModelInput.trim() : provider === "gemini" ? geminiModelInput.trim() : huggingfaceModelInput.trim();
     if (!key) return;
     const next: AIProviderConfig = {
       ...providerConfig,
@@ -174,6 +201,26 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
     await saveAIProviderConfig(next);
     setProviderSaved(provider);
     setTimeout(() => setProviderSaved(null), 2000);
+  };
+
+  const handlePickLocalModel = async () => {
+    setLocalModelError(null);
+    setIsLocalModelLoading(true);
+    try {
+      const info = await pickAndLoadLocalModel();
+      setLocalModelInfo(info);
+    } catch (err: any) {
+      if (!(err instanceof LocalModelPickCancelledError)) {
+        setLocalModelError(err?.message || "Não foi possível carregar o modelo selecionado.");
+      }
+    } finally {
+      setIsLocalModelLoading(false);
+    }
+  };
+
+  const handleUnloadLocalModel = async () => {
+    await unloadLocalModel();
+    setLocalModelInfo(null);
   };
 
   const handleSaveLimits = async () => {
@@ -320,18 +367,82 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                     <p className="text-[10px] font-bold text-slate-400 px-1 leading-relaxed">
                       {providerConfig.activeProvider === "anthropic"
                         ? "Claude é o padrão do sistema — roda via função segura no servidor, sem precisar de chave sua."
+                        : providerConfig.activeProvider === "huggingface"
+                        ? "Usando seu próprio token do Hugging Face, configurado abaixo — gratuito, mas com limites de uso e nem todo modelo suporta as ações do assistente (só o chat de texto)."
+                        : providerConfig.activeProvider === "local"
+                        ? "Rodando um modelo baixado no seu celular, 100% offline e sem custo — configure o arquivo abaixo. Só funciona bem com modelos pequenos e não tem acesso aos dados do app (só chat de texto)."
                         : `Usando sua própria chave de API da ${PROVIDER_META[providerConfig.activeProvider].label}, configurada abaixo.`}
                     </p>
                   </div>
 
-                  {(["openai", "gemini"] as const).map((p) => {
+                  <div className={`flex flex-col gap-2.5 p-4 rounded-2xl border ${isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">{PROVIDER_META.local.icon}</span>
+                      <p className={`text-xs font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>{PROVIDER_META.local.label}</p>
+                      {localModelInfo && (
+                        <span className="ml-auto flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-emerald-500">
+                          <Check size={12} /> Carregado
+                        </span>
+                      )}
+                    </div>
+
+                    {localModelInfo ? (
+                      <div className={`flex items-center gap-3 p-3 rounded-xl ${isDarkMode ? "bg-slate-900" : "bg-white"}`}>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-[11px] font-bold truncate ${isDarkMode ? "text-white" : "text-slate-900"}`}>{localModelInfo.name}</p>
+                          <p className="text-[10px] font-bold text-slate-400">{formatMB(localModelInfo.sizeBytes)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleUnloadLocalModel}
+                          className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-red-500 transition-all shrink-0"
+                          aria-label="Remover modelo"
+                          title="Remover modelo"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] font-bold text-slate-400 leading-relaxed">Nenhum modelo carregado nesta sessão.</p>
+                    )}
+
+                    {localModelError && <p className="text-[10px] font-bold text-red-500">{localModelError}</p>}
+
+                    <button
+                      type="button"
+                      onClick={handlePickLocalModel}
+                      disabled={isLocalModelLoading}
+                      className="py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
+                    >
+                      {isLocalModelLoading ? (
+                        <><Loader2 size={14} className="animate-spin" /> Carregando modelo...</>
+                      ) : (
+                        <><FileUp size={14} /> {localModelInfo ? "Trocar arquivo (.gguf)" : "Selecionar arquivo (.gguf)"}</>
+                      )}
+                    </button>
+
+                    <a
+                      href="https://huggingface.co/models?library=gguf&sort=trending"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-500 underline w-fit"
+                    >
+                      Buscar modelos .gguf gratuitos no Hugging Face <ExternalLink size={10} />
+                    </a>
+
+                    <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                      Baixe um modelo pequeno (até ~3B parâmetros, ex: Llama 3.2 1B/3B, Qwen2.5 1.5B) direto no navegador do celular e selecione o arquivo aqui. Ele roda local, sem internet — mas precisa ser selecionado de novo toda vez que o app reabrir.
+                    </p>
+                  </div>
+
+                  {KEY_CONFIG_PROVIDERS.map((p) => {
                     const meta = PROVIDER_META[p];
-                    const keyInput = p === "openai" ? openaiKeyInput : geminiKeyInput;
-                    const setKeyInput = p === "openai" ? setOpenaiKeyInput : setGeminiKeyInput;
-                    const modelInput = p === "openai" ? openaiModelInput : geminiModelInput;
-                    const setModelInput = p === "openai" ? setOpenaiModelInput : setGeminiModelInput;
-                    const showKey = p === "openai" ? showOpenaiKey : showGeminiKey;
-                    const setShowKey = p === "openai" ? setShowOpenaiKey : setShowGeminiKey;
+                    const keyInput = p === "openai" ? openaiKeyInput : p === "gemini" ? geminiKeyInput : huggingfaceKeyInput;
+                    const setKeyInput = p === "openai" ? setOpenaiKeyInput : p === "gemini" ? setGeminiKeyInput : setHuggingfaceKeyInput;
+                    const modelInput = p === "openai" ? openaiModelInput : p === "gemini" ? geminiModelInput : huggingfaceModelInput;
+                    const setModelInput = p === "openai" ? setOpenaiModelInput : p === "gemini" ? setGeminiModelInput : setHuggingfaceModelInput;
+                    const showKey = p === "openai" ? showOpenaiKey : p === "gemini" ? showGeminiKey : showHuggingfaceKey;
+                    const setShowKey = p === "openai" ? setShowOpenaiKey : p === "gemini" ? setShowGeminiKey : setShowHuggingfaceKey;
                     const hasSavedKey = !!providerConfig[p]?.apiKey;
                     return (
                       <div key={p} className={`flex flex-col gap-2.5 p-4 rounded-2xl border ${isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"}`}>
@@ -348,7 +459,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                           <KeyRound size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
                             type={showKey ? "text" : "password"}
-                            placeholder={`Chave de API da ${meta.label}`}
+                            placeholder={p === "huggingface" ? "Token de acesso do Hugging Face" : `Chave de API da ${meta.label}`}
                             value={keyInput}
                             onChange={(e) => setKeyInput(e.target.value)}
                             className={`${inputClass} pl-9 pr-9`}
@@ -369,6 +480,16 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                           onChange={(e) => setModelInput(e.target.value)}
                           className={inputClass}
                         />
+                        {p === "huggingface" && (
+                          <a
+                            href="https://huggingface.co/settings/tokens"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-500 underline w-fit"
+                          >
+                            Criar token gratuito no Hugging Face <ExternalLink size={10} />
+                          </a>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleSaveProviderKey(p)}

@@ -46,10 +46,15 @@ export const DEFAULT_USAGE_LIMITS: AIUsageLimits = {
 
 // Preços aproximados (USD por 1M tokens) — cada provedor cobra diferente.
 // Claude: claude-sonnet-4-6. OpenAI: gpt-4.1. Gemini: gemini-2.0-flash.
+// Hugging Face: usado com token gratuito (plano free do provedor por trás do
+// modelo escolhido) — sem custo direto pro usuário, então fica zerado aqui.
+// Local: roda no próprio aparelho (WASM), sem chamada de rede nenhuma — zerado também.
 const PRICING_PER_MILLION_USD: Record<AIProvider, { input: number; output: number }> = {
   anthropic: { input: 3, output: 15 },
   openai: { input: 2, output: 8 },
   gemini: { input: 0.1, output: 0.4 },
+  huggingface: { input: 0, output: 0 },
+  local: { input: 0, output: 0 },
 };
 
 export function estimateCostUSD(inputTokens: number, outputTokens: number, provider: AIProvider = 'anthropic'): number {
@@ -94,7 +99,12 @@ export function subscribeToAIProviderConfig(callback: (config: AIProviderConfig)
     const found = all.find((d) => d.id === PROVIDER_CONFIG_DOC_ID);
     callback(
       found
-        ? { activeProvider: found.activeProvider || 'anthropic', openai: found.openai, gemini: found.gemini }
+        ? {
+            activeProvider: found.activeProvider || 'anthropic',
+            openai: found.openai,
+            gemini: found.gemini,
+            huggingface: found.huggingface,
+          }
         : DEFAULT_PROVIDER_CONFIG
     );
   });

@@ -1,10 +1,17 @@
 import OpenAI from "openai";
 import { RunChatParams, AIProviderResult } from "./types";
 
-export async function runOpenAIChat(params: RunChatParams): Promise<AIProviderResult> {
+// Núcleo compartilhado: tanto a OpenAI quanto o roteador de Inference Providers
+// do Hugging Face (router.huggingface.co/v1) falam o mesmo formato de API
+// "chat completions", então os dois adaptadores usam este mesmo código —
+// só muda a baseURL. Nem todo modelo do Hugging Face suporta "tools"
+// (function calling); quando não suporta, o provedor costuma ignorar o
+// campo ou retornar erro — nesse caso as ações do assistente (propostas de
+// cadastro/compra) não funcionam, só o chat de texto.
+export async function runOpenAICompatibleChat(params: RunChatParams, baseURL?: string): Promise<AIProviderResult> {
   const { apiKey, model, systemPrompt, tools, messages, proposalToolNames, maxToolIterations, executeTool } = params;
 
-  const openai = new OpenAI({ apiKey });
+  const openai = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
 
   const openaiTools: OpenAI.Chat.ChatCompletionTool[] = tools.map((t) => ({
     type: "function",
@@ -84,4 +91,8 @@ export async function runOpenAIChat(params: RunChatParams): Promise<AIProviderRe
   }
 
   throw new Error("O assistente não conseguiu concluir a resposta (muitas etapas de ferramentas).");
+}
+
+export async function runOpenAIChat(params: RunChatParams): Promise<AIProviderResult> {
+  return runOpenAICompatibleChat(params);
 }
