@@ -206,10 +206,22 @@ export function isViewTaskAllowed(collab: Collaborator | null, view: ViewType): 
   return canViewTask(collab, mapped[0], mapped[1]);
 }
 
+// Ferramentas genéricas da seção "Extras" das Configurações — não pertencem a nenhum
+// setor de negócio (não mexem em dados do sistema, só utilidades: OCR de texto, ajuste
+// de PDF/JPG, calculadora de regra de três), então ficam liberadas pra QUALQUER
+// colaborador, junto com Dashboard/Configurações, em vez de dependerem de um setor.
+const BASELINE_VIEWS: ViewType[] = [
+  ViewType.DASHBOARD,
+  ViewType.SETTINGS,
+  ViewType.OCR_TEXT_EXTRACTOR,
+  ViewType.RULE_OF_THREE,
+  ViewType.LABEL_PRINT_STUDIO,
+];
+
 // null = acesso total (sem colaborador ativo, ou colaborador isUnrestricted)
 export function getAllowedViews(collab: Collaborator | null): ViewType[] | null {
   if (!collab || collab.isUnrestricted) return null;
-  const set = new Set<ViewType>([ViewType.DASHBOARD, ViewType.SETTINGS]);
+  const set = new Set<ViewType>(BASELINE_VIEWS);
   collab.sectors.forEach(sectorId => {
     SECTORS.find(s => s.id === sectorId)?.views.forEach(v => set.add(v));
   });

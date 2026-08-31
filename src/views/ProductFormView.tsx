@@ -776,6 +776,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {modulesConfig.production && !restrictedProductMode && module === 'PRODUCTION' && (
                     <button
                       onClick={() => setVarView('consumo')}
+                      data-guide-anchor="productForm.abaFichaTecnica"
                       className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
                     >
                       Ficha Técnica
@@ -1266,6 +1267,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             });
                             setIsConsumptionModalOpen(true);
                           }}
+                          data-guide-anchor="productForm.fichaTecnicaAdicionar"
                           className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:scale-105 active:scale-95 transition-all w-full sm:w-auto"
                         >
                           <Plus size={14} strokeWidth={3} /> Nova Peça
@@ -3056,6 +3058,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           <button
             type="button"
             onClick={handleSave}
+            data-guide-anchor="productForm.salvar"
             className={`bg-slate-900 dark:bg-indigo-600 text-white py-3.5 rounded-xl font-bold uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 shadow-xl transform transition-transform active:scale-95 cursor-pointer ${isDarkMode ? 'shadow-none' : 'shadow-slate-200'}`}
             aria-label="Salvar produto e voltar para modelos"
             title="Salvar e Voltar"

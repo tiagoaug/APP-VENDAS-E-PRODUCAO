@@ -317,6 +317,7 @@ export default function ProviderServiceOrdersCard({
         <button
           type="button"
           onClick={() => setIsProviderOSExpanded(v => !v)}
+          data-guide-anchor="dash.providerOS.expandir"
           className="w-full flex items-center justify-between gap-3 p-6"
         >
           <div className="text-left min-w-0">
@@ -341,7 +342,7 @@ export default function ProviderServiceOrdersCard({
                 className={`flex-1 min-w-0 border-none bg-transparent outline-none text-xs font-bold ${isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-800 placeholder:text-slate-400'}`}
               />
               {providerOSSearch && (
-                <button type="button" onClick={() => setProviderOSSearch('')} className="text-slate-400 hover:text-slate-600 shrink-0">
+                <button type="button" onClick={() => setProviderOSSearch('')} data-guide-anchor="dash.providerOS.limparBusca" className="text-slate-400 hover:text-slate-600 shrink-0">
                   <X size={14} />
                 </button>
               )}
@@ -356,6 +357,7 @@ export default function ProviderServiceOrdersCard({
                     key={pt}
                     type="button"
                     onClick={() => setProviderOSPeriodType(pt)}
+                    data-guide-anchor="dash.providerOS.periodo"
                     className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
                       providerOSPeriodType === pt ? 'bg-indigo-600 text-white' : 'text-slate-400'
                     }`}
@@ -366,6 +368,7 @@ export default function ProviderServiceOrdersCard({
               </div>
               <div
                 onClick={openProviderOSMonthPicker}
+                data-guide-anchor="dash.providerOS.mesEscolhido"
                 className={`w-full flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
               >
                 <Calendar size={12} className="text-indigo-500 shrink-0" />
@@ -388,6 +391,7 @@ export default function ProviderServiceOrdersCard({
                 <button
                   type="button"
                   onClick={() => setProviderDetailGroupMode('os')}
+                  data-guide-anchor="dash.providerOS.agrupar"
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${providerDetailGroupMode === 'os' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                 >
                   <Hash size={10} /> Por OS
@@ -395,6 +399,7 @@ export default function ProviderServiceOrdersCard({
                 <button
                   type="button"
                   onClick={() => setProviderDetailGroupMode('modelo')}
+                  data-guide-anchor="dash.providerOS.agrupar"
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${providerDetailGroupMode === 'modelo' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                 >
                   <Layers size={10} /> Por Modelo
@@ -418,6 +423,7 @@ export default function ProviderServiceOrdersCard({
                   <button
                     type="button"
                     onClick={() => setExpandedProviderKey(group.key)}
+                    data-guide-anchor="dash.providerOS.fornecedorItem"
                     className="w-full flex items-center justify-between gap-3 p-3.5 text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -470,6 +476,7 @@ export default function ProviderServiceOrdersCard({
                   <button
                     type="button"
                     onClick={() => setProviderDetailTab(prev => ({ ...prev, [selectedGroup.key]: 'open' }))}
+                    data-guide-anchor="dash.providerOS.aba"
                     className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${detailTab === 'open' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                   >
                     Em aberto ({selectedGroup.openOrders.length})
@@ -477,6 +484,7 @@ export default function ProviderServiceOrdersCard({
                   <button
                     type="button"
                     onClick={() => setProviderDetailTab(prev => ({ ...prev, [selectedGroup.key]: 'period' }))}
+                    data-guide-anchor="dash.providerOS.aba"
                     className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${detailTab === 'period' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                   >
                     No período ({selectedGroup.completedInPeriod.length})
@@ -489,6 +497,7 @@ export default function ProviderServiceOrdersCard({
                     type="button"
                     title="Por OS"
                     onClick={() => setProviderDetailGroupMode('os')}
+                    data-guide-anchor="dash.providerOS.agrupar"
                     className={`p-1.5 rounded-lg transition-all ${providerDetailGroupMode === 'os' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                   >
                     <Hash size={11} />
@@ -497,6 +506,7 @@ export default function ProviderServiceOrdersCard({
                     type="button"
                     title="Por Modelo"
                     onClick={() => setProviderDetailGroupMode('modelo')}
+                    data-guide-anchor="dash.providerOS.agrupar"
                     className={`p-1.5 rounded-lg transition-all ${providerDetailGroupMode === 'modelo' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                   >
                     <Layers size={11} />
@@ -523,6 +533,7 @@ export default function ProviderServiceOrdersCard({
                           key={os.id}
                           type={canSettle ? 'button' : undefined}
                           onClick={canSettle ? () => setOsToSettle(os) : undefined}
+                          data-guide-anchor={canSettle ? 'dash.providerOS.osItem' : undefined}
                           className={`w-full flex items-center justify-between gap-2 p-2.5 rounded-xl text-left ${canSettle ? 'active:scale-[0.98] transition-transform' : ''} ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}
                         >
                           <div className="min-w-0">
@@ -578,6 +589,7 @@ export default function ProviderServiceOrdersCard({
                   <button
                     type="button"
                     onClick={() => setCopyPopupKey(v => v === selectedGroup.key ? null : selectedGroup.key)}
+                    data-guide-anchor="dash.providerOS.copiar"
                     className={`w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
                   >
                     <Clipboard size={12} /> Copiar
@@ -589,6 +601,7 @@ export default function ProviderServiceOrdersCard({
                         <button
                           type="button"
                           onClick={() => handleCopyProviderOSWithNumbers(selectedGroup)}
+                          data-guide-anchor="dash.providerOS.copiarComOS"
                           className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'}`}
                         >
                           <Hash size={12} className="text-indigo-500 shrink-0" /> Com número de OS
@@ -596,6 +609,7 @@ export default function ProviderServiceOrdersCard({
                         <button
                           type="button"
                           onClick={() => handleCopyProviderOSGrouped(selectedGroup)}
+                          data-guide-anchor="dash.providerOS.copiarSemOS"
                           className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-widest border-t ${isDarkMode ? 'text-slate-200 hover:bg-slate-700 border-slate-700' : 'text-slate-700 hover:bg-slate-50 border-slate-100'}`}
                         >
                           <Layers size={12} className="text-violet-500 shrink-0" /> Sem OS, por cor/referência
@@ -608,6 +622,7 @@ export default function ProviderServiceOrdersCard({
                   <button
                     type="button"
                     onClick={() => handlePayProvider(selectedGroup)}
+                    data-guide-anchor="dash.providerOS.pagar"
                     disabled={selectedGroup.openOrders.length === 0}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
                   >
@@ -618,6 +633,7 @@ export default function ProviderServiceOrdersCard({
               <button
                 type="button"
                 onClick={() => handleOpenExportPopup(selectedGroup)}
+                data-guide-anchor="dash.providerOS.exportarAbrir"
                 className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
               >
                 <Upload size={12} /> Exportar
@@ -645,6 +661,7 @@ export default function ProviderServiceOrdersCard({
                 <button
                   type="button"
                   onClick={() => setExportFormat('pdf')}
+                  data-guide-anchor="dash.providerOS.exportarFormato"
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${exportFormat === 'pdf' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                 >
                   <FileDown size={13} /> PDF
@@ -652,6 +669,7 @@ export default function ProviderServiceOrdersCard({
                 <button
                   type="button"
                   onClick={() => setExportFormat('jpg')}
+                  data-guide-anchor="dash.providerOS.exportarFormato"
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${exportFormat === 'jpg' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                 >
                   <ImageIcon size={13} /> JPG
@@ -665,6 +683,7 @@ export default function ProviderServiceOrdersCard({
                 <button
                   type="button"
                   onClick={() => setExportGroupMode('os')}
+                  data-guide-anchor="dash.providerOS.exportarAgrupar"
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${exportGroupMode === 'os' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                 >
                   <Hash size={13} /> Por OS
@@ -672,6 +691,7 @@ export default function ProviderServiceOrdersCard({
                 <button
                   type="button"
                   onClick={() => setExportGroupMode('modelo')}
+                  data-guide-anchor="dash.providerOS.exportarAgrupar"
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${exportGroupMode === 'modelo' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
                 >
                   <Layers size={13} /> Por Modelo
@@ -688,6 +708,7 @@ export default function ProviderServiceOrdersCard({
                   <button
                     type="button"
                     onClick={() => setExportOsPerPage(v => Math.max(0, v - 1))}
+                    data-guide-anchor="dash.providerOS.exportarPorPagina"
                     className={`p-1.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}
                   >
                     <ChevronDown size={12} className="rotate-90" />
@@ -696,6 +717,7 @@ export default function ProviderServiceOrdersCard({
                   <button
                     type="button"
                     onClick={() => setExportOsPerPage(v => Math.min(exportRowCount, v + 1))}
+                    data-guide-anchor="dash.providerOS.exportarPorPagina"
                     className={`p-1.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}
                   >
                     <ChevronDown size={12} className="-rotate-90" />
@@ -726,6 +748,7 @@ export default function ProviderServiceOrdersCard({
               type="button"
               onClick={handleConfirmExport}
               disabled={isExporting}
+              data-guide-anchor="dash.providerOS.exportarConfirmar"
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
             >
               <Upload size={16} /> {isExporting ? 'Gerando...' : 'Exportar'}

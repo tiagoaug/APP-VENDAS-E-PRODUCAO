@@ -1859,6 +1859,7 @@ export default function EngineeringEditor({
               : (materialRequiresColor && !editing.colorId && !editing.ignoreColor) ? "Selecione uma cor para confirmar" : "Confirmar engenharia e salvar"
           }
           aria-label="Confirmar engenharia e salvar alterações"
+          data-guide-anchor="engineeringEditor.confirmar"
           className={`w-full px-6 py-4 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:grayscale ${isDarkMode ? 'bg-indigo-600 shadow-indigo-900/40' : 'bg-slate-900 shadow-slate-900/20 text-white'}`}
         >
           <Save size={18} /> Confirmar

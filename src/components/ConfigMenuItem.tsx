@@ -11,6 +11,8 @@ interface ConfigMenuItemProps {
   isDarkMode?: boolean;
   onClick: () => void;
   isLast?: boolean;
+  /** Chave pro "?" arrastável (DraggableHelpPoint) e/ou tours guiados — ver src/data/fieldHelp.ts. */
+  anchor?: string;
 }
 
 export default function ConfigMenuItem({
@@ -21,12 +23,14 @@ export default function ConfigMenuItem({
   bg = 'bg-slate-100',
   isDarkMode = false,
   onClick,
-  isLast
+  isLast,
+  anchor
 }: ConfigMenuItemProps) {
   return (
     <button
       title={label}
       onClick={onClick}
+      data-guide-anchor={anchor}
       className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${!isLast ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
     >
       <div className="flex items-center gap-4">

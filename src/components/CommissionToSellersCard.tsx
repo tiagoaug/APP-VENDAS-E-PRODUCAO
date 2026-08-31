@@ -147,6 +147,7 @@ export default function CommissionToSellersCard({
       <button
         type="button"
         onClick={() => setIsCommissionExpanded(v => !v)}
+        data-guide-anchor="dash.commission.expandir"
         className="w-full flex items-center justify-between gap-3 p-6"
       >
         <div className="text-left min-w-0">
@@ -167,6 +168,7 @@ export default function CommissionToSellersCard({
                   key={pt}
                   type="button"
                   onClick={() => setCommissionPeriodType(pt)}
+                  data-guide-anchor="dash.commission.periodo"
                   className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
                     commissionPeriodType === pt ? 'bg-indigo-600 text-white' : 'text-slate-400'
                   }`}
@@ -177,6 +179,7 @@ export default function CommissionToSellersCard({
             </div>
             <div
               onClick={openCommissionMonthPicker}
+              data-guide-anchor="dash.commission.mesEscolhido"
               className={`w-full flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
             >
               <Calendar size={12} className="text-indigo-500 shrink-0" />
@@ -195,6 +198,7 @@ export default function CommissionToSellersCard({
           <button
             type="button"
             onClick={() => setIncludeUnpaidCommission(v => !v)}
+            data-guide-anchor="dash.commission.incluirPendentes"
             className={`flex items-center justify-between gap-3 p-3 rounded-2xl text-left ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}
           >
             <div className="min-w-0">
@@ -219,6 +223,7 @@ export default function CommissionToSellersCard({
                 <button
                   type="button"
                   onClick={() => setExpandedCommissionSellerId(v => v === collaborator.id ? null : collaborator.id)}
+                  data-guide-anchor="dash.commission.vendedorItem"
                   className="w-full flex items-center justify-between gap-3 p-3.5 text-left"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -245,6 +250,7 @@ export default function CommissionToSellersCard({
                           key={sale.id}
                           type="button"
                           onClick={() => onOpenSale?.(sale.id)}
+                          data-guide-anchor="dash.commission.abrirVenda"
                           className={`flex items-center justify-between gap-2 p-2.5 rounded-xl text-left ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
                         >
                           <div className="min-w-0">
@@ -264,6 +270,7 @@ export default function CommissionToSellersCard({
                       <button
                         type="button"
                         onClick={() => handleCopyCommission(collaborator.name, payableValue)}
+                        data-guide-anchor="dash.commission.copiar"
                         className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
                       >
                         <Clipboard size={12} /> Copiar
@@ -272,6 +279,7 @@ export default function CommissionToSellersCard({
                         <button
                           type="button"
                           onClick={() => handlePayCommission(sc)}
+                          data-guide-anchor="dash.commission.pagar"
                           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest bg-indigo-600 text-white"
                         >
                           <Send size={12} /> Pagar Comissão
@@ -282,6 +290,7 @@ export default function CommissionToSellersCard({
                       <button
                         type="button"
                         onClick={() => handleExportCommission(sc, 'pdf')}
+                        data-guide-anchor="dash.commission.exportar"
                         className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
                       >
                         <FileDown size={12} /> Exportar PDF
@@ -289,6 +298,7 @@ export default function CommissionToSellersCard({
                       <button
                         type="button"
                         onClick={() => handleExportCommission(sc, 'jpg')}
+                        data-guide-anchor="dash.commission.exportar"
                         className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
                       >
                         <ImageIcon size={12} /> Exportar JPG

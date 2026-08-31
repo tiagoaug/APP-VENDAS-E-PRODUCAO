@@ -694,6 +694,7 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={onOpenAIAssistant}
+                  data-guide-anchor="dash.aiAssistant.abrir"
                   className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-indigo-600 text-white hover:bg-indigo-500"
                 >
                   <Sparkles size={13} /> Abrir Assistente IA
@@ -744,6 +745,7 @@ export default function DashboardView({
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => onNavigate(ViewType.PRODUCTS)}
+                    data-guide-anchor="dash.produtos.ver"
                     title="Ver todos os produtos"
                     aria-label="Navegar para a lista de produtos cadastrados"
                     className={`flex flex-col items-center justify-center gap-2 h-32 p-4 rounded-2xl border transition-all active:scale-95 ${
@@ -760,6 +762,7 @@ export default function DashboardView({
 
                   <button
                     onClick={onAddProduct}
+                    data-guide-anchor="dash.produtos.novo"
                     title="Cadastrar novo modelo de produto"
                     aria-label="Abrir formulário de cadastro de novo produto"
                     className={`flex flex-col items-center justify-center gap-2 h-32 p-4 rounded-2xl border transition-all active:scale-95 ${
@@ -782,6 +785,7 @@ export default function DashboardView({
               <div
                 key="balance"
                 onClick={() => onNavigate(ViewType.FINANCIAL)}
+                data-guide-anchor="dash.balance.card"
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
@@ -792,6 +796,7 @@ export default function DashboardView({
                       onClick={(e) => { e.stopPropagation(); setShowBalanceInfo(true); }}
                       title="O que é o Saldo Consolidado?"
                       aria-label="O que é o Saldo Consolidado?"
+                      data-guide-anchor="dash.balance.info"
                       className="text-indigo-400 dark:text-indigo-500"
                     >
                       <HelpCircle size={15} />
@@ -821,8 +826,9 @@ export default function DashboardView({
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <button 
+                  <button
                     onClick={() => onAddTransaction(TransactionType.INCOME)}
+                    data-guide-anchor="dash.manualEntries.entrada"
                     title="Lançar Entrada Manual"
                     aria-label="Lançar nova entrada financeira manual"
                     className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50'}`}
@@ -833,8 +839,9 @@ export default function DashboardView({
                     <span className="text-[10px] font-black tracking-widest text-emerald-600 dark:text-emerald-400">Entrada</span>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => onAddTransaction(TransactionType.EXPENSE)}
+                    data-guide-anchor="dash.manualEntries.saida"
                     title="Lançar Saída Manual"
                     aria-label="Lançar nova saída financeira manual"
                     className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/10 border border-rose-500/20' : 'bg-rose-50'}`}
@@ -862,8 +869,9 @@ export default function DashboardView({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <button 
+                  <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "ventas-periodo")}
+                    data-guide-anchor="dash.quickReports.item"
                     title="Ver Relatório de Vendas do Período"
                     aria-label="Relatório de vendas detalhado por período"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-indigo-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-indigo-50'}`}
@@ -877,8 +885,9 @@ export default function DashboardView({
                     </div>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "desempenho-financeiro")}
+                    data-guide-anchor="dash.quickReports.item"
                     title="Ver Desempenho Financeiro Detalhado"
                     aria-label="Relatório de lucro e desempenho financeiro"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-emerald-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-emerald-50'}`}
@@ -892,8 +901,9 @@ export default function DashboardView({
                     </div>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "informacao-estoque")}
+                    data-guide-anchor="dash.quickReports.item"
                     title="Ver Itens com Baixo Estoque"
                     aria-label="Relatório de estoque e alertas de reposição"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-amber-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-amber-50'}`}
@@ -909,6 +919,7 @@ export default function DashboardView({
 
                   <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "clientes-mais-compram")}
+                    data-guide-anchor="dash.quickReports.item"
                     title="Ver Ranking de Clientes"
                     aria-label="Ranking dos clientes com maior volume de compra"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-purple-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-purple-50'}`}
@@ -924,6 +935,7 @@ export default function DashboardView({
 
                   <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "produtos-curva-a")}
+                    data-guide-anchor="dash.quickReports.item"
                     title="Ver Ranking de Produtos"
                     aria-label="Ranking dos produtos mais vendidos (Curva A/B/C)"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-sky-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-sky-50'}`}
@@ -955,8 +967,9 @@ export default function DashboardView({
 
                 {/* Responsive grid for quick-access buttons */}
                 <div className="grid grid-cols-2 gap-2.5">
-                  <button 
+                  <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "ventas-periodo")}
+                    data-guide-anchor="dash.reportCenter.item"
                     className={`h-28 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-indigo-500/10 border border-indigo-500/20 shadow-[0_8px_30px_rgb(0,0,0,0.12)]' : 'bg-slate-50 border border-slate-100 shadow-sm'}`}
                   >
                     <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-indigo-500 shadow-sm shrink-0">
@@ -965,8 +978,9 @@ export default function DashboardView({
                     <span className="text-[9px] font-black tracking-widest text-indigo-600 dark:text-indigo-400 text-center leading-tight">Vendas</span>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "desempenho-financeiro")}
+                    data-guide-anchor="dash.reportCenter.item"
                     className={`h-28 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-amber-500/10 border border-amber-500/20 shadow-[0_8px_30px_rgb(0,0,0,0.12)]' : 'bg-slate-50 border border-slate-100 shadow-sm'}`}
                   >
                     <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-amber-500 shadow-sm shrink-0">
@@ -976,8 +990,9 @@ export default function DashboardView({
                   </button>
                 </div>
 
-                <button 
+                <button
                   onClick={() => onNavigate(ViewType.REPORTS)}
+                  data-guide-anchor="dash.reportCenter.vertudo"
                   className={`w-full py-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                 >
                   <span className="text-[10px] font-black tracking-[0.2em]">Ver todos os relatórios</span>
@@ -1008,6 +1023,7 @@ export default function DashboardView({
                         key={pt}
                         type="button"
                         onClick={() => setRankingsPeriodType(pt)}
+                        data-guide-anchor="dash.rankings.periodo"
                         className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
                           rankingsPeriodType === pt ? 'bg-indigo-600 text-white' : 'text-slate-400'
                         }`}
@@ -1018,6 +1034,7 @@ export default function DashboardView({
                     <button
                       type="button"
                       onClick={() => setRankingsPeriodType('TOTAL')}
+                      data-guide-anchor="dash.rankings.periodo"
                       className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
                         rankingsPeriodType === 'TOTAL' ? 'bg-indigo-600 text-white' : 'text-slate-400'
                       }`}
@@ -1033,6 +1050,7 @@ export default function DashboardView({
                   ) : (
                     <div
                       onClick={openRankingsMonthPicker}
+                      data-guide-anchor="dash.rankings.mesEscolhido"
                       className={`w-full flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
                     >
                       <Calendar size={12} className="text-indigo-500 shrink-0" />
@@ -1076,6 +1094,7 @@ export default function DashboardView({
                         <button
                           type="button"
                           onClick={() => setTopProductsRankMode('model')}
+                          data-guide-anchor="dash.rankings.modoRanking"
                           className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${topProductsRankMode === 'model' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400'}`}
                         >
                           Modelo
@@ -1083,6 +1102,7 @@ export default function DashboardView({
                         <button
                           type="button"
                           onClick={() => setTopProductsRankMode('color')}
+                          data-guide-anchor="dash.rankings.modoRanking"
                           className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${topProductsRankMode === 'color' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400'}`}
                         >
                           Cor
@@ -1116,6 +1136,7 @@ export default function DashboardView({
               <div
                 key="cash_flow"
                 onClick={() => onNavigate(ViewType.FINANCIAL)}
+                data-guide-anchor="dash.cashFlow.card"
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div>
@@ -1137,6 +1158,7 @@ export default function DashboardView({
               <div
                 key="receivables"
                 onClick={() => onNavigate(ViewType.FINANCIAL)}
+                data-guide-anchor="dash.receivables.card"
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div>
@@ -1158,6 +1180,7 @@ export default function DashboardView({
               <div
                 key="personal_balance"
                 onClick={() => onNavigate(ViewType.PERSONAL_FINANCIAL)}
+                data-guide-anchor="dash.personalBalance.card"
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(16,185,129,0.1)] flex flex-col gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
@@ -1185,7 +1208,7 @@ export default function DashboardView({
                       </span>
                     )}
                   </div>
-                  <button onClick={() => onNavigate(ViewType.STOCK)} className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">
+                  <button onClick={() => onNavigate(ViewType.STOCK)} data-guide-anchor="dash.stockAlerts.vertudo" className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">
                     Ver tudo
                   </button>
                 </div>
@@ -1230,14 +1253,14 @@ export default function DashboardView({
                 </div>
                 <div className="flex justify-between items-center">
                   <div className={`flex border p-0.5 rounded-xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <button onClick={() => setCustomerDashboardTab('DEBITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${customerDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                    <button onClick={() => setCustomerDashboardTab('DEBITS')} data-guide-anchor="dash.customers.tabs" className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${customerDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       Débitos {customersWithDebts.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{customersWithDebts.length}</span></span>}
                     </button>
                     <button onClick={() => setCustomerDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${customerDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       Créditos {customersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{customersWithCredits.length}</span></span>}
                     </button>
                   </div>
-                  <button onClick={() => onNavigate(ViewType.SALES)} className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
+                  <button onClick={() => onNavigate(ViewType.SALES)} data-guide-anchor="dash.customers.vertudo" className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={14} />
@@ -1247,7 +1270,7 @@ export default function DashboardView({
                   {customerDashboardTab === 'DEBITS' ? (
                     <>
                       {customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).map((item, idx) => (
-                        <div key={`cust-debt-${item.person.id}-${idx}`} onClick={() => onNavigate(ViewType.SALES, null, item.person.name)} className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                        <div key={`cust-debt-${item.person.id}-${idx}`} onClick={() => onNavigate(ViewType.SALES, null, item.person.name)} data-guide-anchor="dash.customers.itemDebito" className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{item.person.name}</p>
                             <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {item.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -1304,6 +1327,7 @@ export default function DashboardView({
                     bg="bg-indigo-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigate(ViewType.PRODUCTS)}
+                    anchor="dash.engConfig.item"
                   />
                   <ConfigMenuItem
                     icon={<Plus size={20} />}
@@ -1313,6 +1337,7 @@ export default function DashboardView({
                     bg="bg-emerald-50"
                     isDarkMode={isDarkMode}
                     onClick={onAddProduct}
+                    anchor="dash.engConfig.item"
                   />
                   <ConfigMenuItem
                     icon={<Grid3X3 size={20} />}
@@ -1322,6 +1347,7 @@ export default function DashboardView({
                     bg="bg-violet-50"
                     isDarkMode={isDarkMode}
                     onClick={onNavigateGrids}
+                    anchor="dash.engConfig.item"
                   />
                   <ConfigMenuItem
                     icon={<Footprints size={20} />}
@@ -1331,6 +1357,7 @@ export default function DashboardView({
                     bg="bg-orange-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigateProduction('MATRIZES')}
+                    anchor="dash.engConfig.item"
                   />
                   <ConfigMenuItem
                     icon={<Layers size={20} />}
@@ -1341,6 +1368,7 @@ export default function DashboardView({
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigateProduction('INSUMOS')}
                     isLast={true}
+                    anchor="dash.engConfig.item"
                   />
                 </div>
               </div>
@@ -1365,6 +1393,7 @@ export default function DashboardView({
                     bg="bg-emerald-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigate(ViewType.PRODUCTION_STOCK)}
+                    anchor="dash.stockControl.item"
                   />
                   <ConfigMenuItem
                     icon={<Package size={20} />}
@@ -1374,6 +1403,7 @@ export default function DashboardView({
                     bg="bg-indigo-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigate(ViewType.PRODUCTION_SOLE_STOCK)}
+                    anchor="dash.stockControl.item"
                   />
                   <ConfigMenuItem
                     icon={<Footprints size={20} />}
@@ -1383,6 +1413,7 @@ export default function DashboardView({
                     bg="bg-rose-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigate(ViewType.PRODUCTION_PALMILHA_STOCK)}
+                    anchor="dash.stockControl.item"
                   />
                   <ConfigMenuItem
                     icon={<Boxes size={20} />}
@@ -1392,6 +1423,7 @@ export default function DashboardView({
                     bg="bg-amber-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigate(ViewType.STOCK)}
+                    anchor="dash.stockControl.item"
                   />
                   <ConfigMenuItem
                     icon={<ClipboardList size={20} />}
@@ -1401,6 +1433,7 @@ export default function DashboardView({
                     bg="bg-amber-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigate(ViewType.PRODUCTION_GENERAL_RECEIPT)}
+                    anchor="dash.stockControl.item"
                     isLast={true}
                   />
                 </div>
@@ -1418,14 +1451,14 @@ export default function DashboardView({
                 </div>
                 <div className="flex justify-between items-center">
                   <div className={`flex border p-0.5 rounded-xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <button onClick={() => setSupplierDashboardTab('DEBITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                    <button onClick={() => setSupplierDashboardTab('DEBITS')} data-guide-anchor="dash.suppliers.tabs" className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       Pendentes {pendingPurchases.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{pendingPurchases.length}</span></span>}
                     </button>
                     <button onClick={() => setSupplierDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       Créditos {suppliersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{suppliersWithCredits.length}</span></span>}
                     </button>
                   </div>
-                  <button onClick={() => onNavigate(ViewType.PURCHASES)} className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
+                  <button onClick={() => onNavigate(ViewType.PURCHASES)} data-guide-anchor="dash.suppliers.vertudo" className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={14} />
@@ -1435,7 +1468,7 @@ export default function DashboardView({
                   {supplierDashboardTab === 'DEBITS' ? (
                     <>
                       {pendingPurchases.map((purchase, idx) => (
-                        <div key={`sup-pending-${purchase.id}-${idx}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, purchase.id)} className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                        <div key={`sup-pending-${purchase.id}-${idx}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, purchase.id)} data-guide-anchor="dash.suppliers.itemPendente" className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{purchase.supplierName}</p>
                             <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {purchase.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -1489,10 +1522,11 @@ export default function DashboardView({
                       <h4 className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {filteredDebtData.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                     </div>
                   </div>
-                  <button 
+                  <button
                     title="Filtrar"
                     aria-label="Abrir filtros de dívidas"
-                    onClick={() => setIsDebtFiltersExpanded(!isDebtFiltersExpanded)} 
+                    data-guide-anchor="dash.debts.filtro"
+                    onClick={() => setIsDebtFiltersExpanded(!isDebtFiltersExpanded)}
                     className={`p-2.5 rounded-xl transition-all ${isDebtFiltersExpanded ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' : 'bg-slate-50 text-slate-400 dark:bg-slate-800'}`}
                   >
                     <Filter size={18} strokeWidth={2.5} />
@@ -1540,7 +1574,7 @@ export default function DashboardView({
                       </div>
                       <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-xl">
                         {[{ id: 'ALL', label: 'Tudo' }, { id: 'PENDING', label: 'Pendentes' }, { id: 'PAID', label: 'Pagas' }].map(s => (
-                          <button key={s.id} onClick={() => setDebtStatusFilter(s.id as any)} className={`flex-1 py-2 rounded-lg text-[8px] font-black tracking-widest transition-all ${debtStatusFilter === s.id ? 'bg-white dark:bg-slate-800 shadow-sm text-rose-500' : 'text-slate-400'}`}>{s.label}</button>
+                          <button key={s.id} onClick={() => setDebtStatusFilter(s.id as any)} data-guide-anchor="dash.debts.filtroStatus" className={`flex-1 py-2 rounded-lg text-[8px] font-black tracking-widest transition-all ${debtStatusFilter === s.id ? 'bg-white dark:bg-slate-800 shadow-sm text-rose-500' : 'text-slate-400'}`}>{s.label}</button>
                         ))}
                       </div>
                     </motion.div>
@@ -1571,7 +1605,7 @@ export default function DashboardView({
                     <p className="text-[9px] font-black text-slate-400 tracking-[0.2em] mb-3">Títulos Recentes</p>
                     <div className="space-y-2">
                       {filteredDebtData.list.slice(0, 3).map((p, i) => (
-                        <div key={`recent-debt-${i}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, p.id)} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all hover:translate-x-1 ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-rose-500/30' : 'bg-white border-slate-50 hover:border-rose-200'}`}><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.debt > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>{p.debt > 0 ? <Clock size={14} /> : <CheckCircle2 size={14} />}</div><div><p className="text-[10px] font-black text-current leading-none">{p.supplierName}</p><p className="text-[8px] font-bold text-slate-400 tracking-widest mt-1">{format(p.date, 'dd MMM yyyy', { locale: ptBR })} • {p.categoryName}</p></div></div><p className={`text-[10px] font-black ${p.debt > 0 ? 'text-rose-500' : 'text-emerald-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {p.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p></div>
+                        <div key={`recent-debt-${i}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, p.id)} data-guide-anchor="dash.debts.itemRecente" className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all hover:translate-x-1 ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-rose-500/30' : 'bg-white border-slate-50 hover:border-rose-200'}`}><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.debt > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>{p.debt > 0 ? <Clock size={14} /> : <CheckCircle2 size={14} />}</div><div><p className="text-[10px] font-black text-current leading-none">{p.supplierName}</p><p className="text-[8px] font-bold text-slate-400 tracking-widest mt-1">{format(p.date, 'dd MMM yyyy', { locale: ptBR })} • {p.categoryName}</p></div></div><p className={`text-[10px] font-black ${p.debt > 0 ? 'text-rose-500' : 'text-emerald-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {p.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p></div>
                       ))}
                     </div>
                   </div>
@@ -1584,6 +1618,7 @@ export default function DashboardView({
               <div
                 key="stock_value"
                 onClick={() => onNavigate(ViewType.STOCK)}
+                data-guide-anchor="dash.stockValue.card"
                 className={`cursor-pointer p-6 rounded-[2rem] border shadow-[0_4px_20px_-6px_rgba(0,0,0,0.1)] flex flex-col justify-center min-h-[140px] ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div className="flex justify-between items-center">
@@ -1737,6 +1772,7 @@ export default function DashboardView({
                         const active = reminderFilter === opt.id;
                         return (
                           <button key={opt.id} type="button" onClick={() => setReminderFilter(opt.id)}
+                            data-guide-anchor="dash.reminders.filtro"
                             className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border truncate ${active ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-100'}`}
                           >
                             {opt.label}{count > 0 ? ` (${count})` : ''}
@@ -1757,7 +1793,7 @@ export default function DashboardView({
                         return (
                           <div key={item.id}
                             className={`w-full flex items-center gap-2 p-3 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-800/50 border-slate-800 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
-                            <button type="button" onClick={item.onClick} className="flex-1 min-w-0 flex items-center gap-3 text-left active:scale-95 transition-all">
+                            <button type="button" onClick={item.onClick} data-guide-anchor="dash.reminders.item" className="flex-1 min-w-0 flex items-center gap-3 text-left active:scale-95 transition-all">
                               <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isLate ? (isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-500') : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-500 border border-slate-200')}`}>
                                 {meta.icon}
                               </div>
@@ -1775,7 +1811,7 @@ export default function DashboardView({
                                 {format(item.ts, item.kind === 'debt' ? 'dd/MM/yyyy' : "dd/MM HH:mm", { locale: ptBR })}
                               </span>
                               {item.onDelete && (
-                                <button type="button" title="Excluir lembrete" onClick={item.onDelete}
+                                <button type="button" title="Excluir lembrete" onClick={item.onDelete} data-guide-anchor="dash.reminders.excluir"
                                   className="p-1 -m-1 text-slate-300 hover:text-rose-500 dark:text-slate-600 dark:hover:text-rose-400 transition-colors active:scale-90">
                                   <Trash2 size={13} />
                                 </button>
@@ -1814,11 +1850,12 @@ export default function DashboardView({
                           <span className="text-[9px] font-black tracking-widest text-slate-400">Total: {filteredChecks.length} cheques</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button 
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95" 
+                          <button
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95"
                             title="Copiar lista de cheques para a área de transferência"
                             aria-label="Copiar resumo de todos os cheques filtrados"
-                            onClick={() => { 
+                            data-guide-anchor="dash.checks.copiar"
+                            onClick={() => {
                               const summary = filteredChecks.map(c => `${c.number} - R$ ${c.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} - ${format(c.dueDate, 'dd/MM/yyyy')}`).join('\n'); 
                               navigator.clipboard.writeText(summary); 
                               toast.show('Lista de cheques copiada!'); 
@@ -1826,8 +1863,9 @@ export default function DashboardView({
                           >
                             <Copy size={12} />Copiar
                           </button>
-                          <button 
-                            onClick={shareChecksPDF} 
+                          <button
+                            onClick={shareChecksPDF}
+                            data-guide-anchor="dash.checks.compartilhar"
                             title="Compartilhar relatório em PDF"
                             aria-label="Gerar e compartilhar PDF com a lista de cheques"
                             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-900/50 active:scale-95"
@@ -1837,7 +1875,7 @@ export default function DashboardView({
                         </div>
                       </div>
                       <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={16} /><input type="text" placeholder="Buscar por número ou fornecedor..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-2xl pl-12 pr-4 py-3.5 text-[11px] font-black tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-800 focus:ring-4 focus:ring-indigo-500/5 transition-all text-slate-800 dark:text-white" value={checksSearch} onChange={(e) => setChecksSearch(e.target.value)} />{checksSearch && (<button onClick={() => setChecksSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" title="Limpar busca"><X size={14} /></button>)}</div>
-                      <div className="grid grid-cols-2 gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">{(['PENDING', 'OVERDUE', 'CLEARED', 'ALL'] as const).map((status) => (<button key={status} onClick={() => setChecksStatusFilter(status)} className={`py-2 px-3 rounded-xl text-[9px] font-black tracking-widest transition-all whitespace-nowrap ${checksStatusFilter === status ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-700'}`}>{status === 'PENDING' ? 'A Vencer' : status === 'CLEARED' ? 'Compensados' : status === 'OVERDUE' ? 'Vencidos' : 'Todos'}</button>))}</div>
+                      <div className="grid grid-cols-2 gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">{(['PENDING', 'OVERDUE', 'CLEARED', 'ALL'] as const).map((status) => (<button key={status} onClick={() => setChecksStatusFilter(status)} data-guide-anchor="dash.checks.filtroStatus" className={`py-2 px-3 rounded-xl text-[9px] font-black tracking-widest transition-all whitespace-nowrap ${checksStatusFilter === status ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-700'}`}>{status === 'PENDING' ? 'A Vencer' : status === 'CLEARED' ? 'Compensados' : status === 'OVERDUE' ? 'Vencidos' : 'Todos'}</button>))}</div>
                     </div>
                   </div>
                   <div className="p-4 flex flex-col gap-3">
@@ -1849,7 +1887,7 @@ export default function DashboardView({
                         const isExpanded = expandedCheckId === check.id;
                         return (
                           <div key={check.id} className={`p-5 rounded-3xl border-2 border-dashed transition-all ${isExpanded ? (isDarkMode ? 'bg-slate-800/50 border-indigo-500/50' : 'bg-slate-50/50 border-indigo-200') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100')}`}>
-                             <button onClick={() => setExpandedCheckId(isExpanded ? null : check.id)} className="w-full text-left group">
+                             <button onClick={() => setExpandedCheckId(isExpanded ? null : check.id)} data-guide-anchor="dash.checks.expandir" className="w-full text-left group">
                                <div className="flex items-center justify-between mb-4 pb-4 border-b border-dashed border-slate-200 dark:border-slate-800">
                                  <div className="flex items-center gap-3">
                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm transition-all duration-300 group-hover:scale-110 group-active:scale-95 ${isDarkMode ? 'bg-amber-950/40 text-amber-500 border border-amber-800/30' : 'bg-amber-50 text-amber-500 border border-amber-100'} ${!isExpanded && check.status === 'PENDING' ? 'animate-pulse ring-4 ring-amber-500/20' : ''}`}>
@@ -1904,15 +1942,15 @@ export default function DashboardView({
                                  <div className="flex gap-2">
                                    {check.status !== 'CLEARED' ? (
                                      <>
-                                       <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "CLEARED"); }} className="flex-1 py-3 rounded-2xl bg-emerald-500 text-white text-[9px] font-black tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                       <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "CLEARED"); }} data-guide-anchor="dash.checks.liquidar" className="flex-1 py-3 rounded-2xl bg-emerald-500 text-white text-[9px] font-black tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
                                          <CheckCircle2 size={16} strokeWidth={3} />Liquidar
                                        </button>
-                                       <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "OVERDUE"); }} className={`flex-1 py-3 rounded-2xl text-[9px] font-black tracking-widest border transition-all flex items-center justify-center gap-2 active:scale-95 ${check.status === 'OVERDUE' ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-500/20' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'}`}>
+                                       <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "OVERDUE"); }} data-guide-anchor="dash.checks.marcarVencido" className={`flex-1 py-3 rounded-2xl text-[9px] font-black tracking-widest border transition-all flex items-center justify-center gap-2 active:scale-95 ${check.status === 'OVERDUE' ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-500/20' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'}`}>
                                          <AlertCircle size={16} />Vencido
                                        </button>
                                      </>
                                    ) : (
-                                     <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "PENDING"); }} className="w-full py-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-black tracking-widest border border-amber-100 dark:border-amber-900/50 active:scale-95 transition-all flex items-center justify-center gap-3">
+                                     <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "PENDING"); }} data-guide-anchor="dash.checks.reverterLiquidacao" className="w-full py-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-black tracking-widest border border-amber-100 dark:border-amber-900/50 active:scale-95 transition-all flex items-center justify-center gap-3">
                                        <RefreshCcw size={16} strokeWidth={3} />Reverter Liquidação
                                      </button>
                                    )}
@@ -1939,6 +1977,7 @@ export default function DashboardView({
                   <button
                     title="Filtrar Período"
                     aria-label="Abrir filtros de período para análise de lucro"
+                    data-guide-anchor="dash.profit.filtro"
                     onClick={() => setIsProfitFiltersExpanded(!isProfitFiltersExpanded)}
                     className={`p-2 rounded-xl transition-all ${isProfitFiltersExpanded ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-blue-800 text-white animate-pulse-blue-ring'}`}
                   >
@@ -1957,14 +1996,16 @@ export default function DashboardView({
                   {isProfitFiltersExpanded && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-4">
                       <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-xl mt-2">
-                        <button 
+                        <button
                           onClick={() => setProfitComparisonMode('AUTO')}
+                          data-guide-anchor="dash.profit.modoComparacao"
                           className={`flex-1 py-2 rounded-lg text-[8px] font-black tracking-widest transition-all ${profitComparisonMode === 'AUTO' ? 'bg-white dark:bg-slate-800 shadow-sm text-emerald-600' : 'text-slate-400'}`}
                         >
                           Auto (Anterior)
                         </button>
-                        <button 
+                        <button
                           onClick={() => setProfitComparisonMode('MANUAL')}
+                          data-guide-anchor="dash.profit.modoComparacao"
                           className={`flex-1 py-2 rounded-lg text-[8px] font-black tracking-widest transition-all ${profitComparisonMode === 'MANUAL' ? 'bg-white dark:bg-slate-800 shadow-sm text-emerald-600' : 'text-slate-400'}`}
                         >
                           Manual (Comparar)
@@ -2104,8 +2145,9 @@ export default function DashboardView({
           case "activity":
             return (
               <section key="activity">
-                <button 
-                  onClick={() => setIsRecentActivityExpanded(!isRecentActivityExpanded)} 
+                <button
+                  onClick={() => setIsRecentActivityExpanded(!isRecentActivityExpanded)}
+                  data-guide-anchor="dash.activity.expandir"
                   title={isRecentActivityExpanded ? "Recolher Atividade" : "Expandir Atividade"}
                   aria-label={isRecentActivityExpanded ? "Recolher seção de atividades recentes" : "Expandir seção de atividades recentes"}
                   className="flex items-center justify-between w-full mb-4 px-1 group"
@@ -2150,6 +2192,7 @@ export default function DashboardView({
                   ].filter(item => modulesConfig.production || !item.productionOnly).map(item => (
                     <button key={item.label} type="button"
                       onClick={() => onNavigate(ViewType.PRINT_CENTER)}
+                      data-guide-anchor="dash.printCenter.item"
                       className={`h-24 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 border ${item.bg}`}>
                       <span className={item.color}>{item.icon}</span>
                       <span className={`text-[9px] font-black tracking-widest text-center leading-tight ${item.color}`}>{item.label}</span>
@@ -2158,6 +2201,7 @@ export default function DashboardView({
                 </div>
                 <button type="button"
                   onClick={() => onNavigate(ViewType.PRINT_CENTER)}
+                  data-guide-anchor="dash.printCenter.vertudo"
                   className={`w-full py-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                   <span className="text-[10px] font-black tracking-[0.2em]">Abrir Central de Impressões</span>
                   <ChevronRight size={14} strokeWidth={3}/>
@@ -2182,6 +2226,7 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={onOpenLabelPrintStudio}
+                  data-guide-anchor="dash.printLabels.abrir"
                   className="shrink-0 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
                 >
                   Abrir
@@ -2227,6 +2272,7 @@ export default function DashboardView({
                         type="button"
                         title={`Ver setor ${sector?.name}`}
                         onClick={() => onNavigateProduction('PCP', sector?.id)}
+                        data-guide-anchor="dash.pcpSectorMap.item"
                         className={`flex items-center justify-between px-4 py-3 rounded-2xl border transition-all active:scale-95 text-left ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-indigo-50 hover:border-indigo-100'}`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -2246,6 +2292,7 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => onNavigateProduction('PCP')}
+                  data-guide-anchor="dash.pcpSectorMap.vertudo"
                   className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-indigo-900/30 hover:text-indigo-400' : 'bg-slate-50 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}
                 >
                   <Factory size={13} /> Abrir PCP Central
@@ -2306,6 +2353,7 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => onNavigateProduction('NECESSIDADES')}
+                  data-guide-anchor="dash.purchaseNeeds.vertudo"
                   className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-amber-900/30 text-amber-400 hover:bg-amber-900/50' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
                 >
                   <ClipboardList size={13} /> Ver Necessidades de Compra
@@ -2345,6 +2393,7 @@ export default function DashboardView({
                       key={item.screen}
                       type="button"
                       onClick={() => onNavigateProduction(item.screen)}
+                      data-guide-anchor="dash.factoryConfig.item"
                       className={`flex items-center justify-between px-3 py-2.5 rounded-2xl border transition-all active:scale-95 text-left ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-indigo-50 hover:border-indigo-100'}`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -2386,6 +2435,7 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={() => setIsQuickScannerOpen(true)}
+                  data-guide-anchor="dash.scanner.abrir"
                   className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-indigo-600 text-white hover:bg-indigo-500"
                 >
                   <QrCode size={13} /> Escanear Código
@@ -2398,6 +2448,7 @@ export default function DashboardView({
                       <button
                         type="button"
                         onClick={handleClearScanHistory}
+                        data-guide-anchor="dash.scanner.limparHistorico"
                         className={`flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full transition-all active:scale-95 ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
                       >
                         <Trash2 size={11} /> Limpar Histórico
@@ -2417,6 +2468,7 @@ export default function DashboardView({
                           type="button"
                           key={item.id}
                           onClick={() => onNavigateProduction('PCP', item.sectorId)}
+                          data-guide-anchor="dash.scanner.item"
                           className={`flex items-center gap-3 p-2.5 rounded-2xl border text-left transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800/60 border-slate-800 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-indigo-50/50'}`}
                         >
                           <div className={`flex items-center justify-center w-8 h-8 rounded-xl shrink-0 ${kindStyles[item.kind].bg} ${kindStyles[item.kind].color}`}>

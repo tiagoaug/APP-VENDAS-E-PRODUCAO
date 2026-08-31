@@ -645,6 +645,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
               <button
                 type="button"
                 onClick={handleOptimize}
+                data-guide-anchor="deliveryRoute.otimizar"
                 className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 active:scale-[0.98] transition-all"
               >
                 <RouteIcon size={14} />
@@ -774,6 +775,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
             type="button"
             disabled={isSaving}
             onClick={handleSave}
+            data-guide-anchor="deliveryRoute.salvar"
             className="flex items-center justify-center gap-2 px-4 py-3.5 mt-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             <Navigation size={14} />

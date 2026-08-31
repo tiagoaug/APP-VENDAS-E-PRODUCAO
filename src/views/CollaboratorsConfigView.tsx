@@ -285,6 +285,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
         <button
           type="button"
           onClick={startNew}
+          data-guide-anchor="collab.novo"
           className={`flex items-center justify-center gap-2 p-5 rounded-[2rem] border-2 border-dashed transition-all ${isDarkMode ? 'border-slate-800 text-slate-400 hover:border-indigo-500/40 hover:text-indigo-400' : 'border-slate-200 text-slate-500 hover:border-indigo-500/40 hover:text-indigo-600'}`}
         >
           <Plus size={18} />
@@ -641,6 +642,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             type="button"
             onClick={handleSave}
             disabled={!draft.name.trim() || !pinValid || isSaving}
+            data-guide-anchor="collab.salvar"
             className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
           >
             {isSaving ? 'Salvando...' : 'Salvar Colaborador'}

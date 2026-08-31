@@ -76,6 +76,7 @@ export default function DeliveryCarriersView({ carriers, isDarkMode, onBack, onS
         <button
           type="button"
           onClick={openNew}
+          data-guide-anchor="carrier.novo"
           className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 active:scale-[0.98] transition-all"
         >
           <Plus size={14} />
@@ -159,6 +160,7 @@ export default function DeliveryCarriersView({ carriers, isDarkMode, onBack, onS
             type="button"
             disabled={isSaving || !name.trim()}
             onClick={handleSave}
+            data-guide-anchor="carrier.salvar"
             className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             {isSaving ? 'Salvando...' : 'Salvar'}

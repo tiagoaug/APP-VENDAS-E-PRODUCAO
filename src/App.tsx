@@ -6978,6 +6978,7 @@ export default function App() {
                   <button
                     key={item.id}
                     onClick={() => navigateTo(item.id)}
+                    data-guide-anchor={item.id === ViewType.DELIVERY_ROUTE_BUILDER ? 'delivery.montarRota' : undefined}
                     className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
                   >
                     <div className="flex items-center gap-4">

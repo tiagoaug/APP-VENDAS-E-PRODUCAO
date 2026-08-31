@@ -297,6 +297,7 @@ function PecasConfig({
           <button
             type="button"
             onClick={adicionarPeca}
+            data-guide-anchor="peca.adicionar"
             className="w-full py-3 bg-emerald-500 text-white rounded-xl font-bold text-sm hover:bg-emerald-600 active:scale-95 transition-all flex items-center justify-center gap-2"
           >
             <Plus size={18} />
@@ -928,6 +929,7 @@ export default function ProductionConfigView({
               }}
               title="Adicionar Setor"
               aria-label="Adicionar novo setor de produção"
+              data-guide-anchor="sector.novo"
               className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
             >
               <Plus size={24} strokeWidth={3} />
@@ -1517,6 +1519,7 @@ export default function ProductionConfigView({
 
           <button
             type="submit"
+            data-guide-anchor="sector.salvar"
             className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4"
           >
             <Check size={18} strokeWidth={3} />

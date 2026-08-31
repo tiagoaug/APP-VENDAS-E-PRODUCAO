@@ -373,6 +373,7 @@ export default function BusinessOverviewCard({
       <button
         type="button"
         onClick={() => setIsOverviewExpanded((v) => !v)}
+        data-guide-anchor="dash.overview.expandir"
         className="flex items-center justify-center gap-2 w-full"
         aria-expanded={isOverviewExpanded}
       >
@@ -399,6 +400,7 @@ export default function BusinessOverviewCard({
                   key={p}
                   type="button"
                   onClick={() => setOverviewPeriod(p)}
+                  data-guide-anchor="dash.overview.periodo"
                   className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                     overviewConfig.periodType === p ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400'
                   }`}
@@ -410,6 +412,7 @@ export default function BusinessOverviewCard({
 
             <div
               onClick={() => openMonthPicker(periodDateInputRef)}
+              data-guide-anchor="dash.overview.mesEscolhido"
               className={`flex items-center gap-2 rounded-xl px-3 py-2 border-2 cursor-pointer ${isDarkMode ? 'bg-orange-900/20 border-orange-800/40' : 'bg-orange-50 border-orange-200'}`}
             >
               <Calendar size={13} className="text-orange-500 shrink-0" />
@@ -434,6 +437,7 @@ export default function BusinessOverviewCard({
                     key={mode}
                     type="button"
                     onClick={() => setComparisonMode(mode)}
+                    data-guide-anchor="dash.overview.modoComparacao"
                     className={`flex-1 py-2 rounded-xl text-[8.5px] font-black uppercase tracking-widest transition-all ${
                       overviewConfig.comparisonMode === mode ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400'
                     }`}
@@ -456,6 +460,7 @@ export default function BusinessOverviewCard({
                   </select>
                   <div
                     onClick={() => openMonthPicker(compPeriodDateInputRef)}
+                    data-guide-anchor="dash.overview.mesComparacao"
                     className={`flex-1 flex items-center rounded-xl cursor-pointer ${isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}
                   >
                     <input
@@ -510,7 +515,7 @@ export default function BusinessOverviewCard({
                   <p className="text-[8px] font-black text-slate-400 tracking-widest">Margem s/ receita</p>
                   <p className={`text-sm font-black mt-0.5 ${businessOverview.margin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{businessOverview.margin.toFixed(1).replace('.', ',')}%</p>
                 </div>
-                <button type="button" onClick={() => setShowExpenseBreakdown(true)} className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50 text-left">
+                <button type="button" onClick={() => setShowExpenseBreakdown(true)} data-guide-anchor="dash.overview.despesasDetalhe" className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50 text-left">
                   <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1">
                     Despesas do período
                     <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-indigo-500/10 animate-pulse-indigo-ring">
@@ -556,6 +561,7 @@ export default function BusinessOverviewCard({
                 <button
                   type="button"
                   onClick={() => setShowLeakConfirm(true)}
+                  data-guide-anchor="dash.overview.corrigirDespesas"
                   className="w-full flex items-center gap-3 mt-3 p-3 rounded-2xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-left"
                 >
                   <AlertCircle size={18} className="text-amber-500 shrink-0" />
@@ -573,6 +579,7 @@ export default function BusinessOverviewCard({
               <button
                 type="button"
                 onClick={() => setIsResumoExpanded((v) => !v)}
+                data-guide-anchor="dash.overview.resumoExpandir"
                 className="w-full flex items-center justify-between p-3.5"
                 aria-expanded={isResumoExpanded}
               >
@@ -643,6 +650,7 @@ export default function BusinessOverviewCard({
                     <button
                       type="button"
                       onClick={() => toggleOverviewSource(s.key)}
+                      data-guide-anchor="dash.overview.fonteToggle"
                       aria-label={checked ? `Desmarcar ${s.label}` : `Marcar ${s.label}`}
                       className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${checked ? colors.solid : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
                     >
@@ -651,6 +659,7 @@ export default function BusinessOverviewCard({
                     <button
                       type="button"
                       onClick={() => (s.onConfigure ? s.onConfigure() : toggleOverviewSource(s.key))}
+                      data-guide-anchor="dash.overview.fonteDetalhe"
                       title={s.onConfigure ? `Ver detalhes de ${s.label}` : undefined}
                       className="flex-1 min-w-0 flex items-center gap-3 text-left"
                     >
@@ -736,7 +745,7 @@ export default function BusinessOverviewCard({
                 <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Contas Incluídas</h3>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">Escolha quais contas somam em "Saldos em Conta"</p>
               </div>
-              <button type="button" onClick={() => setShowAccountPicker(false)} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+              <button type="button" onClick={() => setShowAccountPicker(false)} data-guide-anchor="dash.overview.contasFechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
@@ -745,6 +754,7 @@ export default function BusinessOverviewCard({
               <button
                 type="button"
                 onClick={() => setAllAccountsSelection(true)}
+                data-guide-anchor="dash.overview.contasTodas"
                 className="flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
               >
                 Selecionar todas
@@ -752,6 +762,7 @@ export default function BusinessOverviewCard({
               <button
                 type="button"
                 onClick={() => setAllAccountsSelection(false)}
+                data-guide-anchor="dash.overview.contasNenhuma"
                 className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
               >
                 Nenhuma
@@ -769,6 +780,7 @@ export default function BusinessOverviewCard({
                     key={acc.id}
                     type="button"
                     onClick={() => toggleAccountInSelection(acc.id)}
+                    data-guide-anchor="dash.overview.contaItem"
                     className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition-all ${
                       checked ? 'border-sky-300 dark:border-sky-700' : isDarkMode ? 'border-slate-800' : 'border-slate-100'
                     }`}
@@ -791,6 +803,7 @@ export default function BusinessOverviewCard({
               <button
                 type="button"
                 onClick={() => setShowAccountPicker(false)}
+                data-guide-anchor="dash.overview.contasConcluir"
                 className="w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white"
               >
                 Concluído
@@ -817,7 +830,7 @@ export default function BusinessOverviewCard({
                   <p className="text-[10px] font-bold text-slate-400 mt-0.5">Compras "Não Contábil" que geraram título por engano</p>
                 </div>
               </div>
-              <button type="button" onClick={() => setShowLeakConfirm(false)} className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+              <button type="button" onClick={() => setShowLeakConfirm(false)} data-guide-anchor="dash.overview.corrigirFechar" className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
@@ -849,6 +862,7 @@ export default function BusinessOverviewCard({
                 type="button"
                 onClick={() => setShowLeakConfirm(false)}
                 disabled={isFixingLeaks}
+                data-guide-anchor="dash.overview.corrigirCancelar"
                 className={`flex-1 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest disabled:opacity-50 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 Cancelar
@@ -857,6 +871,7 @@ export default function BusinessOverviewCard({
                 type="button"
                 onClick={handleFixLeaks}
                 disabled={isFixingLeaks}
+                data-guide-anchor="dash.overview.corrigirConfirmar"
                 className="flex-1 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-amber-500 text-white disabled:opacity-60"
               >
                 {isFixingLeaks ? 'Corrigindo...' : 'Confirmar Correção'}
@@ -878,7 +893,7 @@ export default function BusinessOverviewCard({
                 <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Despesas do Período</h3>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">{periodExpenseBreakdown.items.length} lançamento(s) — {OVERVIEW_PERIOD_LABELS[overviewConfig.periodType]} atual</p>
               </div>
-              <button type="button" onClick={() => setShowExpenseBreakdown(false)} className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+              <button type="button" onClick={() => setShowExpenseBreakdown(false)} data-guide-anchor="dash.overview.despesasFechar" className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
@@ -914,6 +929,7 @@ export default function BusinessOverviewCard({
                       <button
                         type="button"
                         onClick={() => setSelectedPurchaseForCart(linkedPurchase)}
+                        data-guide-anchor="dash.overview.despesaVerCompra"
                         title="Ver itens da compra"
                         aria-label="Ver itens da compra"
                         className={`p-1.5 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-400 border border-slate-200'}`}
@@ -930,6 +946,7 @@ export default function BusinessOverviewCard({
               <button
                 type="button"
                 onClick={() => setShowExpenseBreakdown(false)}
+                data-guide-anchor="dash.overview.despesasConcluir"
                 className="w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white"
               >
                 Concluído
@@ -951,7 +968,7 @@ export default function BusinessOverviewCard({
                 <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Receitas do Período</h3>
                 <p className="text-[10px] font-bold text-slate-400 mt-0.5">{periodIncomeBreakdown.items.length} lançamento(s) — {OVERVIEW_PERIOD_LABELS[overviewConfig.periodType]} atual</p>
               </div>
-              <button type="button" onClick={() => setShowIncomeBreakdown(false)} className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+              <button type="button" onClick={() => setShowIncomeBreakdown(false)} data-guide-anchor="dash.overview.receitasFechar" className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
@@ -991,6 +1008,7 @@ export default function BusinessOverviewCard({
               <button
                 type="button"
                 onClick={() => setShowIncomeBreakdown(false)}
+                data-guide-anchor="dash.overview.receitasConcluir"
                 className="w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white"
               >
                 Concluído
@@ -1028,6 +1046,7 @@ export default function BusinessOverviewCard({
                 title="Fechar"
                 aria-label="Fechar carrinho de compras"
                 onClick={() => setSelectedPurchaseForCart(null)}
+                data-guide-anchor="dash.overview.carrinhoFechar"
                 className="p-1 text-slate-400 hover:text-slate-600"
               >
                 <X size={20} />

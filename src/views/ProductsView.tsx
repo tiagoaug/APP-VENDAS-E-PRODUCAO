@@ -119,6 +119,7 @@ export default function ProductsView({
 
       <button
         onClick={onAdd}
+        data-guide-anchor="products.novo"
         className="mt-2 text-white bg-indigo-600 rounded-[1rem] py-5 flex items-center justify-center gap-2 font-black tracking-widest hover:bg-indigo-700 transition-all cursor-pointer shadow-lg shadow-indigo-500/20 active:scale-95 text-[11px] uppercase"
       >
         <Plus size={18} strokeWidth={3} /> Cadastrar Novo Modelo

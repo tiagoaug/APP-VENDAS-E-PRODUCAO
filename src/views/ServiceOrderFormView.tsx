@@ -930,6 +930,7 @@ export default function ServiceOrderFormView({
                 type="button"
                 disabled={isSaving}
                 onClick={handleSave}
+                data-guide-anchor="serviceOrder.emitir"
                 className={`flex-[2] py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all ${
                   isSaving
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600 shadow-none'

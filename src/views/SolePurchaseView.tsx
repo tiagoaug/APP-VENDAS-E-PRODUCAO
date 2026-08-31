@@ -513,6 +513,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
               <button
                 onClick={handleSave}
                 disabled={!selectedSupplierId || items.length === 0 || totalGeral <= 0 || isSaving}
+                data-guide-anchor="solePurchase.confirmar"
                 className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
                   selectedSupplierId && items.length > 0 && totalGeral > 0 && !isSaving
                     ? 'bg-cyan-600 text-white hover:bg-cyan-700 shadow-lg shadow-cyan-500/20' 

@@ -186,6 +186,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
             <button
               onClick={handleSaveCredentials}
               disabled={savingCredentials}
+              data-guide-anchor="bling.salvarCredenciais"
               className="w-full h-12 rounded-2xl bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-all"
             >
               <KeyRound size={16} />
@@ -196,6 +197,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
           <button
             onClick={handleConnect}
             disabled={connecting}
+            data-guide-anchor="bling.conectar"
             className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all"
           >
             <Link2 size={16} />

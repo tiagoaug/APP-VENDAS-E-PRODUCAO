@@ -775,6 +775,7 @@ export default function SoleReceiptView({
                               type="button"
                               disabled={loadingPurchaseId === purchase.id}
                               onClick={() => handleConfirmReceipt(purchase)}
+                              data-guide-anchor="soleReceipt.confirmar"
                               className="px-6 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-400 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-cyan-600/10 flex items-center gap-2 active:scale-95 transition-all"
                               aria-label="Confirmar recebimento de itens"
                               title="Registrar recebimento no estoque"

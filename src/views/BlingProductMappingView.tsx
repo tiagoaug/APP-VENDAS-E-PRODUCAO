@@ -195,6 +195,7 @@ function PendingCard({
           </div>
           <button
             onClick={confirmSuggestion}
+            data-guide-anchor="blingMapping.confirmar"
             className="shrink-0 h-9 px-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5"
           >
             <CheckCircle2 size={14} /> Confirmar

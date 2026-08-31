@@ -43,7 +43,7 @@ function ChoicePopup({ isDarkMode, onChoose }: { isDarkMode: boolean; onChoose: 
           <ChevronRight size={16} className="text-slate-400 shrink-0" />
         </button>
 
-        <button onClick={() => onChoose('somente_nota')} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+        <button onClick={() => onChoose('somente_nota')} data-guide-anchor="blingDevolucao.somenteNota" className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
           <div className="flex items-center gap-3">
             <Ticket size={18} className="text-amber-500 shrink-0" />
             <div className="text-left">
@@ -115,6 +115,7 @@ function NotesOnlyForm({ isDarkMode, onBack }: { isDarkMode: boolean; onBack: ()
       <button
         onClick={handleConfirm}
         disabled={parsedQty === 0 || saving}
+        data-guide-anchor="blingDevolucao.confirmarNota"
         className="w-full h-12 rounded-2xl bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
       >
         {saving ? <Loader2 size={16} className="animate-spin" /> : <Ticket size={16} />}
