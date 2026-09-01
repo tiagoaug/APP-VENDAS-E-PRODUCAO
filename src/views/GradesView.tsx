@@ -111,6 +111,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                   key={f.id}
                   type="button"
                   onClick={() => setActiveFilter(f.id as any)}
+                  data-guide-anchor="grade.selecionarFiltro"
                   className={`flex-1 py-2.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-tight transition-all border-2 flex items-center justify-center gap-1.5 ${
                     isActive ? `${colorActive[f.color]} shadow-sm scale-[1.02]` : inactiveCls
                   }`}
@@ -135,6 +136,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
             <button
               type="button"
               onClick={() => setTemplatesOpen(o => !o)}
+              data-guide-anchor="grade.alternarModelos"
               className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
             >
               <div className="flex items-center gap-2">
@@ -153,6 +155,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                       key={template.id}
                       onClick={() => handleAddFromTemplate(template)}
                       disabled={exists}
+                      data-guide-anchor="grade.adicionarModelo"
                       title={`Adicionar modelo: ${template.name}`}
                       className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
                         exists
@@ -203,6 +206,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                 <button
                   onClick={() => handleSaveAsTemplate(grid)}
                   disabled={isSavedAsTemplate(grid)}
+                  data-guide-anchor="grade.salvarModelo"
                   title={isSavedAsTemplate(grid) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
                   className={`p-2 rounded-xl transition-colors ${
                     isSavedAsTemplate(grid)
@@ -212,10 +216,10 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                 >
                   {isSavedAsTemplate(grid) ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
                 </button>
-                <button title="Editar Grade" onClick={() => { setEditingGrid(grid); setIsModalOpen(true); }} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-white hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}>
+                <button title="Editar Grade" onClick={() => { setEditingGrid(grid); setIsModalOpen(true); }} data-guide-anchor="grade.editar" className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-white hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}>
                   <Edit size={20} />
                 </button>
-                <button title="Excluir Grade" onClick={() => onDelete(grid.id)} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}>
+                <button title="Excluir Grade" onClick={() => onDelete(grid.id)} data-guide-anchor="grade.excluir" className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}>
                   <Trash2 size={20} />
                 </button>
               </div>

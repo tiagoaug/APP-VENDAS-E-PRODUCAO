@@ -266,8 +266,9 @@ export default function SolePurchaseModal({
             <h2 className="text-xl font-black uppercase tracking-tight">Lançamento de Compra</h2>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Entrada de Solados e Financeiro</p>
           </div>
-          <button 
+          <button
             onClick={onClose}
+            data-guide-anchor="solePurchaseModal.fechar"
             title="Fechar Modal"
             aria-label="Fechar Modal"
             className={`p-3 rounded-2xl transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600'}`}
@@ -323,6 +324,7 @@ export default function SolePurchaseModal({
               <div className={`flex p-1 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
                 <button
                   onClick={() => setIsAccounting(true)}
+                  data-guide-anchor="solePurchaseModal.contabilToggle"
                   className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     isAccounting ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'
                   }`}
@@ -331,6 +333,7 @@ export default function SolePurchaseModal({
                 </button>
                 <button
                   onClick={() => setIsAccounting(false)}
+                  data-guide-anchor="solePurchaseModal.contabilToggle"
                   className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     !isAccounting ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'
                   }`}
@@ -346,8 +349,9 @@ export default function SolePurchaseModal({
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                   <Hash size={12} /> Identificação da Compra
                 </label>
-                <button 
+                <button
                   onClick={() => setIsAutoBatch(!isAutoBatch)}
+                  data-guide-anchor="solePurchaseModal.loteAutoToggle"
                   className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isAutoBatch ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}
                 >
                   Auto: {isAutoBatch ? 'On' : 'Off'}
@@ -388,6 +392,7 @@ export default function SolePurchaseModal({
               <div className={`flex p-1 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
                 <button
                   onClick={() => setPaymentTerm(PaymentTerm.CASH)}
+                  data-guide-anchor="solePurchaseModal.pagamentoToggle"
                   className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     paymentTerm === PaymentTerm.CASH ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400'
                   }`}
@@ -396,6 +401,7 @@ export default function SolePurchaseModal({
                 </button>
                 <button
                   onClick={() => setPaymentTerm(PaymentTerm.INSTALLMENTS)}
+                  data-guide-anchor="solePurchaseModal.pagamentoToggle"
                   className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     paymentTerm === PaymentTerm.INSTALLMENTS ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'
                   }`}
@@ -448,6 +454,7 @@ export default function SolePurchaseModal({
                   const firstMold = molds[0];
                   if (firstMold) addItem(firstMold.id);
                 }}
+                data-guide-anchor="solePurchaseModal.itemAdicionar"
                 className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center gap-2"
               >
                 <Plus size={14} /> Adicionar Item
@@ -495,6 +502,7 @@ export default function SolePurchaseModal({
                         </div>
                         <button
                           onClick={() => removeItem(index)}
+                          data-guide-anchor="solePurchaseModal.itemRemover"
                           title="Remover Item"
                           aria-label="Remover Item"
                           className="mb-0.5 p-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
@@ -626,6 +634,7 @@ export default function SolePurchaseModal({
 
             <button
               onClick={handleSave}
+              data-guide-anchor="solePurchaseModal.confirmar"
               disabled={isSaving || items.length === 0}
               className={`w-full py-5 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${
                 isSaving || items.length === 0

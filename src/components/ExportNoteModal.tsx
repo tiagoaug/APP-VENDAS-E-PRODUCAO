@@ -322,6 +322,7 @@ export default function ExportNoteModal({
         <button
           type="button"
           onClick={() => toggleSection(id)}
+          data-guide-anchor="export.abrirSecao"
           className={`w-full flex items-center justify-between gap-2 px-3 py-3 transition-all ${isDarkMode ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`}
         >
           <span className="flex items-center gap-2">
@@ -414,8 +415,9 @@ export default function ExportNoteModal({
             </div>
           </div>
           
-            <button 
+            <button
             onClick={onClose}
+            data-guide-anchor="export.fechar"
             className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
           >
             <X size={20} strokeWidth={2.5} />
@@ -429,6 +431,7 @@ export default function ExportNoteModal({
             <button
               type="button"
               onClick={() => setIsObservationOpen(prev => !prev)}
+              data-guide-anchor="export.abrirObservacao"
               className={`w-full flex items-center justify-between gap-2 px-4 py-4 transition-all ${
                 isDarkMode ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'
               }`}
@@ -469,6 +472,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => { setManageChips(true); setChipDraft(''); setEditingChipIdx(null); }}
+                      data-guide-anchor="export.configurarTextosRapidos"
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${
                         isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                       }`}
@@ -485,6 +489,7 @@ export default function ExportNoteModal({
                           key={idx}
                           type="button"
                           onClick={() => handlePredefinedClick(text)}
+                          data-guide-anchor="export.textoRapido"
                           title={text}
                           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border text-left ${
                             isSelected
@@ -525,6 +530,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setActivePopup('financial')}
+                data-guide-anchor="export.cardValoresFinanceiros"
                 className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
                   isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
                 }`}
@@ -549,6 +555,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setShowThumbnails(v => !v)}
+                data-guide-anchor="export.cardMiniaturas"
                 className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
                   isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
                 }`}
@@ -575,6 +582,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setActivePopup('grid')}
+                data-guide-anchor="export.cardResumoGrade"
                 className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
                   isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
                 }`}
@@ -599,6 +607,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setActivePopup('group')}
+                data-guide-anchor="export.cardAgrupamento"
                 className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
                   isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
                 }`}
@@ -623,6 +632,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setActivePopup('os')}
+                data-guide-anchor="export.cardDadosOS"
                 className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
                   isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
                 }`}
@@ -647,6 +657,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setActivePopup('sector')}
+                data-guide-anchor="export.cardDetalhesSetor"
                 className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
                   isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
                 }`}
@@ -670,6 +681,7 @@ export default function ExportNoteModal({
             <button 
               type="button" 
               onClick={() => setActivePopup('profiles')}
+              data-guide-anchor="export.cardPerfis"
               className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
                 isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
               }`}
@@ -718,6 +730,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setSplitPages(prev => !prev)}
+                      data-guide-anchor="export.dividirPaginas"
                       className={`flex-1 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 ${
                         splitPages ? 'bg-cyan-600 text-white shadow-cyan-600/20' : isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-100 text-slate-600'
                       }`}
@@ -743,6 +756,7 @@ export default function ExportNoteModal({
                         key={n}
                         type="button"
                         onClick={() => setItemsPerPage(n)}
+                        data-guide-anchor="export.fichasPorFolha"
                         className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
                           itemsPerPage === n
                             ? 'bg-cyan-500 text-white'
@@ -775,6 +789,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage, showThumbnails)}
+                data-guide-anchor="export.gerar"
                 className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
                 }`}
@@ -787,6 +802,7 @@ export default function ExportNoteModal({
                 <button
                   type="button"
                   onClick={onPrintLabels}
+                  data-guide-anchor="export.imprimirEtiquetas"
                   className="w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-sky-600 text-white"
                 >
                   <Bluetooth size={16} /> Imprimir Etiquetas na Impressora
@@ -798,6 +814,7 @@ export default function ExportNoteModal({
                 <button
                   type="button"
                   onClick={() => setSelectedFormat('pdf')}
+                  data-guide-anchor="export.selecionarFormato"
                   className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     selectedFormat === 'pdf' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
                   }`}
@@ -807,6 +824,7 @@ export default function ExportNoteModal({
                 <button
                   type="button"
                   onClick={() => setSelectedFormat('jpg')}
+                  data-guide-anchor="export.selecionarFormato"
                   className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     selectedFormat === 'jpg' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
                   }`}
@@ -834,6 +852,7 @@ export default function ExportNoteModal({
                       <button
                         type="button"
                         onClick={() => setPageSize('a4')}
+                        data-guide-anchor="export.selecionarTamanhoPagina"
                         className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                           pageSize === 'a4' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
                         }`}
@@ -843,6 +862,7 @@ export default function ExportNoteModal({
                       <button
                         type="button"
                         onClick={() => setPageSize('marketplace')}
+                        data-guide-anchor="export.selecionarTamanhoPagina"
                         className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                           pageSize === 'marketplace' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
                         }`}
@@ -864,6 +884,7 @@ export default function ExportNoteModal({
             <button
               type="button"
               onClick={onClose}
+              data-guide-anchor="export.cancelar"
               className={`w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest transition-all ${
                 isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-700'
               }`}
@@ -897,8 +918,9 @@ export default function ExportNoteModal({
                 {activePopup === 'sector' && 'Detalhes de Setor'}
                 {activePopup === 'profiles' && 'Perfis de Exportação'}
               </span>
-              <button 
+              <button
                 onClick={() => setActivePopup(null)}
+                data-guide-anchor="export.popupFechar"
                 className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                   isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'
                 }`}
@@ -914,6 +936,7 @@ export default function ExportNoteModal({
                 <button
                   type="button"
                   onClick={() => setShowFinancialValues(prev => !prev)}
+                  data-guide-anchor="export.toggleValoresFinanceiros"
                   className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                     isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                   }`}
@@ -944,6 +967,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setPcpTotalGrid(prev => !prev)}
+                      data-guide-anchor="export.toggleGradeConsolidada"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                       }`}
@@ -966,6 +990,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setShowMaterials(prev => !prev)}
+                      data-guide-anchor="export.toggleMateriais"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                       }`}
@@ -988,6 +1013,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setShowItemGrid(prev => !prev)}
+                      data-guide-anchor="export.toggleGradeItem"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                       }`}
@@ -1010,6 +1036,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setShowOrderList(prev => !prev)}
+                      data-guide-anchor="export.toggleListaPedidos"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                       }`}
@@ -1032,6 +1059,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setShowSectorNotes(prev => !prev)}
+                      data-guide-anchor="export.toggleInstrucoesSetor"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                       }`}
@@ -1062,6 +1090,7 @@ export default function ExportNoteModal({
                           <button
                             type="button"
                             onClick={() => setSelectedSectorIds(sectors.map(s => s.id))}
+                            data-guide-anchor="export.setoresSelecionarTodos"
                             className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300"
                           >
                             Todos
@@ -1070,6 +1099,7 @@ export default function ExportNoteModal({
                           <button
                             type="button"
                             onClick={() => setSelectedSectorIds([])}
+                            data-guide-anchor="export.setoresSelecionarNenhum"
                             className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300"
                           >
                             Nenhum
@@ -1091,6 +1121,7 @@ export default function ExportNoteModal({
                                   setSelectedSectorIds(prev => [...prev, sec.id]);
                                 }
                               }}
+                              data-guide-anchor="export.setorAlternar"
                               className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
                                 isChecked
                                   ? 'border-indigo-500/30 bg-indigo-500/5 dark:bg-indigo-500/10'
@@ -1129,7 +1160,8 @@ export default function ExportNoteModal({
                 <div className="flex flex-col gap-2.5">
                   <button 
                     type="button" 
-                    onClick={() => setGroupMode('none')} 
+                    onClick={() => setGroupMode('none')}
+                    data-guide-anchor="export.selecionarAgrupamento"
                     className={`w-full p-3 rounded-2xl border text-left flex items-start gap-3 transition-all ${
                       groupMode === 'none' 
                         ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' 
@@ -1147,7 +1179,8 @@ export default function ExportNoteModal({
 
                   <button 
                     type="button" 
-                    onClick={() => setGroupMode('ref_color')} 
+                    onClick={() => setGroupMode('ref_color')}
+                    data-guide-anchor="export.selecionarAgrupamento"
                     className={`w-full p-3 rounded-2xl border text-left flex items-start gap-3 transition-all ${
                       groupMode === 'ref_color' 
                         ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' 
@@ -1165,7 +1198,8 @@ export default function ExportNoteModal({
 
                   <button 
                     type="button" 
-                    onClick={() => setGroupMode('ref')} 
+                    onClick={() => setGroupMode('ref')}
+                    data-guide-anchor="export.selecionarAgrupamento"
                     className={`w-full p-3 rounded-2xl border text-left flex items-start gap-3 transition-all ${
                       groupMode === 'ref' 
                         ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' 
@@ -1190,6 +1224,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setShowProvider(prev => !prev)}
+                      data-guide-anchor="export.togglePrestador"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                       }`}
@@ -1212,6 +1247,7 @@ export default function ExportNoteModal({
                     <button
                       type="button"
                       onClick={() => setShowOSData(prev => !prev)}
+                      data-guide-anchor="export.toggleDadosOS"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                       }`}
@@ -1238,6 +1274,7 @@ export default function ExportNoteModal({
                   <button
                     type="button"
                     onClick={() => setShowSoleGrid(prev => !prev)}
+                    data-guide-anchor="export.toggleSeparacaoSolas"
                     className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                       isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
                     }`}
@@ -1279,6 +1316,7 @@ export default function ExportNoteModal({
                         localStorage.removeItem('@app:export_active_profile');
                         setActivePopup(null);
                       }}
+                      data-guide-anchor="export.perfilUltimasOpcoes"
                       className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${
                         activeProfileId === null
                           ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
@@ -1328,6 +1366,7 @@ export default function ExportNoteModal({
                                   setEditingProfileId(null);
                                 }
                               }}
+                              data-guide-anchor="export.perfilConfirmarNome"
                               className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-emerald-500 hover:bg-emerald-500/10"
                             >
                               <Check size={14} strokeWidth={3} />
@@ -1351,6 +1390,7 @@ export default function ExportNoteModal({
                                 localStorage.setItem('@app:export_active_profile', p.id);
                                 setActivePopup(null);
                               }}
+                              data-guide-anchor="export.perfilSelecionar"
                               className="flex-1 flex items-center gap-3 p-3"
                             >
                               <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${activeProfileId === p.id ? 'bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
@@ -1365,6 +1405,7 @@ export default function ExportNoteModal({
                                 setEditingProfileId(p.id);
                                 setEditingProfileName(p.name);
                               }}
+                              data-guide-anchor="export.perfilEditar"
                               className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 hover:bg-indigo-500/10 ${isDarkMode ? 'text-slate-400 hover:text-indigo-400' : 'text-slate-500 hover:text-indigo-600'}`}
                             >
                               <Pencil size={14} strokeWidth={2.5} />
@@ -1381,6 +1422,7 @@ export default function ExportNoteModal({
                                   localStorage.removeItem('@app:export_active_profile');
                                 }
                               }}
+                              data-guide-anchor="export.perfilExcluir"
                               className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-rose-500 hover:bg-rose-500/10"
                             >
                               <Trash2 size={14} strokeWidth={2.5} />
@@ -1455,6 +1497,7 @@ export default function ExportNoteModal({
                           }
                         }}
                         disabled={!newProfileName.trim()}
+                        data-guide-anchor="export.perfilNovoSalvar"
                         className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all ${
                           newProfileName.trim() ? 'bg-indigo-600 text-white active:scale-95' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
                         }`}
@@ -1472,6 +1515,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setActivePopup(null)}
+                data-guide-anchor="export.popupFecharRodape"
                 className="px-5 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-700 transition-all active:scale-[0.98]"
               >
                 Fechar
@@ -1505,6 +1549,7 @@ export default function ExportNoteModal({
               <button
                 type="button"
                 onClick={() => setManageChips(false)}
+                data-guide-anchor="export.chipsFechar"
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
                 aria-label="Fechar"
               >
@@ -1529,6 +1574,7 @@ export default function ExportNoteModal({
                   <button
                     type="button"
                     onClick={() => { setEditingChipIdx(null); setChipDraft(''); }}
+                    data-guide-anchor="export.chipsCancelarEdicao"
                     className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
                     title="Cancelar edição"
                     aria-label="Cancelar edição"
@@ -1539,6 +1585,7 @@ export default function ExportNoteModal({
                 <button
                   type="button"
                   onClick={saveChipDraft}
+                  data-guide-anchor="export.chipsSalvar"
                   disabled={!chipDraft.trim()}
                   className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
                     chipDraft.trim() ? 'bg-indigo-600 text-white active:scale-95' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
@@ -1569,6 +1616,7 @@ export default function ExportNoteModal({
                   <button
                     type="button"
                     onClick={() => { setEditingChipIdx(idx); setChipDraft(text); }}
+                    data-guide-anchor="export.chipsEditar"
                     className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-200'}`}
                     title="Editar"
                     aria-label="Editar texto"
@@ -1578,6 +1626,7 @@ export default function ExportNoteModal({
                   <button
                     type="button"
                     onClick={() => removeChip(idx)}
+                    data-guide-anchor="export.chipsExcluir"
                     className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-rose-500 hover:bg-rose-500/10"
                     title="Excluir"
                     aria-label="Excluir texto"
@@ -1602,6 +1651,7 @@ export default function ExportNoteModal({
           <button
             type="button"
             onClick={() => setPreviewPages([])}
+            data-guide-anchor="export.previewFechar"
             aria-label="Fechar pré-visualização"
             className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all z-10"
           >
@@ -1633,6 +1683,7 @@ export default function ExportNoteModal({
                 type="button"
                 disabled={previewPageIdx === 0}
                 onClick={() => setPreviewPageIdx(p => Math.max(0, p - 1))}
+                data-guide-anchor="export.previewAnterior"
                 className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/10 ${previewPageIdx === 0 ? 'text-white/30 cursor-not-allowed' : 'text-white hover:bg-white/20'}`}
               >
                 <ChevronLeft size={14} /> Anterior
@@ -1643,6 +1694,7 @@ export default function ExportNoteModal({
                     key={idx}
                     type="button"
                     onClick={() => setPreviewPageIdx(idx)}
+                    data-guide-anchor="export.previewIrPagina"
                     aria-label={`Ir para página ${idx + 1}`}
                     className={`w-2 h-2 rounded-full transition-all ${idx === previewPageIdx ? 'bg-white w-5' : 'bg-white/40'}`}
                   />
@@ -1652,6 +1704,7 @@ export default function ExportNoteModal({
                 type="button"
                 disabled={previewPageIdx === previewPages.length - 1}
                 onClick={() => setPreviewPageIdx(p => Math.min(previewPages.length - 1, p + 1))}
+                data-guide-anchor="export.previewProxima"
                 className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white/10 ${previewPageIdx === previewPages.length - 1 ? 'text-white/30 cursor-not-allowed' : 'text-white hover:bg-white/20'}`}
               >
                 Próxima <ChevronRight size={14} />

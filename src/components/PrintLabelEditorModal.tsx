@@ -1329,7 +1329,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
   // ── Edit preview (colored blocks) ────────────────────────────────────────────
   const EditPreview = () => (
-    <div style={{ position:'relative', width:previewW, height:previewH, backgroundColor:'#fff', flexShrink:0 }} onClick={()=>{setSelected(null);setSelectedShapeId(null);}}>
+    <div data-guide-anchor="printLabelEditor.canvasAjustar" style={{ position:'relative', width:previewW, height:previewH, backgroundColor:'#fff', flexShrink:0 }} onClick={()=>{setSelected(null);setSelectedShapeId(null);}}>
       {/* Formas (retângulo/linha) — HTML/CSS (div), NÃO SVG. As primitivas de forma em SVG
           (<rect>/<line>/<circle>) têm suporte inconsistente a `touch-action` em várias versões
           do Chromium/WebView do Android — era isso que deixava o arraste de forma/linha preso/
@@ -1440,6 +1440,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         const isDragging = draggingKey === key;
         return (
           <div key={key}
+            data-guide-anchor="printLabelEditor.blocoEtiqueta"
             onClick={e=>{e.stopPropagation();setSelected(key);}}
             onPointerDown={e=>handleElemPointerDown(e, key)}
             onPointerMove={handleElemPointerMove}
@@ -1476,6 +1477,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         <div className={`rounded-2xl border overflow-hidden ${dk ? 'border-slate-800' : 'border-slate-200'}`}>
           <button
             type="button"
+            data-guide-anchor="printLabelEditor.tamanhoAccordion"
             onClick={() => setSizeAccordionOpen(o => !o)}
             className={`w-full flex items-center justify-between gap-2 px-3 py-3 transition-all ${dk ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`}
           >
@@ -1492,12 +1494,12 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           {/* Salvar Padrão / Resetar e Meus Padrões — sempre visíveis, mesmo com o acordeão fechado */}
           <div className={`p-3 flex flex-col gap-2.5 border-t ${dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
             <div className={`flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
-              <button type="button" onClick={() => setSavePresetModal({ open: true, name: '' })}
+              <button type="button" data-guide-anchor="printLabelEditor.salvarPadrao" onClick={() => setSavePresetModal({ open: true, name: '' })}
                 title="Salvar padrão atual com nome"
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${dk ? 'bg-slate-700 text-emerald-400 shadow-sm' : 'bg-white text-emerald-600 shadow-sm'}`}>
                 <BookmarkPlus size={12}/> Salvar Padrão
               </button>
-              <button type="button" onClick={handleReset}
+              <button type="button" data-guide-anchor="printLabelEditor.resetar" onClick={handleReset}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 transition-all hover:text-indigo-500">
                 <RotateCcw size={11}/> Resetar
               </button>
@@ -1506,6 +1508,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             {customPresets.length > 0 && (
               <button
                 type="button"
+                data-guide-anchor="printLabelEditor.meusPadroesAbrir"
                 onClick={() => setMyPresetsPopupOpen(true)}
                 className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border-2 transition-all ${dk ? 'border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500' : 'border-slate-100 bg-slate-50 text-slate-600 hover:border-indigo-400'}`}
               >
@@ -1525,7 +1528,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               <div className="flex flex-col gap-2">
                 <div className="grid grid-cols-2 gap-1.5">
                   {THERMAL_SIZES.map(opt => { const k=`${opt.dims[0]}x${opt.dims[1]}`; return (
-                    <button key={k} type="button" onClick={()=>handleSizeSelect(opt.dims)}
+                    <button key={k} type="button" data-guide-anchor="printLabelEditor.tamanhoPreset" onClick={()=>handleSizeSelect(opt.dims)}
                       className={`py-2 px-3 rounded-xl border-2 font-black text-[9px] tracking-tight transition-all flex items-center justify-between ${sizeKey===k?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
                       {opt.label}
                       {opt.star && <span className="text-[9px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ml-1">minha</span>}
@@ -1533,7 +1536,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   );})}
                 </div>
                 <div className={`flex items-center gap-2 p-3 rounded-xl border-2 ${sizeKey==='manual'?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20':'border-slate-100 dark:border-slate-800'}`}>
-                  <button type="button" onClick={()=>handleSizeSelect('manual')} className={`text-[9px] font-black uppercase whitespace-nowrap ${sizeKey==='manual'?'text-indigo-600':'text-slate-400'}`}>Manual</button>
+                  <button type="button" data-guide-anchor="printLabelEditor.tamanhoManual" onClick={()=>handleSizeSelect('manual')} className={`text-[9px] font-black uppercase whitespace-nowrap ${sizeKey==='manual'?'text-indigo-600':'text-slate-400'}`}>Manual</button>
                   <div className="flex items-center gap-1 flex-1">
                     <input type="number" min={10} max={200} value={manualW} title="Largura mm" placeholder="80"
                       onChange={e=>{setManualW(+e.target.value||10); if(sizeKey==='manual') localStorage.setItem(STORAGE_MANUAL, JSON.stringify([+e.target.value||10,manualH]));}}
@@ -1554,7 +1557,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         <div className="flex items-center gap-2">
           <div className={`flex-1 flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
             {([['view','Visualizar',<FileText size={12}/>],['edit','Ajustar',<Settings2 size={12}/>]] as const).map(([t,lbl,icon])=>(
-              <button key={t} type="button" onClick={()=>{setTab(t as any);setSelected(null);}}
+              <button key={t} type="button" data-guide-anchor="printLabelEditor.abaVisualizarAjustar" onClick={()=>{setTab(t as any);setSelected(null);}}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab===t?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
                 {icon} {lbl}
               </button>
@@ -1565,6 +1568,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               type="button"
               aria-label="Abrir etiqueta em tela cheia"
               title="Tela cheia — mais fácil de arrastar"
+              data-guide-anchor="printLabelEditor.telaCheia"
               onClick={() => setFullscreenEdit(true)}
               className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 transition-all active:scale-90 ${dk ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
@@ -1575,6 +1579,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             type="button"
             aria-label="Dicas de edição"
             title="Como editar a etiqueta"
+            data-guide-anchor="printLabelEditor.dicasAbrir"
             onClick={() => setTipsModalOpen(true)}
             className={`relative w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 transition-all active:scale-90 ${dk ? 'bg-slate-800 text-indigo-400 hover:bg-slate-700 active:bg-indigo-900/50' : 'bg-slate-100 text-indigo-500 hover:bg-slate-200 active:bg-indigo-100'}`}
           >
@@ -1625,6 +1630,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               <div className="flex flex-col gap-1.5">
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.telaCheiaCamadas"
                   onClick={() => setElemConfigOpen(true)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                 >
@@ -1632,6 +1638,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 </button>
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.telaCheiaPreview"
                   onClick={() => setFullscreenPreviewMode(v => !v)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${fullscreenPreviewMode ? 'bg-indigo-600 text-white' : (dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600')}`}
                 >
@@ -1640,6 +1647,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 </button>
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.telaCheiaSair"
                   onClick={() => { setFullscreenEdit(false); setFullscreenPreviewMode(false); }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                 >
@@ -1677,6 +1685,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         {tab === 'edit' && (
           <button
             type="button"
+            data-guide-anchor="printLabelEditor.elementosCamadasAbrir"
             onClick={() => setElemConfigOpen(true)}
             className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 font-black text-[11px] uppercase tracking-widest transition-all ${
               dk
@@ -1696,11 +1705,11 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         {/* Adicionar Forma — retângulo de bordas arredondadas ou linha, decorativos */}
         {tab === 'edit' && (
           <div className="flex gap-2">
-            <button type="button" onClick={() => addShape('rect')}
+            <button type="button" data-guide-anchor="printLabelEditor.addForma" onClick={() => addShape('rect')}
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 ${dk ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-indigo-500' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-400'}`}>
               <Square size={14} strokeWidth={2.5} /> + Retângulo
             </button>
-            <button type="button" onClick={() => addShape('line')}
+            <button type="button" data-guide-anchor="printLabelEditor.addForma" onClick={() => addShape('line')}
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 ${dk ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-indigo-500' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-400'}`}>
               <Minus size={14} strokeWidth={2.5} /> + Linha
             </button>
@@ -1722,11 +1731,11 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button type="button" aria-label={shape.visible === false ? 'Mostrar forma' : 'Ocultar forma'} onClick={() => updateShape(shape.id, { visible: shape.visible === false })}
+                  <button type="button" aria-label={shape.visible === false ? 'Mostrar forma' : 'Ocultar forma'} data-guide-anchor="printLabelEditor.formaVisivel" onClick={() => updateShape(shape.id, { visible: shape.visible === false })}
                     className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${dk ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
                     {shape.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
-                  <button type="button" aria-label="Remover forma" onClick={() => deleteShape(shape.id)}
+                  <button type="button" aria-label="Remover forma" data-guide-anchor="printLabelEditor.formaRemover" onClick={() => deleteShape(shape.id)}
                     className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${dk ? 'bg-rose-900/30 text-rose-400 hover:bg-rose-900/50' : 'bg-rose-50 text-rose-500 hover:bg-rose-100'}`}>
                     <Trash2 size={14} />
                   </button>
@@ -1736,7 +1745,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 {/* Cor */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {['#000000', '#ef4444', '#6366f1', '#f59e0b', '#10b981', '#0ea5e9', '#94a3b8'].map(c => (
-                    <button key={c} type="button" aria-label={`Cor ${c}`} onClick={() => updateShape(shape.id, { color: c })}
+                    <button key={c} type="button" aria-label={`Cor ${c}`} data-guide-anchor="printLabelEditor.formaCor" onClick={() => updateShape(shape.id, { color: c })}
                       className="w-7 h-7 rounded-full shrink-0 transition-all"
                       style={{ backgroundColor: c, boxShadow: shape.color === c ? `0 0 0 2px ${dk ? '#0f172a' : '#fff'}, 0 0 0 4px ${c}` : 'none' }} />
                   ))}
@@ -1744,7 +1753,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 {/* Estilo da linha — sólida ou tracejada (vale pro contorno do retângulo também) */}
                 <div className="flex gap-2">
                   {([[false, 'Sólida'], [true, 'Tracejada']] as const).map(([d, lbl]) => (
-                    <button key={lbl} type="button" onClick={() => updateShape(shape.id, { dashed: d })}
+                    <button key={lbl} type="button" data-guide-anchor="printLabelEditor.formaEstiloLinha" onClick={() => updateShape(shape.id, { dashed: d })}
                       className={`flex-1 py-2.5 rounded-xl border-2 text-[9px] font-black uppercase tracking-widest transition-all ${(!!shape.dashed) === d ? 'border-indigo-500 bg-indigo-600 text-white' : dk ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
                       {lbl}
                     </button>
@@ -1754,10 +1763,10 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 <div className="flex flex-col gap-1.5">
                   <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
                     <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-20 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Espessura</span>
-                    <button type="button" aria-label="Diminuir espessura" onClick={() => updateShape(shape.id, { strokeWidth: Math.max(0.1, +(shape.strokeWidth - 0.1).toFixed(2)) })}
+                    <button type="button" aria-label="Diminuir espessura" data-guide-anchor="printLabelEditor.formaEspessura" onClick={() => updateShape(shape.id, { strokeWidth: Math.max(0.1, +(shape.strokeWidth - 0.1).toFixed(2)) })}
                       className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
                     <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{shape.strokeWidth.toFixed(2)} mm</span>
-                    <button type="button" aria-label="Aumentar espessura" onClick={() => updateShape(shape.id, { strokeWidth: +(shape.strokeWidth + 0.1).toFixed(2) })}
+                    <button type="button" aria-label="Aumentar espessura" data-guide-anchor="printLabelEditor.formaEspessura" onClick={() => updateShape(shape.id, { strokeWidth: +(shape.strokeWidth + 0.1).toFixed(2) })}
                       className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
                   </div>
                   <input type="range" min={0.1} max={5} step={0.1} value={shape.strokeWidth}
@@ -1787,7 +1796,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     <div className="flex flex-col gap-1.5">
                       <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
                         <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-20 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Girar</span>
-                        <button type="button" aria-label="Girar -1 grau" onClick={() => setAngle(currentAngle - 1)}
+                        <button type="button" aria-label="Girar -1 grau" data-guide-anchor="printLabelEditor.formaGirar" onClick={() => setAngle(currentAngle - 1)}
                           className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
                         <input
                           type="number" min={0} max={359} value={currentAngle}
@@ -1796,7 +1805,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                           className={`flex-1 text-center text-[11px] font-black bg-transparent outline-none ${dk ? 'text-white' : 'text-slate-900'}`}
                         />
                         <span className={`text-[10px] font-bold pr-2 ${dk ? 'text-slate-500' : 'text-slate-400'}`}>°</span>
-                        <button type="button" aria-label="Girar +1 grau" onClick={() => setAngle(currentAngle + 1)}
+                        <button type="button" aria-label="Girar +1 grau" data-guide-anchor="printLabelEditor.formaGirar" onClick={() => setAngle(currentAngle + 1)}
                           className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
                       </div>
                       <input type="range" min={0} max={359} step={1} value={currentAngle}
@@ -1809,13 +1818,13 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   <>
                     <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
                       <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-20 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Bordas</span>
-                      <button type="button" aria-label="Diminuir raio da borda" onClick={() => updateShape(shape.id, { radius: Math.max(0, (shape.radius ?? 0) - 0.5) })}
+                      <button type="button" aria-label="Diminuir raio da borda" data-guide-anchor="printLabelEditor.formaRaio" onClick={() => updateShape(shape.id, { radius: Math.max(0, (shape.radius ?? 0) - 0.5) })}
                         className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
                       <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{(shape.radius ?? 0).toFixed(1)} mm</span>
-                      <button type="button" aria-label="Aumentar raio da borda" onClick={() => updateShape(shape.id, { radius: (shape.radius ?? 0) + 0.5 })}
+                      <button type="button" aria-label="Aumentar raio da borda" data-guide-anchor="printLabelEditor.formaRaio" onClick={() => updateShape(shape.id, { radius: (shape.radius ?? 0) + 0.5 })}
                         className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
                     </div>
-                    <button type="button" onClick={() => updateShape(shape.id, { filled: !shape.filled })}
+                    <button type="button" data-guide-anchor="printLabelEditor.formaPreenchido" onClick={() => updateShape(shape.id, { filled: !shape.filled })}
                       className={`flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all ${shape.filled ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : dk ? 'border-slate-700' : 'border-slate-200'}`}>
                       <span className={`text-[10px] font-black uppercase tracking-widest ${dk ? 'text-slate-200' : 'text-slate-700'}`}>Preenchido</span>
                       <div className={`w-11 h-6 rounded-full relative transition-colors duration-300 shrink-0 ${shape.filled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}>
@@ -1832,10 +1841,10 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                           <div key={lbl} className="flex flex-col gap-1">
                             <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
                               <span className={`text-[9px] font-black uppercase px-2 py-2.5 border-r shrink-0 ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>{lbl}</span>
-                              <button type="button" aria-label={`Diminuir ${lbl}`} onClick={() => fn(-1)}
+                              <button type="button" aria-label={`Diminuir ${lbl}`} data-guide-anchor="printLabelEditor.formaLargAlt" onClick={() => fn(-1)}
                                 className={`w-8 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={12}/></button>
                               <span className={`flex-1 text-center text-[10px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{val.toFixed(1)}</span>
-                              <button type="button" aria-label={`Aumentar ${lbl}`} onClick={() => fn(1)}
+                              <button type="button" aria-label={`Aumentar ${lbl}`} data-guide-anchor="printLabelEditor.formaLargAlt" onClick={() => fn(1)}
                                 className={`w-8 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={12}/></button>
                             </div>
                             <input type="range" min={5} max={max} step={0.5} value={val}
@@ -1878,6 +1887,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 </div>
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.elementosFechar"
                   onClick={() => setElemConfigOpen(false)}
                   aria-label="Fechar"
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}
@@ -1912,6 +1922,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                         <button
                           type="button"
                           disabled={isLocked}
+                          data-guide-anchor="printLabelEditor.elementoAjustar"
                           onClick={() => { setSelected(isSel ? null : key); setElemConfigOpen(false); }}
                           className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${isLocked ? 'cursor-not-allowed' : ''} ${
                             isSel
@@ -1928,6 +1939,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                           disabled={isLocked}
                           aria-label={isLocked ? `${el.label} bloqueado` : el.visible ? `Ocultar ${el.label}` : `Mostrar ${el.label}`}
                           title={isLocked ? 'Disponível apenas para etiqueta de uma única variante' : undefined}
+                          data-guide-anchor="printLabelEditor.elementoVisivel"
                           onClick={() => updateElem(key, { visible: !el.visible })}
                           className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${isLocked ? 'cursor-not-allowed' : ''} ${el.visible ? 'shadow-inner' : dk ? 'bg-slate-700' : 'bg-slate-200'}`}
                           style={el.visible ? { backgroundColor: el.color } : {}}
@@ -1943,6 +1955,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                           {availableSectorNotes.length > 0 ? (
                             <button
                               type="button"
+                              data-guide-anchor="printLabelEditor.instrucaoAbrir"
                               onClick={() => setNotePickerOpen(true)}
                               className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[10px] font-bold border outline-none transition-all ${dk ? 'bg-slate-800 border-slate-700 text-white hover:border-indigo-500' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400'}`}
                             >
@@ -1991,6 +2004,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                           </div>
                           <button
                             type="button"
+                            data-guide-anchor="printLabelEditor.formaAjustar"
                             onClick={() => { setSelected(null); setSelectedShapeId(isSelShape ? null : shape.id); setTab('edit'); setElemConfigOpen(false); }}
                             className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                               isSelShape
@@ -2005,6 +2019,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                           <button
                             type="button"
                             aria-label={isVisible ? `Ocultar ${shapeLabel}` : `Mostrar ${shapeLabel}`}
+                            data-guide-anchor="printLabelEditor.formaVisivelLista"
                             onClick={() => {
                               updateShape(shape.id, { visible: !isVisible });
                               if (isVisible && isSelShape) setSelectedShapeId(null);
@@ -2027,6 +2042,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    data-guide-anchor="printLabelEditor.mostrarTodos"
                     onClick={() => { CONFIG_LIST_KEYS.forEach(k => updateElem(k, { visible: true })); (layout.shapes || []).forEach(s => updateShape(s.id, { visible: true })); }}
                     className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 flex items-center justify-center gap-1.5 active:scale-95 ${
                       dk ? 'border-slate-700 bg-slate-800 text-slate-300 hover:border-emerald-500 hover:text-emerald-400' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-emerald-400 hover:text-emerald-600'
@@ -2036,6 +2052,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   </button>
                   <button
                     type="button"
+                    data-guide-anchor="printLabelEditor.elementosFechar"
                     onClick={() => setElemConfigOpen(false)}
                     className="flex-1 py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
                   >
@@ -2068,6 +2085,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 </div>
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.instrucaoFechar"
                   onClick={() => setNotePickerOpen(false)}
                   aria-label="Fechar"
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}
@@ -2079,6 +2097,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.instrucaoEscolher"
                   onClick={() => { updateElem('sectornotes', { noteFilter: undefined }); setNotePickerOpen(false); }}
                   className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
                     !layout.elems.sectornotes.noteFilter
@@ -2098,6 +2117,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     <button
                       key={`${n.sectorId}::${n.noteName}`}
                       type="button"
+                      data-guide-anchor="printLabelEditor.instrucaoEscolher"
                       onClick={() => { updateElem('sectornotes', { noteFilter: { sectorId: n.sectorId, noteName: n.noteName } }); setNotePickerOpen(false); }}
                       className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
                         isSel ? 'border-orange-500 bg-orange-500/10' : dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
@@ -2137,7 +2157,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     <p className="text-[10px] font-bold text-slate-400 mt-0.5">Toque numa seção pra abrir</p>
                   </div>
                 </div>
-                <button type="button" onClick={dismissTips} aria-label="Fechar"
+                <button type="button" data-guide-anchor="printLabelEditor.dicasFechar" onClick={dismissTips} aria-label="Fechar"
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}>
                   <X size={16} />
                 </button>
@@ -2250,7 +2270,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 ))}
               </div>
               <div className={`px-6 py-4 border-t ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
-                <button type="button" onClick={dismissTips}
+                <button type="button" data-guide-anchor="printLabelEditor.dicasFechar" onClick={dismissTips}
                   className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
                   Entendi
                 </button>
@@ -2279,6 +2299,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 </div>
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.meusPadroesFechar"
                   onClick={() => setMyPresetsPopupOpen(false)}
                   aria-label="Fechar"
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}
@@ -2298,6 +2319,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     }`}>
                       <button
                         type="button"
+                        data-guide-anchor="printLabelEditor.padraoCarregar"
                         onClick={() => { handleLoadPreset(preset); setMyPresetsPopupOpen(false); }}
                         className={`flex-1 min-w-0 flex items-center gap-2 py-3 px-4 text-left transition-all ${
                           isSel ? 'text-emerald-600 dark:text-emerald-400' : dk ? 'text-slate-200' : 'text-slate-700'
@@ -2308,6 +2330,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                       </button>
                       <button
                         type="button"
+                        data-guide-anchor="printLabelEditor.padraoRenomear"
                         onClick={() => setRenamePreset({ id: preset.id, name: preset.name })}
                         title="Renomear padrão"
                         className={`px-3 py-3 border-l transition-all ${
@@ -2318,6 +2341,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                       </button>
                       <button
                         type="button"
+                        data-guide-anchor="printLabelEditor.padraoExcluir"
                         onClick={() => handleDeletePreset(preset.id)}
                         title="Excluir padrão"
                         className={`px-3 py-3 border-l transition-all ${
@@ -2349,6 +2373,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   type="button"
                   aria-label={sel.locked ? `Destravar ${sel.label}` : `Travar ${sel.label}`}
                   title={sel.locked ? 'Destravado — toque pra travar contra arraste/redimensionamento' : 'Travar — impede mover ou redimensionar por engano'}
+                  data-guide-anchor="printLabelEditor.elementoTravar"
                   onClick={() => updateElem(selected, { locked: !sel.locked })}
                   className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${sel.locked ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : dk ? 'bg-slate-900 text-slate-400 hover:bg-slate-700' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
                 >
@@ -2358,6 +2383,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   type="button"
                   aria-label={sel.visible ? `Ocultar ${sel.label}` : `Mostrar ${sel.label}`}
                   title={sel.visible ? 'Ocultar temporariamente — útil pra selecionar um elemento embaixo de um maior' : 'Mostrar de novo'}
+                  data-guide-anchor="printLabelEditor.elementoOcultar"
                   onClick={() => updateElem(selected, { visible: !sel.visible })}
                   className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${!sel.visible ? 'bg-slate-200 dark:bg-slate-700 text-slate-500' : dk ? 'bg-slate-900 text-slate-400 hover:bg-slate-700' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
                 >
@@ -2367,6 +2393,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   type="button"
                   aria-label={`Remover ${sel.label} da etiqueta`}
                   title="Remover — pode ser trazido de volta em Configurar Elementos"
+                  data-guide-anchor="printLabelEditor.elementoRemover"
                   onClick={() => { updateElem(selected, { visible: false }); setSelected(null); }}
                   className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${dk ? 'bg-rose-900/30 text-rose-400 hover:bg-rose-900/50' : 'bg-rose-50 text-rose-500 hover:bg-rose-100'}`}
                 >
@@ -2398,10 +2425,10 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                       <div className={`flex flex-col items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
                         <span className={`text-[9px] font-black uppercase w-full text-center py-2 border-b ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>{lbl}</span>
                         <div className="flex items-center w-full">
-                          <button type="button" disabled={sel.locked} aria-label={`Diminuir ${lbl}`} onClick={() => fn(-0.5)}
+                          <button type="button" disabled={sel.locked} aria-label={`Diminuir ${lbl}`} data-guide-anchor="printLabelEditor.elementoTamanho" onClick={() => fn(-0.5)}
                             className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
                           <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{val.toFixed(1)}</span>
-                          <button type="button" disabled={sel.locked} aria-label={`Aumentar ${lbl}`} onClick={() => fn(0.5)}
+                          <button type="button" disabled={sel.locked} aria-label={`Aumentar ${lbl}`} data-guide-anchor="printLabelEditor.elementoTamanho" onClick={() => fn(0.5)}
                             className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
                         </div>
                       </div>
@@ -2431,6 +2458,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                         <button
                           key={field}
                           type="button"
+                          data-guide-anchor="printLabelEditor.combinarCampos"
                           onClick={() => {
                             const current = sel.combineFields || ['reference'];
                             const next = active ? current.filter(f => f !== field) : [...current, field];
@@ -2465,7 +2493,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                       ['courier',   'Mono',  'monospace'],
                       ['avenir',    'Geo',   '"Century Gothic","Trebuchet MS",sans-serif'],
                     ] as [FontFamily, string, string][]).map(([f, label, ff]) => (
-                      <button key={f} type="button" onClick={() => updateElem(selected, { fontFamily: f })}
+                      <button key={f} type="button" data-guide-anchor="printLabelEditor.tipoFonte" onClick={() => updateElem(selected, { fontFamily: f })}
                         className={`py-2 rounded-xl border text-[9px] font-black transition-all ${(sel.fontFamily === f || (!sel.fontFamily && f === 'helvetica')) ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm' : `border-transparent ${dk ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}`}
                         style={{ fontFamily: ff }}>
                         {label}
@@ -2475,14 +2503,15 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   {/* Size + Bold */}
                   <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
                     <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-16 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Tamanho</span>
-                    <button type="button" aria-label="Diminuir fonte" onClick={() => updateElem(selected, { fontSize: Math.max(3, (sel.fontSize || 8) - 0.5) })}
+                    <button type="button" aria-label="Diminuir fonte" data-guide-anchor="printLabelEditor.fonteTamanho" onClick={() => updateElem(selected, { fontSize: Math.max(3, (sel.fontSize || 8) - 0.5) })}
                       className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
                     <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{(sel.fontSize || 8).toFixed(1)} pt</span>
-                    <button type="button" aria-label="Aumentar fonte" onClick={() => updateElem(selected, { fontSize: (sel.fontSize || 8) + 0.5 })}
+                    <button type="button" aria-label="Aumentar fonte" data-guide-anchor="printLabelEditor.fonteTamanho" onClick={() => updateElem(selected, { fontSize: (sel.fontSize || 8) + 0.5 })}
                       className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
-                    <button type="button" aria-label="Negrito" onClick={() => updateElem(selected, { bold: !sel.bold })}
+                    <button type="button" aria-label="Negrito" data-guide-anchor="printLabelEditor.fonteNegrito" onClick={() => updateElem(selected, { bold: !sel.bold })}
                       className={`w-10 h-9 border-l flex items-center justify-center text-[13px] font-black transition-all ${sel.bold ? `bg-indigo-600 text-white ${dk ? 'border-slate-700' : 'border-indigo-500'}` : `${dk ? 'border-slate-700 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-100'}`}`}>B</button>
                     <button type="button" aria-label="Inverter cor (texto branco em fundo preto)" title="Inverter — texto branco em retângulo preto, igual na impressão"
+                      data-guide-anchor="printLabelEditor.fonteInverter"
                       onClick={() => updateElem(selected, { invert: !sel.invert })}
                       className={`w-10 h-9 border-l flex items-center justify-center shrink-0 transition-all ${sel.invert ? `bg-indigo-600 ${dk ? 'border-slate-700' : 'border-indigo-500'}` : `${dk ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-100'}`}`}>
                       <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black leading-none ${sel.invert ? 'bg-white text-indigo-600' : 'bg-slate-900 text-white'}`}>Aa</span>
@@ -2507,11 +2536,11 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           <div className={`flex flex-col gap-3 p-4 rounded-2xl border ${dk?'bg-slate-900 border-slate-800':'bg-slate-50 border-slate-100'}`}>
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Exportação JPG do Lote</label>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setJpgBatchMode('combined')}
+              <button type="button" data-guide-anchor="printLabelEditor.jpgLoteModo" onClick={() => setJpgBatchMode('combined')}
                 className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${jpgBatchMode==='combined'?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
                 1 imagem combinada
               </button>
-              <button type="button" onClick={() => setJpgBatchMode('separate')}
+              <button type="button" data-guide-anchor="printLabelEditor.jpgLoteModo" onClick={() => setJpgBatchMode('separate')}
                 className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${jpgBatchMode==='separate'?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
                 {batchItems.length} arquivos separados
               </button>
@@ -2528,23 +2557,23 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
         {/* Actions */}
         <div className="flex flex-col gap-2">
-          <button type="button" onClick={() => setShowShareFormatPicker(true)} disabled={printing || exportingJpg}
+          <button type="button" data-guide-anchor="printLabelEditor.compartilhar" onClick={() => setShowShareFormatPicker(true)} disabled={printing || exportingJpg}
             className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
             <Share2 size={16}/> {(printing || exportingJpg) ? 'Gerando…' : 'Compartilhar'}
           </button>
           {isGallerySaverPlatform() && (
-          <button type="button" onClick={handleSaveToGallery} disabled={printing || savingGallery}
+          <button type="button" data-guide-anchor="printLabelEditor.salvarGaleria" onClick={handleSaveToGallery} disabled={printing || savingGallery}
             className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
             <Download size={16}/> {savingGallery ? 'Salvando…' : 'Salvar na Galeria'}
           </button>
           )}
           {isAblemarkPlatform() && (
-          <button type="button" onClick={handleOpenBluetoothPrint} disabled={printing || exportingJpg || preparingBt}
+          <button type="button" data-guide-anchor="printLabelEditor.imprimirBluetooth" onClick={handleOpenBluetoothPrint} disabled={printing || exportingJpg || preparingBt}
             className="w-full py-4 rounded-2xl bg-sky-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
             <Bluetooth size={16}/> {preparingBt ? 'Preparando…' : 'Imprimir na Impressora'}
           </button>
           )}
-          <button type="button" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
+          <button type="button" data-guide-anchor="printLabelEditor.cancelar" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
             Cancelar
           </button>
         </div>
@@ -2556,6 +2585,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           <p className="text-xs font-bold text-center text-slate-500 dark:text-slate-400">Em qual formato?</p>
           <button
             type="button"
+            data-guide-anchor="printLabelEditor.formatoEscolher"
             onClick={() => { setShowShareFormatPicker(false); handleExportJpg(); }}
             className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-emerald-600 text-white"
           >
@@ -2563,6 +2593,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </button>
           <button
             type="button"
+            data-guide-anchor="printLabelEditor.formatoEscolher"
             onClick={() => { setShowShareFormatPicker(false); handlePrint(); }}
             className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
@@ -2579,6 +2610,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </p>
           <button
             type="button"
+            data-guide-anchor="printLabelEditor.listarDispositivos"
             onClick={async () => { setLoadingBtDevices(true); try { setBtDevices(await listAbleMarkPairedDevices()); } finally { setLoadingBtDevices(false); } }}
             disabled={loadingBtDevices}
             className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
@@ -2589,6 +2621,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             <button
               key={d.address}
               type="button"
+              data-guide-anchor="printLabelEditor.conectarDispositivo"
               onClick={() => handleConnectBtDevice(d.address)}
               disabled={!!connectingBtAddress}
               className={`flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border-2 transition-all ${dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}
@@ -2652,6 +2685,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               <div className="flex gap-2">
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.padraoModalCancelar"
                   onClick={() => setSavePresetModal({ open: false, name: '' })}
                   className={`flex-1 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all ${
                     dk ? 'border-slate-700 text-slate-400 hover:border-slate-600' : 'border-slate-200 text-slate-500 hover:border-slate-300'
@@ -2661,6 +2695,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 </button>
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.padraoModalSalvar"
                   onClick={() => handleSavePreset(savePresetModal.name)}
                   className="flex-1 py-3.5 rounded-2xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
                 >
@@ -2710,6 +2745,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               <div className="flex gap-2">
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.renomearCancelar"
                   onClick={() => setRenamePreset(null)}
                   className={`flex-1 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all ${
                     dk ? 'border-slate-700 text-slate-400 hover:border-slate-600' : 'border-slate-200 text-slate-500 hover:border-slate-300'
@@ -2719,6 +2755,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 </button>
                 <button
                   type="button"
+                  data-guide-anchor="printLabelEditor.renomearSalvar"
                   onClick={() => renamePreset && handleRenamePreset(renamePreset.id, renamePreset.name)}
                   className="flex-1 py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
                 >

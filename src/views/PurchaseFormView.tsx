@@ -1426,6 +1426,7 @@ export default function PurchaseFormView({
               <button
                 type="button"
                 onClick={() => setIsQuickPersonModalOpen(true)}
+                data-guide-anchor="purchaseForm.cadastrarFornecedorRapido"
                 className="mt-2 px-3 text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600"
               >
                 Nenhum fornecedor cadastrado ainda? Cadastrar agora
@@ -1470,6 +1471,7 @@ export default function PurchaseFormView({
                           key={rep.id}
                           type="button"
                           onClick={() => setSellerId(rep.id)}
+                          data-guide-anchor="purchaseForm.sugestaoComprador"
                           className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === rep.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
                         >
                           <Users size={12} />
@@ -1481,6 +1483,7 @@ export default function PurchaseFormView({
                           key={`int-${idx}`}
                           type="button"
                           onClick={() => setSellerId(c.name)}
+                          data-guide-anchor="purchaseForm.sugestaoComprador"
                           className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === c.name ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
                         >
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -1903,6 +1906,7 @@ export default function PurchaseFormView({
             <button
               type="button"
               onClick={addSoleItem}
+              data-guide-anchor="purchaseForm.adicionarItemSolado"
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 text-white text-[10px] font-black uppercase tracking-widest"
             >
               <Plus size={14} /> Adicionar Item
@@ -1938,7 +1942,7 @@ export default function PurchaseFormView({
                       {molds.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </select>
                   </div>
-                  <button type="button" onClick={() => removeSoleItem(index)} aria-label="Remover item de solado" title="Remover" className="mb-0.5 p-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20">
+                  <button type="button" onClick={() => removeSoleItem(index)} aria-label="Remover item de solado" title="Remover" data-guide-anchor="purchaseForm.removerItemSolado" className="mb-0.5 p-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20">
                     <Trash2 size={18} />
                   </button>
                 </div>
@@ -2024,6 +2028,7 @@ export default function PurchaseFormView({
               role="switch"
               aria-checked={soleManualValueEnabled}
               onClick={() => setSoleManualValueEnabled(v => !v)}
+              data-guide-anchor="purchaseForm.inserirValorManual"
               title="Inserir valor manualmente"
               aria-label="Inserir valor manualmente"
               className={`w-12 h-7 rounded-full relative transition-colors shrink-0 ${soleManualValueEnabled ? 'bg-cyan-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
@@ -2049,6 +2054,7 @@ export default function PurchaseFormView({
                 <button
                   type="button"
                   onClick={() => openCalculator(-1, 'soleManualValue')}
+                  data-guide-anchor="purchaseForm.calculadoraValorSolado"
                   title="Abrir calculadora"
                   aria-label="Abrir calculadora"
                   className="w-12 shrink-0 flex items-center justify-center rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400"
@@ -2101,6 +2107,7 @@ export default function PurchaseFormView({
               <button
                 type="button"
                 onClick={() => setRegisterAsReceived(v => !v)}
+                data-guide-anchor="purchaseForm.jaEntregue"
                 aria-label="Marcar como já entregue"
                 className={`relative shrink-0 w-14 h-8 rounded-full border-2 transition-colors duration-200 flex items-center px-1 ${
                   registerAsReceived
@@ -2723,6 +2730,7 @@ export default function PurchaseFormView({
               <div className="flex justify-end mb-2 px-2">
                 <button
                   onClick={addCheck}
+                  data-guide-anchor="purchaseForm.adicionarCheque"
                   className={`flex items-center gap-2 font-black text-[10px] uppercase tracking-widest bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all ${isDarkMode ? "shadow-none" : "shadow-slate-200"}`}
                   aria-label="Adicionar cheque"
                   title="Adicionar Cheque"
@@ -2763,6 +2771,7 @@ export default function PurchaseFormView({
                       onClick={() => {
                         setChecks(checks.filter((_, i) => i !== index));
                       }}
+                      data-guide-anchor="purchaseForm.removerCheque"
                       className="p-2 text-slate-200 dark:text-slate-700 hover:text-rose-500 transition-colors transform active:scale-90"
                       aria-label="Remover cheque"
                       title="Remover"
@@ -2923,6 +2932,7 @@ export default function PurchaseFormView({
           <button
             type="button"
             onClick={() => setIsRecurringPurchase(v => !v)}
+            data-guide-anchor="purchaseForm.compraRecorrente"
             className="flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-3 text-left">
@@ -2948,6 +2958,7 @@ export default function PurchaseFormView({
                     type="button"
                     onClick={() => setRecurringInstallments(v => Math.max(2, v - 1))}
                     disabled={recurringInstallments <= 2}
+                    data-guide-anchor="purchaseForm.recorrenteParcelasMenos"
                     aria-label="Diminuir parcelas"
                     title="Diminuir parcelas"
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-black text-base transition-all active:scale-95 disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm'}`}
@@ -2964,6 +2975,7 @@ export default function PurchaseFormView({
                   <button
                     type="button"
                     onClick={() => setRecurringInstallments(v => v + 1)}
+                    data-guide-anchor="purchaseForm.recorrenteParcelasMais"
                     aria-label="Aumentar parcelas"
                     title="Aumentar parcelas"
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-black text-base transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm'}`}
@@ -3109,6 +3121,7 @@ export default function PurchaseFormView({
         <div className="flex gap-2">
           <button
             onClick={onCancel}
+            data-guide-anchor="purchaseForm.cancelar"
             className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-rose-500 transition-colors"
             aria-label="Cancelar"
             title="Cancelar"
@@ -3149,6 +3162,7 @@ export default function PurchaseFormView({
                   <button
                     type="button"
                     onClick={() => setDuplicateCount(c => Math.max(1, c - 1))}
+                    data-guide-anchor="purchaseForm.duplicarDiminuir"
                     className="w-11 h-11 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 bg-white dark:bg-slate-900 active:scale-90 transition-all"
                     aria-label="Diminuir cópias"
                   >
@@ -3166,6 +3180,7 @@ export default function PurchaseFormView({
                   <button
                     type="button"
                     onClick={() => setDuplicateCount(c => c + 1)}
+                    data-guide-anchor="purchaseForm.duplicarAumentar"
                     className="w-11 h-11 rounded-xl flex items-center justify-center text-indigo-500 bg-white dark:bg-slate-900 active:scale-90 transition-all"
                     aria-label="Aumentar cópias"
                   >
@@ -3179,6 +3194,7 @@ export default function PurchaseFormView({
                     <button
                       type="button"
                       onClick={() => setDuplicateMode('separate')}
+                      data-guide-anchor="purchaseForm.duplicarModo"
                       className={`rounded-xl px-3 py-2.5 text-[10px] font-black uppercase tracking-wide border-2 transition-all ${duplicateMode === 'separate' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}
                     >
                       Itens Separados
@@ -3186,6 +3202,7 @@ export default function PurchaseFormView({
                     <button
                       type="button"
                       onClick={() => setDuplicateMode('group')}
+                      data-guide-anchor="purchaseForm.duplicarModo"
                       className={`rounded-xl px-3 py-2.5 text-[10px] font-black uppercase tracking-wide border-2 transition-all ${duplicateMode === 'group' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}
                     >
                       Agrupar Quantidade
@@ -3202,6 +3219,7 @@ export default function PurchaseFormView({
                   <button
                     type="button"
                     onClick={() => setDuplicateTarget(null)}
+                    data-guide-anchor="purchaseForm.duplicarCancelar"
                     className="flex-1 py-4 px-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                   >
                     Cancelar
@@ -3212,6 +3230,7 @@ export default function PurchaseFormView({
                       duplicateBlock(duplicateTarget.index, duplicateCount, duplicateMode);
                       setDuplicateTarget(null);
                     }}
+                    data-guide-anchor="purchaseForm.duplicarConfirmar"
                     className="flex-1 py-4 px-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-indigo-200 dark:shadow-none"
                   >
                     {duplicateMode === 'group' ? 'Agrupar' : 'Duplicar'} {duplicateCount > 1 ? `(${duplicateCount}x)` : ''}
@@ -3305,6 +3324,7 @@ export default function PurchaseFormView({
                       key={pkg.id}
                       type="button"
                       onClick={() => { applyBlockPackaging(pkgPickerBlockIndex, pkg.id); setPkgPickerBlockIndex(null); }}
+                      data-guide-anchor="purchaseForm.selecionarEmbalagemModelo"
                       className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col gap-2.5 ${isSelected ? isDarkMode ? 'bg-violet-900/20 border-violet-600' : 'bg-violet-50 border-violet-400' : isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-violet-700' : 'bg-slate-50 border-slate-100 hover:border-violet-200'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -3355,8 +3375,9 @@ export default function PurchaseFormView({
                 <h2 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Selecionar Modelo</h2>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Busque pelo nome ou referência</p>
               </div>
-              <button 
-                onClick={() => setShowProductModal(false)} 
+              <button
+                onClick={() => setShowProductModal(false)}
+                data-guide-anchor="purchaseForm.fecharModalProduto"
                 className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors"
                 aria-label="Fechar"
                 title="Fechar"
@@ -3428,6 +3449,7 @@ export default function PurchaseFormView({
                         key={p.id}
                         disabled={isAdded}
                         onClick={() => addBlock(p.id)}
+                        data-guide-anchor="purchaseForm.selecionarModelo"
                         className={`flex items-center justify-between p-4 rounded-3xl transition-all border text-left ${
                           isAdded
                           ? "bg-slate-50/50 dark:bg-slate-800/30 border-transparent opacity-50 cursor-not-allowed"

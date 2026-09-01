@@ -190,6 +190,7 @@ export default function ProductSheetMenuView({
                         bg={item.bg}
                         isDarkMode={isDarkMode}
                         onClick={item.onClick}
+                        anchor={`sheetMenu.${item.id}`}
                         isLast={isLast}
                       />
                     );
@@ -211,6 +212,7 @@ export default function ProductSheetMenuView({
                   <button
                     key={p.id}
                     onClick={() => onNavigate(ViewType.PRODUCT_FORM, p.id)}
+                    data-guide-anchor="sheetMenu.modeloRecente"
                     className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
                   >
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
@@ -233,6 +235,7 @@ export default function ProductSheetMenuView({
               {totalProducts > 3 && (
                 <button
                   onClick={() => onNavigate(ViewType.PRODUCTS)}
+                  data-guide-anchor="sheetMenu.verTodos"
                   className={`mt-2 w-full py-3 rounded-xl border-2 border-dashed text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'border-slate-800 text-slate-500 hover:border-slate-700 hover:text-slate-400' : 'border-slate-100 text-slate-400 hover:border-slate-200 hover:text-slate-500'}`}
                 >
                   Ver todos os {totalProducts} modelos
@@ -261,6 +264,7 @@ export default function ProductSheetMenuView({
         <div className="mt-8 flex justify-center px-2">
           <button 
             onClick={onBack}
+            data-guide-anchor="sheetMenu.voltar"
             className={`flex items-center gap-2 px-8 py-5 rounded-[2rem] w-full transition-all border-2 ${isDarkMode ? 'bg-slate-800/30 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700' : 'bg-white border-slate-100 text-slate-500 hover:text-slate-900 hover:border-slate-200 shadow-sm'}`}
           >
             <ArrowLeft size={18} />

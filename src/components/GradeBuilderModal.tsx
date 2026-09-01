@@ -91,6 +91,7 @@ export default function GradeBuilderModal({
             <button
               type="button"
               onClick={handleReset}
+              data-guide-anchor="gradeBuilder.limpar"
               title="Limpar"
               aria-label="Limpar grade"
               className={`w-8 h-8 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
@@ -100,6 +101,7 @@ export default function GradeBuilderModal({
             <button
               type="button"
               onClick={onClose}
+              data-guide-anchor="gradeBuilder.fechar"
               title="Fechar"
               aria-label="Fechar"
               className={`w-8 h-8 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
@@ -190,6 +192,7 @@ export default function GradeBuilderModal({
           <button
             type="button"
             onClick={() => { if (canConfirm) onConfirm(breakdown); }}
+            data-guide-anchor="gradeBuilder.confirmar"
             disabled={!canConfirm}
             className={`w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
               canConfirm

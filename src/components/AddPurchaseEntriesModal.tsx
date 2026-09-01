@@ -162,6 +162,7 @@ export default function AddPurchaseEntriesModal({
           <button
             type="button"
             onClick={handleClose}
+            data-guide-anchor="addPurchaseEntries.fechar"
             className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? "bg-slate-800 text-slate-400 hover:text-white" : "bg-slate-50 text-slate-400 hover:text-slate-600"}`}
           >
             <X size={20} strokeWidth={2.5} />
@@ -177,6 +178,7 @@ export default function AddPurchaseEntriesModal({
                 key={k}
                 type="button"
                 onClick={() => { setKind(k); setMaterialId(""); setPersonId(""); setDescription(""); }}
+                data-guide-anchor="addPurchaseEntries.selecionarTipo"
                 className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all border-r last:border-r-0 ${isDarkMode ? "border-slate-700" : "border-slate-200"} ${kind === k ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 dark:text-slate-400"}`}
               >
                 {kindLabel[k]}
@@ -267,6 +269,7 @@ export default function AddPurchaseEntriesModal({
                 <button
                   type="button"
                   onClick={() => setCalcField("quantity")}
+                  data-guide-anchor="addPurchaseEntries.calculadoraQtd"
                   className="w-11 shrink-0 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 transition-colors"
                   aria-label="Calculadora da quantidade"
                   title="Calculadora da quantidade"
@@ -289,6 +292,7 @@ export default function AddPurchaseEntriesModal({
                 <button
                   type="button"
                   onClick={() => setCalcField("value")}
+                  data-guide-anchor="addPurchaseEntries.calculadoraValor"
                   className="w-11 shrink-0 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 transition-colors"
                   aria-label="Calculadora do valor"
                   title="Calculadora do valor"
@@ -310,6 +314,7 @@ export default function AddPurchaseEntriesModal({
             type="button"
             onClick={handleAddEntry}
             disabled={!description.trim() || qtyNum <= 0 || valueNum <= 0}
+            data-guide-anchor="addPurchaseEntries.adicionar"
             className="w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 disabled:active:scale-100"
           >
             <Plus size={16} strokeWidth={3} /> Adicionar
@@ -338,6 +343,7 @@ export default function AddPurchaseEntriesModal({
                     <button
                       type="button"
                       onClick={() => handleRemoveEntry(e.id)}
+                      data-guide-anchor="addPurchaseEntries.removerItem"
                       className="w-7 h-7 flex items-center justify-center rounded-full text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
                       aria-label="Remover item"
                     >
@@ -362,6 +368,7 @@ export default function AddPurchaseEntriesModal({
             type="button"
             onClick={handleConfirm}
             disabled={entries.length === 0}
+            data-guide-anchor="addPurchaseEntries.lancar"
             className="w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-emerald-600 disabled:opacity-40 disabled:active:scale-100"
           >
             <PackagePlus size={16} /> Lançar na Compra
@@ -369,6 +376,7 @@ export default function AddPurchaseEntriesModal({
           <button
             type="button"
             onClick={handleClose}
+            data-guide-anchor="addPurchaseEntries.cancelar"
             className={`w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest transition-all ${isDarkMode ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}
           >
             Cancelar

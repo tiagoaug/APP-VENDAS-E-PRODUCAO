@@ -182,6 +182,7 @@ export default function LabelPrintPreviewModal({
                 type="button"
                 onClick={() => setPreviewIndex(Math.max(0, safePreviewIndex - 1))}
                 disabled={safePreviewIndex <= 0}
+                data-guide-anchor="labelPrintPreview.anterior"
                 className={`p-1.5 rounded-full disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 <ChevronLeft size={14} />
@@ -193,6 +194,7 @@ export default function LabelPrintPreviewModal({
                 type="button"
                 onClick={() => setPreviewIndex(Math.min(previewDataUrls.length - 1, safePreviewIndex + 1))}
                 disabled={safePreviewIndex >= previewDataUrls.length - 1}
+                data-guide-anchor="labelPrintPreview.proxima"
                 className={`p-1.5 rounded-full disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 <ChevronRight size={14} />
@@ -210,6 +212,7 @@ export default function LabelPrintPreviewModal({
                 key={d.value}
                 type="button"
                 onClick={() => patch({ direction: d.value })}
+                data-guide-anchor="labelPrintPreview.selecionarDirecao"
                 className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest ${
                   options.direction === d.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                 }`}
@@ -224,17 +227,17 @@ export default function LabelPrintPreviewModal({
         <div className={rowCls}>
           <span className={labelCls}>Deslocamento vertical</span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => patch({ offsetYmm: Math.max(-20, +(options.offsetYmm - 0.5).toFixed(1)) })} className={stepperBtnCls}><Minus size={12} /></button>
+            <button type="button" onClick={() => patch({ offsetYmm: Math.max(-20, +(options.offsetYmm - 0.5).toFixed(1)) })} data-guide-anchor="labelPrintPreview.diminuirOffsetY" className={stepperBtnCls}><Minus size={12} /></button>
             <span className="text-xs font-black w-10 text-center">{options.offsetYmm.toFixed(1)}</span>
-            <button type="button" onClick={() => patch({ offsetYmm: Math.min(20, +(options.offsetYmm + 0.5).toFixed(1)) })} className={stepperBtnCls}><Plus size={12} /></button>
+            <button type="button" onClick={() => patch({ offsetYmm: Math.min(20, +(options.offsetYmm + 0.5).toFixed(1)) })} data-guide-anchor="labelPrintPreview.aumentarOffsetY" className={stepperBtnCls}><Plus size={12} /></button>
           </div>
         </div>
         <div className={rowCls}>
           <span className={labelCls}>Deslocamento horizontal</span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => patch({ offsetXmm: Math.max(-20, +(options.offsetXmm - 0.5).toFixed(1)) })} className={stepperBtnCls}><Minus size={12} /></button>
+            <button type="button" onClick={() => patch({ offsetXmm: Math.max(-20, +(options.offsetXmm - 0.5).toFixed(1)) })} data-guide-anchor="labelPrintPreview.diminuirOffsetX" className={stepperBtnCls}><Minus size={12} /></button>
             <span className="text-xs font-black w-10 text-center">{options.offsetXmm.toFixed(1)}</span>
-            <button type="button" onClick={() => patch({ offsetXmm: Math.min(20, +(options.offsetXmm + 0.5).toFixed(1)) })} className={stepperBtnCls}><Plus size={12} /></button>
+            <button type="button" onClick={() => patch({ offsetXmm: Math.min(20, +(options.offsetXmm + 0.5).toFixed(1)) })} data-guide-anchor="labelPrintPreview.aumentarOffsetX" className={stepperBtnCls}><Plus size={12} /></button>
           </div>
         </div>
 
@@ -255,9 +258,9 @@ export default function LabelPrintPreviewModal({
         <div className={rowCls}>
           <span className={labelCls}>Número de impressões</span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => patch({ copies: Math.max(1, options.copies - 1) })} className={stepperBtnCls}><Minus size={12} /></button>
+            <button type="button" onClick={() => patch({ copies: Math.max(1, options.copies - 1) })} data-guide-anchor="labelPrintPreview.diminuirCopias" className={stepperBtnCls}><Minus size={12} /></button>
             <span className="text-xs font-black w-6 text-center">{options.copies}</span>
-            <button type="button" onClick={() => patch({ copies: Math.min(20, options.copies + 1) })} className={stepperBtnCls}><Plus size={12} /></button>
+            <button type="button" onClick={() => patch({ copies: Math.min(20, options.copies + 1) })} data-guide-anchor="labelPrintPreview.aumentarCopias" className={stepperBtnCls}><Plus size={12} /></button>
           </div>
         </div>
 
@@ -270,6 +273,7 @@ export default function LabelPrintPreviewModal({
                 key={p.value}
                 type="button"
                 onClick={() => patch({ paperType: p.value })}
+                data-guide-anchor="labelPrintPreview.selecionarTipoPapel"
                 className={`flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
                   options.paperType === p.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                 }`}
@@ -300,6 +304,7 @@ export default function LabelPrintPreviewModal({
             type="button"
             onClick={() => { onClose(); onBackToEdit(); }}
             disabled={printing}
+            data-guide-anchor="labelPrintPreview.voltarEdicao"
             className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
             <Pencil size={14} /> Voltar à edição
@@ -312,6 +317,7 @@ export default function LabelPrintPreviewModal({
               type="button"
               onClick={handleSaveGallery}
               disabled={savingGallery}
+              data-guide-anchor="labelPrintPreview.salvarGaleria"
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
             >
               <Download size={14} /> {savingGallery ? 'Salvando...' : 'Galeria'}
@@ -321,6 +327,7 @@ export default function LabelPrintPreviewModal({
             type="button"
             onClick={handleShareJpg}
             disabled={sharing}
+            data-guide-anchor="labelPrintPreview.compartilharJpg"
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
             <ImageIcon size={14} /> {sharing ? '...' : 'JPG'}
@@ -329,6 +336,7 @@ export default function LabelPrintPreviewModal({
             type="button"
             onClick={handleSharePdf}
             disabled={sharingPdf}
+            data-guide-anchor="labelPrintPreview.compartilharPdf"
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
             <FileText size={14} /> {sharingPdf ? '...' : 'PDF'}
@@ -339,6 +347,7 @@ export default function LabelPrintPreviewModal({
           type="button"
           onClick={handlePrint}
           disabled={printing || (isAblemarkPlatform() && !printerConnected)}
+          data-guide-anchor="labelPrintPreview.imprimir"
           className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
         >
           <Printer size={16} /> {printing ? 'Imprimindo...' : 'Imprimir agora'}

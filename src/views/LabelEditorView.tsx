@@ -717,11 +717,11 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   // ─── Blocos reutilizados na visão normal E na tela cheia ──────────────────────
   const zoomControls = (
     <div className="flex items-center justify-center gap-3">
-      <button type="button" onClick={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+      <button type="button" data-guide-anchor="labelEditor.zoom" onClick={() => setZoom(z => Math.max(0.5, +(z - 0.25).toFixed(2)))} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
         <ZoomOut size={14} />
       </button>
       <span className="text-[10px] font-black text-slate-400 w-10 text-center">{zoom.toFixed(2)}x</span>
-      <button type="button" onClick={() => setZoom(z => Math.min(3, +(z + 0.25).toFixed(2)))} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+      <button type="button" data-guide-anchor="labelEditor.zoom" onClick={() => setZoom(z => Math.min(3, +(z + 0.25).toFixed(2)))} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
         <ZoomIn size={14} />
       </button>
     </div>
@@ -734,6 +734,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
     <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
       <button
         type="button"
+        data-guide-anchor="labelEditor.camadasAccordion"
         onClick={() => setLayersAccordionOpen(v => !v)}
         className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
       >
@@ -754,6 +755,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           {selected && (
             <button
               type="button"
+              data-guide-anchor="labelEditor.desmarcar"
               onClick={e => { e.stopPropagation(); setSelectedId(null); }}
               title="Desmarcar seleção"
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-black/10 hover:bg-black/20"
@@ -773,6 +775,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               {[...elements].reverse().map(el => (
                 <div
                   key={el.id}
+                  data-guide-anchor="labelEditor.camadaSelecionar"
                   onClick={() => { setSelectedId(el.id); setTextTab('content'); }}
                   className={`flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${
                     selectedId === el.id ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
@@ -782,6 +785,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   <span className="flex-1 text-[10px] font-bold truncate">{elementLabel(el)}</span>
                   <button
                     type="button"
+                    data-guide-anchor="labelEditor.camadaOcultar"
                     onClick={e => { e.stopPropagation(); updateElement(el.id, { hidden: !el.hidden }); }}
                     title={el.hidden ? 'Mostrar' : 'Ocultar'}
                     className="p-1.5 rounded-lg bg-black/10 hover:bg-black/20"
@@ -790,6 +794,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   </button>
                   <button
                     type="button"
+                    data-guide-anchor="labelEditor.camadaTravar"
                     onClick={e => {
                       e.stopPropagation();
                       const anyLocked = isElementLocked(el);
@@ -843,6 +848,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               onPointerUp={canvasLocked ? undefined : endDrag}
               onPointerCancel={canvasLocked ? undefined : endDrag}
               onClick={() => setSelectedId(null)}
+              data-guide-anchor="labelEditor.canvas"
               className={`relative bg-white rounded-lg border-2 border-dashed border-slate-300 select-none shrink-0 ${canvasLocked ? '' : 'touch-none'}`}
               style={{ width: canvasWidthPx, height: canvasHeightPx, touchAction: canvasLocked ? 'pan-x pan-y' : 'none' }}
             >
@@ -851,6 +857,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   key={el.id}
                   onPointerDown={e => { if (!canvasLocked && !el.lockPosition) beginDrag(e, el.id, 'move'); }}
                   onClick={e => { e.stopPropagation(); if (!canvasLocked) { setSelectedId(el.id); setTextTab('content'); } }}
+                  data-guide-anchor="labelEditor.elementoCanvas"
                   className={`absolute flex items-center justify-center ${selectedId === el.id ? 'outline outline-2 outline-indigo-500' : ''}`}
                   style={{
                     left: el.x * pxPerMmX,
@@ -988,6 +995,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <button
             type="button"
             onClick={handleOpenPrintPreview}
+            data-guide-anchor="labelEditor.visualizarImpressao"
             title="Visualizar etiqueta de impressão"
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
@@ -1017,6 +1025,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   <button
                     key={tab}
                     type="button"
+                    data-guide-anchor="labelEditor.textoAba"
                     onClick={() => setTextTab(tab)}
                     className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
                       textTab === tab ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
@@ -1057,6 +1066,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                               <button
                                 key={field}
                                 type="button"
+                                data-guide-anchor="labelEditor.combinarCampos"
                                 onClick={() => {
                                   const current = selected.combineFields || ['reference'];
                                   const next = active ? current.filter(f => f !== field) : [...current, field];
@@ -1085,6 +1095,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                           {availableSectorNotes.length > 0 ? (
                             <button
                               type="button"
+                              data-guide-anchor="labelEditor.instrucaoAbrir"
                               onClick={() => setNotePickerOpen(true)}
                               className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-800'}`}
                             >
@@ -1125,12 +1136,13 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               {textTab === 'style' && (
                 <div className="flex flex-col gap-2">
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => updateElement(selected.id, { bold: !selected.bold })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.bold ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Bold size={14} /></button>
-                    <button type="button" onClick={() => updateElement(selected.id, { italic: !selected.italic })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.italic ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Italic size={14} /></button>
-                    <button type="button" onClick={() => updateElement(selected.id, { underline: !selected.underline })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.underline ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Underline size={14} /></button>
+                    <button type="button" data-guide-anchor="labelEditor.textoEstilo" onClick={() => updateElement(selected.id, { bold: !selected.bold })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.bold ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Bold size={14} /></button>
+                    <button type="button" data-guide-anchor="labelEditor.textoEstilo" onClick={() => updateElement(selected.id, { italic: !selected.italic })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.italic ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Italic size={14} /></button>
+                    <button type="button" data-guide-anchor="labelEditor.textoEstilo" onClick={() => updateElement(selected.id, { underline: !selected.underline })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.underline ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Underline size={14} /></button>
                     <button
                       type="button"
                       title="Inverter — texto branco em retângulo preto, igual sai na impressão"
+                      data-guide-anchor="labelEditor.textoInverter"
                       onClick={() => updateElement(selected.id, { invert: !selected.invert })}
                       className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.invert ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                     >
@@ -1138,9 +1150,9 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     </button>
                   </div>
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => updateElement(selected.id, { align: 'left' })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.align === 'left' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><AlignLeft size={14} /></button>
-                    <button type="button" onClick={() => updateElement(selected.id, { align: 'center' })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${(!selected.align || selected.align === 'center') ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><AlignCenter size={14} /></button>
-                    <button type="button" onClick={() => updateElement(selected.id, { align: 'right' })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.align === 'right' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><AlignRight size={14} /></button>
+                    <button type="button" data-guide-anchor="labelEditor.textoAlinhar" onClick={() => updateElement(selected.id, { align: 'left' })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.align === 'left' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><AlignLeft size={14} /></button>
+                    <button type="button" data-guide-anchor="labelEditor.textoAlinhar" onClick={() => updateElement(selected.id, { align: 'center' })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${(!selected.align || selected.align === 'center') ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><AlignCenter size={14} /></button>
+                    <button type="button" data-guide-anchor="labelEditor.textoAlinhar" onClick={() => updateElement(selected.id, { align: 'right' })} className={`flex-1 flex items-center justify-center py-2 rounded-lg ${selected.align === 'right' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><AlignRight size={14} /></button>
                   </div>
                 </div>
               )}
@@ -1154,6 +1166,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                         <button
                           key={f.value}
                           type="button"
+                          data-guide-anchor="labelEditor.fonteFamilia"
                           onClick={() => updateElement(selected.id, { fontFamily: f.value })}
                           style={{ fontFamily: f.css }}
                           className={`py-2 rounded-lg border text-[9px] font-black transition-all ${
@@ -1172,7 +1185,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                       <span>Tamanho</span><span className={selected.lockFontSize ? 'opacity-40' : ''}>{(selected.fontSize || 4).toFixed(1)}mm</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => updateElement(selected.id, { lockFontSize: !selected.lockFontSize })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockFontSize ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                      <button type="button" data-guide-anchor="labelEditor.travarFonte" onClick={() => updateElement(selected.id, { lockFontSize: !selected.lockFontSize })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockFontSize ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                         {selected.lockFontSize ? <Lock size={15} /> : <Unlock size={15} />}
                       </button>
                       <input type="range" min={2} max={20} step={0.5} value={selected.fontSize || 4} disabled={selected.lockFontSize} onChange={e => updateElement(selected.id, { fontSize: parseFloat(e.target.value) })} className="flex-1" />
@@ -1199,6 +1212,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <div className="flex gap-2">
               <button
                 type="button"
+                data-guide-anchor="labelEditor.imagemTonsCinza"
                 onClick={() => updateElement(selected.id, { grayscale: !selected.grayscale })}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${
                   selected.grayscale ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
@@ -1208,6 +1222,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               </button>
               <button
                 type="button"
+                data-guide-anchor="labelEditor.imagemRecortar"
                 onClick={handleOpenImageCrop}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
@@ -1230,6 +1245,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     <button
                       key={value}
                       type="button"
+                      data-guide-anchor="labelEditor.gradeEstilo"
                       onClick={() => updateElement(selected.id, { gradeSizeStyle: value })}
                       className={`flex-1 flex items-center justify-center py-1.5 rounded-md transition-all ring-2 ${active ? 'ring-indigo-500' : 'ring-transparent'}`}
                     >
@@ -1251,6 +1267,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <div className="flex gap-2">
             <button
               type="button"
+              data-guide-anchor="labelEditor.elementoVisivel"
               onClick={() => updateElement(selected.id, { hidden: !selected.hidden })}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${selected.hidden ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
             >
@@ -1258,6 +1275,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             </button>
             <button
               type="button"
+              data-guide-anchor="labelEditor.travarPosicao"
               onClick={() => updateElement(selected.id, { lockPosition: !selected.lockPosition })}
               title={selected.lockPosition ? 'Destravar posição' : 'Travar posição'}
               className={`p-2.5 rounded-lg shrink-0 ${selected.lockPosition ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
@@ -1270,6 +1288,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             {selected.type === 'text' && (
               <button
                 type="button"
+                data-guide-anchor="labelEditor.textoInverter"
                 onClick={() => updateElement(selected.id, { invert: !selected.invert })}
                 title={selected.invert ? 'Desativar inverter cor' : 'Inverter cor — texto branco em retângulo preto'}
                 className={`p-2.5 rounded-lg shrink-0 ${selected.invert ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
@@ -1279,6 +1298,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             )}
             <button
               type="button"
+              data-guide-anchor="labelEditor.telaCheia"
               onClick={() => setFullscreen(v => !v)}
               title={fullscreen ? 'Recolher tela cheia' : 'Expandir tela cheia'}
               className="px-3 py-2 rounded-lg bg-orange-500 text-white"
@@ -1293,6 +1313,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
             <button
               type="button"
+              data-guide-anchor="labelEditor.tamanhoAccordion"
               onClick={() => setSizeAccordionOpen(v => !v)}
               className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
             >
@@ -1311,7 +1332,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     <span>Largura</span><span className={selected.lockWidth ? 'opacity-40' : ''}>{selected.w.toFixed(1)}mm</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => updateElement(selected.id, { lockWidth: !selected.lockWidth })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockWidth ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                    <button type="button" data-guide-anchor="labelEditor.travarLargAlt" onClick={() => updateElement(selected.id, { lockWidth: !selected.lockWidth })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockWidth ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                       {selected.lockWidth ? <Lock size={15} /> : <Unlock size={15} />}
                     </button>
                     <input
@@ -1328,7 +1349,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     <span>Altura</span><span className={selected.lockHeight ? 'opacity-40' : ''}>{selected.h.toFixed(1)}mm</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => updateElement(selected.id, { lockHeight: !selected.lockHeight })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockHeight ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                    <button type="button" data-guide-anchor="labelEditor.travarLargAlt" onClick={() => updateElement(selected.id, { lockHeight: !selected.lockHeight })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockHeight ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                       {selected.lockHeight ? <Lock size={15} /> : <Unlock size={15} />}
                     </button>
                     <input
@@ -1347,7 +1368,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                       <span>Tamanho da fonte</span><span className={selected.lockFontSize ? 'opacity-40' : ''}>{(selected.fontSize || 3.5).toFixed(1)}mm</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => updateElement(selected.id, { lockFontSize: !selected.lockFontSize })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockFontSize ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                      <button type="button" data-guide-anchor="labelEditor.travarFonte" onClick={() => updateElement(selected.id, { lockFontSize: !selected.lockFontSize })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockFontSize ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                         {selected.lockFontSize ? <Lock size={15} /> : <Unlock size={15} />}
                       </button>
                       <input
@@ -1371,6 +1392,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
             <button
               type="button"
+              data-guide-anchor="labelEditor.anguloAccordion"
               onClick={() => setAngleAccordionOpen(v => !v)}
               className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
             >
@@ -1401,7 +1423,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   <span className="text-[10px] font-black text-slate-400 shrink-0">°</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => updateElement(selected.id, { lockRotation: !selected.lockRotation })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockRotation ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                  <button type="button" data-guide-anchor="labelEditor.travarAngulo" onClick={() => updateElement(selected.id, { lockRotation: !selected.lockRotation })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockRotation ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                     {selected.lockRotation ? <Lock size={15} /> : <Unlock size={15} />}
                   </button>
                   <input
@@ -1416,6 +1438,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   <button
                     type="button"
                     disabled={selected.lockRotation}
+                    data-guide-anchor="labelEditor.anguloPasso"
                     onClick={() => updateElement(selected.id, { rotation: wrapDeg(Math.round(selected.rotation) - rotationStep) })}
                     className={`p-2 rounded-lg ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                   >
@@ -1439,6 +1462,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   <button
                     type="button"
                     disabled={selected.lockRotation}
+                    data-guide-anchor="labelEditor.anguloPasso"
                     onClick={() => updateElement(selected.id, { rotation: wrapDeg(Math.round(selected.rotation) + rotationStep) })}
                     className={`p-2 rounded-lg ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                   >
@@ -1458,6 +1482,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
               <button
                 type="button"
+                data-guide-anchor="labelEditor.espessuraAccordion"
                 onClick={() => setThicknessAccordionOpen(v => !v)}
                 className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
               >
@@ -1475,6 +1500,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                 <div className="p-3 flex items-center gap-2">
                   <button
                     type="button"
+                    data-guide-anchor="labelEditor.espessuraAjustar"
                     onClick={() => {
                       if (selected.type === 'line') updateElement(selected.id, { h: Math.max(0.5, selected.h - 0.5) });
                       else updateElement(selected.id, { strokeWidth: Math.max(0.5, (selected.strokeWidth || 0.5) - 0.5) });
@@ -1488,6 +1514,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   </span>
                   <button
                     type="button"
+                    data-guide-anchor="labelEditor.espessuraAjustar"
                     onClick={() => {
                       if (selected.type === 'line') updateElement(selected.id, { h: selected.h + 0.5 });
                       else updateElement(selected.id, { strokeWidth: (selected.strokeWidth || 0.5) + 0.5 });
@@ -1508,6 +1535,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
               <button
                 type="button"
+                data-guide-anchor="labelEditor.cantoAccordion"
                 onClick={() => setCornerAccordionOpen(v => !v)}
                 className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
               >
@@ -1525,6 +1553,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                 <div className="p-3 flex items-center gap-2">
                   <button
                     type="button"
+                    data-guide-anchor="labelEditor.cantoAjustar"
                     onClick={() => {
                       const base = selected.type === 'text' ? (selected.borderRadius ?? Math.min(selected.h / 2, 1.2)) : (selected.borderRadius || 0);
                       updateElement(selected.id, { borderRadius: Math.max(0, base - 0.5) });
@@ -1538,6 +1567,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   </span>
                   <button
                     type="button"
+                    data-guide-anchor="labelEditor.cantoAjustar"
                     onClick={() => {
                       const base = selected.type === 'text' ? (selected.borderRadius ?? Math.min(selected.h / 2, 1.2)) : (selected.borderRadius || 0);
                       updateElement(selected.id, { borderRadius: base + 0.5 });
@@ -1552,10 +1582,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           )}
 
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={handleDuplicateSelected} className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500">
+            <button type="button" data-guide-anchor="labelEditor.duplicar" onClick={handleDuplicateSelected} className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500">
               <Copy size={13} /> Duplicar
             </button>
-            <button type="button" onClick={handleDeleteSelected} className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500">
+            <button type="button" data-guide-anchor="labelEditor.excluir" onClick={handleDeleteSelected} className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500">
               <Trash2 size={13} /> Excluir
             </button>
           </div>
@@ -1568,6 +1598,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
       <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
         <button
           type="button"
+          data-guide-anchor="labelEditor.ferramentasAccordion"
           onClick={() => setToolsAccordionOpen(v => !v)}
           className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
         >
@@ -1579,12 +1610,12 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         {toolsAccordionOpen && (
           <div className="p-3">
             <div className="grid grid-cols-3 gap-2">
-              <button type="button" onClick={handleAddText} className={btnCls()}><Type size={16} /> Texto</button>
-              <button type="button" onClick={() => setShowImageSourcePicker(true)} className={btnCls()}><ImagePlus size={16} /> Imagem</button>
-              <button type="button" onClick={() => setAddingQr(v => !v)} className={btnCls(addingQr)}><QrCode size={16} /> QR Code</button>
-              <button type="button" onClick={handleAddDate} className={btnCls()}><Calendar size={16} /> Data</button>
-              <button type="button" onClick={handleAddLine} className={btnCls()}><Minus size={16} /> Linha</button>
-              <button type="button" onClick={handleAddShape} className={btnCls()}><Square size={16} /> Forma</button>
+              <button type="button" data-guide-anchor="labelEditor.addElemento" onClick={handleAddText} className={btnCls()}><Type size={16} /> Texto</button>
+              <button type="button" data-guide-anchor="labelEditor.addElemento" onClick={() => setShowImageSourcePicker(true)} className={btnCls()}><ImagePlus size={16} /> Imagem</button>
+              <button type="button" data-guide-anchor="labelEditor.addElemento" onClick={() => setAddingQr(v => !v)} className={btnCls(addingQr)}><QrCode size={16} /> QR Code</button>
+              <button type="button" data-guide-anchor="labelEditor.addElemento" onClick={handleAddDate} className={btnCls()}><Calendar size={16} /> Data</button>
+              <button type="button" data-guide-anchor="labelEditor.addElemento" onClick={handleAddLine} className={btnCls()}><Minus size={16} /> Linha</button>
+              <button type="button" data-guide-anchor="labelEditor.addElemento" onClick={handleAddShape} className={btnCls()}><Square size={16} /> Forma</button>
             </div>
 
             {addingQr && (
@@ -1595,7 +1626,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   placeholder="Texto ou link do QR code"
                   className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900'}`}
                 />
-                <button type="button" onClick={handleConfirmQr} className="p-2 rounded-lg bg-indigo-600 text-white"><Check size={16} /></button>
+                <button type="button" data-guide-anchor="labelEditor.qrConfirmar" onClick={handleConfirmQr} className="p-2 rounded-lg bg-indigo-600 text-white"><Check size={16} /></button>
               </div>
             )}
 
@@ -1610,7 +1641,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                 </span>
                 <div className="grid grid-cols-3 gap-2">
                   {[...BOUND_FIELD_OPTIONS, ...(session.productionContext ? PRODUCTION_FIELD_OPTIONS : [])].map(({ binding, icon: Icon }) => (
-                    <button key={binding} type="button" onClick={() => handleAddBoundField(binding)} className={btnCls()}>
+                    <button key={binding} type="button" data-guide-anchor="labelEditor.addCampoVinculado" onClick={() => handleAddBoundField(binding)} className={btnCls()}>
                       <Icon size={16} /> {BINDING_LABELS[binding]}
                     </button>
                   ))}
@@ -1639,13 +1670,14 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         </label>
       )}
       <div className="flex gap-2">
-        <button type="button" onClick={() => handleSave()} disabled={saving} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+        <button type="button" data-guide-anchor="labelEditor.salvar" onClick={() => handleSave()} disabled={saving} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
           <Save size={14} /> {saving ? 'Salvando...' : 'Salvar'}
         </button>
         <button
           type="button"
           disabled={saving}
           title="Salvar como um novo perfil, sem mexer no que já estava salvo"
+          data-guide-anchor="labelEditor.salvarComo"
           onClick={() => setSaveAsNewModal({ open: true, name: session.fileId ? `${name} (cópia)` : name })}
           className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
         >
@@ -1657,6 +1689,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         <button
           type="button"
           disabled={savingGallery}
+          data-guide-anchor="labelEditor.salvarGaleria"
           onClick={async () => {
             setSavingGallery(true);
             try {
@@ -1679,6 +1712,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         <button
           type="button"
           onClick={handleOpenPrintPreview}
+          data-guide-anchor="labelEditor.imprimir"
           className="flex-[2] flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
         >
           <Printer size={14} /> Imprimir
@@ -1688,6 +1722,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         <button
           type="button"
           onClick={handleShareJpg}
+          data-guide-anchor="labelEditor.compartilharJpg"
           disabled={sharingJpg}
           className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
         >
@@ -1696,6 +1731,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         <button
           type="button"
           onClick={handleSharePdf}
+          data-guide-anchor="labelEditor.compartilharPdf"
           disabled={sharingPdf}
           className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
         >
@@ -1737,6 +1773,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <button
               type="button"
               onClick={() => setShowLayers(v => !v)}
+              data-guide-anchor="labelEditor.camadasBotao"
               title="Camadas"
               className={`px-3 rounded-xl shrink-0 ${showLayers ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-300 border border-slate-800' : 'bg-white text-slate-600 border border-slate-100 shadow-sm'}`}
             >
@@ -1745,6 +1782,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <button
               type="button"
               onClick={handleRotateCanvas}
+              data-guide-anchor="labelEditor.girarCanvas"
               title={`Girar área da etiqueta (Paisagem ↔ Retrato) — hoje ${widthMm > heightMm ? 'Paisagem' : 'Retrato'}`}
               className="px-3 rounded-xl shrink-0 bg-purple-800 text-white"
             >
@@ -1792,6 +1830,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <button
             type="button"
             disabled={!saveAsNewModal.name.trim() || saving}
+            data-guide-anchor="labelEditor.salvarComoConfirmar"
             onClick={handleConfirmSaveAsNew}
             className="py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest disabled:opacity-40 flex items-center justify-center gap-1.5"
           >
@@ -1813,6 +1852,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <div className="flex flex-col gap-2">
             <button
               type="button"
+              data-guide-anchor="labelEditor.instrucaoEscolher"
               onClick={() => { updateElement(selected.id, { sectorNoteFilter: undefined }); setNotePickerOpen(false); }}
               className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
                 !selected.sectorNoteFilter
@@ -1832,6 +1872,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                 <button
                   key={`${n.sectorId}::${n.noteName}`}
                   type="button"
+                  data-guide-anchor="labelEditor.instrucaoEscolher"
                   onClick={() => { updateElement(selected.id, { sectorNoteFilter: { sectorId: n.sectorId, noteName: n.noteName } }); setNotePickerOpen(false); }}
                   className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
                     isSel ? 'border-indigo-500 bg-indigo-500/10' : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
@@ -1861,6 +1902,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <div className="flex gap-1.5">
               <button
                 type="button"
+                data-guide-anchor="labelEditor.cropPreset"
                 onClick={() => setImageCropRect(FULL_CROP)}
                 className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${cropEquals(imageCropRect, FULL_CROP) ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
@@ -1868,6 +1910,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               </button>
               <button
                 type="button"
+                data-guide-anchor="labelEditor.cropPreset"
                 onClick={() => setImageCropRect(CENTER_CROP)}
                 className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${cropEquals(imageCropRect, CENTER_CROP) ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
@@ -1877,6 +1920,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             <button
               type="button"
               onClick={handleApplyImageCrop}
+              data-guide-anchor="labelEditor.cropAplicar"
               disabled={croppingImage}
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
             >

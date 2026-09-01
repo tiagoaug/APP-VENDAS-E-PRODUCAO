@@ -150,6 +150,7 @@ const StockDiagnosticsModal: React.FC<{
                   setFixingAlloc(false);
                 }
               }}
+              data-guide-anchor="stockDiag.corrigirAlocacoes"
               className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
               title="Corrigir alocações de embalagem inconsistentes"
               aria-label="Corrigir inconsistências nas alocações de embalagem"
@@ -178,6 +179,7 @@ const StockDiagnosticsModal: React.FC<{
             <button
               type="button"
               onClick={() => setShowReconcileModal(true)}
+              data-guide-anchor="stockDiag.reconciliarSeparacoesAbrir"
               className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
               title="Reconciliar Separações"
               aria-label="Corrigir estoque de separações pendentes de reconciliação"
@@ -204,6 +206,7 @@ const StockDiagnosticsModal: React.FC<{
           <button
             type="button"
             onClick={() => setShowStockDiagnosticModal(true)}
+            data-guide-anchor="stockDiag.duplicadoAbrir"
             className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
             title="Diagnóstico de Estoque Duplicado"
             aria-label="Ver diagnóstico de estoque duplicado"
@@ -241,6 +244,7 @@ const StockDiagnosticsModal: React.FC<{
                   setFixingFinalizedKeys(false);
                 }
               }}
+              data-guide-anchor="stockDiag.repararFinalizados"
               className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
               title="Reparar Finalizados"
               aria-label="Corrigir marcações de finalizado órfãs"
@@ -272,6 +276,7 @@ const StockDiagnosticsModal: React.FC<{
             <button
               type="button"
               onClick={() => setShowUndercreditModal(true)}
+              data-guide-anchor="stockDiag.naoCreditadoAbrir"
               className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
               title="Estoque Não Creditado"
               aria-label="Ver produção que nunca somou no contador de estoque"
@@ -299,6 +304,7 @@ const StockDiagnosticsModal: React.FC<{
             <button
               type="button"
               onClick={() => setShowOrphanedModal(true)}
+              data-guide-anchor="stockDiag.reservasOrfasAbrir"
               className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
               title="Reservas Órfãs"
               aria-label="Ver caixas reservadas presas em vendas que não as referenciam mais"
@@ -349,6 +355,7 @@ const StockDiagnosticsModal: React.FC<{
             <button
               type="button"
               onClick={() => setShowFixAllocModal(false)}
+              data-guide-anchor="stockDiag.fecharResultado"
               className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
             >
               Fechar
@@ -394,6 +401,7 @@ const StockDiagnosticsModal: React.FC<{
                 <button
                   type="button"
                   onClick={() => onReconcileSeparationGroup?.(g)}
+                  data-guide-anchor="stockDiag.reconciliarCorrigir"
                   className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
                 >
                   <Wrench size={12} strokeWidth={3} /> Corrigir Agora
@@ -423,6 +431,7 @@ const StockDiagnosticsModal: React.FC<{
                 type="button"
                 disabled={trimmingAllUndercredit}
                 onClick={handleTrimAllUndercreditExcess}
+                data-guide-anchor="stockDiag.naoCreditadoDescontarTodos"
                 title="O estoque do produto já está certo — desconta o excesso direto dos StockLots mais antigos (apaga/encolhe eles). Não altera o contador de estoque. Vale pra todo mundo, não só neste aparelho."
                 className={`self-center flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-4 py-2.5 rounded-full transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
               >
@@ -432,6 +441,7 @@ const StockDiagnosticsModal: React.FC<{
             <button
               type="button"
               onClick={dismissAllUndercreditGroups}
+              data-guide-anchor="stockDiag.naoCreditadoMarcarTodos"
               title="Só esconde a lista neste aparelho — não corrige o dado no servidor, então outro colaborador ainda vai ver a pendência. Use só se 'Descontar dos Lotes' não estiver disponível."
               className={`self-center text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
             >
@@ -461,6 +471,7 @@ const StockDiagnosticsModal: React.FC<{
                       setFixingUndercreditKey(prev => prev === g.key ? null : prev);
                     }
                   }}
+                  data-guide-anchor="stockDiag.naoCreditadoCorrigir"
                   className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
                 >
                   <Wrench size={12} strokeWidth={3} /> {fixingUndercreditKey === g.key ? 'Corrigindo...' : 'Corrigir Agora'}
@@ -477,6 +488,7 @@ const StockDiagnosticsModal: React.FC<{
                         setTrimmingUndercreditKey(prev => prev === g.key ? null : prev);
                       }
                     }}
+                    data-guide-anchor="stockDiag.naoCreditadoDescontarUm"
                     title="O estoque deste produto já está certo — desconta o excesso direto do(s) StockLot(s) mais antigo(s), sem alterar o contador de estoque"
                     className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
                   >
@@ -486,6 +498,7 @@ const StockDiagnosticsModal: React.FC<{
                 <button
                   type="button"
                   onClick={() => dismissUndercreditGroup(g)}
+                  data-guide-anchor="stockDiag.naoCreditadoMarcarUm"
                   title="Só esconde este item neste aparelho — não corrige o dado no servidor"
                   className={`self-center text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
                 >
@@ -542,6 +555,7 @@ const StockDiagnosticsModal: React.FC<{
                       setFixingOrphanedKey(prev => prev === entry.key ? null : prev);
                     }
                   }}
+                  data-guide-anchor="stockDiag.orfaCorrigir"
                   className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
                 >
                   <Wrench size={12} strokeWidth={3} /> {fixingOrphanedKey === entry.key ? 'Corrigindo...' : 'Corrigir Agora'}
@@ -549,6 +563,7 @@ const StockDiagnosticsModal: React.FC<{
                 <button
                   type="button"
                   onClick={() => dismissOrphanedLot(entry)}
+                  data-guide-anchor="stockDiag.orfaMarcar"
                   title="Já corrigi isso por fora (recontagem física + Balanço) — não mexe em estoque, só some daqui"
                   className={`self-center text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
                 >

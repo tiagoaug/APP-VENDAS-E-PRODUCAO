@@ -197,7 +197,7 @@ export default function PackagingBuilderModal({
               </p>
             </div>
           </div>
-          <button type="button" onClick={onClose} title="Fechar" aria-label="Fechar" className={`w-8 h-8 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+          <button type="button" onClick={onClose} data-guide-anchor="pkgBuilder.fechar" title="Fechar" aria-label="Fechar" className={`w-8 h-8 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
             <X size={16} />
           </button>
         </div>
@@ -373,6 +373,7 @@ export default function PackagingBuilderModal({
                       <button
                         type="button"
                         onClick={() => setGradesToAbate(g => Math.max(0, g - 1))}
+                        data-guide-anchor="pkgBuilder.gradesStepper"
                         className={`w-9 h-9 rounded-xl font-black text-lg flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}
                         aria-label="Diminuir grades"
                       >−</button>
@@ -389,6 +390,7 @@ export default function PackagingBuilderModal({
                       <button
                         type="button"
                         onClick={() => setGradesToAbate(g => Math.min(maxGradesToAbate, g + 1))}
+                        data-guide-anchor="pkgBuilder.gradesStepper"
                         className={`w-9 h-9 rounded-xl font-black text-lg flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}
                         aria-label="Aumentar grades"
                       >+</button>
@@ -458,6 +460,7 @@ export default function PackagingBuilderModal({
               if (!canConfirm) return;
               onConfirm({ pkgId: selectedPkgId, breakdown, fromStock: fromStockEffective });
             }}
+            data-guide-anchor="pkgBuilder.confirmar"
             disabled={!canConfirm}
             className={`w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
               canConfirm

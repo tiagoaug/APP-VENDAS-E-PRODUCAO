@@ -1081,7 +1081,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
               <p className={`text-sm font-bold truncate ${dk ? 'text-white' : 'text-slate-800'}`}>{labelProduct.name}</p>
               <p className="text-xs text-slate-400">{labelProduct.variations.length} variação(ões)</p>
             </div>
-            <button aria-label="Remover produto selecionado" type="button" onClick={() => setLabelProductId('')} className="text-slate-400 p-1"><X size={16}/></button>
+            <button aria-label="Remover produto selecionado" type="button" data-guide-anchor="printCenter.produtoRemover" onClick={() => setLabelProductId('')} className="text-slate-400 p-1"><X size={16}/></button>
           </div>
         )}
 
@@ -1093,6 +1093,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           <div className={`flex flex-col divide-y ${dk ? 'divide-slate-800' : 'divide-slate-50'}`}>
             {products.map(p => (
               <button key={p.id} type="button"
+                data-guide-anchor="printCenter.produtoEscolher"
                 onClick={() => setLabelProductId(p.id)}
                 className={`flex items-center gap-3 p-4 text-left transition-all ${labelProductId === p.id ? dk ? 'bg-pink-900/20' : 'bg-pink-50' : dk ? 'bg-slate-900 hover:bg-slate-800' : 'bg-white hover:bg-slate-50'}`}>
                 {p.photoUrl
@@ -1118,7 +1119,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
       const sel = selOS.has(os.id);
       const sector = sectors.find(s => s.id === os.sectorId);
       return (
-        <button key={os.id} type="button" onClick={() => setSelOS(toggle(selOS, os.id))}
+        <button key={os.id} type="button" data-guide-anchor="printCenter.itemSelecionar" onClick={() => setSelOS(toggle(selOS, os.id))}
           className={`w-full flex items-center gap-3 p-4 text-left rounded-2xl border-2 transition-all ${sel ? 'border-rose-400 bg-rose-50 dark:bg-rose-900/20' : dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
           <div className={`w-5 h-5 rounded-lg border-2 shrink-0 flex items-center justify-center ${sel ? 'bg-rose-500 border-rose-500 text-white' : dk ? 'border-slate-600' : 'border-slate-300'}`}>
             {sel && <Check size={10} strokeWidth={3}/>}
@@ -1142,7 +1143,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
       const variation = product?.variations.find(v => v.id === lot.variationId);
       const curSector = sectors.find(s => s.id === lot.route?.[lot.currentSectorIndex]);
       return (
-        <button key={lot.id} type="button" onClick={() => setSelLots(toggle(selLots, lot.id))}
+        <button key={lot.id} type="button" data-guide-anchor="printCenter.itemSelecionar" onClick={() => setSelLots(toggle(selLots, lot.id))}
           className={`w-full flex items-center gap-3 p-4 text-left rounded-2xl border-2 transition-all ${sel ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/20' : dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
           <div className={`w-5 h-5 rounded-lg border-2 shrink-0 flex items-center justify-center ${sel ? 'bg-violet-600 border-violet-600 text-white' : dk ? 'border-slate-600' : 'border-slate-300'}`}>
             {sel && <Check size={10} strokeWidth={3}/>}
@@ -1179,7 +1180,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
       const customer = people.find(p => p.id === sale.customerId);
       const stColor = sale.status === SaleStatus.QUOTE ? 'bg-amber-50 text-amber-600' : sale.status === SaleStatus.SALE ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500';
       return (
-        <button key={sale.id} type="button" onClick={() => setSelSales(toggle(selSales, sale.id))}
+        <button key={sale.id} type="button" data-guide-anchor="printCenter.itemSelecionar" onClick={() => setSelSales(toggle(selSales, sale.id))}
           className={`w-full flex items-center gap-3 p-4 text-left rounded-2xl border-2 transition-all ${sel ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20' : dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
           <div className={`w-5 h-5 rounded-lg border-2 shrink-0 flex items-center justify-center ${sel ? 'bg-indigo-600 border-indigo-600 text-white' : dk ? 'border-slate-600' : 'border-slate-300'}`}>
             {sel && <Check size={10} strokeWidth={3}/>}
@@ -1201,7 +1202,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
       const sel = selPurchases.has(purchase.id);
       const supplier = people.find(p => p.id === purchase.supplierId);
       return (
-        <button key={purchase.id} type="button" onClick={() => setSelPurchases(toggle(selPurchases, purchase.id))}
+        <button key={purchase.id} type="button" data-guide-anchor="printCenter.itemSelecionar" onClick={() => setSelPurchases(toggle(selPurchases, purchase.id))}
           className={`w-full flex items-center gap-3 p-4 text-left rounded-2xl border-2 transition-all ${sel ? 'border-teal-400 bg-teal-50 dark:bg-teal-900/20' : dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
           <div className={`w-5 h-5 rounded-lg border-2 shrink-0 flex items-center justify-center ${sel ? 'bg-teal-600 border-teal-600 text-white' : dk ? 'border-slate-600' : 'border-slate-300'}`}>
             {sel && <Check size={10} strokeWidth={3}/>}
@@ -1222,7 +1223,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
     return filteredProducts.map(product => {
       const sel = selProducts.has(product.id);
       return (
-        <button key={product.id} type="button" onClick={() => setSelProducts(toggle(selProducts, product.id))}
+        <button key={product.id} type="button" data-guide-anchor="printCenter.itemSelecionar" onClick={() => setSelProducts(toggle(selProducts, product.id))}
           className={`w-full flex items-center gap-3 p-4 text-left rounded-2xl border-2 transition-all ${sel ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
           <div className={`w-5 h-5 rounded-lg border-2 shrink-0 flex items-center justify-center ${sel ? 'bg-amber-500 border-amber-500 text-white' : dk ? 'border-slate-600' : 'border-slate-300'}`}>
             {sel && <Check size={10} strokeWidth={3}/>}
@@ -1243,19 +1244,19 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
 
   const filterBtns = () => {
     if (activeSection === 'os') return [['all','Todos'],['open','Em aberto'],['done','Concluídas']].map(([v,l]) => (
-      <button key={v} type="button" onClick={()=>setOsFilter(v as any)}
+      <button key={v} type="button" data-guide-anchor="printCenter.filtro" onClick={()=>setOsFilter(v as any)}
         className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${osFilter===v?'bg-rose-600 text-white':'text-slate-400'}`}>{l}</button>
     ));
     if (activeSection === 'lots') return [['all','Todos'],['active','Em prod.'],['done','Finalizados']].map(([v,l]) => (
-      <button key={v} type="button" onClick={()=>setLotFilter(v as any)}
+      <button key={v} type="button" data-guide-anchor="printCenter.filtro" onClick={()=>setLotFilter(v as any)}
         className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${lotFilter===v?'bg-violet-600 text-white':'text-slate-400'}`}>{l}</button>
     ));
     if (activeSection === 'sales') return [['all','Todos'],['quote','Orçamentos'],['sale','Vendas'],['cancelled','Cancelados']].map(([v,l]) => (
-      <button key={v} type="button" onClick={()=>setSaleFilter(v as any)}
+      <button key={v} type="button" data-guide-anchor="printCenter.filtro" onClick={()=>setSaleFilter(v as any)}
         className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${saleFilter===v?'bg-indigo-600 text-white':'text-slate-400'}`}>{l}</button>
     ));
     if (activeSection === 'purchases') return [['all','Todos'],['replenishment','Reposição'],['general','Geral']].map(([v,l]) => (
-      <button key={v} type="button" onClick={()=>setPurchaseFilter(v as any)}
+      <button key={v} type="button" data-guide-anchor="printCenter.filtro" onClick={()=>setPurchaseFilter(v as any)}
         className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${purchaseFilter===v?'bg-teal-600 text-white':'text-slate-400'}`}>{l}</button>
     ));
     return null;
@@ -1270,7 +1271,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <span className={`text-[10px] font-black uppercase tracking-widest ${sec.accent}`}>Editor — {sec.label}</span>
-        <button type="button" onClick={handleReset} className="flex items-center gap-1 text-[9px] font-black text-indigo-500 px-2 py-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+        <button type="button" data-guide-anchor="printCenter.resetarLayout" onClick={handleReset} className="flex items-center gap-1 text-[9px] font-black text-indigo-500 px-2 py-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
           <RotateCcw size={9}/> Resetar
         </button>
       </div>
@@ -1283,7 +1284,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             {PAPER_PRESETS.map(p => {
               const active = layout.paper[0] === p.dims[0] && layout.paper[1] === p.dims[1];
               return (
-                <button key={p.key} type="button" onClick={() => changePaper(p)}
+                <button key={p.key} type="button" data-guide-anchor="printCenter.papelTamanho" onClick={() => changePaper(p)}
                   className={`px-3 py-1.5 rounded-xl border-2 text-[9px] font-black tracking-tight transition-all flex items-center gap-1 ${active ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
                   {p.label}
                   {p.thermal && <span className="text-[7px] text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1 py-0.5 rounded-full">térmica</span>}
@@ -1295,7 +1296,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           <div className="flex items-center gap-2 mt-2">
             <span className="text-[8px] font-black text-slate-400 uppercase">Atual:</span>
             <span className="text-[9px] font-black text-indigo-600">{W}×{H} mm • {layout.orientation === 'portrait' ? 'Retrato' : 'Paisagem'}</span>
-            <button type="button" onClick={() => {
+            <button type="button" data-guide-anchor="printCenter.girarPapel" onClick={() => {
               saveLayout(activeSection, { ...layout, orientation: layout.orientation === 'portrait' ? 'landscape' : 'portrait', paper: [layout.paper[1], layout.paper[0]] as [number,number] });
               setSelectedElem(null);
             }} className="ml-auto text-[8px] font-black text-indigo-500 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-900/30 hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
@@ -1315,13 +1316,13 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           <div style={{ display:'flex' }}>
             <Ruler axis="v" totalMm={H} scale={scale} isDark={dk}/>
             {/* Edit canvas */}
-            <div style={{ position:'relative', width: W*scale, height: H*scale, backgroundColor:'#fff', flexShrink:0 }} onClick={()=>setSelectedElem(null)}>
+            <div data-guide-anchor="printCenter.canvas" style={{ position:'relative', width: W*scale, height: H*scale, backgroundColor:'#fff', flexShrink:0 }} onClick={()=>setSelectedElem(null)}>
               {elemKeys.map(key => {
                 const el = layout.elems[key];
                 if (!el.visible) return null;
                 const isSel = selectedElem === key;
                 return (
-                  <div key={key} onClick={e=>{e.stopPropagation();setSelectedElem(key);}}
+                  <div key={key} data-guide-anchor="printCenter.elementoCanvas" onClick={e=>{e.stopPropagation();setSelectedElem(key);}}
                     style={{ position:'absolute', left:el.x*scale, top:el.y*scale, width:el.w*scale, height:el.h*scale,
                       backgroundColor:el.color+'22', border:`${isSel?2:1}px ${isSel?'solid':'dashed'} ${el.color}`,
                       boxSizing:'border-box', cursor:'pointer', zIndex:isSel?10:1,
@@ -1340,12 +1341,12 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
         {elemKeys.map(key => {
           const el = layout.elems[key]; const isSel = selectedElem === key;
           return (
-            <button key={key} type="button" onClick={()=>setSelectedElem(isSel?null:key)}
+            <button key={key} type="button" data-guide-anchor="printCenter.elementoChip" onClick={()=>setSelectedElem(isSel?null:key)}
               className={`flex items-center gap-1.5 pl-2 pr-1 py-1.5 rounded-xl border-2 text-[9px] font-black uppercase tracking-tight transition-all ${isSel?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}
               style={isSel?{}:{borderColor:el.color+'70'}}>
               <div className="w-2 h-2 rounded-full shrink-0" style={{backgroundColor:el.color}}/>
               {el.label}
-              <button type="button" aria-label={el.visible?'Ocultar':'Mostrar'} onClick={e=>{e.stopPropagation();updateElem(key,{visible:!el.visible});}}
+              <button type="button" aria-label={el.visible?'Ocultar':'Mostrar'} data-guide-anchor="printCenter.elementoVisivel" onClick={e=>{e.stopPropagation();updateElem(key,{visible:!el.visible});}}
                 className="ml-1 p-0.5 rounded opacity-60 hover:opacity-100">
                 {el.visible?<Eye size={9}/>:<EyeOff size={9}/>}
               </button>
@@ -1362,7 +1363,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             <div className="flex items-center gap-1">
               <span className="text-[9px] font-black text-slate-400 mr-1">Passo:</span>
               {STEPS.map(s=>(
-                <button key={s} type="button" onClick={()=>setStep(s)}
+                <button key={s} type="button" data-guide-anchor="printCenter.passo" onClick={()=>setStep(s)}
                   className={`px-2 py-0.5 rounded-lg border text-[9px] font-black transition-all ${step===s?'border-indigo-500 bg-indigo-50 text-indigo-600':'border-slate-200 dark:border-slate-700 text-slate-400'}`}>
                   {s}
                 </button>
@@ -1383,19 +1384,19 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           {/* D-pad + resize */}
           <div className="flex gap-4 items-center justify-center">
             <div className="grid grid-cols-3 gap-1.5">
-              <div/><button aria-label="Mover para cima" type="button" onClick={()=>moveElem(selectedElem,0,-step)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronUp size={18}/></button><div/>
-              <button aria-label="Mover para esquerda" type="button" onClick={()=>moveElem(selectedElem,-step,0)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronLeft size={18}/></button>
+              <div/><button aria-label="Mover para cima" type="button" data-guide-anchor="printCenter.mover" onClick={()=>moveElem(selectedElem,0,-step)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronUp size={18}/></button><div/>
+              <button aria-label="Mover para esquerda" type="button" data-guide-anchor="printCenter.mover" onClick={()=>moveElem(selectedElem,-step,0)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronLeft size={18}/></button>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${dk?'bg-slate-800':'bg-slate-200'}`}><div className="w-2.5 h-2.5 rounded-full bg-indigo-400"/></div>
-              <button aria-label="Mover para direita" type="button" onClick={()=>moveElem(selectedElem,step,0)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronRight size={18}/></button>
-              <div/><button aria-label="Mover para baixo" type="button" onClick={()=>moveElem(selectedElem,0,step)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronDown size={18}/></button><div/>
+              <button aria-label="Mover para direita" type="button" data-guide-anchor="printCenter.mover" onClick={()=>moveElem(selectedElem,step,0)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronRight size={18}/></button>
+              <div/><button aria-label="Mover para baixo" type="button" data-guide-anchor="printCenter.mover" onClick={()=>moveElem(selectedElem,0,step)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center active:scale-90"><ChevronDown size={18}/></button><div/>
             </div>
             <div className="flex flex-col gap-2">
               {([['Largura',selElem.w,(d:number)=>resizeElem(selectedElem,d,0)],['Altura',selElem.h,(d:number)=>resizeElem(selectedElem,0,d)]] as const).map(([lbl,val,fn])=>(
                 <div key={lbl} className="flex items-center gap-1.5">
                   <span className="text-[8px] font-black text-slate-400 w-11 uppercase">{lbl}</span>
-                  <button aria-label={`Diminuir ${lbl}`} type="button" onClick={()=>fn(-step)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={11}/></button>
+                  <button aria-label={`Diminuir ${lbl}`} type="button" data-guide-anchor="printCenter.redimensionar" onClick={()=>fn(-step)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={11}/></button>
                   <span className={`w-12 text-center text-[9px] font-black ${dk?'text-slate-200':'text-slate-700'}`}>{(val as number).toFixed(1)}</span>
-                  <button aria-label={`Aumentar ${lbl}`} type="button" onClick={()=>fn(step)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={11}/></button>
+                  <button aria-label={`Aumentar ${lbl}`} type="button" data-guide-anchor="printCenter.redimensionar" onClick={()=>fn(step)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={11}/></button>
                 </div>
               ))}
             </div>
@@ -1408,7 +1409,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
               <span className="text-[8px] font-black text-slate-400 w-10 uppercase shrink-0">Fonte</span>
               <div className="flex gap-1.5 flex-1">
                 {(['helvetica','times','courier'] as FontFamily[]).map(f=>(
-                  <button key={f} type="button" onClick={()=>updateElem(selectedElem,{fontFamily:f})}
+                  <button key={f} type="button" data-guide-anchor="printCenter.fonteFamilia" onClick={()=>updateElem(selectedElem,{fontFamily:f})}
                     className={`flex-1 py-1.5 rounded-xl border text-[9px] font-black transition-all ${(selElem.fontFamily===f||(!selElem.fontFamily&&f==='helvetica'))?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600':'border-slate-200 dark:border-slate-700 text-slate-400'}`}
                     style={{fontFamily:f==='helvetica'?'Arial':f==='times'?'Georgia':'monospace'}}>
                     {f==='helvetica'?'Sans':f==='times'?'Serif':'Mono'}
@@ -1418,10 +1419,10 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[8px] font-black text-slate-400 w-10 uppercase shrink-0">Tam.</span>
-              <button aria-label="Diminuir fonte" type="button" onClick={()=>updateElem(selectedElem,{fontSize:Math.max(3,(selElem.fontSize||8)-0.5)})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={11}/></button>
+              <button aria-label="Diminuir fonte" type="button" data-guide-anchor="printCenter.fonteTamanho" onClick={()=>updateElem(selectedElem,{fontSize:Math.max(3,(selElem.fontSize||8)-0.5)})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={11}/></button>
               <span className={`w-12 text-center text-[9px] font-black ${dk?'text-slate-200':'text-slate-700'}`}>{(selElem.fontSize||8).toFixed(1)} pt</span>
-              <button aria-label="Aumentar fonte" type="button" onClick={()=>updateElem(selectedElem,{fontSize:(selElem.fontSize||8)+0.5})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={11}/></button>
-              <button aria-label="Negrito" type="button" onClick={()=>updateElem(selectedElem,{bold:!selElem.bold})}
+              <button aria-label="Aumentar fonte" type="button" data-guide-anchor="printCenter.fonteTamanho" onClick={()=>updateElem(selectedElem,{fontSize:(selElem.fontSize||8)+0.5})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={11}/></button>
+              <button aria-label="Negrito" type="button" data-guide-anchor="printCenter.fonteNegrito" onClick={()=>updateElem(selectedElem,{bold:!selElem.bold})}
                 className={`w-9 h-7 rounded-xl border text-[11px] font-black transition-all ml-1 ${selElem.bold?'border-indigo-500 bg-indigo-600 text-white':'border-slate-200 dark:border-slate-700 text-slate-400'}`}>B</button>
             </div>
           </div>
@@ -1439,6 +1440,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
         <div className="grid grid-cols-3 gap-1.5 mb-3">
           {visibleSections.map(s => (
             <button key={s.id} type="button"
+              data-guide-anchor="printCenter.abaSecao"
               onClick={() => { setActiveSection(s.id); setSearch(''); setSelectedElem(null); if(view==='editor') setView('list'); }}
               className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-2xl border-2 font-black text-[9px] uppercase tracking-widest transition-all ${
                 activeSection === s.id
@@ -1455,7 +1457,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
         {activeSection !== 'labels' && (
           <div className={`flex p-1 rounded-2xl gap-1 mb-3 ${dk?'bg-slate-800':'bg-slate-100'}`}>
             {([['list','Lista',<FileText size={11}/>],['editor','Ajustar Impressão',<Settings2 size={11}/>]] as const).map(([v,l,icon])=>(
-              <button key={v} type="button" onClick={()=>{setView(v as any);setSelectedElem(null);}}
+              <button key={v} type="button" data-guide-anchor="printCenter.abaLista" onClick={()=>{setView(v as any);setSelectedElem(null);}}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${view===v?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
                 {icon}{l}
               </button>
@@ -1478,7 +1480,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
               <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Buscar em ${sec.label}…`}
                 className={`w-full py-2.5 pl-9 pr-8 rounded-2xl border text-sm outline-none ${dk?'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500':'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400'}`}/>
-              {search && <button aria-label="Limpar busca" type="button" onClick={()=>setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"><X size={13}/></button>}
+              {search && <button aria-label="Limpar busca" type="button" data-guide-anchor="printCenter.limparBusca" onClick={()=>setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"><X size={13}/></button>}
             </div>
             <div className={`flex gap-0.5 p-1 rounded-2xl ${dk?'bg-slate-800':'bg-slate-100'}`}>
               {filterBtns()}
@@ -1488,10 +1490,10 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           {/* Select all / count toolbar */}
           <div className={`px-4 py-2 flex items-center justify-between border-b ${dk?'border-slate-800':'border-slate-100'}`}>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={selectAll} className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border ${sec.accent} ${dk?'border-slate-700':'border-slate-200'}`}>Todos</button>
-              {cnt > 0 && <button type="button" onClick={clearSel} className="text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border text-slate-400 border-slate-200 dark:border-slate-700">Limpar</button>}
+              <button type="button" data-guide-anchor="printCenter.selecionarTodos" onClick={selectAll} className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border ${sec.accent} ${dk?'border-slate-700':'border-slate-200'}`}>Todos</button>
+              {cnt > 0 && <button type="button" data-guide-anchor="printCenter.limparSelecao" onClick={clearSel} className="text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border text-slate-400 border-slate-200 dark:border-slate-700">Limpar</button>}
               {cnt > 0 && onDeleteItems && (
-                <button type="button" onClick={() => {
+                <button type="button" data-guide-anchor="printCenter.apagarSelecionados" onClick={() => {
                   if (confirm(`Deseja apagar ${cnt} item(ns) selecionado(s)?`)) {
                     let ids: string[] = [];
                     if (activeSection === 'os') ids = Array.from(selOS);
@@ -1529,7 +1531,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
 
       {/* ── Print bar — always visible at bottom ── */}
       <div className={`px-4 py-4 border-t shrink-0 ${dk?'border-slate-800 bg-slate-900':'border-slate-100 bg-white'}`}>
-        <button type="button" onClick={handlePrint} disabled={printing || cnt === 0}
+        <button type="button" data-guide-anchor="printCenter.exportarBarra" onClick={handlePrint} disabled={printing || cnt === 0}
           className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg active:scale-95 disabled:opacity-40 ${cnt>0?'bg-indigo-600 text-white shadow-indigo-500/20':dk?'bg-slate-800 text-slate-500':'bg-slate-100 text-slate-400'}`}>
           <Printer size={18}/>
           {printing ? 'Exportando…'
@@ -1548,11 +1550,11 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
                 <h3 className={`text-base font-black uppercase tracking-tight ${dk?'text-white':'text-slate-900'}`}>Exportar</h3>
                 <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${sec.accent}`}>{cnt} {sec.label} selecionado(s)</p>
               </div>
-              <button type="button" title="Fechar" aria-label="Fechar modal de exportação" onClick={() => setShowExportModal(false)} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><X size={18}/></button>
+              <button type="button" title="Fechar" aria-label="Fechar modal de exportação" data-guide-anchor="printCenter.exportarFechar" onClick={() => setShowExportModal(false)} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><X size={18}/></button>
             </div>
 
             {/* PDF */}
-            <button type="button" onClick={() => doExport('pdf')}
+            <button type="button" data-guide-anchor="printCenter.exportarFormato" onClick={() => doExport('pdf')}
               className={`flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-95 ${dk?'border-indigo-700/50 bg-indigo-900/20 hover:bg-indigo-900/40':'border-indigo-100 bg-indigo-50 hover:bg-indigo-100'}`}>
               <div className="w-11 h-11 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
                 <FileText size={20} className="text-white"/>
@@ -1564,7 +1566,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             </button>
 
             {/* JPG */}
-            <button type="button" onClick={() => doExport('jpg')}
+            <button type="button" data-guide-anchor="printCenter.exportarFormato" onClick={() => doExport('jpg')}
               className={`flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-95 ${dk?'border-emerald-700/50 bg-emerald-900/20 hover:bg-emerald-900/40':'border-emerald-100 bg-emerald-50 hover:bg-emerald-100'}`}>
               <div className="w-11 h-11 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
                 <Image size={20} className="text-white"/>
@@ -1576,7 +1578,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             </button>
 
             {/* Etiqueta Térmica */}
-            <button type="button" onClick={() => doExport('thermal')}
+            <button type="button" data-guide-anchor="printCenter.exportarFormato" onClick={() => doExport('thermal')}
               className={`flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-95 ${dk?'border-amber-700/50 bg-amber-900/20 hover:bg-amber-900/40':'border-amber-100 bg-amber-50 hover:bg-amber-100'}`}>
               <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center shrink-0">
                 <Thermometer size={20} className="text-white"/>
@@ -1587,7 +1589,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
               </div>
             </button>
 
-            <button type="button" onClick={() => setShowExportModal(false)}
+            <button type="button" data-guide-anchor="printCenter.exportarCancelar" onClick={() => setShowExportModal(false)}
               className={`w-full py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
               Cancelar
             </button>

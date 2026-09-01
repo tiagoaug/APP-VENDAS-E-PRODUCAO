@@ -773,6 +773,7 @@ export default function App() {
       { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'any' },
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
       { id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' },
+      { id: 'produced_pairs', label: 'Pares Produzidos', visible: true, order: 16.7, module: 'production' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
       { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
@@ -864,6 +865,12 @@ export default function App() {
     // Migration: ensure business_overview card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'business_overview')) {
       config.cards.push({ id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: ensure produced_pairs card is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'produced_pairs')) {
+      config.cards.push({ id: 'produced_pairs', label: 'Pares Produzidos', visible: true, order: 16.7, module: 'production' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 

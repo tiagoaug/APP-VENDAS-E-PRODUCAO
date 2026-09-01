@@ -418,7 +418,7 @@ export default function PurchaseNeedsView({
       {/* Header */}
       <div className={`sticky top-0 z-20 px-4 pt-4 pb-3 flex flex-col gap-3 border-b ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
         <div className="flex items-center gap-3 min-w-0">
-          <button type="button" title="Voltar" onClick={onBack} className={`w-10 h-10 flex items-center justify-center rounded-2xl shrink-0 ${isDarkMode ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100 shadow-sm text-slate-500'}`}>
+          <button type="button" title="Voltar" onClick={onBack} data-guide-anchor="purchaseNeeds.voltar" className={`w-10 h-10 flex items-center justify-center rounded-2xl shrink-0 ${isDarkMode ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100 shadow-sm text-slate-500'}`}>
             <ChevronLeft size={20} />
           </button>
           <h2 className="text-base font-black tracking-tight leading-none truncate flex-1">Necessidade de Compras</h2>
@@ -431,6 +431,7 @@ export default function PurchaseNeedsView({
               if (isSelectMode) setSelectedIds(new Set());
               setIsSelectMode(prev => !prev);
             }}
+            data-guide-anchor="purchaseNeeds.alternarSelecao"
             className={`flex-1 h-10 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all duration-300 ${
               isSelectMode
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
@@ -443,6 +444,7 @@ export default function PurchaseNeedsView({
           <button
             type="button"
             onClick={() => setShowFilters(true)}
+            data-guide-anchor="purchaseNeeds.abrirFiltros"
             className={`flex-1 h-10 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all duration-300 ${isDarkMode ? 'bg-slate-900 text-amber-400 hover:text-amber-300' : 'bg-white text-amber-500 border border-slate-100 shadow-sm hover:text-amber-600'}`}
           >
             <Filter size={16} strokeWidth={2.5} className="text-amber-500" />
@@ -477,6 +479,7 @@ export default function PurchaseNeedsView({
               type="button"
               title="Limpar pesquisa"
               onClick={() => setSearchQuery('')}
+              data-guide-anchor="purchaseNeeds.limparPesquisa"
               className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white"
             >
               <X size={16} strokeWidth={2.5} />
@@ -508,7 +511,7 @@ export default function PurchaseNeedsView({
                   <h3 className={`text-lg font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Filtrar Status</h3>
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Selecione uma categoria</p>
                 </div>
-                <button type="button" title="Fechar filtros" onClick={() => setShowFilters(false)} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-white">
+                <button type="button" title="Fechar filtros" onClick={() => setShowFilters(false)} data-guide-anchor="purchaseNeeds.fecharFiltros" className="w-10 h-10 flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-white">
                   <X size={20} strokeWidth={2.5} />
                 </button>
               </div>
@@ -522,6 +525,7 @@ export default function PurchaseNeedsView({
                       key={f.key}
                       type="button"
                       onClick={() => { setActiveFilter(f.key); setShowFilters(false); }}
+                      data-guide-anchor="purchaseNeeds.selecionarFiltro"
                       className={`w-full flex items-center justify-between px-6 py-5 rounded-[1.8rem] border-2 transition-all duration-300 ${
                         isActive
                           ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl shadow-indigo-500/20 scale-[1.02]'
@@ -594,6 +598,7 @@ export default function PurchaseNeedsView({
                         onClick={() => { if (selectableNow || isSelected) toggleSelect(req); }}
                         onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && (selectableNow || isSelected)) toggleSelect(req); }}
                         title={eligibleForBatch ? 'Selecionar para compra agrupada' : 'Sem fornecedor configurado'}
+                        data-guide-anchor="purchaseNeeds.selecionarItem"
                         className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${
                           isSelected
                             ? 'bg-indigo-600 border-indigo-600 text-white'
@@ -615,6 +620,7 @@ export default function PurchaseNeedsView({
                           type="button"
                           title="Editar solicitação"
                           onClick={() => openEdit(req)}
+                          data-guide-anchor="purchaseNeeds.editar"
                           className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-400' : 'bg-slate-50 hover:bg-slate-100 text-slate-400'}`}
                         >
                           <Pencil size={16} strokeWidth={2.5} />
@@ -625,6 +631,7 @@ export default function PurchaseNeedsView({
                           type="button"
                           title={isExpanded ? 'Recolher grade' : 'Ver grade por tamanho'}
                           onClick={() => setExpandedId(isExpanded ? null : req.id)}
+                          data-guide-anchor="purchaseNeeds.expandirGrade"
                           className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-400' : 'bg-slate-50 hover:bg-slate-100 text-slate-400'}`}
                         >
                           {isExpanded ? <ChevronUp size={20} strokeWidth={2.5} /> : <ChevronDown size={20} strokeWidth={2.5} />}
@@ -634,6 +641,7 @@ export default function PurchaseNeedsView({
                         type="button"
                         title="Excluir solicitação"
                         onClick={() => setDeletingReq(req)}
+                        data-guide-anchor="purchaseNeeds.excluir"
                         className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-colors ${isDarkMode ? 'bg-rose-950/30 hover:bg-rose-900/40 text-rose-400' : 'bg-rose-50 hover:bg-rose-100 text-rose-500'}`}
                       >
                         <Trash2 size={16} strokeWidth={2.5} />
@@ -768,6 +776,7 @@ export default function PurchaseNeedsView({
                           type="button"
                           onClick={() => handleAdvance(req)}
                           disabled={isLoading}
+                          data-guide-anchor="purchaseNeeds.avancarStatus"
                           className={`flex-1 h-12 rounded-2xl text-[11px] font-black uppercase tracking-[0.15em] flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                             isLoading
                               ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
@@ -782,6 +791,7 @@ export default function PurchaseNeedsView({
                       <button
                         type="button"
                         onClick={() => handleOrder(req)}
+                        data-guide-anchor="purchaseNeeds.comprar"
                         className={`flex items-center justify-center gap-2 px-5 h-12 rounded-2xl text-[11px] font-black uppercase tracking-[0.15em] border-2 transition-all active:scale-[0.98] ${
                           isDarkMode
                             ? 'border-slate-700 hover:bg-slate-800 text-slate-300'
@@ -797,6 +807,7 @@ export default function PurchaseNeedsView({
                     <button
                       type="button"
                       onClick={() => openReceive(req)}
+                      data-guide-anchor="purchaseNeeds.registrarRecebimento"
                       className={`w-full h-12 rounded-2xl text-[11px] font-black uppercase tracking-[0.15em] flex items-center justify-center gap-2 border-2 transition-all active:scale-[0.98] ${
                         isDarkMode
                           ? 'border-emerald-700/50 text-emerald-400 hover:bg-emerald-900/20'
@@ -828,6 +839,7 @@ export default function PurchaseNeedsView({
             type="button"
             onClick={handleBatchOrder}
             disabled={isBatchProcessing}
+            data-guide-anchor="purchaseNeeds.comprarLote"
             className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60"
           >
             {isBatchProcessing ? (
@@ -866,7 +878,7 @@ export default function PurchaseNeedsView({
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Editar</p>
                   <h3 className="text-lg font-black tracking-tight">{editingReq.name}</h3>
                 </div>
-                <button type="button" title="Fechar" onClick={() => setEditingReq(null)}
+                <button type="button" title="Fechar" onClick={() => setEditingReq(null)} data-guide-anchor="purchaseNeeds.fecharEdicao"
                   className={`w-10 h-10 flex items-center justify-center rounded-2xl ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
                   <X size={18} strokeWidth={2.5} />
                 </button>
@@ -941,6 +953,7 @@ export default function PurchaseNeedsView({
                 type="button"
                 onClick={handleSaveEdit}
                 disabled={isSavingEdit}
+                data-guide-anchor="purchaseNeeds.salvarEdicao"
                 className={`w-full h-14 rounded-2xl text-[12px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isSavingEdit ? 'bg-slate-300 text-slate-400' : 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20 hover:bg-indigo-700'}`}
               >
                 {isSavingEdit ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Salvar Alterações'}
@@ -979,7 +992,7 @@ export default function PurchaseNeedsView({
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Excluir solicitação</p>
                   <h3 className="text-lg font-black tracking-tight uppercase">{deletingReq.name}</h3>
                 </div>
-                <button type="button" title="Fechar" disabled={isDeleting} onClick={() => setDeletingReq(null)}
+                <button type="button" title="Fechar" disabled={isDeleting} onClick={() => setDeletingReq(null)} data-guide-anchor="purchaseNeeds.fecharExclusao"
                   className={`w-10 h-10 flex items-center justify-center rounded-2xl ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
                   <X size={18} strokeWidth={2.5} />
                 </button>
@@ -993,6 +1006,7 @@ export default function PurchaseNeedsView({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => handleDeleteBackToPCP(deletingReq)}
+                data-guide-anchor="purchaseNeeds.excluirVoltarPcp"
                 className={`flex flex-col items-start gap-1.5 text-left p-4 rounded-2xl border-2 transition-all active:scale-[0.99] ${isDarkMode ? 'border-slate-800 hover:border-indigo-700 hover:bg-indigo-950/20' : 'border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50'}`}
               >
                 <span className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-indigo-500">
@@ -1007,6 +1021,7 @@ export default function PurchaseNeedsView({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => handleDeleteAndPurchaseManually(deletingReq)}
+                data-guide-anchor="purchaseNeeds.excluirComprarManual"
                 className={`flex flex-col items-start gap-1.5 text-left p-4 rounded-2xl border-2 transition-all active:scale-[0.99] ${isDarkMode ? 'border-slate-800 hover:border-emerald-700 hover:bg-emerald-950/20' : 'border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/50'}`}
               >
                 <span className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-emerald-500">
@@ -1021,6 +1036,7 @@ export default function PurchaseNeedsView({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => setDeletingReq(null)}
+                data-guide-anchor="purchaseNeeds.cancelarExclusao"
                 className="text-center text-[11px] font-black uppercase tracking-widest text-slate-400 py-2"
               >
                 {isDeleting ? 'Excluindo...' : 'Cancelar'}

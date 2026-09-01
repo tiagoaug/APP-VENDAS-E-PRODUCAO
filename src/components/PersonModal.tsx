@@ -161,6 +161,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
           </h3>
           <button
             onClick={onClose}
+            data-guide-anchor="person.fechar"
             className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 transition-colors"
             title="Fechar"
             aria-label="Fechar"
@@ -179,6 +180,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
           <button
             type="button"
             onClick={handleImportFromContacts}
+            data-guide-anchor="person.importarAgenda"
             className="w-full mb-6 flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 text-[11px] font-black uppercase tracking-widest hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors active:scale-[0.98]"
           >
             <ContactIcon size={16} />
@@ -320,8 +322,9 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
         )}
 
           <div className="flex gap-3 mt-8">
-            <button 
+            <button
               onClick={onClose}
+              data-guide-anchor="person.cancelar"
               className="flex-1 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black uppercase text-xs tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
             >
               Cancelar
@@ -361,6 +364,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                 <button
                   type="button"
                   onClick={() => setContactPrompt(null)}
+                  data-guide-anchor="person.contactPromptNao"
                   className="flex-1 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
                 >
                   Não
@@ -368,6 +372,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                 <button
                   type="button"
                   onClick={() => setContactPrompt(prev => prev ? { ...prev, step: 'name' } : prev)}
+                  data-guide-anchor="person.contactPromptSim"
                   className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
                 >
                   Sim
@@ -392,6 +397,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                 <button
                   type="button"
                   onClick={() => setContactPrompt(null)}
+                  data-guide-anchor="person.contactPromptCancelar"
                   className="flex-1 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
                 >
                   Cancelar
@@ -400,6 +406,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                   type="button"
                   disabled={!contactPrompt.name.trim()}
                   onClick={confirmContactPrompt}
+                  data-guide-anchor="person.contactPromptConfirmar"
                   className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
                 >
                   Confirmar

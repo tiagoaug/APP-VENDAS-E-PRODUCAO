@@ -209,6 +209,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
            <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Todas as Categorias</h2>
             <button
               onClick={() => onNavigate(ViewType.CATEGORY_CONFIG)}
+              data-guide-anchor="cat.abrirConfigModulos"
               title="Configurar Hierarquia de Módulos"
               className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
@@ -222,6 +223,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              data-guide-anchor="cat.selecionarAba"
               title={`Filtrar por ${tab.label}`}
               aria-label={`Filtrar categorias por ${tab.label}`}
               className={`flex flex-col items-center justify-center gap-2 py-3 px-1 rounded-2xl border transition-all ${
@@ -269,6 +271,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
               <button
                 type="button"
                 onClick={() => setSuggestionsOpen(o => !o)}
+                data-guide-anchor="cat.alternarSugestoes"
                 className={`w-full flex items-center justify-between px-4 py-3 ${config.header}`}
               >
                 <div className="flex items-center gap-2">
@@ -287,6 +290,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                         key={name}
                         onClick={() => handleAddSuggested(name, activeTab)}
                         disabled={exists}
+                        data-guide-anchor="cat.adicionarSugestao"
                         title={`Adicionar sugestão: ${name}`}
                         className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
                           exists
@@ -309,6 +313,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
             <button
               type="button"
               onClick={() => setTemplatesOpen(o => !o)}
+              data-guide-anchor="cat.alternarModelos"
               className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
             >
               <div className="flex items-center gap-2">
@@ -327,6 +332,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       key={template.id}
                       onClick={() => handleAddFromTemplate(template)}
                       disabled={exists}
+                      data-guide-anchor="cat.adicionarModelo"
                       title={`Adicionar modelo: ${template.name}`}
                       className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
                         exists
@@ -380,6 +386,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       <button
                         onClick={() => handleSaveAsTemplate(parent)}
                         disabled={isSavedAsTemplate(parent)}
+                        data-guide-anchor="cat.salvarModelo"
                         title={isSavedAsTemplate(parent) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
                         className={`p-2 rounded-xl transition-colors ${
                           isSavedAsTemplate(parent)
@@ -391,6 +398,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       </button>
                       <button
                         onClick={() => { setEditingCategory(parent); setIsModalOpen(true); }}
+                        data-guide-anchor="cat.editar"
                         title="Editar Categoria"
                         className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
                       >
@@ -398,6 +406,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       </button>
                       <button
                         onClick={() => handleDeleteClick(parent.id)}
+                        data-guide-anchor="cat.excluir"
                         title="Excluir Categoria"
                         className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
                       >
@@ -418,6 +427,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       <button
                         onClick={() => handleSaveAsTemplate(child)}
                         disabled={isSavedAsTemplate(child)}
+                        data-guide-anchor="cat.salvarModelo"
                         title={isSavedAsTemplate(child) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
                         className={`p-1.5 rounded-lg transition-colors ${
                           isSavedAsTemplate(child)
@@ -429,6 +439,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       </button>
                       <button
                         onClick={() => { setEditingCategory(child); setIsModalOpen(true); }}
+                        data-guide-anchor="cat.editar"
                         title="Editar Subcategoria"
                         className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
                       >
@@ -436,6 +447,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       </button>
                       <button
                         onClick={() => handleDeleteClick(child.id)}
+                        data-guide-anchor="cat.excluir"
                         title="Excluir Subcategoria"
                         className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
                       >

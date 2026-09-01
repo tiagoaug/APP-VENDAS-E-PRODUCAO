@@ -146,7 +146,7 @@ export default function EngineeringModal({
               </div>
             </div>
           </div>
-          <button onClick={onClose} title="Fechar Modal" className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 transition-all active:scale-90">
+          <button onClick={onClose} data-guide-anchor="engineeringModal.fechar" title="Fechar Modal" className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 transition-all active:scale-90">
             <X size={20} strokeWidth={3} />
           </button>
         </div>
@@ -284,6 +284,7 @@ export default function EngineeringModal({
                   setNewServiceId('');
                   setNewServiceCost(0);
                 }}
+                data-guide-anchor="engineeringModal.servicoAdicionar"
                 title="Adicionar Serviço Terceirizado"
                 className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center"
               >
@@ -300,7 +301,8 @@ export default function EngineeringModal({
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
                     <button 
-                      onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })} 
+                      onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })}
+                      data-guide-anchor="engineeringModal.servicoRemover"
                       title="Excluir Serviço"
                       className="text-slate-300 hover:text-rose-500"
                     >
@@ -345,6 +347,7 @@ export default function EngineeringModal({
            <button 
             disabled={!editing.materialId || !editing.colorId}
             onClick={() => onSave(editing)}
+            data-guide-anchor="engineeringModal.confirmar"
             className={`w-full py-5 rounded-[1.5rem] text-xs font-black uppercase tracking-[0.3em] shadow-xl transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-slate-900 text-white shadow-slate-900/20'}`}
           >
             Confirmar Engenharia

@@ -116,6 +116,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
           <button
             type="button"
             onClick={() => setPrinterBrand('ABLEMARK')}
+            data-guide-anchor="printerConnection.selecionarMarcaAblemark"
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
               printerBrand === 'ABLEMARK' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
             }`}
@@ -125,6 +126,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
           <button
             type="button"
             onClick={() => setPrinterBrand('EPSON')}
+            data-guide-anchor="printerConnection.selecionarMarcaEpson"
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
               printerBrand === 'EPSON' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
             }`}
@@ -165,6 +167,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
             type="button"
             onClick={handleDiscoverEpson}
             disabled={epsonLoading}
+            data-guide-anchor="printerConnection.procurarEpson"
             className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
             <RefreshCw size={13} className={epsonLoading ? 'animate-spin' : ''} /> Procurar impressoras
@@ -180,6 +183,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
         <button
           type="button"
           onClick={handleDisconnect}
+          data-guide-anchor="printerConnection.desconectar"
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
         >
           <CheckCircle2 size={13} /> Desconectar
@@ -190,6 +194,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
             type="button"
             onClick={handleListDevices}
             disabled={loadingDevices}
+            data-guide-anchor="printerConnection.listarDispositivos"
             className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
             <RefreshCw size={13} className={loadingDevices ? 'animate-spin' : ''} /> Listar dispositivos pareados
@@ -200,6 +205,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
               type="button"
               onClick={() => handleConnect(d.address)}
               disabled={connecting}
+              data-guide-anchor="printerConnection.conectarDispositivo"
               className={`flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border-2 transition-all ${
                 selectedAddress === d.address
                   ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
@@ -221,6 +227,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
           type="button"
           onClick={handleResetConnection}
           disabled={resetting}
+          data-guide-anchor="printerConnection.resetarConexao"
           className="w-full flex items-center justify-center gap-1.5 mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-400 hover:bg-amber-500 disabled:opacity-60 transition-colors"
         >
           <RotateCcw size={13} className={resetting ? 'animate-spin' : ''} /> {resetting ? 'Resetando...' : 'Resetar conexão e cache (se a impressão falhar)'}

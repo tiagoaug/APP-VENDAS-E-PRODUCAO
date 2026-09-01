@@ -18,6 +18,7 @@ export default function StockRepairBanner({ fixable, unresolved, onOpen, isDarkM
     <button
       type="button"
       onClick={onOpen}
+      data-guide-anchor="stockRepairBanner.abrir"
       className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/15' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
     >
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>

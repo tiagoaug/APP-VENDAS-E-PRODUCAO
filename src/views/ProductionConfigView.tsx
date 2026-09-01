@@ -17,8 +17,9 @@ class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, {
         <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-200 text-red-700 flex flex-col gap-2">
           <p className="font-black text-sm tracking-widest">Erro ao Renderizar {this.props.label}</p>
           <p className="text-xs font-mono break-all">{this.state.error?.message}</p>
-          <button 
-            onClick={() => this.setState({ hasError: false, error: null })} 
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            data-guide-anchor="prodcfg.errorRetry"
             title="Recarregar o componente"
             aria-label="Tentar novamente"
             className="mt-2 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-black tracking-widest"
@@ -86,6 +87,7 @@ import {
 } from 'lucide-react';
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot, FlowTagTemplate, SectorTemplate } from '../types';
 import { subscribeToFlowTagTemplates, saveFlowTagTemplate } from '../services/flowTagTemplatesService';
+import { subscribeToProductionScheduleConfig, saveProductionScheduleConfig } from '../services/productionScheduleService';
 import { subscribeToSectorTemplates, saveSectorTemplate } from '../services/sectorTemplatesService';
 import Modal from '../components/Modal';
 import PersonModal from '../components/PersonModal';
@@ -144,6 +146,7 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsum
               setLocalValue(val.toFixed(4).replace('.', ','));
               onChange(val);
             })}
+            data-guide-anchor="prodcfg.areaCalculadora"
             aria-label="Abrir calculadora"
             title="Abrir calculadora"
             className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-100 text-slate-400'}`}
@@ -164,6 +167,7 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsum
               });
             }
           }}
+          data-guide-anchor="prodcfg.areaConsumoCalc"
           className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 hover:text-emerald-600 transition-all active:scale-95 z-10"
           title="Abrir Calculador de Consumo"
           aria-label="Abrir Calculador de Consumo"
@@ -264,6 +268,7 @@ function PecasConfig({
       <div className="flex items-center justify-between">
         <button
           onClick={onBack}
+          data-guide-anchor="peca.voltar"
           className={`flex items-center gap-2 text-sm font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
         >
           <ArrowLeft size={18} /> Voltar
@@ -345,19 +350,19 @@ function PecasConfig({
                 <div className="flex items-center gap-1 shrink-0">
                   {editingId === p.id ? (
                     <>
-                      <button type="button" onClick={() => salvarEdicao(p)} className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 hover:bg-emerald-100 transition-colors" title="Salvar">
+                      <button type="button" onClick={() => salvarEdicao(p)} data-guide-anchor="peca.salvarEdicao" className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 hover:bg-emerald-100 transition-colors" title="Salvar">
                         <Check size={15} strokeWidth={3} />
                       </button>
-                      <button type="button" onClick={() => setEditingId(null)} className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 hover:bg-slate-200 transition-colors" title="Cancelar">
+                      <button type="button" onClick={() => setEditingId(null)} data-guide-anchor="peca.cancelarEdicao" className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 hover:bg-slate-200 transition-colors" title="Cancelar">
                         <X size={15} strokeWidth={2.5} />
                       </button>
                     </>
                   ) : (
                     <>
-                      <button type="button" onClick={() => { setEditingId(p.id); setEditingName(p.name); }} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-indigo-50 hover:text-indigo-500 dark:hover:bg-indigo-900/20 transition-colors" title="Editar">
+                      <button type="button" onClick={() => { setEditingId(p.id); setEditingName(p.name); }} data-guide-anchor="peca.editar" className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-indigo-50 hover:text-indigo-500 dark:hover:bg-indigo-900/20 transition-colors" title="Editar">
                         <Edit3 size={14} />
                       </button>
-                      <button type="button" onClick={() => removerPeca(p.id)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-900/20 transition-colors" title="Excluir">
+                      <button type="button" onClick={() => removerPeca(p.id)} data-guide-anchor="peca.remover" className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-900/20 transition-colors" title="Excluir">
                         <Trash2 size={14} />
                       </button>
                     </>
@@ -502,6 +507,21 @@ export default function ProductionConfigView({
 }: ProductionConfigViewProps) {
 
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
+
+  // Considerar só dias úteis (seg-sex) na Média de Pares/Dia — usado pelo card "Pares
+  // Produzidos" do Dashboard e pela barra de estatísticas do PCP Monitor (ver
+  // productionScheduleService.ts). Documento único no Firestore, mesmo padrão de
+  // businessOverviewConfig.
+  const [excludeWeekends, setExcludeWeekends] = useState(true);
+  useEffect(() => {
+    const unsub = subscribeToProductionScheduleConfig(cfg => setExcludeWeekends(cfg.excludeWeekends));
+    return () => unsub();
+  }, []);
+  const handleToggleExcludeWeekends = () => {
+    const next = !excludeWeekends;
+    setExcludeWeekends(next);
+    saveProductionScheduleConfig({ excludeWeekends: next });
+  };
 
   const handleNavigateShortcut = (screen: ProductionScreenType | ViewType) => {
     if (Object.values(ViewType).includes(screen as ViewType)) {
@@ -770,6 +790,7 @@ export default function ProductionConfigView({
                       label="Setores de Produção"
                       desc="Fluxo da fábrica"
                       onClick={() => setCurrentScreen('SECTORS')}
+                      anchor="prodcfg.menuSetores"
                       color="text-indigo-600"
                       bg="bg-indigo-50"
                       isDarkMode={isDarkMode}
@@ -779,6 +800,7 @@ export default function ProductionConfigView({
                       label="Etapas e Processos"
                       desc="Serviços e Flow Tags"
                       onClick={() => setCurrentScreen('FLOW_TAGS')}
+                      anchor="prodcfg.menuFlowTags"
                       color="text-emerald-600"
                       bg="bg-emerald-50"
                       isDarkMode={isDarkMode}
@@ -791,8 +813,36 @@ export default function ProductionConfigView({
                       bg="bg-teal-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('PRAZOS')}
+                      anchor="prodcfg.menuPrazos"
                       isLast={true}
                     />
+                  </div>
+                </div>
+
+                {/* CARD: INDICADORES DE PRODUÇÃO */}
+                <div className="flex flex-col gap-3">
+                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Indicadores de Produção</h3>
+                  <div className={`rounded-3xl border shadow-sm p-5 flex items-center justify-between gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-teal-500/15 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                        <CalendarClock size={20} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Só Dias Úteis na Média</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">
+                          Divide os pares produzidos só pelos dias de seg. a sex. do período, excluindo sábado e domingo — em vez de todos os dias corridos
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleExcludeWeekends}
+                      data-guide-anchor="prodcfg.excludeWeekendsToggle"
+                      aria-label={excludeWeekends ? 'Desativar contagem só de dias úteis' : 'Ativar contagem só de dias úteis'}
+                      className={`w-12 h-7 rounded-full transition-all relative shrink-0 ${excludeWeekends ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
+                    >
+                      <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 ${excludeWeekends ? 'left-5' : 'left-0.5'}`} />
+                    </button>
                   </div>
                 </div>
 
@@ -805,6 +855,7 @@ export default function ProductionConfigView({
                       label="Produtos Cadastrados"
                       desc="Catálogo técnico completo"
                       onClick={() => onNavigate?.(ViewType.PRODUCTS)}
+                      anchor="prodcfg.menuProdutos"
                       color="text-indigo-600"
                       bg="bg-indigo-50"
                       isDarkMode={isDarkMode}
@@ -814,6 +865,7 @@ export default function ProductionConfigView({
                       label="Cadastrar Novo Modelo"
                       desc="Solados, Cores e Materiais"
                       onClick={() => onAddProduct?.()}
+                      anchor="prodcfg.menuNovoModelo"
                       color="text-emerald-600"
                       bg="bg-emerald-50"
                       isDarkMode={isDarkMode}
@@ -823,6 +875,7 @@ export default function ProductionConfigView({
                       label="Grades de Produção"
                       desc="Tamanhos e configurações"
                       onClick={() => onNavigateGrids?.()}
+                      anchor="prodcfg.menuGrades"
                       color="text-violet-600"
                       bg="bg-violet-50"
                       isDarkMode={isDarkMode}
@@ -835,6 +888,7 @@ export default function ProductionConfigView({
                       bg="bg-orange-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('MATRIZES')}
+                      anchor="prodcfg.menuSolados"
                     />
                     <ConfigMenuItem
                       icon={<Layers size={24} />}
@@ -844,6 +898,7 @@ export default function ProductionConfigView({
                       bg="bg-blue-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('INSUMOS')}
+                      anchor="prodcfg.menuInsumos"
                       isLast={true}
                     />
                   </div>
@@ -858,6 +913,7 @@ export default function ProductionConfigView({
                       label="Unidades de Medida"
                       desc="KG, MT, UN, PR..."
                       onClick={() => setCurrentScreen('UNIDADES')}
+                      anchor="prodcfg.menuUnidades"
                       color="text-slate-600"
                       isDarkMode={isDarkMode}
                     />
@@ -869,6 +925,7 @@ export default function ProductionConfigView({
                       bg="bg-rose-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('FACAS')}
+                      anchor="prodcfg.menuFacas"
                     />
                     <ConfigMenuItem
                       icon={<Box size={24} />}
@@ -878,6 +935,7 @@ export default function ProductionConfigView({
                       bg="bg-sky-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('INFESTO')}
+                      anchor="prodcfg.menuInfesto"
                     />
                     <ConfigMenuItem
                       icon={<Layers size={24} />}
@@ -887,6 +945,7 @@ export default function ProductionConfigView({
                       bg="bg-emerald-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('PECAS')}
+                      anchor="prodcfg.menuPecas"
                     />
                     <ConfigMenuItem
                       icon={<PackageOpen size={24} />}
@@ -896,6 +955,7 @@ export default function ProductionConfigView({
                       bg="bg-amber-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('EMBALAGENS')}
+                      anchor="prodcfg.menuEmbalagens"
                       isLast={true}
                     />
                   </div>
@@ -975,6 +1035,7 @@ export default function ProductionConfigView({
               <button
                 type="button"
                 onClick={() => setSectorTemplatesOpen(o => !o)}
+                data-guide-anchor="sector.modelosToggle"
                 className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
               >
                 <div className="flex items-center gap-2">
@@ -992,6 +1053,7 @@ export default function ProductionConfigView({
                         type="button"
                         key={template.id}
                         onClick={() => handleAddSectorFromTemplate(template)}
+                        data-guide-anchor="sector.modeloAdicionar"
                         disabled={exists}
                         title={`Adicionar modelo: ${template.name}`}
                         className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
@@ -1029,6 +1091,7 @@ export default function ProductionConfigView({
               }}
               title="Adicionar Flow Tag"
               aria-label="Adicionar nova flow tag de processo"
+              data-guide-anchor="flowtag.novo"
               className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
             >
               <Plus size={24} strokeWidth={3} />
@@ -1060,6 +1123,7 @@ export default function ProductionConfigView({
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleSaveFlowTagAsTemplate(tag)}
+                    data-guide-anchor="flowtag.salvarModelo"
                     disabled={isFlowTagSavedAsTemplate(tag)}
                     title={isFlowTagSavedAsTemplate(tag) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
                     aria-label={isFlowTagSavedAsTemplate(tag) ? `${tag.name} já é um modelo disponível` : `Salvar ${tag.name} como modelo pra outras contas`}
@@ -1076,6 +1140,7 @@ export default function ProductionConfigView({
                       setEditingTag({ ...tag });
                       setIsAddingTag(false);
                     }}
+                    data-guide-anchor="flowtag.editar"
                     title="Editar Tag"
                     aria-label={`Editar flow tag ${tag.name}`}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
@@ -1086,6 +1151,7 @@ export default function ProductionConfigView({
                     onClick={() => {
                       if (confirm('Deseja excluir esta Flow Tag?')) onDeleteFlowTag(tag.id);
                     }}
+                    data-guide-anchor="flowtag.excluir"
                     title="Excluir Tag"
                     aria-label={`Excluir flow tag ${tag.name}`}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
@@ -1111,6 +1177,7 @@ export default function ProductionConfigView({
               <button
                 type="button"
                 onClick={() => setFlowTagTemplatesOpen(o => !o)}
+                data-guide-anchor="flowtag.modelosToggle"
                 className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
               >
                 <div className="flex items-center gap-2">
@@ -1128,6 +1195,7 @@ export default function ProductionConfigView({
                         type="button"
                         key={template.id}
                         onClick={() => handleAddFlowTagFromTemplate(template)}
+                        data-guide-anchor="flowtag.modeloAdicionar"
                         disabled={exists}
                         title={`Adicionar modelo: ${template.name}`}
                         className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
@@ -1338,6 +1406,7 @@ export default function ProductionConfigView({
         <div className="mt-8 flex justify-center px-4">
           <button
             onClick={onBack}
+            data-guide-anchor="prodcfg.voltarInicio"
             title="Voltar ao Início"
             aria-label="Voltar para a tela inicial do dashboard"
             className={`flex items-center justify-center gap-3 px-8 py-5 rounded-[2rem] w-full transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-white text-slate-500 hover:text-slate-900 border border-slate-100'}`}
@@ -1392,6 +1461,7 @@ export default function ProductionConfigView({
               <button
                 type="button"
                 onClick={handleAddSubcategory}
+                data-guide-anchor="flowtag.adicionarSubcategoria"
                 title="Adicionar Subcategoria"
                 aria-label="Adicionar nova subcategoria de serviço"
                 className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest"
@@ -1417,6 +1487,7 @@ export default function ProductionConfigView({
                   <button
                     type="button"
                     onClick={() => handleRemoveSubcategory(index)}
+                    data-guide-anchor="flowtag.removerSubcategoria"
                     title="Remover Subcategoria"
                     aria-label="Remover esta subcategoria de serviço"
                     className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center shrink-0"
@@ -1478,6 +1549,7 @@ export default function ProductionConfigView({
                     key={tag.id}
                     type="button"
                     onClick={() => toggleTagInSector(tag.id)}
+                    data-guide-anchor="sector.flowTagToggle"
                     className={`p-4 rounded-2xl border-2 flex flex-col gap-2 transition-all text-left ${isSelected
                       ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
                       : (isDarkMode ? 'border-slate-800 bg-slate-900 text-slate-500' : 'border-slate-100 bg-white text-slate-400')
@@ -1502,6 +1574,7 @@ export default function ProductionConfigView({
           <button
             type="button"
             onClick={() => setEditingSector(prev => prev ? { ...prev, isProductionCycleEnd: !prev.isProductionCycleEnd } : null)}
+            data-guide-anchor="sector.fimCicloToggle"
             className={`p-4 rounded-2xl border-2 flex items-center gap-4 transition-all text-left ${editingSector?.isProductionCycleEnd
               ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
               : (isDarkMode ? 'border-slate-800 bg-slate-900 text-slate-500' : 'border-slate-100 bg-white text-slate-400')
@@ -1920,6 +1993,7 @@ function GenericConfigList({
               onNavigateToScreen(screen);
             }
           }}
+          data-guide-anchor="mold.atalhoConfigurar"
           className="p-1 rounded-lg bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 transition-all"
           title={`Configurar ${text}`}
         >
@@ -2183,6 +2257,7 @@ function GenericConfigList({
         {onBack && (
           <button
             onClick={onBack}
+            data-guide-anchor="prodcfg.listaVoltar"
             title="Voltar"
             aria-label="Voltar para a tela anterior"
             className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:text-slate-700'}`}
@@ -2299,8 +2374,8 @@ function GenericConfigList({
                         </div>
                       </div>
                       <div className="flex items-center gap-2 pr-2">
-                        <button type="button" onClick={() => { setEditingItem({ ...item }); setIsModalOpen(true); }} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"><Edit3 size={18} /></button>
-                        <button type="button" onClick={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                        <button type="button" onClick={() => { setEditingItem({ ...item }); setIsModalOpen(true); }} data-guide-anchor="prodcfg.itemEditar" className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"><Edit3 size={18} /></button>
+                        <button type="button" onClick={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }} data-guide-anchor="prodcfg.itemExcluir" className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                       </div>
                     </motion.div>
                   ))}
@@ -2332,6 +2407,7 @@ function GenericConfigList({
                 tabIndex={0}
                 onClick={() => toggleMaterialCategory(category)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleMaterialCategory(category); }}
+                data-guide-anchor="prodcfg.categoriaToggle"
                 title={isCatOpen ? `Recolher ${category}` : `Expandir ${category}`}
                 aria-label={isCatOpen ? `Recolher ${category}` : `Expandir ${category}`}
                 className="flex items-center gap-4 px-4 py-3 rounded-2xl border cursor-pointer select-none"
@@ -2441,6 +2517,7 @@ function GenericConfigList({
                 <div className="flex items-center gap-2 pr-4">
                   <button
                     onClick={() => { setEditingItem({ ...item }); setIsModalOpen(true); }}
+                    data-guide-anchor="prodcfg.itemEditar"
                     title="Editar item"
                     aria-label={`Editar ${item.name}`}
                     className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-white' : 'text-slate-200 hover:text-slate-400'}`}
@@ -2449,6 +2526,7 @@ function GenericConfigList({
                   </button>
                   <button
                     onClick={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
+                    data-guide-anchor="prodcfg.itemExcluir"
                     title="Excluir item"
                     aria-label={`Excluir ${item.name}`}
                     className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-red-400' : 'text-slate-200 hover:text-red-400'}`}
@@ -2464,7 +2542,7 @@ function GenericConfigList({
         {filteredItems.length === 0 && search === '' && seedDefaults && (
           <div className="flex flex-col items-center gap-4 py-8">
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Lista vazia</p>
-            <button onClick={handleSeed} className="px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest border border-indigo-100">Carregar Unidades Padrão</button>
+            <button onClick={handleSeed} data-guide-anchor="prodcfg.carregarPadrao" className="px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest border border-indigo-100">Carregar Unidades Padrão</button>
           </div>
         )}
 
@@ -2568,6 +2646,7 @@ function GenericConfigList({
                               key={opt.type}
                               type="button"
                               onClick={() => setNewCategoryType(opt.type)}
+                              data-guide-anchor="mold.categoriaTipo"
                               className={`flex items-center justify-center py-2.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all ${newCategoryType === opt.type ? `${opt.color} border-transparent text-white shadow-lg` : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-400')}`}
                             >
                               {opt.label}
@@ -2587,12 +2666,13 @@ function GenericConfigList({
                         />
                       </div>
                       <div className="flex gap-2 pt-1">
-                        <button type="button" onClick={() => setIsCreatingCategoryInline(false)} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                        <button type="button" onClick={() => setIsCreatingCategoryInline(false)} data-guide-anchor="mold.categoriaInlineVoltar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
                           Voltar
                         </button>
                         <button
                           type="button"
                           onClick={handleQuickCreateCategory}
+                          data-guide-anchor="mold.categoriaSalvarUsar"
                           disabled={!newCategoryName.trim()}
                           className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
                         >
@@ -2635,6 +2715,7 @@ function GenericConfigList({
                         key={s.id}
                         type="button"
                         onClick={() => { setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: s.id } } : null); setIsSupplierPickerOpen(false); }}
+                        data-guide-anchor="mold.fornecedorItem"
                         className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
                       >
                         <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{s.name}</span>
@@ -2836,12 +2917,13 @@ function GenericConfigList({
                       />
                     </div>
                     <div className="flex gap-2 pt-1">
-                      <button type="button" onClick={() => setIsCreatingFlowTagInline(false)} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                      <button type="button" onClick={() => setIsCreatingFlowTagInline(false)} data-guide-anchor="mold.fluxoInlineVoltar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
                         Voltar
                       </button>
                       <button
                         type="button"
                         onClick={handleQuickCreateFlowTag}
+                        data-guide-anchor="mold.fluxoSalvarUsar"
                         disabled={!newFlowTagName.trim()}
                         className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
                       >
@@ -2871,6 +2953,7 @@ function GenericConfigList({
                           key={m.id}
                           type="button"
                           onClick={() => selectMaterialForTarget(m.id)}
+                          data-guide-anchor="mold.materialItem"
                           className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
                         >
                           <div className="flex flex-col min-w-0">
@@ -2913,12 +2996,13 @@ function GenericConfigList({
                       existingReferences={existingMaterialReferences}
                     />
                     <div className="flex gap-2 pt-1">
-                      <button type="button" onClick={() => { setIsCreatingMaterialInline(false); setNewMaterialItem(null); }} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                      <button type="button" onClick={() => { setIsCreatingMaterialInline(false); setNewMaterialItem(null); }} data-guide-anchor="mold.materialInlineVoltar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
                         Voltar
                       </button>
                       <button
                         type="button"
                         onClick={handleQuickCreateMaterial}
+                        data-guide-anchor="mold.materialSalvarUsar"
                         disabled={!newMaterialItem.name.trim()}
                         className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
                       >
@@ -2972,7 +3056,7 @@ function GenericConfigList({
                     {sortSizeKeys(editingItem?.metadata?.sizes || []).map(size => (
                       <div key={size} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
                         <span className="text-[10px] font-black">{size}</span>
-                        <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors">
+                        <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} data-guide-anchor="mold.numeracaoRemover" className="text-slate-300 hover:text-red-500 transition-colors">
                           <X size={12} />
                         </button>
                       </div>
@@ -3054,7 +3138,7 @@ function GenericConfigList({
                           placeholder="Ex: 38"
                           className={`flex-1 px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
                         />
-                        <button type="button" onClick={addNewGridSize} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black transition-colors">
+                        <button type="button" onClick={addNewGridSize} data-guide-anchor="mold.gradeInlineAddSize" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black transition-colors">
                           <Plus size={16} />
                         </button>
                       </div>
@@ -3063,18 +3147,19 @@ function GenericConfigList({
                       {newGridSizes.map(size => (
                         <span key={size} className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
                           {size}
-                          <button type="button" onClick={() => removeNewGridSize(size)} className="text-rose-400 hover:text-rose-600">×</button>
+                          <button type="button" onClick={() => removeNewGridSize(size)} data-guide-anchor="mold.gradeInlineRemoveSize" className="text-rose-400 hover:text-rose-600">×</button>
                         </span>
                       ))}
                       {newGridSizes.length === 0 && <span className="text-[10px] text-slate-300 dark:text-slate-700 font-bold italic self-center">Adicione numerações acima</span>}
                     </div>
                     <div className="flex gap-2 pt-1">
-                      <button type="button" onClick={() => { setIsCreatingGridInline(false); setEditingGridId(null); }} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                      <button type="button" onClick={() => { setIsCreatingGridInline(false); setEditingGridId(null); }} data-guide-anchor="mold.gradeInlineVoltar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
                         Voltar
                       </button>
                       <button
                         type="button"
                         onClick={handleSaveInlineGrid}
+                        data-guide-anchor="mold.gradeInlineSalvar"
                         disabled={!newGridName.trim() || newGridSizes.length === 0}
                         className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
                       >
@@ -3159,6 +3244,7 @@ function GenericConfigList({
                                   return { ...prev, metadata: { ...prev.metadata, sizeWeights: newWeights } };
                                 })
                               })}
+                              data-guide-anchor="mold.pesoTamanhoCalc"
                               className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"
                             >
                               <Calculator size={12} />
@@ -3481,6 +3567,7 @@ function GenericConfigList({
                         key={color.id}
                         type="button"
                         onClick={toggleColor}
+                        data-guide-anchor="mold.corPickerItem"
                         className={`p-3 rounded-2xl border-2 flex items-center gap-2 min-w-0 transition-all ${isSelected ? 'border-indigo-500/30 bg-indigo-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}
                       >
                         <span className={`flex-1 min-w-0 truncate text-left text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span>
@@ -3585,12 +3672,12 @@ function GenericConfigList({
                 {editingItem?.imageUrl ? (
                   <>
                     <img src={editingItem.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                    <button type="button" title="Remover Foto" aria-label="Remover foto atual" onClick={() => setEditingItem(prev => prev ? { ...prev, imageUrl: '' } : null)} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg">
+                    <button type="button" title="Remover Foto" aria-label="Remover foto atual" onClick={() => setEditingItem(prev => prev ? { ...prev, imageUrl: '' } : null)} data-guide-anchor="tool.removerFoto" className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg">
                       <X size={12} />
                     </button>
                   </>
                 ) : (
-                  <button type="button" title="Adicionar Foto" aria-label="Adicionar nova foto" onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-2 text-slate-400">
+                  <button type="button" title="Adicionar Foto" aria-label="Adicionar nova foto" onClick={() => fileInputRef.current?.click()} data-guide-anchor="tool.adicionarFoto" className="flex flex-col items-center gap-2 text-slate-400">
                     <Camera size={24} />
                     <span className="text-xs font-bold uppercase tracking-widest">Adicionar Foto</span>
                   </button>
@@ -3612,6 +3699,7 @@ function GenericConfigList({
                   <button
                     type="button"
                     onClick={generateCode}
+                    data-guide-anchor="tool.gerarCodigo"
                     className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
                     title="Gerar Código Automático"
                   >
@@ -3691,7 +3779,7 @@ function GenericConfigList({
                 <label htmlFor="tool-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Configurar Numerações</label>
                 <div className="flex gap-2">
                   <input id="tool-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
-                  <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                  <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} data-guide-anchor="tool.numeracaoAdicionar" className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center justify-center border border-slate-200 dark:border-slate-700">
                     <Plus size={24} />
                   </button>
                 </div>
@@ -3699,7 +3787,7 @@ function GenericConfigList({
                   {(editingItem?.metadata?.sizes || []).map(size => (
                     <div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
                       <span className="text-xs font-black">{size}</span>
-                      <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors">
+                      <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} data-guide-anchor="tool.numeracaoRemover" className="text-slate-300 hover:text-red-500 transition-colors">
                         <X size={14} />
                       </button>
                     </div>
@@ -3723,6 +3811,7 @@ function GenericConfigList({
                         setPercTargetId(null);
                         setShowPercentageModal(true);
                       }}
+                      data-guide-anchor="tool.escalonarGrade"
                       className="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white shadow-xl shadow-indigo-500/30 active:scale-95 transition-all flex items-center gap-2 group"
                       title="Escalonar por Porcentagem"
                     >
@@ -3769,6 +3858,7 @@ function GenericConfigList({
                                 : [...current, product.id];
                               setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, productIds: updated } } : null);
                             }}
+                            data-guide-anchor="tool.modeloToggle"
                             className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all active:scale-[0.99] ${selected ? (isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50') : 'hover:bg-slate-100 dark:hover:bg-slate-900'}`}
                           >
                             <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${selected ? 'bg-indigo-600 border-indigo-600' : isDarkMode ? 'border-slate-700' : 'border-slate-300'}`}>
@@ -3807,6 +3897,7 @@ function GenericConfigList({
                     }
                     return { ...prev, metadata: meta };
                   })}
+                  data-guide-anchor="tool.palmilhaToggle"
                   className="w-full flex items-center justify-between gap-2 text-left"
                 >
                   <div className="flex items-center gap-2">
@@ -3834,6 +3925,7 @@ function GenericConfigList({
                               const currentPalmilha = prev.metadata?.palmilha || { subtype: 'MONTAGEM' as const, colorVariations: [] };
                               return { ...prev, metadata: { ...prev.metadata, palmilha: { ...currentPalmilha, subtype: sub } } };
                             })}
+                            data-guide-anchor="tool.palmilhaSubtipo"
                             className={`py-3 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${editingItem?.metadata?.palmilha?.subtype === sub ? 'bg-rose-500 border-rose-600 text-white' : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
                           >
                             {sub === 'MONTAGEM' ? 'Montagem' : 'Acabamento'}
@@ -3884,6 +3976,7 @@ function GenericConfigList({
                                       return { ...prev, metadata: { ...prev.metadata, palmilha: { ...currentPalmilha, colorVariations: variations } } };
                                     });
                                   }}
+                                  data-guide-anchor="tool.palmilhaCorToggle"
                                   className={`p-2 rounded-xl transition-all ${isSelected ? 'text-rose-500' : 'text-slate-300'}`}
                                 >
                                   {isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}
@@ -3921,20 +4014,20 @@ function GenericConfigList({
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Layers size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Camadas para<br />Corte e Produção</p></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Infesto *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: COURO PADRÃO" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Quantidade de Camadas *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.layers || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)} placeholder="Ex: 4" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade de camadas" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.layers || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Quantidade de Camadas *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.layers || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)} placeholder="Ex: 4" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade de camadas" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.layers || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: val } } : null) })} data-guide-anchor="infesto.camadasCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
             </div>
           ) : type === 'DEADLINE' ? (
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><CalendarClock size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Definição de Prazos e SLA<br />para Ordens de Produção</p></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Prazo *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: URGENTE, PADRÃO..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prazo em Dias *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.days || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)} placeholder="Ex: 7" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir prazo em dias" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.days || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prazo em Dias *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.days || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)} placeholder="Ex: 7" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir prazo em dias" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.days || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: val } } : null) })} data-guide-anchor="deadline.diasCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
             </div>
           ) : type === 'PACKAGING' ? (
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Grid3X3 size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Grades e<br />Tamanhos para Embalagens</p></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div data-guide-anchor="pkg.tipoGradeToggle" className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
 
               {/* Cor do badge de estoque (ex.: "12P") — escolhida aqui pra diferenciar de
                   relance, no Estoque, caixas de padrões diferentes (12 pares x 15 pares...). */}
@@ -3948,6 +4041,7 @@ function GenericConfigList({
                         key={color}
                         type="button"
                         onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, badgeColor: color } } : null)}
+                        data-guide-anchor="pkg.corBadge"
                         title={color}
                         aria-label={`Cor ${color}`}
                         className={`w-9 h-9 rounded-full ${BADGE_COLOR_CLASSES[color].swatch} flex items-center justify-center transition-all ${active ? 'ring-2 ring-offset-2 ring-slate-900 dark:ring-white dark:ring-offset-slate-950 scale-110' : 'opacity-60 hover:opacity-100'}`}
@@ -4009,7 +4103,7 @@ function GenericConfigList({
                     <label htmlFor="pack-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Adicionar Numerações</label>
                     <div className="flex gap-2">
                       <input id="pack-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
-                      <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+                      <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} data-guide-anchor="pkg.numeracaoAdicionar" className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
                         <Plus size={24} strokeWidth={3} />
                       </button>
                     </div>
@@ -4017,7 +4111,7 @@ function GenericConfigList({
                       {(editingItem?.metadata?.sizes || []).map(size => (
                         <div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
                           <span className="text-xs font-black">{size}</span>
-                          <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors">
+                          <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} data-guide-anchor="pkg.numeracaoRemover" className="text-slate-300 hover:text-red-500 transition-colors">
                             <X size={14} />
                           </button>
                         </div>
@@ -4160,6 +4254,7 @@ function GenericConfigList({
             <button 
               type="button"
               onClick={() => setShowPercentageModal(false)}
+              data-guide-anchor="prodcfg.escalonarCancelar"
               className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all border-2 ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
             >
               Cancelar
@@ -4170,6 +4265,7 @@ function GenericConfigList({
                 const base = percBaseSize || editingItem?.metadata?.sizes?.[0] || '';
                 applyPercentageScale(base, percValue, percField, percTargetId);
               }}
+              data-guide-anchor="prodcfg.escalonarAplicar"
               className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
             >
               Aplicar Escalonamento
@@ -4238,6 +4334,7 @@ function SectorCard({ sector, flowTags, isDarkMode, pendingCount, isSavedAsTempl
         <div className="flex gap-2">
           <button
             onClick={onSaveAsTemplate}
+            data-guide-anchor="sector.salvarModelo"
             disabled={isSavedAsTemplate}
             title={isSavedAsTemplate ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
             aria-label={isSavedAsTemplate ? `${sector.name} já é um modelo disponível` : `Salvar ${sector.name} como modelo pra outras contas`}
@@ -4251,6 +4348,7 @@ function SectorCard({ sector, flowTags, isDarkMode, pendingCount, isSavedAsTempl
           </button>
           <button
             onClick={onToggleHidden}
+            data-guide-anchor="sector.ocultarToggle"
             title={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
             aria-label={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
@@ -4259,6 +4357,7 @@ function SectorCard({ sector, flowTags, isDarkMode, pendingCount, isSavedAsTempl
           </button>
           <button
             onClick={onEdit}
+            data-guide-anchor="sector.editar"
             title="Editar Setor"
             aria-label="Editar Setor"
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
@@ -4269,6 +4368,7 @@ function SectorCard({ sector, flowTags, isDarkMode, pendingCount, isSavedAsTempl
             onClick={() => {
               if (confirm(`Deseja excluir o setor ${sector.name}?`)) onDelete();
             }}
+            data-guide-anchor="sector.excluir"
             title="Excluir Setor"
             aria-label="Excluir Setor"
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
@@ -4336,6 +4436,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
       <button
         type="button"
         onClick={() => setExpanded(e => !e)}
+        data-guide-anchor="material.cardToggle"
         className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-800/60' : 'hover:bg-slate-50'}`}
       >
         {/* Icon */}
@@ -4441,10 +4542,10 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
           <div className="flex items-center justify-between pt-1">
             <span className="text-[9px] font-bold text-slate-400 uppercase">Cores Cadastradas: {item.metadata?.colorIds?.length || 0}</span>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-400 hover:bg-indigo-100 transition-colors">
+              <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} data-guide-anchor="material.cardEditar" className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-400 hover:bg-indigo-100 transition-colors">
                 <Edit3 size={11} /> Editar
               </button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 transition-colors">
+              <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} data-guide-anchor="material.cardExcluir" className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 transition-colors">
                 <Trash2 size={11} /> Excluir
               </button>
             </div>
@@ -4517,8 +4618,8 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={onEdit} title="Editar Matriz" aria-label={`Editar matriz ${item.name}`} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"><Edit3 size={18} /></button>
-          <button onClick={onDelete} title="Excluir Matriz" aria-label={`Excluir matriz ${item.name}`} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+          <button onClick={onEdit} data-guide-anchor="mold.cardEditar" title="Editar Matriz" aria-label={`Editar matriz ${item.name}`} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"><Edit3 size={18} /></button>
+          <button onClick={onDelete} data-guide-anchor="mold.cardExcluir" title="Excluir Matriz" aria-label={`Excluir matriz ${item.name}`} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
         </div>
       </div>
 

@@ -475,6 +475,7 @@ export default function EngineeringEditor({
           <button
             type="button"
             onClick={onCancel}
+            data-guide-anchor="engineeringEditor.voltar"
             title="Voltar"
             className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shrink-0"
           >
@@ -543,6 +544,7 @@ export default function EngineeringEditor({
             <button
               type="button"
               onClick={() => setEditing(prev => ({ ...prev, entryType: 'PIECE' }))}
+              data-guide-anchor="engineeringEditor.tipoLancamento"
               className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editing.entryType !== 'GENERIC' ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400'}`}
             >
               Peça / Material
@@ -550,6 +552,7 @@ export default function EngineeringEditor({
             <button
               type="button"
               onClick={() => setEditing(prev => ({ ...prev, entryType: 'GENERIC' }))}
+              data-guide-anchor="engineeringEditor.tipoLancamento"
               className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editing.entryType === 'GENERIC' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
             >
               Genérico (Mão de Obra/Serviço)
@@ -604,6 +607,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setActiveCalcField('unit')}
+                  data-guide-anchor="engineeringEditor.simplesCalc"
                   title="Abrir Calculadora"
                   aria-label="Abrir calculadora para definir o valor"
                   className="absolute right-12 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -613,6 +617,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setEditing(prev => ({ ...prev, valueType: (!prev.valueType || prev.valueType === 'percentage') ? 'fixed' : 'percentage' }))}
+                  data-guide-anchor="engineeringEditor.simplesTipoValor"
                   title="Alternar entre alíquota em porcentagem (%) ou valor fixo (R$)"
                   aria-label="Alternar tipo de valor"
                   className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${
@@ -660,6 +665,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setShowUnitPicker(true)}
+                  data-guide-anchor="engineeringEditor.unidadeGenerico"
                   className={`w-full px-3 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all text-center uppercase ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-white border-slate-200 text-slate-900 hover:border-indigo-300 shadow-sm'}`}
                 >
                   {units.find(u => u.id === editing.unitId)?.name || <span className="text-slate-400 dark:text-slate-500">UN...</span>}
@@ -676,6 +682,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setActiveCalcField('qty')}
+                  data-guide-anchor="engineeringEditor.genericoQtyCalc"
                   title="Abrir Calculadora de Quantidade"
                   aria-label="Abrir calculadora para definir a quantidade"
                   className="absolute right-2 top-[38px] p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -694,6 +701,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setActiveCalcField('unit')}
+                  data-guide-anchor="engineeringEditor.genericoValorCalc"
                   title="Abrir Calculadora de Valor Unitário"
                   aria-label="Abrir calculadora para definir o valor unitário"
                   className="absolute right-2 top-[38px] p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -753,6 +761,7 @@ export default function EngineeringEditor({
             <button
               type="button"
               onClick={() => setShowPiecePicker(true)}
+              data-guide-anchor="engineeringEditor.pecaPicker"
               className={`w-full flex items-center justify-between border-2 rounded-2xl pl-6 pr-4 py-4 text-sm font-black text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-white border-white hover:border-indigo-200 shadow-sm'}`}
             >
               <span className={editing.name ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
@@ -794,6 +803,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setShowToolPicker(true)}
+                  data-guide-anchor="engineeringEditor.facaPicker"
                   className={`w-full flex items-center justify-between gap-2 text-sm font-black text-left transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                 >
                   <span className={toolSearch ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
@@ -849,8 +859,9 @@ export default function EngineeringEditor({
 
             {editing.toolId && (
               <>
-                <button 
+                <button
                   onClick={() => setShowToolMapping(true)}
+                  data-guide-anchor="engineeringEditor.mapeamentoAbrir"
                   title="Abrir Mapeamento de Tamanhos"
                   aria-label="Configurar mapeamento de tamanhos para esta faca"
                   className={`w-full py-4 px-6 rounded-[2rem] flex items-center justify-between transition-all active:scale-[0.98] ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 border-2 border-indigo-500/30' : 'bg-indigo-50 text-indigo-600 border-2 border-indigo-200'}`}
@@ -971,6 +982,7 @@ export default function EngineeringEditor({
               <button
                 type="button"
                 onClick={() => setShowMaterialPicker(true)}
+                data-guide-anchor="engineeringEditor.materialPicker"
                 className={`w-full px-5 py-4 rounded-2xl border-2 flex items-center justify-between gap-3 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-50 border-slate-100 hover:border-indigo-300'}`}
               >
                 <span className={`font-black text-sm truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{material.name}</span>
@@ -993,6 +1005,7 @@ export default function EngineeringEditor({
                   <button
                     type="button"
                     onClick={() => setQtyMode('simple')}
+                    data-guide-anchor="engineeringEditor.qtyModo"
                     className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${qtyMode === 'simple' ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
                   >
                     Simples
@@ -1000,6 +1013,7 @@ export default function EngineeringEditor({
                   <button
                     type="button"
                     onClick={() => { setQtyMode('yield'); computeYieldQty(qtyEmbalagem, qtyRendimento); }}
+                    data-guide-anchor="engineeringEditor.qtyModo"
                     className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${qtyMode === 'yield' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
                   >
                     Rendimento
@@ -1007,6 +1021,7 @@ export default function EngineeringEditor({
                   <button
                     type="button"
                     onClick={() => { setQtyMode('weighing'); computeWeighingQty(pesoInicial, pesoFinal, qtdParesPesagem); }}
+                    data-guide-anchor="engineeringEditor.qtyModo"
                     className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${qtyMode === 'weighing' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
                   >
                     Pesagem
@@ -1018,6 +1033,7 @@ export default function EngineeringEditor({
                     <button
                       type="button"
                       onClick={() => setEditing(prev => ({ ...prev, consumptionBasis: 'pair' }))}
+                      data-guide-anchor="engineeringEditor.consumoBase"
                       className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${(!editing.consumptionBasis || editing.consumptionBasis === 'pair') ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400'}`}
                     >
                       /par
@@ -1028,6 +1044,7 @@ export default function EngineeringEditor({
                         setEditing(prev => ({ ...prev, consumptionBasis: 'grade', quantity: 1 }));
                         setCalcQty('1');
                       }}
+                      data-guide-anchor="engineeringEditor.consumoBase"
                       className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${editing.consumptionBasis === 'grade' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-400'}`}
                     >
                       /grade
@@ -1041,6 +1058,7 @@ export default function EngineeringEditor({
                     <button
                       type="button"
                       onClick={() => setEditing(prev => ({ ...prev, salesChannel: 'WHOLESALE' }))}
+                      data-guide-anchor="engineeringEditor.canalVenda"
                       className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${editing.salesChannel === 'WHOLESALE' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400'}`}
                     >
                       Atacado
@@ -1048,6 +1066,7 @@ export default function EngineeringEditor({
                     <button
                       type="button"
                       onClick={() => setEditing(prev => ({ ...prev, salesChannel: 'RETAIL' }))}
+                      data-guide-anchor="engineeringEditor.canalVenda"
                       className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${editing.salesChannel === 'RETAIL' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400'}`}
                     >
                       Varejo
@@ -1055,6 +1074,7 @@ export default function EngineeringEditor({
                     <button
                       type="button"
                       onClick={() => setEditing(prev => ({ ...prev, salesChannel: 'BOTH' }))}
+                      data-guide-anchor="engineeringEditor.canalVenda"
                       className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${(!editing.salesChannel || editing.salesChannel === 'BOTH') ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400'}`}
                     >
                       Ambos
@@ -1098,6 +1118,7 @@ export default function EngineeringEditor({
                         <button
                           type="button"
                           onClick={() => setActiveCalcField('qty')}
+                          data-guide-anchor="engineeringEditor.qtyCalcSimples"
                           title="Abrir Calculadora de Quantidade"
                           aria-label="Abrir calculadora para definir a quantidade"
                           className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -1127,6 +1148,7 @@ export default function EngineeringEditor({
                       <button
                         type="button"
                         onClick={() => setShowPackageEditor(v => !v)}
+                        data-guide-anchor="engineeringEditor.pacoteEditorToggle"
                         title="Alterar valor da embalagem para recalcular o Valor Unit. (R$/kg)"
                         className={`flex items-center justify-center gap-1 px-2 py-0.5 rounded-full text-[7px] font-black uppercase tracking-widest text-center leading-tight transition-all active:scale-95 ${showPackageEditor ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white hover:bg-orange-600'}`}
                       >
@@ -1144,6 +1166,7 @@ export default function EngineeringEditor({
                     />
                     <button
                       onClick={() => setActiveCalcField('unit')}
+                      data-guide-anchor="engineeringEditor.unitCalcMaterial"
                       title="Abrir Calculadora de Valor Unitário"
                       aria-label="Abrir calculadora para definir o valor unitário"
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -1312,12 +1335,13 @@ export default function EngineeringEditor({
                   </p>
                 )}
                 {editing.ignoreQuantity && (
-                  <button 
+                  <button
                     onClick={() => {
                       const val = evaluate(calcQty);
                       setEditing(prev => ({ ...prev, quantity: val, ignoreQuantity: true }));
                       setCalcQty(val.toString().replace('.', ','));
                     }}
+                    data-guide-anchor="engineeringEditor.usarValorManual"
                     className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all mb-2"
                   >
                     <CheckCircle2 size={16} /> Usar este Valor (Consumo Manual)
@@ -1422,6 +1446,7 @@ export default function EngineeringEditor({
               <button
                 type="button"
                 onClick={() => setShowConsumptionBreakdown(prev => !prev)}
+                data-guide-anchor="engineeringEditor.consumoDetalheToggle"
                 title={showConsumptionBreakdown ? "Recolher detalhamento por tamanho" : "Ver detalhamento por tamanho"}
                 aria-label={showConsumptionBreakdown ? "Recolher detalhamento do consumo" : "Expandir detalhamento do consumo"}
                 className={`w-full px-5 py-4 flex items-center justify-between gap-3 transition-colors ${isDarkMode ? 'bg-indigo-900/30 hover:bg-indigo-900/40' : 'bg-indigo-600 hover:bg-indigo-700'}`}
@@ -1541,6 +1566,7 @@ export default function EngineeringEditor({
                 id="material-select"
                 type="button"
                 onClick={() => setShowMaterialPicker(true)}
+                data-guide-anchor="engineeringEditor.materialPicker"
                 className={`w-full flex items-center justify-between border-2 rounded-2xl px-6 py-4 text-sm font-black text-left transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-slate-50 border-slate-100 text-slate-900 hover:border-indigo-300'}`}
               >
                 <span className={materialSearch ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
@@ -1680,6 +1706,7 @@ export default function EngineeringEditor({
            <button
              type="button"
              onClick={() => setShowServiceFlow(prev => !prev)}
+             data-guide-anchor="engineeringEditor.servicoFlowToggle"
              title={showServiceFlow ? "Recolher Fluxo de Setores/Serviços" : "Expandir Fluxo de Setores/Serviços"}
              aria-label={showServiceFlow ? "Recolher Fluxo de Setores/Serviços" : "Expandir Fluxo de Setores/Serviços"}
              className="w-full flex items-center justify-between gap-3 p-4 sm:p-8"
@@ -1744,6 +1771,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setShowServiceCostCalc(true)}
+                  data-guide-anchor="engineeringEditor.servicoCustoCalc"
                   title="Abrir Calculadora do Custo do Serviço"
                   aria-label="Abrir calculadora para definir o custo do serviço"
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -1763,6 +1791,7 @@ export default function EngineeringEditor({
                     setNewServiceNoteName('');
                     setNewServiceNote('');
                   }}
+                  data-guide-anchor="engineeringEditor.servicoAdicionar"
                   title="Adicionar Setor ao Fluxo"
                   className="w-full h-11 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
                 >
@@ -1816,6 +1845,7 @@ export default function EngineeringEditor({
                       <span className="text-xs font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
                       <button
                         onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })}
+                        data-guide-anchor="engineeringEditor.servicoRemover"
                         title="Remover Setor"
                         className="text-slate-300 hover:text-rose-500 transition-colors"
                       >
@@ -1933,6 +1963,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setShowQuickCostCalc(true)}
+                  data-guide-anchor="engineeringEditor.quickAddCustoCalc"
                   title="Abrir Calculadora"
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                 >
@@ -1962,6 +1993,7 @@ export default function EngineeringEditor({
             <button
               type="button"
               onClick={() => setShowQuickAddMaterial(false)}
+              data-guide-anchor="engineeringEditor.quickAddCancelar"
               className={`flex-1 py-3 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               Cancelar
@@ -1969,6 +2001,7 @@ export default function EngineeringEditor({
             <button
               type="button"
               onClick={handleSaveQuickMaterial}
+              data-guide-anchor="engineeringEditor.quickAddSalvar"
               disabled={!quickAddMaterialName.trim() || isSavingQuickMaterial}
               className="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:grayscale transition-all active:scale-[0.98]"
             >

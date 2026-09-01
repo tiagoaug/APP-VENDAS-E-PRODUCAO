@@ -522,6 +522,7 @@ export default function PurchasesView({
                 title="Fechar"
                 aria-label="Fechar observação"
                 onClick={() => setSelectedNote(null)}
+                data-guide-anchor="purchases.fecharObservacao"
                 className="p-1 text-slate-400 hover:text-slate-600"
               >
                 <X size={20} />
@@ -563,6 +564,7 @@ export default function PurchasesView({
                 title="Fechar"
                 aria-label="Fechar carrinho de compras"
                 onClick={() => setSelectedPurchaseForItems(null)}
+                data-guide-anchor="purchases.fecharCarrinho"
                 className="p-1 text-slate-400 hover:text-slate-600"
               >
                 <X size={20} />
@@ -619,6 +621,7 @@ export default function PurchasesView({
       <div className={`flex p-1 rounded-2xl border gap-1 mt-3 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
         {(['ALL', PurchaseType.GENERAL, PurchaseType.SOLE, PurchaseType.REPLENISHMENT] as const).map((v) => (
           <button key={v} type="button" onClick={() => setTypeFilter(v)}
+            data-guide-anchor="purchases.selecionarTipo"
             className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${typeFilter === v ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-700'}`}>
             {v === 'ALL' ? 'Todos' : v === PurchaseType.GENERAL ? 'Geral' : v === PurchaseType.SOLE ? 'Solados' : 'Estoque'}
           </button>
@@ -632,6 +635,7 @@ export default function PurchasesView({
           <button
             type="button"
             onClick={() => setIsRecurringOverviewExpanded(v => !v)}
+            data-guide-anchor="purchases.expandirRecorrentes"
             className="w-full flex items-center justify-between gap-3 p-4"
           >
             <div className="flex items-center gap-3 text-left min-w-0">
@@ -690,6 +694,7 @@ export default function PurchasesView({
           <button
             type="button"
             onClick={() => setShowFilters(true)}
+            data-guide-anchor="purchases.abrirFiltros"
             className="h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center transition-all relative bg-rose-500 text-white shadow-sm"
             title="Filtros e Configurações"
             aria-label="Abrir filtros e configurações"
@@ -709,6 +714,7 @@ export default function PurchasesView({
             type="button"
             onClick={handleLoadFullHistory}
             disabled={isLoadingHistory}
+            data-guide-anchor="purchases.carregarHistorico"
             className={`w-full mt-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-indigo-950/30 text-indigo-400 border border-indigo-900/50' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
           >
             {isLoadingHistory ? 'Carregando...' : 'Carregar histórico completo de compras'}
@@ -726,7 +732,7 @@ export default function PurchasesView({
           >
             <div className="flex items-center justify-between mb-1">
               <h3 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Filtros e Configurações</h3>
-              <button type="button" onClick={() => setShowFilters(false)} title="Fechar" aria-label="Fechar filtros" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white">
+              <button type="button" onClick={() => setShowFilters(false)} title="Fechar" aria-label="Fechar filtros" data-guide-anchor="purchases.fecharFiltros" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
@@ -758,10 +764,12 @@ export default function PurchasesView({
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Visualização</p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setExpandedCards(v => !v)}
+                  data-guide-anchor="purchases.alternarCardsExpandidos"
                   className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${expandedCards ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
                   {expandedCards ? 'Cards Expandidos' : 'Cards Compactos'}
                 </button>
                 <button type="button" onClick={() => setShowItems(v => !v)}
+                  data-guide-anchor="purchases.alternarMostrarItens"
                   className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showItems ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
                   {showItems ? 'Mostrar Itens' : 'Ocultar Itens'}
                 </button>
@@ -771,6 +779,7 @@ export default function PurchasesView({
             <button
               type="button"
               onClick={() => { setTypeFilter('ALL'); setPeriodFilter(''); setExpandedCards(true); setShowItems(true); }}
+              data-guide-anchor="purchases.limparFiltros"
               className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
             >
               Limpar Filtros
@@ -795,6 +804,7 @@ export default function PurchasesView({
             <div
               key={purchase.id}
               onClick={() => onEdit(purchase.id)}
+              data-guide-anchor="purchases.abrirCompra"
               className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 relative overflow-hidden group cursor-pointer transition-all ${isDarkMode ? "bg-slate-900 border-slate-800 shadow-[0_6px_0_0_rgba(0,0,0,0.45)]" : "bg-white border-slate-200 shadow-[0_6px_0_0_rgba(148,163,184,0.35)]"}`}
             >
               {/* Linha 1: nome no topo + info/total/badges abaixo */}
@@ -806,6 +816,7 @@ export default function PurchasesView({
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setSelectedNote(purchase.notes || ""); }}
+                        data-guide-anchor="purchases.verObservacao"
                         title="Ver Observações"
                         aria-label="Ver Observações"
                         className="relative w-6 h-6 flex items-center justify-center rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-500"
@@ -856,6 +867,7 @@ export default function PurchasesView({
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); toggleExpand(purchase.id); }}
+                        data-guide-anchor="purchases.expandirCompra"
                         className="w-8 h-8 rounded-full flex items-center justify-center transition-all bg-slate-500 text-white"
                         title={isExpanded ? "Recolher" : "Expandir"}
                         aria-label={isExpanded ? "Recolher detalhes da compra" : "Expandir detalhes da compra"}
@@ -902,6 +914,7 @@ export default function PurchasesView({
                       }}
                       title="Ver Histórico de Cheques"
                       aria-label="Ver Histórico de Cheques"
+                      data-guide-anchor="purchases.verCheques"
                       className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-xs font-black tracking-widest transition-all active:scale-[0.98] w-fit ${isDarkMode
                           ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20'
                           : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
@@ -921,6 +934,7 @@ export default function PurchasesView({
                       }}
                       title="Ver carrinho de compras completo"
                       aria-label="Ver carrinho de compras completo"
+                      data-guide-anchor="purchases.verCarrinho"
                       className={`flex flex-col gap-1.5 text-left rounded-2xl p-2 transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-950/40 hover:bg-slate-800/60' : 'bg-slate-50/80 hover:bg-slate-100'}`}
                     >
                       {purchase.type === PurchaseType.GENERAL
@@ -946,6 +960,7 @@ export default function PurchasesView({
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); handlePartialPayment(purchase, 'PAYMENT'); }}
+                  data-guide-anchor="purchases.adicionarPagamento"
                   className={`flex items-center justify-center gap-2 w-full py-3 rounded-full border text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] z-10 ${isDarkMode ? 'bg-slate-950/40 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
                 >
                   <span className="flex items-center justify-center w-6 h-6 rounded-full bg-rose-500 animate-[pulse_0.7s_cubic-bezier(0.4,0,0.6,1)_infinite] shrink-0">
@@ -978,6 +993,7 @@ export default function PurchasesView({
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setAddEntryPurchase(purchase); }}
+                      data-guide-anchor="purchases.adicionarLancamento"
                       className="w-10 h-10 flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
                       title="Adicionar Lançamento"
                       aria-label="Adicionar novo lançamento a esta compra"
@@ -990,6 +1006,7 @@ export default function PurchasesView({
                   <button
                     type="button"
                     onClick={(e) => handleOpenExport(e, purchase, 'jpg')}
+                    data-guide-anchor="purchases.compartilhar"
                     className="w-10 h-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
                     title="Compartilhar"
                     aria-label="Compartilhar compra"
@@ -1001,6 +1018,7 @@ export default function PurchasesView({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onEdit(purchase.id); }}
+                    data-guide-anchor="purchases.editar"
                     className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-blue-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
                     title="Editar"
                   >
@@ -1011,6 +1029,7 @@ export default function PurchasesView({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setItemToDelete(purchase.id); }}
+                    data-guide-anchor="purchases.excluir"
                     className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-rose-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
                     title="Excluir"
                     aria-label="Excluir compra"

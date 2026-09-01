@@ -393,6 +393,7 @@ export default function SoleStockView({
               <button
                 type="button"
                 onClick={() => setShowClearConfirm(false)}
+                data-guide-anchor="soleStock.zerarCancelar"
                 className="flex-1 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
               >
                 Cancelar
@@ -400,6 +401,7 @@ export default function SoleStockView({
               <button
                 type="button"
                 onClick={handleClearAllStock}
+                data-guide-anchor="soleStock.zerarConfirmar"
                 className="flex-1 py-3 rounded-xl font-bold text-sm bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all shadow-sm"
               >
                 Zerar Tudo
@@ -421,6 +423,7 @@ export default function SoleStockView({
               <button
                 type="button"
                 onClick={handleCloseEntryModal}
+                data-guide-anchor="soleStock.entradaFechar"
                 title="Fechar"
                 className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
               >
@@ -485,6 +488,7 @@ export default function SoleStockView({
                           <button
                             type="button"
                             onClick={() => setCalculatorTargetSize(size)}
+                            data-guide-anchor="soleStock.entradaCalc"
                             title={`Abrir calculadora para o tamanho ${size}`}
                             className="absolute top-1 right-1 p-1.5 rounded-lg bg-emerald-500 text-white shadow-sm shadow-emerald-500/30 hover:bg-emerald-600 active:scale-95 transition-all"
                           >
@@ -510,6 +514,7 @@ export default function SoleStockView({
             <button
               type="button"
               onClick={handleSaveManualEntry}
+              data-guide-anchor="soleStock.entradaSalvar"
               disabled={!entryMoldId || !entryColorId || entryGradeTotal <= 0 || isSavingEntry}
               className="w-full mt-6 py-4 rounded-2xl bg-emerald-500 text-white font-black uppercase tracking-[0.2em] text-xs shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -536,6 +541,7 @@ export default function SoleStockView({
               <button
                 type="button"
                 onClick={handleCloseShareCenter}
+                data-guide-anchor="soleStock.compartilharFechar"
                 title="Fechar"
                 className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
               >
@@ -626,6 +632,7 @@ export default function SoleStockView({
               <button
                 type="button"
                 onClick={() => handleExportShare('jpg')}
+                data-guide-anchor="soleStock.compartilharExportarJpg"
                 disabled={shareItems.length === 0 || !!isExportingShare}
                 className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-[0.15em] text-[10px] shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -634,6 +641,7 @@ export default function SoleStockView({
               <button
                 type="button"
                 onClick={() => handleExportShare('pdf')}
+                data-guide-anchor="soleStock.compartilharExportarPdf"
                 disabled={shareItems.length === 0 || !!isExportingShare}
                 className="flex-1 py-4 rounded-2xl bg-rose-500 text-white font-black uppercase tracking-[0.15em] text-[10px] shadow-lg shadow-rose-500/30 flex items-center justify-center gap-2 hover:bg-rose-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -719,6 +727,7 @@ export default function SoleStockView({
                   key={key}
                   type="button"
                   onClick={() => toggleDetailField(key)}
+                  data-guide-anchor="soleStock.detalheToggle"
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 text-xs font-black uppercase tracking-tight transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
                 >
                   {label}
@@ -731,6 +740,7 @@ export default function SoleStockView({
             <button
               type="button"
               onClick={() => setShowDetailFilter(false)}
+              data-guide-anchor="soleStock.detalheFechar"
               className="w-full mt-4 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
             >
               Fechar
@@ -754,6 +764,7 @@ export default function SoleStockView({
                     key={p.id}
                     type="button"
                     onClick={() => selectFormularSupplier(p.id)}
+                    data-guide-anchor="soleStock.fornecedorItem"
                     className={`w-full text-left px-4 py-3 rounded-2xl border-2 text-xs font-black uppercase tracking-tight transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-emerald-400'}`}
                   >
                     {p.name}
@@ -764,6 +775,7 @@ export default function SoleStockView({
             <button
               type="button"
               onClick={() => setShowSupplierPicker(false)}
+              data-guide-anchor="soleStock.fornecedorCancelar"
               className="w-full mt-4 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
             >
               Cancelar
@@ -773,8 +785,9 @@ export default function SoleStockView({
       )}
 
       <div className="flex items-center gap-4 mb-6">
-        <button 
+        <button
           onClick={onBack}
+          data-guide-anchor="soleStock.voltar"
           className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
           <ArrowLeft size={20} />
@@ -803,6 +816,7 @@ export default function SoleStockView({
           <button
             type="button"
             onClick={dismissInfoBanner}
+            data-guide-anchor="soleStock.avisoFechar"
             title="Dispensar aviso"
             className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isDarkMode ? 'text-amber-300 hover:bg-amber-800/40' : 'text-amber-600 hover:bg-amber-100'}`}
           >
@@ -842,6 +856,7 @@ export default function SoleStockView({
                 setIsBalanceMode(true);
               }
             }}
+            data-guide-anchor="soleStock.balancoToggle"
             className={`flex-1 py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
               isBalanceMode
                 ? 'bg-rose-500 border-rose-500 text-white shadow-lg shadow-rose-500/20'
@@ -861,6 +876,7 @@ export default function SoleStockView({
             <button
               type="button"
               onClick={() => setShowBalancoHelp(true)}
+              data-guide-anchor="soleStock.balancoAjuda"
               title="O que é o Balanço?"
               aria-label="O que é o Balanço?"
               className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/20 active:scale-95 transition-all shrink-0"
@@ -886,6 +902,7 @@ export default function SoleStockView({
           <button
             type="button"
             onClick={() => setShowClearConfirm(true)}
+            data-guide-anchor="soleStock.zerarAbrir"
             className="w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-500 active:scale-95 transition-all flex items-center gap-2.5 border border-rose-100 dark:border-rose-900/30 bg-rose-50/50 dark:bg-rose-900/10"
             title="Zerar todo o estoque de solados"
           >
@@ -903,6 +920,7 @@ export default function SoleStockView({
         <button
           type="button"
           onClick={() => setShowAddEntryModal(true)}
+          data-guide-anchor="soleStock.entradaAbrir"
           className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
         >
           <Plus size={14} strokeWidth={2.5} className="text-emerald-500" /> Entrada Manual
@@ -911,6 +929,7 @@ export default function SoleStockView({
         <button
           type="button"
           onClick={() => onNavigateToWeighingHistory ? onNavigateToWeighingHistory() : (onNavigateToWeighing ? onNavigateToWeighing() : onBack())}
+          data-guide-anchor="soleStock.historicoPesagem"
           className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
         >
           <Clock size={14} className="text-indigo-500" /> Histórico de Pesagem
@@ -919,6 +938,7 @@ export default function SoleStockView({
         <button
           type="button"
           onClick={() => setShowShareCenter(true)}
+          data-guide-anchor="soleStock.compartilharAbrir"
           className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
         >
           <Share2 size={14} strokeWidth={2.5} className="text-sky-500" /> Compartilhar
@@ -927,6 +947,7 @@ export default function SoleStockView({
         <button
           type="button"
           onClick={() => setShowDetailFilter(true)}
+          data-guide-anchor="soleStock.detalheAbrir"
           className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
         >
           <SlidersHorizontal size={14} strokeWidth={2.5} className="text-violet-500" /> Filtrar Detalhamento
@@ -936,6 +957,7 @@ export default function SoleStockView({
           <button
             type="button"
             onClick={isFormularPedidoMode ? cancelFormularPedido : startFormularPedido}
+            data-guide-anchor="soleStock.pedidoToggle"
             className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${
               isFormularPedidoMode
                 ? 'bg-rose-500 border-rose-500 text-white'
@@ -1083,6 +1105,7 @@ export default function SoleStockView({
                                   const numericVal = typeof currentVal === 'number' ? currentVal : (parseInt(currentVal) || 0);
                                   setBalanceCalculatorTarget({ itemKey, size, currentVal: numericVal });
                                 }}
+                                data-guide-anchor="soleStock.balancoCalc"
                                 title={`Abrir calculadora para o tamanho ${size}`}
                                 className="shrink-0 p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/30 hover:bg-indigo-700 active:scale-95 transition-all"
                               >
@@ -1118,6 +1141,7 @@ export default function SoleStockView({
                   <button
                     type="button"
                     onClick={() => setExpandedCards(prev => ({ ...prev, [itemKey]: !prev[itemKey] }))}
+                    data-guide-anchor="soleStock.cardExpandir"
                     className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
                   >
                     <span>Detalhamento por numeração (mapas)</span>
@@ -1175,6 +1199,7 @@ export default function SoleStockView({
                                       <button
                                         type="button"
                                         onClick={() => setHelpTooltipKey(prev => prev === helpKey ? null : helpKey)}
+                                        data-guide-anchor="soleStock.calculoAjuda"
                                         className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/20 hover:shadow-orange-500/40 hover:scale-105 active:scale-95 transition-all duration-200"
                                         title="Como são feitos os cálculos?"
                                         aria-label="Como são feitos os cálculos?"
@@ -1192,6 +1217,7 @@ export default function SoleStockView({
                                             <button
                                               type="button"
                                               onClick={() => setHelpTooltipKey(null)}
+                                              data-guide-anchor="soleStock.calculoAjudaFechar"
                                               className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                                               aria-label="Fechar"
                                             >
@@ -1326,6 +1352,7 @@ export default function SoleStockView({
                             <button
                               type="button"
                               onClick={() => setOrderCalculatorTarget({ itemKey, size, currentVal: parseInt(orderVal) || 0 })}
+                              data-guide-anchor="soleStock.pedidoCalc"
                               title={`Abrir calculadora para o tamanho ${size}`}
                               className="shrink-0 p-1.5 rounded-lg bg-emerald-500 text-white shadow-sm shadow-emerald-500/30 hover:bg-emerald-600 active:scale-95 transition-all"
                             >
@@ -1347,6 +1374,7 @@ export default function SoleStockView({
         <div className="fixed bottom-24 left-4 right-4 z-50">
           <button
             onClick={handleFazerCompra}
+            data-guide-anchor="soleStock.pedidoConfirmar"
             disabled={!hasAnyOrderQty}
             className="w-full py-5 rounded-[2rem] bg-emerald-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-500/40 flex items-center justify-center gap-3 hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -1419,6 +1447,7 @@ export default function SoleStockView({
                 toast.show('Erro ao salvar balanço');
               }
             }}
+            data-guide-anchor="soleStock.balancoSalvar"
             className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all"
           >
             <Save size={20} /> Salvar Balanço Total

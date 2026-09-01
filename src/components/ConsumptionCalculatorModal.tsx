@@ -76,7 +76,7 @@ export default function ConsumptionCalculatorModal({ isOpen, onClose, onResult, 
                 {sizeLabel && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tamanho {sizeLabel}</span>}
               </div>
            </div>
-           <button onClick={onClose} title="Fechar Calculadora" className={`p-3 rounded-2xl transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}>
+           <button onClick={onClose} data-guide-anchor="consumoCalc.fechar" title="Fechar Calculadora" className={`p-3 rounded-2xl transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}>
             <X size={22} className="text-slate-300" />
            </button>
         </div>
@@ -85,13 +85,15 @@ export default function ConsumptionCalculatorModal({ isOpen, onClose, onResult, 
         <div className="px-10 mb-8">
            <div className={`p-2 rounded-[2rem] flex ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
               <button 
-                onClick={() => setActiveTab('PAPEL')} 
+                onClick={() => setActiveTab('PAPEL')}
+                data-guide-anchor="consumoCalc.aba"
                 className={`flex-1 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'PAPEL' ? (isDarkMode ? 'bg-slate-800 text-white shadow-xl' : 'bg-white text-indigo-600 shadow-sm') : 'text-slate-400 hover:text-slate-600'}`}
               >
                 PAPEL MILIMETRADO
               </button>
-              <button 
-                onClick={() => setActiveTab('CORTE')} 
+              <button
+                onClick={() => setActiveTab('CORTE')}
+                data-guide-anchor="consumoCalc.aba"
                 className={`flex-1 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'CORTE' ? (isDarkMode ? 'bg-slate-800 text-white shadow-xl' : 'bg-white text-indigo-600 shadow-sm') : 'text-slate-400 hover:text-slate-600'}`}
               >
                 CORTE EM MATERIAL
@@ -149,6 +151,7 @@ export default function ConsumptionCalculatorModal({ isOpen, onClose, onResult, 
         <div className="px-10 pb-10 flex gap-4">
             <button 
               onClick={handleCopy}
+              data-guide-anchor="consumoCalc.copiar"
               title="Copiar Valor"
               className={`flex-1 py-5 rounded-[1.8rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
             >
@@ -157,6 +160,7 @@ export default function ConsumptionCalculatorModal({ isOpen, onClose, onResult, 
             </button>
             <button 
               onClick={handleApply}
+              data-guide-anchor="consumoCalc.aplicar"
               title="Aplicar Valor ao Campo"
               className="flex-[1.2] py-5 rounded-[1.8rem] bg-emerald-600 text-white flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] shadow-xl shadow-emerald-600/20 active:scale-95 transition-all hover:bg-emerald-500"
             >

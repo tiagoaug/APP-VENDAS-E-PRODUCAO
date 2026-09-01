@@ -109,6 +109,7 @@ export default function LabelProfilePickerModal({
           onClick={(e) => { e.stopPropagation(); if (thumbnails[file.id]) setExpandedFile(file); }}
           onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && thumbnails[file.id]) { e.preventDefault(); setExpandedFile(file); } }}
           aria-label={thumbnails[file.id] ? 'Ver etiqueta ampliada' : undefined}
+          data-guide-anchor="labelProfilePicker.ampliarMiniatura"
           className={`relative shrink-0 rounded-lg overflow-hidden border flex items-center justify-center transition-all ${thumbnails[file.id] ? 'cursor-zoom-in hover:ring-2 hover:ring-indigo-400 active:scale-95' : ''} ${isDarkMode ? 'border-slate-700 bg-white' : 'border-slate-200 bg-white'}`}
           style={{ width: 64, height: Math.min(64, 64 / aspect) }}
         >
@@ -123,7 +124,7 @@ export default function LabelProfilePickerModal({
             <div className="w-full h-full animate-pulse bg-slate-100" />
           )}
         </div>
-        <button type="button" onClick={() => onSelectProfile(file)} className="min-w-0 flex-1 text-left active:scale-[0.98] transition-transform">
+        <button type="button" onClick={() => onSelectProfile(file)} data-guide-anchor="labelProfilePicker.selecionarPerfil" className="min-w-0 flex-1 text-left active:scale-[0.98] transition-transform">
           <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{file.name}</p>
           <p className="text-[9px] font-bold text-slate-400 mt-0.5">{file.widthMm} × {file.heightMm} mm</p>
         </button>
@@ -151,6 +152,7 @@ export default function LabelProfilePickerModal({
           <button
             type="button"
             onClick={() => setPickingSize(false)}
+            data-guide-anchor="labelProfilePicker.voltarEscolhaPerfil"
             className={`self-start flex items-center gap-1 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <ChevronLeft size={14} /> Voltar
@@ -164,6 +166,7 @@ export default function LabelProfilePickerModal({
                   key={p.label}
                   type="button"
                   onClick={() => chooseSize(p.widthMm, p.heightMm)}
+                  data-guide-anchor="labelProfilePicker.escolherTamanhoPreset"
                   className={`relative flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[11px] font-black transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800/60 hover:bg-slate-800 text-white' : 'bg-slate-50 hover:bg-slate-100 text-slate-800'}`}
                 >
                   {p.star && <span className="absolute top-1.5 right-2 text-amber-400 text-xs">★</span>}
@@ -192,6 +195,7 @@ export default function LabelProfilePickerModal({
               type="button"
               disabled={!customSizeValid}
               onClick={() => chooseSize(customWidthNum, customHeightNum)}
+              data-guide-anchor="labelProfilePicker.usarTamanhoPersonalizado"
               className="w-full py-3 rounded-2xl bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
               Usar Este Tamanho
@@ -237,6 +241,7 @@ export default function LabelProfilePickerModal({
         <button
           type="button"
           onClick={() => setPickingSize(true)}
+          data-guide-anchor="labelProfilePicker.criarNovoPerfil"
           className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
         >
           <Plus size={14} /> Criar Novo Perfil
@@ -251,6 +256,7 @@ export default function LabelProfilePickerModal({
         <button
           type="button"
           onClick={() => setExpandedFile(null)}
+          data-guide-anchor="labelProfilePicker.fecharAmpliada"
           className="absolute top-5 right-5 p-2 rounded-full bg-white/10 text-white active:scale-90 transition-transform"
           aria-label="Fechar"
         >

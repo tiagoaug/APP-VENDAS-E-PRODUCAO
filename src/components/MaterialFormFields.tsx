@@ -56,6 +56,7 @@ export default function MaterialFormFields({
               onNavigateToScreen(screen);
             }
           }}
+          data-guide-anchor="materialForm.atalhoConfigurar"
           className="p-1 rounded-lg bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 transition-all"
           title={`Configurar ${text}`}
         >
@@ -109,7 +110,7 @@ export default function MaterialFormFields({
           <label htmlFor="mat-reference" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Referência / Código</label>
           <div className="relative group">
             <input id="mat-reference" type="text" value={item.metadata?.reference || ''} title="Referência" placeholder="REFERÊNCIA" onChange={(e) => onChange({ ...item, metadata: { ...item.metadata, reference: e.target.value.toUpperCase() } })} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
-            <button type="button" onClick={generateReference} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all" title="Gerar Código Automático"><Wand2 size={16} /></button>
+            <button type="button" onClick={generateReference} data-guide-anchor="materialForm.gerarReferencia" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all" title="Gerar Código Automático"><Wand2 size={16} /></button>
           </div>
         </div>
       </div>
@@ -188,6 +189,7 @@ export default function MaterialFormFields({
                       onChange({ ...item, metadata: { ...item.metadata, packageWeight: val, baseCost } });
                     }
                   })}
+                  data-guide-anchor="materialForm.pesoEmbalagemCalc"
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
                 ><Calculator size={16} /></button>
               </div>
@@ -222,6 +224,7 @@ export default function MaterialFormFields({
                       onChange({ ...item, metadata: { ...item.metadata, packagePrice: val, baseCost } });
                     }
                   })}
+                  data-guide-anchor="materialForm.precoEmbalagemCalc"
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
                 ><Calculator size={16} /></button>
               </div>
@@ -233,8 +236,8 @@ export default function MaterialFormFields({
           </>
         ) : (
           <>
-            <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={item.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => onChange({ ...item, metadata: { ...item.metadata, baseCost: Number(e.target.value) } })} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: item.metadata?.baseCost || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, baseCost: val } }) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
-            <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={item.metadata?.width || ''} title="Largura" onChange={(e) => onChange({ ...item, metadata: { ...item.metadata, width: Number(e.target.value) } })} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: item.metadata?.width || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, width: val } }) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+            <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={item.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => onChange({ ...item, metadata: { ...item.metadata, baseCost: Number(e.target.value) } })} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: item.metadata?.baseCost || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, baseCost: val } }) })} data-guide-anchor="materialForm.custoBaseCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+            <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={item.metadata?.width || ''} title="Largura" onChange={(e) => onChange({ ...item, metadata: { ...item.metadata, width: Number(e.target.value) } })} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: item.metadata?.width || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, width: val } }) })} data-guide-anchor="materialForm.larguraCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
           </>
         )}
       </div>
@@ -247,6 +250,7 @@ export default function MaterialFormFields({
               const next = !(item.metadata?.noColor);
               onChange({ ...item, metadata: { ...item.metadata, noColor: next, colorIds: next ? [] : item.metadata?.colorIds } });
             }}
+            data-guide-anchor="materialForm.semCorToggle"
             title="Este material não usa cor — oculta a seleção de cores no produto"
             className={`shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${item.metadata?.noColor ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
           >
@@ -258,7 +262,7 @@ export default function MaterialFormFields({
             Este material não usa cor — a seleção de cor fica oculta e não é obrigatória ao usar este material em um produto.
           </p>
         ) : (
-          <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (item.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = item.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; onChange({ ...item, metadata: { ...item.metadata, colorIds: newIds } }); if (!wasSelected) openStockColorModal(newIds); }} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
+          <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (item.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = item.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; onChange({ ...item, metadata: { ...item.metadata, colorIds: newIds } }); if (!wasSelected) openStockColorModal(newIds); }} data-guide-anchor="materialForm.corToggle" className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
         )}
       </div>
       <div className="flex flex-col gap-4">
@@ -275,6 +279,7 @@ export default function MaterialFormFields({
             <button
               type="button"
               onClick={() => openStockColorModal(item.metadata?.colorIds || [])}
+              data-guide-anchor="materialForm.estoquePorCor"
               className={`w-full px-6 py-4 rounded-2xl font-bold text-xs outline-none transition-all border-2 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 hover:border-indigo-200'}`}
             >
               <span className="tracking-widest">{Object.values(item.metadata?.stockByColor || {}).reduce((a, b) => a + (b || 0), 0)}</span>
@@ -310,7 +315,7 @@ export default function MaterialFormFields({
                 placeholder="0,00"
                 className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
               />
-              <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: item.metadata?.stock || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, stock: val } }) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
+              <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: item.metadata?.stock || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, stock: val } }) })} data-guide-anchor="materialForm.estoqueCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
             </div>
           )}
           {!((item.metadata?.colorIds?.length || 0) > 0) && isKgMaterialUnit && !!item.metadata?.packageWeight && (
@@ -340,7 +345,7 @@ export default function MaterialFormFields({
           <label htmlFor="mat-min-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Estoque Mínimo</label>
           <div className="relative group">
             <input id="mat-min-stock" type="number" step="0.01" value={item.metadata?.minStock || ''} title="Estoque Mínimo" onChange={(e) => onChange({ ...item, metadata: { ...item.metadata, minStock: Number(e.target.value) } })} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
-            <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque mínimo" onClick={() => setActiveCalc({ initialValue: item.metadata?.minStock || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, minStock: val } }) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
+            <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque mínimo" onClick={() => setActiveCalc({ initialValue: item.metadata?.minStock || 0, onResult: (val) => onChange({ ...item, metadata: { ...item.metadata, minStock: val } }) })} data-guide-anchor="materialForm.estoqueMinimoCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
           </div>
         </div>
       </div>
@@ -384,7 +389,7 @@ export default function MaterialFormFields({
                           placeholder="0,00"
                           className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
                         />
-                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de estoque" onClick={() => setActiveCalc({ initialValue: editingStockColors[colorId] || 0, onResult: (val) => setEditingStockColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
+                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de estoque" onClick={() => setActiveCalc({ initialValue: editingStockColors[colorId] || 0, onResult: (val) => setEditingStockColors(prev => ({ ...prev, [colorId]: val })) })} data-guide-anchor="materialForm.corEstoqueCalc" className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
                       </div>
                     </div>
                     <div className="flex-1 flex flex-col gap-1">
@@ -399,7 +404,7 @@ export default function MaterialFormFields({
                           placeholder="0,00"
                           className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
                         />
-                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de custo" onClick={() => setActiveCalc({ initialValue: editingPriceColors[colorId] || 0, onResult: (val) => setEditingPriceColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
+                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de custo" onClick={() => setActiveCalc({ initialValue: editingPriceColors[colorId] || 0, onResult: (val) => setEditingPriceColors(prev => ({ ...prev, [colorId]: val })) })} data-guide-anchor="materialForm.corCustoCalc" className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
                       </div>
                     </div>
                   </div>
@@ -412,6 +417,7 @@ export default function MaterialFormFields({
             <button
               type="button"
               onClick={() => setIsStockColorModalOpen(false)}
+              data-guide-anchor="materialForm.corModalCancelar"
               className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all border-2 ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
             >
               Cancelar
@@ -431,6 +437,7 @@ export default function MaterialFormFields({
                 });
                 setIsStockColorModalOpen(false);
               }}
+              data-guide-anchor="materialForm.corModalSalvar"
               className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
             >
               Salvar Balanço

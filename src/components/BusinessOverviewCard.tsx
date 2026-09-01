@@ -2,8 +2,8 @@ import { useState, useMemo, useEffect, useRef, type RefObject } from 'react';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot, ProductionConfigItem } from '../types';
-import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Banknote } from 'lucide-react';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem } from '../types';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Banknote, Footprints } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '../utils/toast';
@@ -15,8 +15,8 @@ import {
   computeAccountBalance,
   computePendingReceivables,
   computeMonthlySettledBalance,
-  computeSalesProfitInPeriod,
   computePeriodFinancials,
+  computeProducedPairs,
   OverviewPeriodType,
 } from '../utils/businessOverview';
 import {
@@ -176,12 +176,6 @@ export default function BusinessOverviewCard({
     return () => unsub();
   }, []);
 
-  const toggleOverviewSource = (key: 'includeStock' | 'includeAccounts' | 'includeProduction' | 'includeReceivables' | 'includeAllIncome') => {
-    const next = { ...overviewConfig, [key]: !overviewConfig[key] };
-    setOverviewConfig(next);
-    saveBusinessOverviewConfig(next);
-  };
-
   const setOverviewPeriod = (periodType: OverviewPeriodType) => {
     const next = { ...overviewConfig, periodType };
     setOverviewConfig(next);
@@ -292,41 +286,57 @@ export default function BusinessOverviewCard({
   const packagingItems = useMemo(() => productionConfigs.filter(c => c.type === 'PACKAGING'), [productionConfigs]);
 
   const resumo = useMemo(() => ({
-    consolidatedBalance: computeAccountBalance(accounts),
+    // Respeita a mesma seleção de contas do popup "Escolher Contas" (ver showAccountPicker,
+    // aberto a partir deste card) — antes somava sempre todas as contas do negócio.
+    consolidatedBalance: computeAccountBalance(accounts, overviewConfig.selectedAccountIds),
     pendingReceivables: computePendingReceivables(sales),
     monthlyBalance: computeMonthlySettledBalance(transactions, accounts),
     stockValue: computeStockValue(products, packagingItems),
-  }), [accounts, sales, transactions, products, packagingItems]);
+  }), [accounts, sales, transactions, products, packagingItems, overviewConfig.selectedAccountIds]);
 
+  const accountsDesc = overviewConfig.selectedAccountIds
+    ? `${overviewConfig.selectedAccountIds.length} de ${businessAccounts.length} contas selecionadas`
+    : 'Todas as contas do negócio — toque pra escolher';
+
+  // Lucro Real = Receitas Totais (todas as transações confirmadas no período) − Despesas do
+  // período. Estoque/Produção ficam só como referência informativa (não entram na conta) —
+  // Saldo em Conta e Vendas a Receber saíram daqui de vez, por já aparecerem no Resumo
+  // Financeiro abaixo (Saldo Consolidado / A Receber), evitando mostrar o mesmo número duas
+  // vezes com rótulos diferentes.
   const businessOverview = useMemo(() => {
     const { start, end } = getPeriodRange(overviewConfig.periodType, overviewConfig.periodDate);
     const { income, expenses } = computePeriodFinancials(transactions, start, end);
 
     const stockProfit = computeStockProfit(products, packagingItems);
     const productionProfit = computeProductionProfit(products, productionLots);
-    const accountBalance = computeAccountBalance(accounts, overviewConfig.selectedAccountIds);
-    const pendingReceivables = computePendingReceivables(sales);
-    const salesProfit = computeSalesProfitInPeriod(sales, products, start, end);
 
-    const accountsDesc = overviewConfig.selectedAccountIds
-      ? `${overviewConfig.selectedAccountIds.length} de ${businessAccounts.length} contas selecionadas`
-      : 'Todas as contas do negócio — toque pra escolher';
-
-    const sources = [
-      { key: 'includeStock' as const, label: 'Lucro em Estoque', desc: 'Venda − custo de tudo que está pronto', value: stockProfit, color: 'emerald', icon: Package },
-      { key: 'includeAccounts' as const, label: 'Saldos em Conta', desc: accountsDesc, value: accountBalance, color: 'sky', icon: Wallet, onConfigure: () => setShowAccountPicker(true) },
-      { key: 'includeProduction' as const, label: 'Lucro em Produção', desc: 'Pares em andamento × lucro unitário cadastrado', value: productionProfit, color: 'violet', icon: Factory },
-      { key: 'includeReceivables' as const, label: 'Vendas a Receber', desc: 'Pedidos fechados, ainda não pagos', value: pendingReceivables, color: 'amber', icon: DollarSign },
-      { key: 'includeAllIncome' as const, label: 'Receitas Totais (Transações)', desc: 'Soma de toda entrada confirmada em Financeiro no período — venda ou não', value: income, color: 'cyan', icon: Banknote, onConfigure: () => setShowIncomeBreakdown(true) },
+    const infoSources = [
+      { label: 'Lucro em Estoque', desc: 'Venda − custo de tudo que está pronto (informativo)', value: stockProfit, color: 'emerald', icon: Package },
+      { label: 'Lucro em Produção', desc: 'Pares em andamento × lucro unitário cadastrado (informativo)', value: productionProfit, color: 'violet', icon: Factory },
     ];
 
-    const includedTotal = sources.filter(s => overviewConfig[s.key]).reduce((acc, s) => acc + s.value, 0);
-    const profit = includedTotal - expenses;
+    const profit = income - expenses;
     const margin = income > 0 ? (profit / income) * 100 : 0;
 
-    // Comparação com outro período — só as partes que variam por período (Despesas,
-    // Receitas Totais) mudam de fato; Estoque/Produção/Saldo/A Receber são "de agora"
-    // e não têm histórico salvo, então entram com o mesmo valor nos dois lados.
+    // Lucro por Par — mesmo cálculo do card "Análise de Lucro" do Dashboard: (Receitas −
+    // Despesas) do período ÷ pares realmente finalizados na produção (Mapas com finishedAt)
+    // no mesmo período.
+    const producedPairs = computeProducedPairs(productionLots, start, end).total;
+    const profitPerPair = producedPairs > 0 ? profit / producedPairs : null;
+
+    // Preço médio de venda (todos os modelos vendidos no período) — receita total das vendas
+    // fechadas ÷ total de pares vendidos, pra dar uma referência de ticket médio junto do
+    // Lucro por Par (que usa pares PRODUZIDOS, não vendidos — números propositalmente
+    // diferentes, um mede fábrica, o outro mede venda).
+    const periodSales = sales.filter(s => s.status === SaleStatus.SALE && s.isAccounting !== false && s.date >= start && s.date <= end);
+    let totalPairsSold = 0;
+    let totalRevenueSold = 0;
+    for (const sale of periodSales) {
+      for (const item of sale.items || []) totalPairsSold += item.quantity || 0;
+      totalRevenueSold += sale.total;
+    }
+    const avgSalePricePerPair = totalPairsSold > 0 ? totalRevenueSold / totalPairsSold : null;
+
     let comparison: { profit: number; delta: number; label: string } | null = null;
     if (overviewConfig.comparisonMode !== 'NONE') {
       let compStart: number, compEnd: number, label: string;
@@ -342,18 +352,13 @@ export default function BusinessOverviewCard({
         label = format(new Date(overviewConfig.compPeriodDate + '-01T12:00:00'), 'MMM/yy', { locale: ptBR });
       }
       const compFin = computePeriodFinancials(transactions, compStart, compEnd);
-      const compIncludedTotal = sources.reduce((acc, s) => {
-        if (!overviewConfig[s.key]) return acc;
-        if (s.key === 'includeAllIncome') return acc + compFin.income;
-        return acc + s.value;
-      }, 0);
-      const compProfit = compIncludedTotal - compFin.expenses;
+      const compProfit = compFin.income - compFin.expenses;
       const delta = compProfit === 0 ? (profit > 0 ? 100 : profit < 0 ? -100 : 0) : ((profit - compProfit) / Math.abs(compProfit)) * 100;
       comparison = { profit: compProfit, delta, label };
     }
 
-    return { sources, includedTotal, expenses, income, profit, margin, comparison, salesProfitInPeriod: salesProfit };
-  }, [overviewConfig, products, productionLots, packagingItems, accounts, sales, transactions, businessAccounts]);
+    return { infoSources, expenses, income, profit, margin, comparison, producedPairs, profitPerPair, avgSalePricePerPair, totalPairsSold };
+  }, [overviewConfig, products, productionLots, packagingItems, transactions, sales]);
 
   const cashFlowTrend = useMemo(() => {
     const months: { label: string; profit: number }[] = [];
@@ -394,6 +399,13 @@ export default function BusinessOverviewCard({
             transition={{ duration: 0.25, ease: 'easeInOut' }}
             className="flex flex-col gap-5 overflow-hidden"
           >
+            <div className={`flex items-start gap-2.5 p-3.5 rounded-2xl border-2 ${isDarkMode ? 'bg-rose-950/30 border-rose-800 text-rose-300' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+              <p className="text-[10.5px] font-bold leading-relaxed">
+                Preço de Venda e Lucro em Vendas aqui vêm do que está cadastrado em cada produto — são métricas obtidas de acordo com o preço de venda e o preço de compra (custo) cadastrados. Use este card pra ter uma noção da saúde do negócio, mas mantenha sempre atualizados os preços de matéria-prima, mão de obra, custo e compra dos produtos: se ficarem desatualizados, os cálculos se afastam do real.
+              </p>
+            </div>
+
             <div className="flex gap-1.5 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">
               {(Object.keys(OVERVIEW_PERIOD_LABELS) as OverviewPeriodType[]).map((p) => (
                 <button
@@ -527,17 +539,17 @@ export default function BusinessOverviewCard({
               </div>
 
               <div className="mt-4">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Fontes Marcadas × Despesas do Período</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Receitas Totais × Despesas do Período</p>
                 <div className="flex flex-col gap-2.5">
                   <div>
                     <div className="flex justify-between items-baseline text-[9px] font-black mb-1">
-                      <span className="text-emerald-500 uppercase tracking-widest">Fontes marcadas</span>
-                      <span className={`text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {businessOverview.includedTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="text-emerald-500 uppercase tracking-widest">Receitas totais</span>
+                      <span className={`text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {businessOverview.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                       <div
                         className="h-full rounded-full bg-emerald-500 transition-all"
-                        style={{ width: `${Math.max(3, Math.min(100, (Math.abs(businessOverview.includedTotal) / (Math.max(Math.abs(businessOverview.includedTotal), businessOverview.expenses) || 1)) * 100))}%` }}
+                        style={{ width: `${Math.max(3, Math.min(100, (Math.abs(businessOverview.income) / (Math.max(Math.abs(businessOverview.income), businessOverview.expenses) || 1)) * 100))}%` }}
                       />
                     </div>
                   </div>
@@ -549,11 +561,11 @@ export default function BusinessOverviewCard({
                     <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                       <div
                         className="h-full rounded-full bg-rose-500 transition-all"
-                        style={{ width: `${Math.max(3, Math.min(100, (businessOverview.expenses / (Math.max(Math.abs(businessOverview.includedTotal), businessOverview.expenses) || 1)) * 100))}%` }}
+                        style={{ width: `${Math.max(3, Math.min(100, (businessOverview.expenses / (Math.max(Math.abs(businessOverview.income), businessOverview.expenses) || 1)) * 100))}%` }}
                       />
                     </div>
                   </div>
-                  <p className="text-[8.5px] font-bold text-slate-400 leading-relaxed">Reflete só as fontes marcadas em "Fontes Incluídas no Cálculo" abaixo — desmarque ou marque uma fonte e a barra muda.</p>
+                  <p className="text-[8.5px] font-bold text-slate-400 leading-relaxed">Lucro Real = Receitas Totais (todas as transações confirmadas no período) − Despesas do período.</p>
                 </div>
               </div>
 
@@ -596,13 +608,23 @@ export default function BusinessOverviewCard({
                     className="overflow-hidden"
                   >
                     <div className="flex flex-col gap-2 px-3 pb-3.5">
-                      <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Landmark size={10} /> Saldo Consolidado</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAccountPicker(true)}
+                        data-guide-anchor="dash.overview.saldoConsolidadoAbrir"
+                        className={`p-3 rounded-2xl text-left ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+                      >
+                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1">
+                          <Landmark size={10} /> Saldo Consolidado
+                          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-indigo-500/10 animate-pulse-indigo-ring">
+                            <ChevronDown size={9} className="rotate-[-90deg] text-indigo-500" />
+                          </span>
+                        </p>
                         <p className={`text-sm font-black mt-0.5 ${resumo.consolidatedBalance >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                           R$ {resumo.consolidatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Soma do saldo de todas as contas do negócio agora (contas de uso Pessoal não entram).</p>
-                      </div>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">{accountsDesc} (contas de uso Pessoal não entram).</p>
+                      </button>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><DollarSign size={10} /> A Receber (Pendente)</p>
@@ -624,9 +646,18 @@ export default function BusinessOverviewCard({
                       </div>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><ShoppingBag size={10} /> Lucro em Vendas</p>
-                        <p className={`text-sm font-black mt-0.5 ${businessOverview.salesProfitInPeriod >= 0 ? 'text-teal-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {businessOverview.salesProfitInPeriod.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas fechadas no período selecionado acima, menos o custo dos produtos vendidos — a margem já ganha ao vender, recebida ou não ainda o dinheiro. Só informativo: não entra na soma de "Lucro Real".</p>
+                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Footprints size={10} /> Lucro por Par</p>
+                        <p className={`text-sm font-black mt-0.5 ${businessOverview.profitPerPair === null ? 'text-slate-400' : businessOverview.profitPerPair >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                          {businessOverview.profitPerPair === null ? '—' : `R$ ${businessOverview.profitPerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Mesmo cálculo do card "Análise de Lucro": (Receitas − Despesas) ÷ {businessOverview.producedPairs} {businessOverview.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} no período selecionado acima.</p>
+                        <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                          <p className={`text-[11px] font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-700'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                            {businessOverview.avgSalePricePerPair === null ? '—' : `R$ ${businessOverview.avgSalePricePerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest ml-1">Preço Médio de Venda (todos os modelos)</span>
+                          </p>
+                          <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Receita das vendas fechadas ÷ {businessOverview.totalPairsSold} {businessOverview.totalPairsSold === 1 ? 'par vendido' : 'pares vendidos'} no período — média de todos os modelos, não os pares produzidos.</p>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -635,73 +666,54 @@ export default function BusinessOverviewCard({
             </div>
 
             <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Fontes incluídas no cálculo</p>
-              {businessOverview.sources.map((s) => {
-                const checked = overviewConfig[s.key];
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Base do Lucro Real</p>
+              <button
+                type="button"
+                onClick={() => setShowIncomeBreakdown(true)}
+                data-guide-anchor="dash.overview.receitasTotais"
+                className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition-all ${OVERVIEW_SOURCE_COLORS.cyan.ring} ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+              >
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${OVERVIEW_SOURCE_COLORS.cyan.iconBg} ${OVERVIEW_SOURCE_COLORS.cyan.icon}`}>
+                  <Banknote size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-black flex items-center gap-1">
+                    Receitas Totais (Transações)
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-500/10 animate-pulse-indigo-ring shrink-0">
+                      <ChevronDown size={10} className="rotate-[-90deg] text-indigo-500" />
+                    </span>
+                  </p>
+                  <p className="text-[9px] font-bold text-slate-400">Soma de toda entrada confirmada em Financeiro no período — venda ou não. Único valor usado no Lucro Real.</p>
+                </div>
+                <p className={`text-[12px] font-black shrink-0 ${OVERVIEW_SOURCE_COLORS.cyan.chip} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                  R$ {businessOverview.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </button>
+
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1 mt-2">Outras Métricas (Informativo — não entram no Lucro Real)</p>
+              {businessOverview.infoSources.map((s) => {
                 const colors = OVERVIEW_SOURCE_COLORS[s.color];
                 const Icon = s.icon;
                 return (
                   <div
-                    key={s.key}
-                    className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${
-                      checked ? colors.ring : isDarkMode ? 'border-slate-800' : 'border-slate-100'
-                    } ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+                    key={s.label}
+                    data-guide-anchor="dash.overview.metricaInformativa"
+                    className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleOverviewSource(s.key)}
-                      data-guide-anchor="dash.overview.fonteToggle"
-                      aria-label={checked ? `Desmarcar ${s.label}` : `Marcar ${s.label}`}
-                      className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${checked ? colors.solid : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
-                    >
-                      {checked && <CheckCircle2 size={14} className="text-white" strokeWidth={3} />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => (s.onConfigure ? s.onConfigure() : toggleOverviewSource(s.key))}
-                      data-guide-anchor="dash.overview.fonteDetalhe"
-                      title={s.onConfigure ? `Ver detalhes de ${s.label}` : undefined}
-                      className="flex-1 min-w-0 flex items-center gap-3 text-left"
-                    >
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${colors.iconBg} ${colors.icon} ${checked ? '' : 'opacity-40'}`}>
-                        <Icon size={16} />
-                      </div>
-                      <div className={`flex-1 min-w-0 ${checked ? '' : 'opacity-40'}`}>
-                        <p className="text-[11px] font-black flex items-center gap-1">
-                          {s.label}
-                          {s.onConfigure && (
-                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-500/10 animate-pulse-indigo-ring shrink-0">
-                              <ChevronDown size={10} className="rotate-[-90deg] text-indigo-500" />
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-[9px] font-bold text-slate-400">{s.desc}</p>
-                      </div>
-                    </button>
-                    <p className={`text-[12px] font-black shrink-0 ${checked ? colors.chip : 'text-slate-400'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${colors.iconBg} ${colors.icon}`}>
+                      <Icon size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-black">{s.label}</p>
+                      <p className="text-[9px] font-bold text-slate-400">{s.desc}</p>
+                    </div>
+                    <p className={`text-[12px] font-black shrink-0 ${colors.chip} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                       R$ {s.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                 );
               })}
             </div>
-
-            {businessOverview.includedTotal > 0 && (
-              <div className="flex flex-col gap-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Composição do lucro</p>
-                <div className="flex h-3.5 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-                  {businessOverview.sources.filter((s) => overviewConfig[s.key] && s.value > 0).map((s) => (
-                    <div key={s.key} className={OVERVIEW_SOURCE_COLORS[s.color].solid} style={{ width: `${(s.value / businessOverview.includedTotal) * 100}%` }} />
-                  ))}
-                </div>
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-[9px] font-bold text-slate-400">Total das fontes marcadas</span>
-                  <span className={`text-[13px] font-black ${businessOverview.includedTotal >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
-                    R$ {businessOverview.includedTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-            )}
 
             <div className="flex flex-col gap-2">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Receita − Despesas — últimos 6 meses</p>

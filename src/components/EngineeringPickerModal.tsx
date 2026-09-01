@@ -75,6 +75,7 @@ export default function EngineeringPickerModal({
           <button
             type="button"
             onClick={onClose}
+            data-guide-anchor="engPicker.fechar"
             className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? "bg-slate-800 text-slate-400 hover:text-white" : "bg-slate-50 text-slate-400 hover:text-slate-600"}`}
             aria-label="Fechar"
           >
@@ -111,6 +112,7 @@ export default function EngineeringPickerModal({
                       onSelect(option.id);
                       onClose();
                     }}
+                    data-guide-anchor="engPicker.item"
                     className={`w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-2xl text-left transition-all ${
                       isSelected
                         ? isDarkMode
@@ -142,6 +144,7 @@ export default function EngineeringPickerModal({
             <button
               type="button"
               onClick={() => onCreateNew?.(search.trim())}
+              data-guide-anchor="engPicker.criarNovo"
               className={`w-full mt-2 flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left font-black text-sm transition-all border-2 border-dashed ${
                 isDarkMode ? "text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10" : "text-emerald-600 border-emerald-200 hover:bg-emerald-50"
               }`}

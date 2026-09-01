@@ -159,7 +159,7 @@ export default function PrintDocumentModal({
               <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Impressão e Exportação</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className={`w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-all ${dk ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`} aria-label="Fechar">
+          <button type="button" onClick={onClose} data-guide-anchor="printDocument.fechar" className={`w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white transition-all ${dk ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`} aria-label="Fechar">
             <X size={18} />
           </button>
         </div>
@@ -172,6 +172,7 @@ export default function PrintDocumentModal({
               key={f.label}
               type="button"
               onClick={() => selectFormat(i)}
+              data-guide-anchor="printDocument.selecionarFormato"
               className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
                 formatIdx === i
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
@@ -236,6 +237,7 @@ export default function PrintDocumentModal({
             type="button"
             onClick={handleNativePrint}
             disabled={printing}
+            data-guide-anchor="printDocument.imprimir"
             className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
           >
             <Printer size={16} strokeWidth={2.5} />
@@ -246,6 +248,7 @@ export default function PrintDocumentModal({
             type="button"
             onClick={handleExportPDF}
             disabled={printing}
+            data-guide-anchor="printDocument.exportarPdf"
             className={`flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 ${
               dk ? 'bg-slate-800 text-slate-200 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
@@ -258,6 +261,7 @@ export default function PrintDocumentModal({
             type="button"
             onClick={handleExportJPG}
             disabled={printing}
+            data-guide-anchor="printDocument.exportarJpg"
             className={`flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 ${
               dk ? 'bg-slate-800 text-slate-200 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}

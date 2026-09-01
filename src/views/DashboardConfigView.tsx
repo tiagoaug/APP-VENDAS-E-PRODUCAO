@@ -321,6 +321,26 @@ function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
         </div>
       );
 
+    case 'produced_pairs':
+      return (
+        <div className={containerClass}>
+          <div className={headerClass}>
+            <span className={`${titleClass} bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400`}>Pares Produzidos</span>
+            <Factory size={mini ? 12 : 16} className="text-teal-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className={`p-2 rounded-lg border text-center ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+              <p className="text-[7px] text-slate-400 font-bold mb-0.5">Total (Mês)</p>
+              <p className="font-black text-slate-700 dark:text-slate-200">1.540</p>
+            </div>
+            <div className={`p-2 rounded-lg border text-center ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+              <p className="text-[7px] text-slate-400 font-bold mb-0.5">Média/Dia</p>
+              <p className="font-black text-teal-500">51,3</p>
+            </div>
+          </div>
+        </div>
+      );
+
     case 'estimated_profit':
       return (
         <div className={containerClass}>
@@ -539,9 +559,10 @@ function CardItem({ card, isDarkMode, onToggleVisibility, viewMode }: CardItemPr
             e.stopPropagation();
             onToggleVisibility(card.id);
           }}
+          data-guide-anchor="dashConfig.toggleVisibilidade"
           className={`p-3 rounded-xl transition-all ${
-            card.visible 
-              ? (isDarkMode ? 'text-indigo-400 bg-indigo-500/10' : 'text-indigo-600 bg-indigo-50') 
+            card.visible
+              ? (isDarkMode ? 'text-indigo-400 bg-indigo-500/10' : 'text-indigo-600 bg-indigo-50')
               : (isDarkMode ? 'text-slate-600 bg-slate-800' : 'text-slate-300 bg-slate-100')
           }`}
           title={card.visible ? "Ocultar" : "Mostrar"}
@@ -634,6 +655,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
         <div className="flex items-center gap-4">
           <button 
             onClick={onBack}
+            data-guide-anchor="dashConfig.voltar"
             className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
             title="Voltar"
           >
@@ -649,6 +671,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
         
         <button 
           onClick={handleSave}
+          data-guide-anchor="dashConfig.salvar"
           className={`${isSaved ? 'bg-emerald-500 shadow-emerald-500/20' : 'bg-indigo-600 shadow-indigo-500/20'} text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg transition-all flex items-center gap-2 active:scale-95`}
         >
           {isSaved ? (
@@ -680,6 +703,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
                   key={mode}
                   type="button"
                   onClick={() => handleViewModeChange(mode)}
+                  data-guide-anchor="dashConfig.modoVisualizacao"
                   className={`flex-1 py-2.5 px-2 rounded-2xl text-[9px] font-black uppercase tracking-wider transition-all duration-300 ${
                     active
                       ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-lg shadow-black/30 border border-slate-700/50' : 'bg-white text-indigo-600 shadow-md border border-slate-200/20')
@@ -754,12 +778,14 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
               <div className="flex gap-3">
                 <button 
                   onClick={() => setShowReloadPrompt(false)}
+                  data-guide-anchor="dashConfig.recarregarDepois"
                   className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
                 >
                   Mais Tarde
                 </button>
                 <button 
                   onClick={handleReload}
+                  data-guide-anchor="dashConfig.recarregarAgora"
                   className="flex-[2] py-3.5 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
                 >
                   <RefreshCcw size={14} strokeWidth={3} />

@@ -231,30 +231,31 @@ cada botão/card que ainda não tem, tela por tela.
 Contagem automática em 30/08/2026: `grep -c "onClick=" <arquivo>` (pontos clicáveis) vs
 `grep -c "data-guide-anchor" <arquivo>` (já cobertos), por arquivo, agrupado por módulo.
 
-**Progresso atual: 495 de 2520 pontos clicáveis do app têm anchor — 20%.** É um escopo
+**Progresso atual: 1727 de 2537 pontos clicáveis do app têm anchor — 68%.** É um escopo
 bem maior que a seção 3 (que só mediu os ~350 anchors que já existiam) — cobrir tudo é
 um trabalho de várias sessões, tela por tela. Esta tabela é o mapa pra ir avançando nisso
 aos poucos, sem perder de vista quanto falta em cada módulo.
 
 | Módulo | Cobertos / Total | % |
 |---|---|---|
-| **Painel Inicial (Dashboard)** | **126 / 172** | **73% (DashboardView.tsx + os 3 cards filhos concluídos em 30/08/2026 — falta só DashboardConfigView.tsx e os popups de diagnóstico de estoque)** |
-| Vendas | 182 / 351 | 52% |
+| **Painel Inicial (Dashboard)** | **156 / 172** | **91% — módulo praticamente fechado em 30/08/2026 (só sobra o que for pedido novo)** |
+| Vendas | 336 / 351 | 96% — módulo praticamente fechado em 31/08/2026 (o resto são backdrops/wrappers sem ação própria) |
 | Ferramentas Extras (OCR/Regra de Três) | 27 / 58 | 47% |
-| Compras | 42 / 99 | 42% |
+| Compras | 143 / 151 | 95% — módulo praticamente fechado em 31/08/2026 (inclui `GeneralReceiptsView.tsx` e `PurchaseNeedsView.tsx`, recategorizados de Solados e PCP para Compras nesta etapa; o resto são backdrops/wrappers sem ação própria) |
 | Central de Ajuda / Onboarding guiado | 8 / 30 | 27% |
-| Produção / PCP | 76 / 608 | 13% |
+| Produção / PCP | 464 / 588 | 79% |
+| Etiquetas / Impressão | 314 / 331 | 95% — módulo praticamente fechado em 31/08/2026 (o resto são backdrops/wrappers sem ação própria) |
 | App.tsx (nav/menus globais) | 4 / 30 | 13% |
-| Cadastros (Produtos/Categorias/Cores/Grades/Pessoas) | 12 / 134 | 9% |
+| Cadastros (Produtos/Categorias/Cores/Grades/Pessoas) | 130 / 134 | 97% — módulo praticamente fechado em 31/08/2026 (o resto são backdrops/wrappers sem ação própria) |
 | Bling | 5 / 88 | 6% |
 | Entregas | 4 / 78 | 5% |
 | Estoque (produtos prontos) | 4 / 91 | 4% |
 | Financeiro | 4 / 109 | 4% |
 | Colaboradores / Sistema / Configurações | 2 / 92 | 2% |
-| Solados / Palmilhas / Insumos | 2 / 166 | 1% |
+| Solados / Palmilhas / Insumos | 121 / 140 | 86% |
 | Assistente de IA | 0 / 43 | 0% |
-| Componentes Genéricos / Utilitários (Modal, DatePicker, ComboBox...) | 0 / 40 | 0% |
-| **Total geral** | **495 / 2520** | **20%** |
+| Componentes Genéricos / Utilitários (Modal, DatePicker, ComboBox...) | 1 / 40 | 3% |
+| **Total geral** | **1727 / 2537** | **68%** |
 
 ### Painel Inicial — detalhe (o que foi pedido explicitamente)
 `DashboardView.tsx` (cards de Assistente IA, Produtos, Saldo Consolidado, Lançamentos
@@ -263,14 +264,12 @@ Financeiro Pessoal, Necessidade de Compras, Estoque de Solados/Palmilhas, Débit
 de Clientes e Fornecedores, Valor em Estoque, Lembretes, Cheques, Lucro Estimado,
 Atividade Recente, Central de Impressão, atalhos de Produção/PCP e o Scanner Rápido) está
 **100% coberto** (68/71 — os 3 restantes são backdrops/wrappers sem ação própria).
-Os 3 cards "filhos" que vivem em arquivos próprios também estão completos:
-`BusinessOverviewCard.tsx` (24/34 — 10 são overlays de fechar-por-fora/stopPropagation
-sem ação própria), `CommissionToSellersCard.tsx` (10/10) e `ProviderServiceOrdersCard.tsx`
-(24/25 — 1 é overlay de fechar popup). Ainda faltam, fora do escopo desta rodada:
-`DashboardConfigView.tsx` (tela de "Personalizar Dashboard") e os popups de diagnóstico
-de estoque (`StockDiagnosticsModal`, `StockDuplicateDiagnosticModal`,
-`StockDuplicateBanner`, `StockRepairBanner`, `StockEntryHistoryModal`) que abrem a partir
-do Dashboard — juntos, ~32 pontos clicáveis.
+Os 3 cards "filhos" (`BusinessOverviewCard.tsx`, `CommissionToSellersCard.tsx`,
+`ProviderServiceOrdersCard.tsx`), a tela `DashboardConfigView.tsx` ("Personalizar
+Dashboard") e os popups de diagnóstico de estoque que abrem a partir do Dashboard
+(`StockDiagnosticsModal`, `StockDuplicateDiagnosticModal`, `StockDuplicateBanner`,
+`StockRepairBanner`, `StockEntryHistoryModal`) também estão completos — cada um só com
+backdrops/wrappers sem ação própria como exceção. **Módulo Painel Inicial concluído.**
 
 ### Etapas da Seção 4 (plano por sessão — 30/08/2026)
 
@@ -282,48 +281,71 @@ escrito + typecheck/build passando), marque o `[x]` e atualize a tabela de módu
 - [x] **Etapa 0 — Painel Inicial (Dashboard)** — `DashboardView.tsx` (68/71),
   `BusinessOverviewCard.tsx` (24/34), `CommissionToSellersCard.tsx` (10/10),
   `ProviderServiceOrdersCard.tsx` (24/25). ~126 pontos. **Concluída em 30/08/2026.**
-- [ ] **Etapa 0b — Painel Inicial, sobras** — `DashboardConfigView.tsx` (6),
-  `StockDiagnosticsModal.tsx` (15), `StockDuplicateDiagnosticModal.tsx` (6),
-  `StockDuplicateBanner.tsx` (1), `StockRepairBanner.tsx` (1),
-  `StockEntryHistoryModal.tsx` (3). ~32 pontos — fecha o módulo Painel Inicial 100%.
-- [ ] **Etapa 1 — PCP, mapa de produção** — `PCPView.tsx` sozinho (228 pontos faltando
-  de 265) — arquivo grande, provavelmente com bastante reaproveitamento de anchor entre
-  linhas de tabela/lista repetidas (mesmo padrão usado no Dashboard).
-- [ ] **Etapa 2 — Produção / Engenharia** — `ProductionConfigView.tsx` (90),
-  `EngineeringEditor.tsx` (33), `CompletedServiceOrdersModal.tsx` (30),
-  `MaterialFormFields.tsx` (15), `ProductionEngineeringView.tsx` (8),
-  `ProductionOrderModal.tsx` (7), `ConsumptionCalculatorModal.tsx` (5),
-  `PackagingBuilderModal.tsx` (5), `EngineeringModal.tsx` (4),
-  `EngineeringPickerModal.tsx` (4), `GradeBuilderModal.tsx` (4),
-  `ProductCostSummaryModal.tsx` (4), `ProductSheetMenuView.tsx` (4),
-  `PCPFilterModal.tsx` (2). ~215 pontos.
-- [ ] **Etapa 3 — Solados / Palmilhas / Insumos** — `SoleStockView.tsx` (34),
-  `WeighingView.tsx` (31), `SoleReceiptView.tsx` (19), `SolePurchaseModal.tsx` (10),
-  `PalmilhaPurchaseModal.tsx` (10), `SolePurchaseView.tsx` (8),
-  `PrintSoleLabelModal.tsx` (9), `PalmilhaStockView.tsx` (11),
-  `SoleNeedsFormModal.tsx` (6). ~138 pontos.
-- [ ] **Etapa 4a — Etiquetas / Impressão, parte 1** — `PrintLabelEditorModal.tsx` (84),
-  `LabelEditorView.tsx` (68), `PrintCenterView.tsx` (41). ~193 pontos — o maior módulo
-  do app em pontos clicáveis totais (331), por isso dividido em duas etapas.
-- [ ] **Etapa 4b — Etiquetas / Impressão, parte 2** — `PdfPageSelectModal.tsx` (42),
-  `PrintOSModal.tsx` (30), `LabelPrintPreviewModal.tsx` (15),
-  `LabelPrintStudioView.tsx` (14), `PrintLabelModal.tsx` (12),
-  `LabelProfilePickerModal.tsx` (9), `PrinterConnectionCard.tsx` (7),
-  `PrintDocumentModal.tsx` (6), `LabelEditor.tsx` (2). ~137 pontos.
-- [ ] **Etapa 5 — Vendas, sobras** — `ExportNoteModal.tsx` (61), `SaleFormView.tsx` (44),
-  `SalePaymentModal.tsx` (9), `PasteOrderModal.tsx` (8), `ConsolidatedMessageModal.tsx`
-  (7), `SeparacaoCaixasModal.tsx` (7), `NavigationProviderModal.tsx` (6),
-  `DeliveryItemsPicker.tsx` (5), `PartialPaymentModal.tsx` (5), `SalesView.tsx` (17).
-  ~169 pontos — Vendas já é o módulo mais coberto (52%), essa etapa fecha o resto.
-- [ ] **Etapa 6 — Compras** — `PurchaseNeedsView.tsx` (26), `GeneralReceiptsView.tsx`
-  (26), `PurchasesView.tsx` (24), `PurchaseFormView.tsx` (17), `AddPurchaseEntriesModal.tsx`
-  (9), `PurchaseNeedsModal.tsx` (7). ~109 pontos.
-- [ ] **Etapa 7 — Cadastros (Produtos/Categorias/Cores/Grades/Pessoas)** —
-  `ProductFormView.tsx` (54), `CategoriesView.tsx` (12), `PeopleView.tsx` (9),
-  `PersonModal.tsx` (9), `GradeModal.tsx` (8), `ProductsView.tsx` (8), `ColorsView.tsx`
-  (6), `GradesView.tsx` (6), `ProductCreationChoiceModal.tsx` (3), `CategoryConfigView.tsx`
-  (3), `CategoryModal.tsx` (2), `ColorModal.tsx` (1), `PersonDetailView.tsx` (1).
-  ~122 pontos.
+- [x] **Etapa 0b — Painel Inicial, sobras** — `DashboardConfigView.tsx` (6/6),
+  `StockDiagnosticsModal.tsx` (15/15), `StockDuplicateDiagnosticModal.tsx` (4/6),
+  `StockDuplicateBanner.tsx` (1/1), `StockRepairBanner.tsx` (1/1),
+  `StockEntryHistoryModal.tsx` (3/3). **Concluída em 30/08/2026 — módulo Painel Inicial
+  fechado em 91% (156/172, o resto são backdrops/wrappers sem ação própria).**
+- [x] **Etapa 1 — PCP, mapa de produção** — `PCPView.tsx` (240/265 — os 25 restantes são
+  backdrops de popup e wrappers `stopPropagation()` sem ação própria, sem contar como
+  gap real). 179 anchors novos + entradas em `FIELD_HELP` correspondentes.
+  **Concluída em 31/08/2026.**
+- [x] **Etapa 2 — Produção / Engenharia** — `ProductionConfigView.tsx` (108/125 — o
+  resto são backdrops/wrappers `stopPropagation()`), `EngineeringEditor.tsx` (34/34),
+  `CompletedServiceOrdersModal.tsx` (26/32), `MaterialFormFields.tsx` (15/15),
+  `ProductionEngineeringView.tsx` (7/8), `ProductionOrderModal.tsx` (6/7),
+  `ConsumptionCalculatorModal.tsx` (5/5), `PackagingBuilderModal.tsx` (4/5),
+  `EngineeringModal.tsx` (4/4), `EngineeringPickerModal.tsx` (3/4),
+  `GradeBuilderModal.tsx` (3/4), `ProductCostSummaryModal.tsx` (3/4),
+  `ProductSheetMenuView.tsx` (4/4), `PCPFilterModal.tsx` (2/2). ~185 anchors novos +
+  entradas em `FIELD_HELP` correspondentes. **Concluída em 31/08/2026.**
+- [x] **Etapa 3 — Solados / Palmilhas / Insumos** — `SoleStockView.tsx` (29/34),
+  `WeighingView.tsx` (26/31), `SoleReceiptView.tsx` (18/20 — já tinha `soleReceipt.confirmar`
+  de antes), `SolePurchaseModal.tsx` (9/10), `PalmilhaPurchaseModal.tsx` (9/10),
+  `SolePurchaseView.tsx` (7/9 — já tinha `solePurchase.confirmar` de antes),
+  `PrintSoleLabelModal.tsx` (9/9), `PalmilhaStockView.tsx` (9/11),
+  `SoleNeedsFormModal.tsx` (5/6 — o resto em cada arquivo são backdrops/wrappers
+  `stopPropagation()` sem ação própria). 106 anchors novos + entradas em `FIELD_HELP`
+  correspondentes. **Concluída em 31/08/2026.**
+- [x] **Etapa 4a — Etiquetas / Impressão, parte 1** — `PrintLabelEditorModal.tsx` (72/84 —
+  os 12 restantes são backdrops/wrappers `stopPropagation()` sem ação própria),
+  `LabelEditorView.tsx` (69/69), `PrintCenterView.tsx` (41/41). 182 anchors novos + entradas
+  em `FIELD_HELP` correspondentes (137 delas realmente novas — `labelEditor.travarArea` já
+  existia de antes). Etapa 4b (o resto do módulo Etiquetas/Impressão) ainda falta.
+  **Concluída em 31/08/2026.**
+- [x] **Etapa 4b — Etiquetas / Impressão, parte 2** — `PdfPageSelectModal.tsx` (42/42),
+  `PrintOSModal.tsx` (28/30), `LabelPrintPreviewModal.tsx` (15/15),
+  `LabelPrintStudioView.tsx` (14/14), `PrintLabelModal.tsx` (12/12),
+  `LabelProfilePickerModal.tsx` (7/9), `PrinterConnectionCard.tsx` (7/7),
+  `PrintDocumentModal.tsx` (5/6), `LabelEditor.tsx` (2/2 — os restantes nos arquivos acima
+  são backdrops/wrappers `stopPropagation()` sem ação própria). 132 anchors novos + entradas
+  em `FIELD_HELP` correspondentes. **Concluída em 31/08/2026 — fecha o módulo
+  Etiquetas/Impressão em 95% (314/331).**
+- [x] **Etapa 5 — Vendas, sobras** — `ExportNoteModal.tsx` (55/63), `SaleFormView.tsx`
+  (77/76), `SalesView.tsx` (155/158), `SalePaymentModal.tsx` (9/9), `PasteOrderModal.tsx`
+  (15/15), `ConsolidatedMessageModal.tsx` (6/7), `SeparacaoCaixasModal.tsx` (5/7),
+  `NavigationProviderModal.tsx` (4/6), `DeliveryItemsPicker.tsx` (5/5),
+  `PartialPaymentModal.tsx` (5/5 — o resto em cada arquivo são backdrops/wrappers
+  `stopPropagation()` sem ação própria). 145 anchors novos + entradas em `FIELD_HELP`
+  correspondentes. **Concluída em 31/08/2026 — fecha o módulo Vendas em 96% (336/351).**
+- [x] **Etapa 6 — Compras** — `PurchaseNeedsView.tsx` (20/26), `GeneralReceiptsView.tsx`
+  (25/26), `PurchasesView.tsx` (22/26), `PurchaseFormView.tsx` (63/57 — anchors de
+  container cobrindo mais de um onClick), `AddPurchaseEntriesModal.tsx` (8/9),
+  `PurchaseNeedsModal.tsx` (5/7 — o resto em cada arquivo são backdrops/wrappers
+  `stopPropagation()` sem ação própria). 101 anchors novos + entradas em `FIELD_HELP`
+  correspondentes (99 novas). `GeneralReceiptsView.tsx` e `PurchaseNeedsView.tsx` foram
+  recategorizados de Solados e PCP para Compras na tabela acima, por pertencerem
+  funcionalmente ao módulo. **Concluída em 31/08/2026 — fecha o módulo Compras em 95%
+  (143/151).**
+- [x] **Etapa 7 — Cadastros (Produtos/Categorias/Cores/Grades/Pessoas)** —
+  `ProductFormView.tsx` (56/57), `CategoriesView.tsx` (13/13), `PeopleView.tsx` (10/10),
+  `PersonModal.tsx` (8/10), `GradeModal.tsx` (9/9), `ProductsView.tsx` (8/9),
+  `ColorsView.tsx` (7/7), `GradesView.tsx` (7/7), `ProductCreationChoiceModal.tsx` (3/3),
+  `CategoryConfigView.tsx` (3/3), `CategoryModal.tsx` (3/3), `ColorModal.tsx` (2/2),
+  `PersonDetailView.tsx` (1/1 — o resto em cada arquivo são backdrops/wrappers
+  `stopPropagation()` sem ação própria). 118 anchors novos + entradas em `FIELD_HELP`
+  correspondentes (105 novas). **Concluída em 31/08/2026 — fecha o módulo Cadastros em
+  97% (130/134).**
 - [ ] **Etapa 8 — Financeiro + Estoque (produtos prontos)** — `StockView.tsx` (44),
   `StockGlanceView.tsx` (30), `FinancialView.tsx` (22), `PersonalFinancialView.tsx` (22),
   `TransactionModal.tsx` (12), `FinancialQueryModal.tsx` (9), `ChecksModal.tsx` (6),

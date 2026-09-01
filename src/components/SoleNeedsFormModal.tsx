@@ -161,6 +161,7 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
               <button
                 type="button"
                 onClick={onClose}
+                data-guide-anchor="soleNeeds.fechar"
                 aria-label="Fechar"
                 className={`p-2 rounded-xl transition-colors ${isDarkMode ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
               >
@@ -209,6 +210,7 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
                       <button
                         type="button"
                         onClick={() => removeRow(row.id)}
+                        data-guide-anchor="soleNeeds.linhaRemover"
                         disabled={rows.length <= 1}
                         aria-label="Remover"
                         className={`p-2 rounded-xl transition-colors disabled:opacity-30 ${isDarkMode ? "text-slate-400 hover:text-red-400 hover:bg-slate-800" : "text-slate-400 hover:text-red-500 hover:bg-slate-100"}`}
@@ -245,6 +247,7 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
               <button
                 type="button"
                 onClick={addRow}
+                data-guide-anchor="soleNeeds.adicionarItem"
                 className={`flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-colors ${
                   isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
@@ -298,6 +301,7 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
                       key={value}
                       type="button"
                       onClick={() => setExportPreference(value)}
+                      data-guide-anchor="soleNeeds.exportacaoToggle"
                       className={`flex flex-col items-center justify-center gap-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors border-2 ${
                         exportPreference === value
                           ? "bg-indigo-600 border-indigo-600 text-white"
@@ -318,6 +322,7 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
               <button
                 type="button"
                 onClick={handleSubmit}
+                data-guide-anchor="soleNeeds.enviar"
                 className="w-full flex items-center justify-center gap-2 px-4 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors active:scale-95"
               >
                 <Send size={14} />

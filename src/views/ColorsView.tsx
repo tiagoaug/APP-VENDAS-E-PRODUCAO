@@ -60,6 +60,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
         <button
           onClick={(e) => { e.stopPropagation(); handleSaveAsTemplate(color); }}
           disabled={isSavedAsTemplate(color)}
+          data-guide-anchor="color.salvarModelo"
           title={isSavedAsTemplate(color) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
           className={`p-2 rounded-xl transition-colors ${
             isSavedAsTemplate(color)
@@ -71,6 +72,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); setEditingColor(color); setIsModalOpen(true); }}
+          data-guide-anchor="color.editar"
           title="Editar Cor"
           className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
         >
@@ -78,6 +80,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(color.id); }}
+          data-guide-anchor="color.excluir"
           title="Excluir Cor"
           className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
         >
@@ -95,6 +98,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
         <button
           type="button"
           onClick={() => setTemplatesOpen(o => ({ ...o, [kind]: !o[kind] }))}
+          data-guide-anchor="color.alternarModelos"
           className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
         >
           <div className="flex items-center gap-2">
@@ -113,6 +117,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
                   key={template.id}
                   onClick={() => handleAddFromTemplate(template)}
                   disabled={exists}
+                  data-guide-anchor="color.adicionarModelo"
                   title={`Adicionar modelo: ${template.name}`}
                   className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
                     exists
@@ -145,6 +150,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
       {colors.length > 0 && (
         <button
           onClick={handleSaveAllAsTemplates}
+          data-guide-anchor="color.salvarTodosModelos"
           className={`flex items-center justify-center gap-2 p-3 rounded-2xl border-2 border-dashed text-[10px] font-black uppercase tracking-widest transition-all ${
             isDarkMode ? 'border-violet-900/50 text-violet-400 hover:bg-violet-950/20' : 'border-violet-200 text-violet-600 hover:bg-violet-50/50'
           }`}

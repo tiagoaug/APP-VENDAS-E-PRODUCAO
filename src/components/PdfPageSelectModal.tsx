@@ -436,7 +436,7 @@ export default function PdfPageSelectModal({
           isSel ? 'border-indigo-500' : isDarkMode ? 'border-slate-800' : 'border-slate-200'
         }`}
       >
-        <button type="button" onClick={() => toggle(idx)} className="block w-full">
+        <button type="button" onClick={() => toggle(idx)} data-guide-anchor="pdfPageSelect.toggle" className="block w-full">
           <img src={thumbPages[idx] || pages[idx]} alt={`Página ${idx + 1}`} className="w-full h-20 object-contain bg-white" />
           <div className={`text-[8px] font-black text-center py-0.5 ${isDarkMode ? 'bg-slate-900/80 text-slate-300' : 'bg-white/90 text-slate-600'}`}>
             Pág. {idx + 1} · <span className={idx % 2 === 0 ? 'text-indigo-400' : 'text-amber-500'}>{idx % 2 === 0 ? 'Í' : 'P'}</span>
@@ -461,6 +461,7 @@ export default function PdfPageSelectModal({
             setLastViewerCropPreset(null);
           }}
           title="Ampliar página"
+          data-guide-anchor="pdfPageSelect.ampliarPagina"
           className="absolute top-1 left-1 w-5 h-5 rounded-full bg-slate-900/70 flex items-center justify-center"
         >
           <Maximize2 size={10} className="text-white" />
@@ -498,6 +499,7 @@ export default function PdfPageSelectModal({
                       key={p.id}
                       type="button"
                       onClick={() => handlePresetFromStep1(p)}
+                      data-guide-anchor="pdfPageSelect.aplicarPresetPasso1"
                       className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                         appliedPresetId === p.id ? 'bg-emerald-500 text-white' : 'bg-white text-amber-600 hover:bg-amber-50 animate-pulse'
                       }`}
@@ -518,6 +520,7 @@ export default function PdfPageSelectModal({
               type="button"
               disabled={selected.size === 0}
               onClick={() => setStep(2)}
+              data-guide-anchor="pdfPageSelect.proximo"
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
             >
               Próximo — {selected.size} selecionada(s)
@@ -529,7 +532,7 @@ export default function PdfPageSelectModal({
                 + grade de miniaturas), separado do card de recorte pra não misturar as duas
                 decisões. Já veio escolhido no passo 1, então fica fechado por padrão. */}
             <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-              <button type="button" onClick={() => setPagesExpanded(v => !v)} className="w-full flex items-center justify-between gap-2 p-3">
+              <button type="button" onClick={() => setPagesExpanded(v => !v)} data-guide-anchor="pdfPageSelect.expandirSelecaoPaginas" className="w-full flex items-center justify-between gap-2 p-3">
                 <span className="text-[9px] font-black uppercase tracking-widest text-rose-500">Seleção de páginas</span>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-indigo-500">{selectedIndexes.length} de {pages.length}</span>
@@ -539,18 +542,18 @@ export default function PdfPageSelectModal({
               {pagesExpanded && (
                 <div className="flex flex-col gap-2 p-3 pt-0">
                   <div className="grid grid-cols-2 gap-1.5">
-                    <button type="button" onClick={() => { setLastSelectAction('all'); setSelected(new Set(pages.map((_, i) => i))); }} className={quickCls(lastSelectAction === 'all')}>
+                    <button type="button" onClick={() => { setLastSelectAction('all'); setSelected(new Set(pages.map((_, i) => i))); }} data-guide-anchor="pdfPageSelect.selecionarTodas" className={quickCls(lastSelectAction === 'all')}>
                       Todas
                     </button>
-                    <button type="button" onClick={() => { setLastSelectAction('none'); setSelected(new Set()); }} className={quickCls(lastSelectAction === 'none')}>
+                    <button type="button" onClick={() => { setLastSelectAction('none'); setSelected(new Set()); }} data-guide-anchor="pdfPageSelect.selecionarNenhuma" className={quickCls(lastSelectAction === 'none')}>
                       Nenhuma
                     </button>
                     {allowOddEven && (
                       <>
-                        <button type="button" onClick={() => { setLastSelectAction('odd'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 0))); }} className={quickCls(lastSelectAction === 'odd')}>
+                        <button type="button" onClick={() => { setLastSelectAction('odd'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 0))); }} data-guide-anchor="pdfPageSelect.manterImpares" className={quickCls(lastSelectAction === 'odd')}>
                           Manter só ímpares
                         </button>
-                        <button type="button" onClick={() => { setLastSelectAction('even'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 1))); }} className={quickCls(lastSelectAction === 'even')}>
+                        <button type="button" onClick={() => { setLastSelectAction('even'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 1))); }} data-guide-anchor="pdfPageSelect.manterPares" className={quickCls(lastSelectAction === 'even')}>
                           Manter só pares
                         </button>
                       </>
@@ -579,10 +582,10 @@ export default function PdfPageSelectModal({
 
               {allowOddEven && (
                 <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); }} className={quickCls(!splitOddEven)}>
+                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); }} data-guide-anchor="pdfPageSelect.recorteUnico" className={quickCls(!splitOddEven)}>
                     Mesmo recorte pra todas
                   </button>
-                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); }} className={quickCls(splitOddEven)}>
+                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); }} data-guide-anchor="pdfPageSelect.recorteSeparado" className={quickCls(splitOddEven)}>
                     Recorte diferente ímpar/par
                   </button>
                 </div>
@@ -591,10 +594,10 @@ export default function PdfPageSelectModal({
                 <>
                   <span className="text-[8px] font-black uppercase tracking-widest text-rose-500">Lado sendo editado</span>
                   <div className="flex gap-1.5">
-                    <button type="button" onClick={() => setEditingGroup('odd')} className={quickCls(editingGroup === 'odd')}>
+                    <button type="button" onClick={() => setEditingGroup('odd')} data-guide-anchor="pdfPageSelect.editarImpares" className={quickCls(editingGroup === 'odd')}>
                       Editando: Ímpares
                     </button>
-                    <button type="button" onClick={() => setEditingGroup('even')} className={quickCls(editingGroup === 'even')}>
+                    <button type="button" onClick={() => setEditingGroup('even')} data-guide-anchor="pdfPageSelect.editarPares" className={quickCls(editingGroup === 'even')}>
                       Editando: Pares
                     </button>
                   </div>
@@ -609,6 +612,7 @@ export default function PdfPageSelectModal({
                         type="button"
                         disabled={refPos <= 0}
                         onClick={() => setManualRefIndex(groupIndexes[refPos - 1])}
+                        data-guide-anchor="pdfPageSelect.paginaAnterior"
                         className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                       >
                         <ChevronLeft size={13} /> Anterior
@@ -620,6 +624,7 @@ export default function PdfPageSelectModal({
                         type="button"
                         disabled={refPos >= groupIndexes.length - 1}
                         onClick={() => setManualRefIndex(groupIndexes[refPos + 1])}
+                        data-guide-anchor="pdfPageSelect.proximaPagina"
                         className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                       >
                         Próxima <ChevronRight size={13} />
@@ -640,6 +645,7 @@ export default function PdfPageSelectModal({
                       type="button"
                       onClick={() => setShowCropPopup(true)}
                       title="Expandir miniatura"
+                      data-guide-anchor="pdfPageSelect.expandirMiniaturaRecorte"
                       className="absolute top-1 left-1 w-6 h-6 rounded-full bg-slate-900/70 flex items-center justify-center"
                     >
                       <Maximize2 size={12} className="text-white" />
@@ -660,6 +666,7 @@ export default function PdfPageSelectModal({
                     <button
                       type="button"
                       onClick={() => setPageSpecificMode(v => !v)}
+                      data-guide-anchor="pdfPageSelect.alternarRecorteEspecifico"
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all shrink-0 ${
                         pageSpecificMode ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                       }`}
@@ -671,6 +678,7 @@ export default function PdfPageSelectModal({
                     <button
                       type="button"
                       onClick={() => setPageOverrides(prev => { const next = { ...prev }; delete next[referenceIndex!]; return next; })}
+                      data-guide-anchor="pdfPageSelect.removerRecortePagina"
                       className={`flex items-center justify-center gap-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                     >
                       <RotateCcw size={12} /> Remover recorte desta página (usar o do grupo)
@@ -680,21 +688,23 @@ export default function PdfPageSelectModal({
                   <button
                     type="button"
                     onClick={() => setShowCropPopup(true)}
+                    data-guide-anchor="pdfPageSelect.abrirAreaRecorte"
                     className="flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white"
                   >
                     <Crop size={14} /> Abrir área de recorte
                   </button>
 
                   <div className="flex gap-1.5">
-                    <button type="button" onClick={() => { setLastCropPreset('full'); setAppliedPresetId(null); setEditingCrop(FULL_CROP); }} className={quickCls(lastCropPreset === 'full')}>
+                    <button type="button" onClick={() => { setLastCropPreset('full'); setAppliedPresetId(null); setEditingCrop(FULL_CROP); }} data-guide-anchor="pdfPageSelect.presetPaginaInteira" className={quickCls(lastCropPreset === 'full')}>
                       Página inteira
                     </button>
-                    <button type="button" onClick={() => { setLastCropPreset('center'); setAppliedPresetId(null); setEditingCrop(CENTER_CROP); }} className={quickCls(lastCropPreset === 'center')}>
+                    <button type="button" onClick={() => { setLastCropPreset('center'); setAppliedPresetId(null); setEditingCrop(CENTER_CROP); }} data-guide-anchor="pdfPageSelect.presetRecorteCentral" className={quickCls(lastCropPreset === 'center')}>
                       Recorte central
                     </button>
                     <button
                       type="button"
                       onClick={() => { setLastCropPreset('fit'); setAppliedPresetId(null); applyFitToLabel(referencePage, setEditingCrop); }}
+                      data-guide-anchor="pdfPageSelect.presetAjustarEtiqueta"
                       className={quickCls(lastCropPreset === 'fit')}
                     >
                       Ajustar à etiqueta
@@ -711,6 +721,7 @@ export default function PdfPageSelectModal({
                       <button
                         type="button"
                         onClick={() => { setAppliedPresetId(null); setFitMode('contain'); }}
+                        data-guide-anchor="pdfPageSelect.fitConter"
                         className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                           fitMode === 'contain' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                         }`}
@@ -721,6 +732,7 @@ export default function PdfPageSelectModal({
                       <button
                         type="button"
                         onClick={() => { setAppliedPresetId(null); setFitMode('cover'); }}
+                        data-guide-anchor="pdfPageSelect.fitCobrir"
                         className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                           fitMode === 'cover' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                         }`}
@@ -751,11 +763,11 @@ export default function PdfPageSelectModal({
                                   : isDarkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-100 bg-white'
                               }`}
                             >
-                              <button type="button" onClick={() => applyCropPreset(p)} className="flex-1 flex items-center gap-1.5 text-left text-xs font-bold truncate">
+                              <button type="button" onClick={() => applyCropPreset(p)} data-guide-anchor="pdfPageSelect.aplicarPresetSalvo" className="flex-1 flex items-center gap-1.5 text-left text-xs font-bold truncate">
                                 {isApplied && <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />}
                                 <span className={`truncate ${isApplied ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{p.name}</span>
                               </button>
-                              <button type="button" onClick={() => handleDeleteCropPreset(p.id)} className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 shrink-0">
+                              <button type="button" onClick={() => handleDeleteCropPreset(p.id)} data-guide-anchor="pdfPageSelect.excluirPreset" className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 shrink-0">
                                 <Trash2 size={13} />
                               </button>
                             </div>
@@ -772,13 +784,14 @@ export default function PdfPageSelectModal({
                           autoFocus
                           className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-500' : 'bg-white text-slate-900 placeholder:text-slate-400'}`}
                         />
-                        <button type="button" onClick={handleSaveCropPreset} className="p-2.5 rounded-lg bg-indigo-600 text-white shrink-0"><Check size={14} /></button>
-                        <button type="button" onClick={() => { setShowSavePresetForm(false); setPresetNameInput(''); }} className={`p-2.5 rounded-lg shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><X size={14} /></button>
+                        <button type="button" onClick={handleSaveCropPreset} data-guide-anchor="pdfPageSelect.confirmarNomePreset" className="p-2.5 rounded-lg bg-indigo-600 text-white shrink-0"><Check size={14} /></button>
+                        <button type="button" onClick={() => { setShowSavePresetForm(false); setPresetNameInput(''); }} data-guide-anchor="pdfPageSelect.cancelarNomePreset" className={`p-2.5 rounded-lg shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><X size={14} /></button>
                       </div>
                     ) : (
                       <button
                         type="button"
                         onClick={() => setShowSavePresetForm(true)}
+                        data-guide-anchor="pdfPageSelect.abrirSalvarPreset"
                         className={`flex items-center justify-center gap-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                       >
                         <Save size={12} /> Salvar recorte atual como preset
@@ -804,6 +817,7 @@ export default function PdfPageSelectModal({
                     setConfirmedGroups(prev => new Set(prev).add(activeGroupKey));
                     toast.show(splitOddEven ? `Recorte para ${editingGroup === 'odd' ? 'ímpares' : 'pares'} confirmado!` : 'Recorte confirmado!');
                   }}
+                  data-guide-anchor="pdfPageSelect.confirmarRecorte"
                   className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     isActiveGroupConfirmed ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white'
                   }`}
@@ -817,6 +831,7 @@ export default function PdfPageSelectModal({
               <button
                 type="button"
                 onClick={() => setStep(1)}
+                data-guide-anchor="pdfPageSelect.voltarPasso1"
                 className={`px-4 flex items-center justify-center gap-1.5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 <ChevronLeft size={16} /> Voltar
@@ -825,6 +840,7 @@ export default function PdfPageSelectModal({
                 type="button"
                 disabled={selected.size === 0}
                 onClick={() => onConfirm(selectedIndexes.map(i => ({ dataUrl: pages[i], crop: resolveCropForIndex(i), fitMode })))}
+                data-guide-anchor="pdfPageSelect.importar"
                 className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
               >
                 Importar {selected.size} página(s)
@@ -854,6 +870,7 @@ export default function PdfPageSelectModal({
             <button
               type="button"
               onClick={() => setShowCropPopup(false)}
+              data-guide-anchor="pdfPageSelect.concluirRecortePopup"
               className="flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white"
             >
               <Check size={16} /> Concluir
@@ -873,6 +890,7 @@ export default function PdfPageSelectModal({
             <button
               type="button"
               onClick={handleGoToPrintWithPreset}
+              data-guide-anchor="pdfPageSelect.irParaImpressao"
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white"
             >
               Ir direto para a impressão
@@ -880,6 +898,7 @@ export default function PdfPageSelectModal({
             <button
               type="button"
               onClick={handleGoToConfigWithPreset}
+              data-guide-anchor="pdfPageSelect.conferirAjustarRecorte"
               className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
             >
               Conferir/ajustar o recorte
@@ -897,11 +916,12 @@ export default function PdfPageSelectModal({
               <>
                 <CropEditor imageSrc={pages[viewingIndex]} crop={viewerCrop} onChangeCrop={c => { setLastViewerCropPreset(null); setViewerCrop(c); }} isDarkMode={isDarkMode} />
                 <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { setLastViewerCropPreset('full'); setViewerCrop(FULL_CROP); }} className={quickCls(lastViewerCropPreset === 'full')}>Página inteira</button>
-                  <button type="button" onClick={() => { setLastViewerCropPreset('center'); setViewerCrop(CENTER_CROP); }} className={quickCls(lastViewerCropPreset === 'center')}>Recorte central</button>
+                  <button type="button" onClick={() => { setLastViewerCropPreset('full'); setViewerCrop(FULL_CROP); }} data-guide-anchor="pdfPageSelect.viewerPresetPaginaInteira" className={quickCls(lastViewerCropPreset === 'full')}>Página inteira</button>
+                  <button type="button" onClick={() => { setLastViewerCropPreset('center'); setViewerCrop(CENTER_CROP); }} data-guide-anchor="pdfPageSelect.viewerPresetRecorteCentral" className={quickCls(lastViewerCropPreset === 'center')}>Recorte central</button>
                   <button
                     type="button"
                     onClick={() => { setLastViewerCropPreset('fit'); if (viewingIndex !== null) applyFitToLabel(pages[viewingIndex], setViewerCrop); }}
+                    data-guide-anchor="pdfPageSelect.viewerPresetAjustarEtiqueta"
                     className={quickCls(lastViewerCropPreset === 'fit')}
                   >
                     Ajustar à etiqueta
@@ -910,6 +930,7 @@ export default function PdfPageSelectModal({
                 <button
                   type="button"
                   onClick={() => { setPageOverrides(prev => ({ ...prev, [viewingIndex]: viewerCrop })); setViewerCropMode(false); }}
+                  data-guide-anchor="pdfPageSelect.viewerSalvarRecorte"
                   className="flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white"
                 >
                   <Check size={16} /> Salvar recorte desta página
@@ -927,6 +948,7 @@ export default function PdfPageSelectModal({
               <button
                 type="button"
                 onClick={() => { setViewerCrop(resolveCropForIndex(viewingIndex)); setViewerCropMode(true); setLastViewerCropPreset(null); }}
+                data-guide-anchor="pdfPageSelect.viewerRecortarPagina"
                 className="flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-amber-500 text-white"
               >
                 <Scissors size={16} /> Recortar esta página
@@ -936,6 +958,7 @@ export default function PdfPageSelectModal({
               <button
                 type="button"
                 onClick={() => setPageOverrides(prev => { const next = { ...prev }; delete next[viewingIndex]; return next; })}
+                data-guide-anchor="pdfPageSelect.viewerRemoverRecorteManual"
                 className={`flex items-center justify-center gap-2 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 <RotateCcw size={13} /> Usar recorte padrão (remover o manual)
@@ -945,6 +968,7 @@ export default function PdfPageSelectModal({
               <button
                 type="button"
                 onClick={() => { toggle(viewingIndex); setViewingIndex(null); }}
+                data-guide-anchor="pdfPageSelect.viewerToggleSelecao"
                 className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-xs font-black uppercase tracking-widest ${
                   selected.has(viewingIndex) ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-500' : 'bg-indigo-600 text-white'
                 }`}

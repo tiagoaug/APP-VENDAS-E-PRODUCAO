@@ -34,7 +34,7 @@ export default function StockDuplicateDiagnosticModal({
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">{groups.length} referência(s)/cor(es) afetada(s)</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fechar" title="Fechar"
+          <button type="button" onClick={onClose} data-guide-anchor="stockDupDiag.fechar" aria-label="Fechar" title="Fechar"
             className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
             <X size={20} strokeWidth={2.5} />
           </button>
@@ -75,6 +75,7 @@ export default function StockDuplicateDiagnosticModal({
                         setFixingKey(prev => prev === key ? null : prev);
                       }
                     }}
+                    data-guide-anchor="stockDupDiag.corrigir"
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
                     title="Desconta o excedente do estoque e remove o(s) registro(s) duplicado(s) — corrige de verdade"
                   >
@@ -87,6 +88,7 @@ export default function StockDuplicateDiagnosticModal({
                     onMarkResolved(g.groupKeys);
                     toast.show('Marcado como resolvido — não corrige o estoque, só esconde este aviso.');
                   }}
+                  data-guide-anchor="stockDupDiag.marcarResolvido"
                   title="Já corrigi manualmente por fora — só esconde este aviso, não mexe em estoque"
                   className={onFixNow
                     ? `p-2.5 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-slate-200' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`
@@ -106,6 +108,7 @@ export default function StockDuplicateDiagnosticModal({
                 navigator.clipboard.writeText(text);
                 toast.show('Resumo copiado.');
               }}
+              data-guide-anchor="stockDupDiag.copiarResumo"
               className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
               Copiar Resumo
             </button>

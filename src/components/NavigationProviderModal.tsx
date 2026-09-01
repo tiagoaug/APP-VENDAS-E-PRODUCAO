@@ -70,7 +70,7 @@ export default function NavigationProviderModal({
         >
           <div className={`flex items-center justify-between px-6 py-5 border-b shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
             <h3 className={`text-sm font-black uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Escolher Provedor</h3>
-            <button type="button" onClick={onClose} aria-label="Fechar" title="Fechar"
+            <button type="button" onClick={onClose} aria-label="Fechar" title="Fechar" data-guide-anchor="navProvider.fechar"
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}>
               <X size={18} />
             </button>
@@ -84,6 +84,7 @@ export default function NavigationProviderModal({
                   key={opt.id}
                   type="button"
                   onClick={() => handleSelect(opt.id)}
+                  data-guide-anchor="navProvider.selecionarProvedor"
                   className={`flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all active:scale-[0.98] ${
                     isPreferred
                       ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20'
@@ -111,6 +112,7 @@ export default function NavigationProviderModal({
                 <button
                   type="button"
                   onClick={() => { onOpenAnyApp(); onClose(); }}
+                  data-guide-anchor="navProvider.outroApp"
                   className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
                   <MoreHorizontal size={15} />
@@ -121,6 +123,7 @@ export default function NavigationProviderModal({
                 <button
                   type="button"
                   onClick={() => { onExportRoute(); onClose(); }}
+                  data-guide-anchor="navProvider.exportarRota"
                   className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
                   <Share2 size={15} />

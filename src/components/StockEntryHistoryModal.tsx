@@ -109,6 +109,7 @@ const StockLotRevertModal: React.FC<{
               type="button"
               onClick={onCancel}
               disabled={status === 'loading'}
+              data-guide-anchor="stockHistory.reverterCancelar"
               className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50"
             >
               Cancelar
@@ -117,6 +118,7 @@ const StockLotRevertModal: React.FC<{
               type="button"
               onClick={onConfirm}
               disabled={status === 'loading'}
+              data-guide-anchor="stockHistory.reverterConfirmar"
               className="flex-1 px-4 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-rose-500/20 disabled:opacity-50 active:scale-95"
             >
               {status === 'loading' ? 'Revertendo...' : 'Confirmar Reversão'}
@@ -254,6 +256,7 @@ const StockEntryHistoryModal: React.FC<{
                       setRevertTarget({ lot, preview: onPreviewRevertStockLot(lot) });
                       setRevertStatus('confirm');
                     }}
+                    data-guide-anchor="stockHistory.reverterAbrir"
                     className="self-end px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95"
                   >
                     <RotateCcw size={12} strokeWidth={3} />

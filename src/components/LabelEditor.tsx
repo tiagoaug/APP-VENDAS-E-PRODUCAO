@@ -68,6 +68,7 @@ export default function LabelEditor({
           }}
           title="Resetar posições para o padrão"
           aria-label="Resetar layout"
+          data-guide-anchor="labelEditorComp.resetarLayout"
           className="text-[9px] font-bold text-indigo-500 flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 px-2 py-1 rounded-lg transition-colors"
         >
           <RotateCcw size={10} /> Resetar
@@ -240,6 +241,7 @@ export default function LabelEditor({
            <label className="text-[9px] font-black uppercase text-slate-400">Mostrar Tamanho</label>
            <button 
              onClick={() => updateField('showSize', !layout.showSize)}
+             data-guide-anchor="labelEditorComp.alternarMostrarTamanho"
              className={`w-10 h-5 rounded-full transition-colors relative ${layout.showSize ? 'bg-indigo-600' : 'bg-slate-300'}`}
            >
              <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${layout.showSize ? 'left-6' : 'left-1'}`} />

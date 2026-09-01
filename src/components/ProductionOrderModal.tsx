@@ -326,7 +326,7 @@ export default function ProductionOrderModal({
               </p>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Fechar" title="Fechar" className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}>
+          <button onClick={onClose} data-guide-anchor="prodOrder.fechar" aria-label="Fechar" title="Fechar" className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}>
             <X size={18} />
           </button>
         </div>
@@ -342,6 +342,7 @@ export default function ProductionOrderModal({
 
               <button
                 onClick={() => { setMode('FULL'); setStep(2); }}
+                data-guide-anchor="prodOrder.modoEscolha"
                 className={`p-6 rounded-[2rem] border-2 flex items-center gap-5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-indigo-500' : 'bg-slate-50 border-slate-100 hover:border-indigo-300 hover:bg-indigo-50/30'}`}
               >
                 <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
@@ -360,6 +361,7 @@ export default function ProductionOrderModal({
 
               <button
                 onClick={() => { setMode('PARTIAL'); setStep(2); }}
+                data-guide-anchor="prodOrder.modoEscolha"
                 className={`p-6 rounded-[2rem] border-2 flex items-center gap-5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-emerald-500' : 'bg-slate-50 border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/30'}`}
               >
                 <div className="w-14 h-14 rounded-2xl bg-emerald-600 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
@@ -383,6 +385,7 @@ export default function ProductionOrderModal({
             <div className="flex flex-col gap-5">
               <button
                 onClick={() => setStep(1)}
+                data-guide-anchor="prodOrder.voltarEtapa1"
                 className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 self-start flex items-center gap-1.5"
               >
                 ← Voltar
@@ -415,6 +418,7 @@ export default function ProductionOrderModal({
                 {mode === 'PARTIAL' && (
                   <button
                     onClick={allocateMax}
+                    data-guide-anchor="prodOrder.alocarMaximo"
                     className="ml-auto text-[9px] font-black uppercase tracking-widest text-emerald-600 hover:text-emerald-700 bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 rounded-lg"
                   >
                     Alocar Máximo
@@ -593,6 +597,7 @@ export default function ProductionOrderModal({
             )}
             <button
               onClick={handleConfirm}
+              data-guide-anchor="prodOrder.confirmar"
               disabled={isSaving || totalToProduction === 0}
               className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
                 isSaving || totalToProduction === 0

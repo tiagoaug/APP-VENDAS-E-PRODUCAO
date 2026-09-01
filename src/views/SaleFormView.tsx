@@ -1481,6 +1481,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
         <button
           type="button"
           onClick={() => setShowSaleModeInfo(true)}
+          data-guide-anchor="saleForm.infoModos"
           className="w-full flex items-center justify-center gap-1.5 py-1 text-[10px] font-bold text-orange-500 hover:text-orange-600 transition-colors"
           aria-label="Entenda a diferença entre Venda, Pedido e Orçamento"
           title="Entenda a diferença entre os modos"
@@ -1510,6 +1511,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               <button
                 type="button"
                 onClick={() => setIsQuickPersonModalOpen(true)}
+                data-guide-anchor="saleForm.cadastrarClienteRapido"
                 className="mt-2 px-3 text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600"
               >
                 Nenhum cliente cadastrado ainda? Cadastrar agora
@@ -1552,6 +1554,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                           key={s.id}
                           type="button"
                           onClick={() => setSellerId(s.id)}
+                          data-guide-anchor="saleForm.vendedorSugestao"
                           className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === s.id ? 'bg-[#7c3aed] border-[#7c3aed] text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
                         >
                           <Users size={12} />
@@ -1563,6 +1566,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                           key={`int-${idx}`}
                           type="button"
                           onClick={() => setSellerId(ic.name)}
+                          data-guide-anchor="saleForm.vendedorSugestao"
                           className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === ic.name ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
                         >
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -2047,8 +2051,8 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                                           {prodStock > 0 && <span className="text-[8px] text-sky-500">(+{prodStock} prod)</span>}
                                         </div>
                                       </div>
-                                      <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1">
-                                        <button 
+                                      <div data-guide-anchor="saleForm.itemStepper" className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1">
+                                        <button
                                           onClick={() => updateVariation(index, v.id, (varState.quantity || 0) - 1, varState.price, size)}
                                           className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-500"
                                           title="Diminuir"
@@ -2116,7 +2120,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                                     Estoque: {stock} grades {prodStock > 0 && <span className="text-sky-500">(+{prodStock} em prod.)</span>}
                                   </p>
                                 </div>
-                                <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1 shrink-0">
+                                <div data-guide-anchor="saleForm.itemStepper" className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1 shrink-0">
                                   <button type="button" onClick={() => updateVariation(index, v.id, (varState.quantity || 0) - 1, varState.price)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-500" title="Diminuir" aria-label="Diminuir quantidade"><Minus size={14} /></button>
                                   <input
                                     type="number"
@@ -2160,6 +2164,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                                   <button
                                     type="button"
                                     onClick={() => setPackagingModalTarget({ blockId: block.id, variationId: v.id, variationName: v.colorName })}
+                                    data-guide-anchor="saleForm.selecionarEmbalagem"
                                     className={`mt-2 w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${
                                       varPkg?.pkgId
                                         ? isDarkMode ? 'bg-violet-900/30 border border-violet-700' : 'bg-violet-50 border border-violet-200'
@@ -2194,6 +2199,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                                     <button
                                       type="button"
                                       onClick={() => setGradeModalTarget({ blockId: block.id, variationId: v.id, variationName: v.colorName, productId: block.productId })}
+                                      data-guide-anchor="saleForm.selecionarGrade"
                                       className={`mt-2 w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${
                                         varGradeTotal > 0
                                           ? isDarkMode ? 'bg-emerald-900/30 border border-emerald-700' : 'bg-emerald-50 border border-emerald-200'
@@ -2295,7 +2301,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
 
                   <div className="flex-1 min-w-0">
                     {/* Cabeçalho do item — clique para abrir/fechar o acordeão */}
-                    <button type="button" onClick={() => toggleCartItem(cartKey)} className="w-full flex items-start justify-between gap-2 text-left">
+                    <button type="button" onClick={() => toggleCartItem(cartKey)} data-guide-anchor="saleForm.cartToggleItem" className="w-full flex items-start justify-between gap-2 text-left">
                       <div className="min-w-0">
                         <p className={`text-[11px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                           {item.productName}
@@ -2335,6 +2341,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                           <button
                             type="button"
                             onClick={() => setPackagingModalTarget({ blockId: item.blockId, variationId: item.variationId, variationName: item.variationName })}
+                            data-guide-anchor="saleForm.cartEditarEmbalagem"
                             className="text-[8px] font-black text-indigo-500 uppercase tracking-widest"
                           >
                             Editar Embalagem ›
@@ -2588,8 +2595,9 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                              </div>
                              <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-black text-emerald-500">R$ {payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                <button 
+                                <button
                                   onClick={() => setPaymentHistory(paymentHistory.filter(p => p.id !== payment.id))}
+                                  data-guide-anchor="saleForm.removerRecebimento"
                                   className="p-1 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all"
                                   title="Remover Pagamento"
                                   aria-label="Remover este pagamento do histórico"
@@ -2819,7 +2827,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                   <p className="text-[10px] font-bold text-slate-400 mt-0.5">Destine as caixas de cada item a clientes de cliente</p>
                 </div>
               </div>
-              <button type="button" onClick={() => setShowBoxSplitModal(false)} aria-label="Fechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
+              <button type="button" onClick={() => setShowBoxSplitModal(false)} aria-label="Fechar" data-guide-anchor="saleForm.boxSplitFechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -2881,7 +2889,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                             placeholder="Nome do cliente final"
                             className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'}`}
                           />
-                          <div className={`flex items-center rounded-xl border overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                          <div data-guide-anchor="saleForm.boxSplitStepper" className={`flex items-center rounded-xl border overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                             <button
                               type="button"
                               onClick={() => updateRecipient(idx, { quantity: Math.max(0, r.quantity - 1) })}
@@ -2916,6 +2924,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                           <button
                             type="button"
                             onClick={() => removeRecipient(idx)}
+                            data-guide-anchor="saleForm.boxSplitRemoverCliente"
                             title="Remover"
                             aria-label="Remover cliente"
                             className="p-2 rounded-xl text-slate-300 hover:text-rose-500 transition-all shrink-0"
@@ -2928,6 +2937,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                       <button
                         type="button"
                         onClick={addRecipient}
+                        data-guide-anchor="saleForm.boxSplitAdicionarCliente"
                         disabled={remaining <= 0}
                         className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${remaining <= 0
                           ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
@@ -2950,6 +2960,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               <button
                 type="button"
                 onClick={() => setShowBoxSplitModal(false)}
+                data-guide-anchor="saleForm.boxSplitConcluir"
                 className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
               >
                 Concluir
@@ -2975,7 +2986,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                   <p className="text-[10px] font-bold text-slate-400 mt-0.5">Onde entregar — pode ser mais de um lugar</p>
                 </div>
               </div>
-              <button type="button" onClick={() => setShowDeliveryModal(false)} aria-label="Fechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
+              <button type="button" onClick={() => setShowDeliveryModal(false)} aria-label="Fechar" data-guide-anchor="saleForm.entregaFechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -2990,6 +3001,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                     <button
                       type="button"
                       onClick={() => setDeliveryAddress(customer.defaultDeliveryAddress)}
+                      data-guide-anchor="saleForm.usarEnderecoCadastrado"
                       className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-orange-500 text-white hover:bg-orange-600"
                     >
                       <MapPin size={12} /> Usar Endereço Cadastrado do Cliente
@@ -3026,6 +3038,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                           return next;
                         });
                       }}
+                      data-guide-anchor="saleForm.removerEnderecoAdicional"
                       title="Remover este endereço"
                       className={`p-1.5 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
                     >
@@ -3044,6 +3057,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               <button
                 type="button"
                 onClick={() => setAdditionalDeliveryAddresses(prev => [...prev, { address: {} }])}
+                data-guide-anchor="saleForm.adicionarPontoEntrega"
                 className="flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.98]"
               >
                 <Plus size={13} /> Adicionar Outro Ponto de Entrega
@@ -3108,7 +3122,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                                   <option key={i} value={i}>Endereço {i + 2}</option>
                                 ))}
                               </select>
-                              <div className={`flex items-center rounded-xl border overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                              <div data-guide-anchor="saleForm.entregaSplitStepper" className={`flex items-center rounded-xl border overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                                 <button type="button" onClick={() => updateRow(rowIdx, { quantity: Math.max(0, r.quantity - 1) })} disabled={r.quantity <= 0} className={`w-8 h-9 flex items-center justify-center transition-colors disabled:opacity-30 ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}>
                                   <Minus size={13} />
                                 </button>
@@ -3122,7 +3136,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                                   <Plus size={13} />
                                 </button>
                               </div>
-                              <button type="button" onClick={() => removeRow(rowIdx)} title="Remover" aria-label="Remover divisão" className="p-2 rounded-xl text-slate-300 hover:text-rose-500 transition-all shrink-0">
+                              <button type="button" onClick={() => removeRow(rowIdx)} data-guide-anchor="saleForm.entregaSplitRemover" title="Remover" aria-label="Remover divisão" className="p-2 rounded-xl text-slate-300 hover:text-rose-500 transition-all shrink-0">
                                 <Trash2 size={14} />
                               </button>
                             </div>
@@ -3131,6 +3145,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                           <button
                             type="button"
                             onClick={addRow}
+                            data-guide-anchor="saleForm.entregaSplitAdicionar"
                             disabled={remaining <= 0 || rows.length >= totalPoints}
                             className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${remaining <= 0 || rows.length >= totalPoints
                               ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
@@ -3152,7 +3167,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             </div>
 
             <div className={`px-6 py-4 border-t shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-              <button type="button" onClick={() => setShowDeliveryModal(false)} className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+              <button type="button" onClick={() => setShowDeliveryModal(false)} data-guide-anchor="saleForm.entregaConcluir" className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
                 Concluir
               </button>
             </div>
@@ -3175,8 +3190,9 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Confira os detalhes antes de compartilhar</p>
                  </div>
               </div>
-              <button 
-                onClick={() => setShowWhatsAppModal(false)} 
+              <button
+                onClick={() => setShowWhatsAppModal(false)}
+                data-guide-anchor="saleForm.whatsappFechar"
                 className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors"
                 title="Fechar"
                 aria-label="Fechar prévia do WhatsApp"
@@ -3188,27 +3204,30 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             <div className="p-8 flex-1 overflow-hidden flex flex-col gap-6">
                <div className="flex items-center justify-between">
                   <div className="flex gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                     <button 
+                     <button
                         onClick={() => {
                           setIsMessageManual(false);
                           setWhatsappMessage(generateDefaultMessage());
                         }}
+                        data-guide-anchor="saleForm.whatsappModoMensagem"
                         className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${!isMessageManual ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
                      >
                         Automática
                      </button>
-                     <button 
+                     <button
                         onClick={() => setIsMessageManual(true)}
+                        data-guide-anchor="saleForm.whatsappModoMensagem"
                         className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isMessageManual ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
                      >
                         Manual
                      </button>
                   </div>
-                  <button 
+                  <button
                     onClick={() => {
                       navigator.clipboard.writeText(whatsappMessage);
                       toast.show('Mensagem copiada!');
                     }}
+                    data-guide-anchor="saleForm.whatsappCopiarTexto"
                     className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 px-4 py-2 rounded-xl transition-all"
                   >
                     <Copy size={14} strokeWidth={3} /> Copiar Texto
@@ -3229,14 +3248,16 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             </div>
 
             <div className="p-8 pt-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
-               <button 
+               <button
                  onClick={handleExportPDF}
+                 data-guide-anchor="saleForm.whatsappCompartilharPdf"
                  className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 py-5 rounded-[1.5rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] transition-all active:scale-95 border border-slate-200 dark:border-slate-700"
                >
                  <Share2 size={20} strokeWidth={2.5} /> Compartilhar PDF
                </button>
-               <button 
+               <button
                  onClick={sendWhatsApp}
+                 data-guide-anchor="saleForm.whatsappEnviar"
                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-5 rounded-[1.5rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
                >
                  <Share size={20} strokeWidth={2.5} /> Enviar WhatsApp
@@ -3255,8 +3276,9 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 <h2 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Selecionar Modelo</h2>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Busque pelo nome ou referência</p>
               </div>
-              <button 
-                onClick={() => setShowProductModal(false)} 
+              <button
+                onClick={() => setShowProductModal(false)}
+                data-guide-anchor="saleForm.produtoPickerFechar"
                 className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors"
                 title="Fechar"
                 aria-label="Fechar seleção de produto"
@@ -3292,6 +3314,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                         key={p.id}
                         disabled={isBlocked}
                         onClick={() => { if (!isBlocked) addBlock(p.id); }}
+                        data-guide-anchor="saleForm.selecionarProdutoLista"
                         className={`flex items-center justify-between p-4 rounded-3xl transition-all border text-left ${
                           isBlocked
                             ? 'bg-slate-50/50 dark:bg-slate-800/30 border-transparent opacity-50 cursor-not-allowed'
@@ -3339,7 +3362,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 <h2 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Novo Recebimento</h2>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Registrar pagamento parcial ou total</p>
               </div>
-              <button onClick={() => setShowPaymentModal(false)} className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar registro de recebimento">
+              <button onClick={() => setShowPaymentModal(false)} data-guide-anchor="saleForm.recebimentoFechar" className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar registro de recebimento">
                 <X size={20} />
               </button>
             </div>
@@ -3352,6 +3375,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                       <button 
                         type="button"
                         onClick={() => setPartialPaymentAmount(remainingBalance)}
+                        data-guide-anchor="saleForm.recebimentoQuitarTotal"
                         className="text-[8px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 flex items-center gap-1"
                       >
                         <CheckCircle2 size={10} />
@@ -3415,8 +3439,9 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                   />
                </div>
 
-               <button 
+               <button
                  onClick={addPartialPayment}
+                 data-guide-anchor="saleForm.recebimentoConfirmar"
                  disabled={partialPaymentAmount <= 0}
                  className={`w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg transition-all active:scale-[0.98] mt-2 ${partialPaymentAmount > 0 ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'}`}
                >
@@ -3436,6 +3461,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             {saleId && !mustCancelAndRevert && (
               <button
                 onClick={() => setShowCancelOnlyConfirm(true)}
+                data-guide-anchor="saleForm.cancelarSemEstorno"
                 disabled={status === SaleStatus.CANCELLED}
                 title={status === SaleStatus.CANCELLED ? "Venda Cancelada/Neutro" : "Cancelar (Sem Estorno)"}
                 className={`w-full xl:flex-1 h-12 px-2 rounded-full flex items-center justify-center gap-1.5 text-white font-black uppercase tracking-tight text-[10px] transition-all active:scale-90 ${status === SaleStatus.CANCELLED ? 'bg-slate-700 cursor-not-allowed' : 'bg-white/10 hover:bg-slate-500 active:bg-slate-600'}`}
@@ -3451,6 +3477,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                   onCancel();
                 }
               }}
+              data-guide-anchor="saleForm.cancelarComEstorno"
               disabled={status === SaleStatus.CANCELLED}
               title={saleId ? (status === SaleStatus.CANCELLED ? "Venda Cancelada/Estornada" : mustCancelAndRevert ? "Cancelar Pedido e Estornar" : "Cancelar Venda e Estornar") : "Descartar"}
               className={`w-full xl:flex-1 h-12 px-2 rounded-full flex items-center justify-center gap-1.5 text-white font-black uppercase tracking-tight text-[10px] transition-all active:scale-90 ${status === SaleStatus.CANCELLED ? 'bg-slate-700 cursor-not-allowed' : 'bg-white/10 hover:bg-rose-500 active:bg-rose-600'}`}
@@ -3469,6 +3496,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               <button
                 type="button"
                 onClick={() => setShowProductionOrderModal(true)}
+                data-guide-anchor="saleForm.gerarOP"
                 title="Gerar Pedido de Produção"
                 className={`w-full xl:w-auto h-12 px-3 rounded-full font-black uppercase tracking-tight text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-95 border-2 ${
                   sales.find(s => s.id === saleId)?.productionOrderId
@@ -3506,6 +3534,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 onClick={() => setShowSaleModeInfo(false)}
                 aria-label="Fechar"
                 title="Fechar"
+                data-guide-anchor="saleForm.infoModosFechar"
                 className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-600 transition-all"
               >
                 <X size={18} strokeWidth={2.5} />
@@ -3545,6 +3574,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             <button
               type="button"
               onClick={() => setShowSaleModeInfo(false)}
+              data-guide-anchor="saleForm.infoModosEntendi"
               className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
             >
               Entendi
@@ -3570,6 +3600,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               <div className="flex gap-2 w-full mt-4">
                 <button
                   onClick={() => setShowCancelConfirm(false)}
+                  data-guide-anchor="saleForm.cancelarConfirmVoltar"
                   className="flex-1 py-4 px-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   Voltar
@@ -3580,6 +3611,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                     if (mustCancelAndRevert) onCancelAndRevert(saleId);
                     else onDelete(saleId);
                   }}
+                  data-guide-anchor="saleForm.cancelarConfirmar"
                   className="flex-1 py-4 px-4 bg-rose-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-rose-200 dark:shadow-none"
                 >
                   Confirmar Estorno
@@ -3603,17 +3635,19 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               </p>
               
               <div className="flex gap-2 w-full mt-4">
-                <button 
-                  onClick={() => setShowCancelOnlyConfirm(false)} 
+                <button
+                  onClick={() => setShowCancelOnlyConfirm(false)}
+                  data-guide-anchor="saleForm.cancelarSemEstornoVoltar"
                   className="flex-1 py-4 px-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   Voltar
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     setShowCancelOnlyConfirm(false);
                     onCancelOnly(saleId);
-                  }} 
+                  }}
+                  data-guide-anchor="saleForm.cancelarSemEstornoConfirmar"
                   className="flex-1 py-4 px-4 bg-slate-800 dark:bg-slate-700 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   Cancelar sem Estorno
@@ -3640,11 +3674,12 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 <p className="text-xl font-black text-indigo-600 dark:text-indigo-400 italic">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
              </div>
 
-             <button 
+             <button
                onClick={() => {
                  setShowSuccessModal(false);
                  onCancel();
                }}
+               data-guide-anchor="saleForm.sucessoContinuar"
                className="w-full py-5 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-xl active:scale-95 transition-all"
              >
                Continuar

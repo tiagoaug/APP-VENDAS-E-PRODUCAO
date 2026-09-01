@@ -168,6 +168,7 @@ export function PCPFilterModal({
           <button
             type="button"
             onClick={onClose}
+            data-guide-anchor="pcpFilterModal.aplicar"
             className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest flex justify-center items-center gap-2 transition-transform active:scale-95"
           >
             <Filter size={16} /> Ver Resultados
@@ -176,6 +177,7 @@ export function PCPFilterModal({
           <button
             type="button"
             onClick={handleClear}
+            data-guide-anchor="pcpFilterModal.limpar"
             className={`w-full py-3.5 rounded-xl border-2 text-xs font-black uppercase tracking-widest flex justify-center items-center gap-2 transition-transform active:scale-95 ${
               isDarkMode 
                 ? 'border-rose-900/50 text-rose-500 hover:bg-rose-900/20' 

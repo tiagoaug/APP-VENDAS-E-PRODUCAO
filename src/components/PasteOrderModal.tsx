@@ -257,7 +257,7 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
               {step === 'paste' ? 'Colar Pedido Digitado' : 'Conferir Itens'}
             </h3>
           </div>
-          <button type="button" onClick={handleClose} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+          <button type="button" onClick={handleClose} data-guide-anchor="pasteOrder.fechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
             <X size={16} strokeWidth={2.5} />
           </button>
         </div>
@@ -346,6 +346,7 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
                       <button
                         type="button"
                         onClick={() => toggleExpanded(line.lineIndex)}
+                        data-guide-anchor="pasteOrder.expandirLinha"
                         className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
@@ -409,6 +410,7 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
                               <button
                                 type="button"
                                 onClick={() => updateResolution(line.lineIndex, { saleType: SaleType.RETAIL, entries: [] })}
+                                data-guide-anchor="pasteOrder.escolherVarejo"
                                 className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${r.saleType === SaleType.RETAIL ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                               >
                                 Varejo (por tamanho)
@@ -416,6 +418,7 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
                               <button
                                 type="button"
                                 onClick={() => updateResolution(line.lineIndex, { saleType: SaleType.WHOLESALE, entries: [{ size: undefined, quantity: 1 }] })}
+                                data-guide-anchor="pasteOrder.escolherAtacado"
                                 className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${r.saleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                               >
                                 Atacado (grade)
@@ -450,6 +453,7 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
                           <button
                             type="button"
                             onClick={() => updateResolution(line.lineIndex, { ignored: !r.ignored })}
+                            data-guide-anchor="pasteOrder.ignorarLinha"
                             className={`self-start flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${r.ignored ? 'text-emerald-500' : 'text-rose-500'}`}
                           >
                             <Trash2 size={11} /> {r.ignored ? 'Linha ignorada — toque para desfazer' : 'Ignorar esta linha'}
@@ -491,6 +495,7 @@ export default function PasteOrderModal({ isOpen, onClose, products, grids, peop
               <button
                 type="button"
                 onClick={() => setStep('paste')}
+                data-guide-anchor="pasteOrder.voltar"
                 className={`px-4 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 Voltar
@@ -547,10 +552,10 @@ function SizeEntriesEditor({ isDarkMode, variation, grids, product, entries, onC
             onChange={(e) => update(idx, { quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })}
             className={`w-16 py-1.5 px-2 rounded-lg text-xs font-black text-center ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-white' : 'bg-slate-50 border border-slate-200 text-slate-700'}`}
           />
-          <button type="button" onClick={() => remove(idx)} className="p-1.5 text-rose-500 shrink-0"><Trash2 size={13} /></button>
+          <button type="button" onClick={() => remove(idx)} data-guide-anchor="pasteOrder.removerTamanho" className="p-1.5 text-rose-500 shrink-0"><Trash2 size={13} /></button>
         </div>
       ))}
-      <button type="button" onClick={add} className={`self-start flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+      <button type="button" onClick={add} data-guide-anchor="pasteOrder.adicionarTamanho" className={`self-start flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
         <Plus size={11} /> Adicionar Tamanho
       </button>
     </div>

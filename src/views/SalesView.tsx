@@ -2149,6 +2149,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={() => setSelectedSale(sale)}
+                    data-guide-anchor="sales.verDetalhesPedido"
                     title="Ver Detalhes do Pedido"
                     aria-label={`Ver detalhes do pedido de ${getCustomerName(sale) || 'Cliente'}`}
                     className={`shrink-0 ml-3 transition-all hover:scale-110 ${
@@ -2643,6 +2644,7 @@ export default function SalesView({
                           e.stopPropagation();
                           setNoteModal({ isOpen: true, note: sale.notes || "" });
                         }}
+                        data-guide-anchor="sales.cardVerObservacao"
                         className="w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-90 relative bg-[#fffbeb] text-rose-500 shadow-xl shadow-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:shadow-none"
                       >
                         <Lightbulb size={18} strokeWidth={2.5} />
@@ -2937,7 +2939,7 @@ export default function SalesView({
                 </div>
                 <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Nova Venda</h3>
               </div>
-              <button type="button" onClick={() => setAddChoiceOpen(false)} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+              <button type="button" onClick={() => setAddChoiceOpen(false)} data-guide-anchor="sales.novoPedidoFechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
@@ -3541,6 +3543,7 @@ export default function SalesView({
                               return (
                                 <div
                                   onClick={photo ? (e) => { e.stopPropagation(); setZoomedThumbnail(photo); } : undefined}
+                                  data-guide-anchor="sales.ampliarFoto"
                                   className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${photo ? 'cursor-zoom-in' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
                                 >
                                   {photo
@@ -3753,7 +3756,7 @@ export default function SalesView({
                       >
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                           <h2 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Selecionar Produto</h2>
-                          <button onClick={() => setAlterarProductPickerOpen(false)} className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar seleção de produto">
+                          <button onClick={() => setAlterarProductPickerOpen(false)} data-guide-anchor="sales.alterarProdutoPickerFechar" className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar seleção de produto">
                             <X size={20} />
                           </button>
                         </div>
@@ -3781,6 +3784,7 @@ export default function SalesView({
                               <button
                                 key={p.id}
                                 type="button"
+                                data-guide-anchor="sales.alterarEscolherProduto"
                                 onClick={() => {
                                   setAddProductId(p.id);
                                   setAddVariationId('');
@@ -3820,7 +3824,7 @@ export default function SalesView({
                       >
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                           <h2 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Selecionar Cor</h2>
-                          <button onClick={() => setAlterarColorPickerOpen(false)} className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar seleção de cor">
+                          <button onClick={() => setAlterarColorPickerOpen(false)} data-guide-anchor="sales.alterarCorPickerFechar" className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors" title="Fechar" aria-label="Fechar seleção de cor">
                             <X size={20} />
                           </button>
                         </div>
@@ -3830,6 +3834,7 @@ export default function SalesView({
                               key={v.id}
                               type="button"
                               onClick={() => { setAddVariationId(v.id); setAlterarColorPickerOpen(false); }}
+                              data-guide-anchor="sales.alterarEscolherCor"
                               className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all border-2 ${
                                 addVariationId === v.id
                                   ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
@@ -3872,6 +3877,7 @@ export default function SalesView({
                             <button
                               type="button"
                               onClick={() => setRemoveAllConfirm(null)}
+                              data-guide-anchor="sales.removerReservadoEntendi"
                               className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-600 hover:bg-amber-700 active:scale-95 transition-all"
                             >
                               Entendi
@@ -3901,6 +3907,7 @@ export default function SalesView({
                               <button
                                 type="button"
                                 onClick={() => setRemoveAllConfirm(null)}
+                                data-guide-anchor="sales.removerTudoCancelar"
                                 className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                               >
                                 Cancelar
@@ -3911,6 +3918,7 @@ export default function SalesView({
                                   setAlterarRemoveQtys(prev => ({ ...prev, [removeAllConfirm.rowIdx]: removeAllConfirm.qty }));
                                   setRemoveAllConfirm(null);
                                 }}
+                                data-guide-anchor="sales.removerTudoConfirmar"
                                 className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-rose-600 hover:bg-rose-700 active:scale-95 transition-all"
                               >
                                 Remover
@@ -3976,6 +3984,7 @@ export default function SalesView({
                             return (
                               <div
                                 onClick={photo ? (e) => { e.stopPropagation(); setZoomedThumbnail(photo); } : undefined}
+                                data-guide-anchor="sales.ampliarFoto"
                                 className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${photo ? 'cursor-zoom-in' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
                               >
                                 {photo
@@ -4133,6 +4142,7 @@ export default function SalesView({
                             return (
                               <div
                                 onClick={photo ? (e) => { e.stopPropagation(); setZoomedThumbnail(photo); } : undefined}
+                                data-guide-anchor="sales.ampliarFoto"
                                 className={`w-9 h-9 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${photo ? 'cursor-zoom-in' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
                               >
                                 {photo
@@ -4197,7 +4207,7 @@ export default function SalesView({
                             <span className="text-[11px] font-black uppercase tracking-wide text-rose-500 leading-tight">Remover</span>
                             <span className="text-[10px] font-bold text-slate-400 leading-tight">{row.separated} reservados</span>
                           </div>
-                          <div className={`flex-1 flex items-center rounded-xl px-1 py-0.5 gap-0.5 ${isDarkMode ? 'bg-slate-900 border border-amber-800/30' : 'bg-white border border-amber-200'}`}>
+                          <div data-guide-anchor="sales.reverterStepper" className={`flex-1 flex items-center rounded-xl px-1 py-0.5 gap-0.5 ${isDarkMode ? 'bg-slate-900 border border-amber-800/30' : 'bg-white border border-amber-200'}`}>
                             <button
                               type="button"
                               onClick={() => setRevertQty(row.idx, row.separated, revertQty - 1)}

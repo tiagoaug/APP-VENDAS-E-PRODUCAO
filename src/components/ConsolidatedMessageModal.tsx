@@ -313,6 +313,7 @@ export default function ConsolidatedMessageModal({
               <button
                 type="button"
                 onClick={onClose}
+                data-guide-anchor="consolidatedMsg.fechar"
                 title="Fechar"
                 className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors"
               >
@@ -330,6 +331,7 @@ export default function ConsolidatedMessageModal({
                   <div
                     key={s.id}
                     onClick={() => toggleSaleSelection(s.id)}
+                    data-guide-anchor="consolidatedMsg.alternarItem"
                     className={`p-4 rounded-3xl border-2 transition-all cursor-pointer flex items-center gap-4 ${
                       selectedSaleIds.includes(s.id)
                       ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-500/10'
@@ -373,6 +375,7 @@ export default function ConsolidatedMessageModal({
               <button
                 type="button"
                 onClick={() => setExportModal({ isOpen: true, format: 'pdf' })}
+                data-guide-anchor="consolidatedMsg.exportarPdf"
                 disabled={selectedSales.length === 0}
                 className="flex-1 py-4 px-4 rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-rose-100 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -381,6 +384,7 @@ export default function ConsolidatedMessageModal({
               <button
                 type="button"
                 onClick={() => setExportModal({ isOpen: true, format: 'jpg' })}
+                data-guide-anchor="consolidatedMsg.exportarJpg"
                 disabled={selectedSales.length === 0}
                 className="flex-1 py-4 px-4 rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-100 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -389,6 +393,7 @@ export default function ConsolidatedMessageModal({
               <button
                 type="button"
                 onClick={handleCopy}
+                data-guide-anchor="consolidatedMsg.copiar"
                 className={`flex-1 py-4 px-4 rounded-2xl border-2 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
                   isDarkMode ? 'border-slate-800 text-white hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
@@ -401,6 +406,7 @@ export default function ConsolidatedMessageModal({
             <button
               type="button"
               onClick={handleWhatsApp}
+              data-guide-anchor="consolidatedMsg.enviarWhatsapp"
               disabled={!customer?.phone}
               className={`w-full py-5 rounded-[1.5rem] bg-emerald-500 text-white font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all active:scale-[0.98] ${
                 !customer?.phone ? 'opacity-50 cursor-not-allowed' : ''

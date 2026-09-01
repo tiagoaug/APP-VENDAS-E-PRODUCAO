@@ -177,8 +177,9 @@ export default function PurchaseNeedsModal({
             <div className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
               <span className="text-[11px] font-black text-indigo-500">{counts.PENDING + counts.IN_PROGRESS} pendentes</span>
             </div>
-            <button 
+            <button
               onClick={onClose}
+              data-guide-anchor="purchaseNeedsModal.fechar"
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}`}
               aria-label="Fechar modal"
             >
@@ -197,6 +198,7 @@ export default function PurchaseNeedsModal({
                 <button
                   key={f.key}
                   onClick={() => setActiveFilter(f.key)}
+                  data-guide-anchor="purchaseNeedsModal.selecionarFiltro"
                   className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all whitespace-nowrap ${
                     isActive
                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-500/20'
@@ -278,6 +280,7 @@ export default function PurchaseNeedsModal({
                         {hasSizes && (
                           <button
                             onClick={() => setExpandedId(isExpanded ? null : req.id)}
+                            data-guide-anchor="purchaseNeedsModal.expandirGrade"
                             className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${
                               isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-50 hover:bg-slate-100 shadow-sm'
                             }`}
@@ -345,6 +348,7 @@ export default function PurchaseNeedsModal({
                         <button
                           onClick={() => handleAdvance(req)}
                           disabled={isLoading}
+                          data-guide-anchor="purchaseNeedsModal.avancarStatus"
                           className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.1em] flex items-center justify-center gap-2 transition-all ${
                             isLoading
                               ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
@@ -357,6 +361,7 @@ export default function PurchaseNeedsModal({
                       {req.status !== 'RECEIVED' && (
                         <button
                           onClick={() => handleOrder(req)}
+                          data-guide-anchor="purchaseNeedsModal.comprar"
                           className={`flex items-center justify-center gap-2 px-6 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.1em] border-2 transition-all ${
                             isDarkMode 
                               ? 'border-slate-700 hover:bg-slate-800 text-slate-300' 

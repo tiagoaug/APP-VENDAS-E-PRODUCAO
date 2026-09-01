@@ -762,6 +762,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               <div className="flex items-center justify-between mb-2 px-2">
                 <button
                   onClick={() => setActiveVariationIndex(null)}
+                  data-guide-anchor="productForm.voltarVariacao"
                   className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400"
                 >
                   <ChevronLeft size={16} /> Voltar
@@ -769,6 +770,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <div className="flex gap-2">
                   <button
                     onClick={() => setVarView('info')}
+                    data-guide-anchor="productForm.abaCoresInfo"
                     className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'info' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
                   >
                     Cores & Info
@@ -806,6 +808,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                               <button
                                 type="button"
                                 onClick={e => { e.preventDefault(); updateVariation(activeVariationIndex, { photoUrl: undefined }); }}
+                                data-guide-anchor="productForm.removerFotoVariacao"
                                 className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
                                 title="Remover foto"
                               >
@@ -1019,6 +1022,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                         type="button"
                                         title={`Adicionar instrução para ${sector.name}`}
                                         onClick={addNote}
+                                        data-guide-anchor="productForm.adicionarInstrucaoSetor"
                                         className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all hover:opacity-80"
                                         style={{ backgroundColor: `${sector.color || '#6366f1'}20`, color: sector.color || '#6366f1' }}
                                       >
@@ -1051,6 +1055,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                               type="button"
                                               title="Remover instrução"
                                               onClick={() => removeNote(note.id)}
+                                              data-guide-anchor="productForm.removerInstrucaoSetor"
                                               className="shrink-0 p-1 rounded-lg text-slate-300 hover:text-rose-500 transition-colors mt-0.5"
                                             >
                                               <X size={12} />
@@ -1147,6 +1152,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <button
                         type="button"
                         onClick={() => setShowCostSummary(true)}
+                        data-guide-anchor="productForm.verResumoCusto"
                         title="Ver resumo completo do custo"
                         aria-label="Ver resumo completo do custo"
                         className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 transition-all active:scale-90"
@@ -1216,6 +1222,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     <button
                       type="button"
                       onClick={() => setShowCostSummary(true)}
+                      data-guide-anchor="productForm.verResumoCusto"
                       className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
                     >
                       Ver Resumo Completo
@@ -1284,6 +1291,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <button
                         type="button"
                         onClick={() => setShowCuttingPieces(prev => !prev)}
+                        data-guide-anchor="productForm.alternarPecasCorte"
                         title={showCuttingPieces ? "Recolher peças cadastradas" : "Ver peças cadastradas"}
                         aria-label={showCuttingPieces ? "Recolher peças cadastradas" : "Expandir peças cadastradas"}
                         className={`w-full flex items-center justify-between gap-3 px-4 py-3 mb-4 rounded-2xl border transition-colors ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:bg-slate-800/60' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
@@ -1335,6 +1343,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                        setConsumptionCategory('CUTTING_PIECE');
                                        setIsConsumptionModalOpen(true);
                                      }}
+                                     data-guide-anchor="productForm.configPecaCorte"
                                      title="Configurações"
                                      className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-xl transition-colors"
                                    >
@@ -1346,6 +1355,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                        const newSectorNotes = stripEngineeringSectorNotes(v.sectorNotes, item.id);
                                        updateVariation(activeVariationIndex, { consumptions: newC, sectorNotes: newSectorNotes });
                                      }}
+                                     data-guide-anchor="productForm.excluirPecaCorte"
                                      title="Excluir"
                                      className="p-2 bg-rose-50 dark:bg-rose-900/30 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/50 rounded-xl transition-colors"
                                    >
@@ -1448,6 +1458,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                               role="button"
                               tabIndex={0}
                               onClick={() => toggleCategoryOpen(group.cat)}
+                              data-guide-anchor="productForm.alternarCategoriaConsumo"
                               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleCategoryOpen(group.cat); }}
                               title={isOpen ? `Recolher ${group.label}` : `Expandir ${group.label}`}
                               aria-label={isOpen ? `Recolher ${group.label}` : `Expandir ${group.label}`}
@@ -1470,6 +1481,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); upsertCategoryCostType(group.cat, group.label, isFixedCost ? 'VARIABLE' : 'FIXED'); }}
+                                    data-guide-anchor="productForm.alternarTipoCusto"
                                     title="Alternar entre Fixo Variável (valor fixo mensal, diluído por produção estimada — varia por par conforme o volume) e Fixo (valor imutável por par, sempre o mesmo independente da produção)"
                                     className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${isFixedCost ? 'bg-orange-500 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
                                   >
@@ -1540,6 +1552,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                     <button
                                       type="button"
                                       onClick={() => setShowAssemblyServiceCalc(true)}
+                                      data-guide-anchor="productForm.calculadoraServico"
                                       title="Abrir Calculadora do Custo do Serviço"
                                       aria-label="Abrir calculadora para definir o custo do serviço"
                                       className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
@@ -1577,6 +1590,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                         setNewAssemblyServiceNoteName('');
                                         setNewAssemblyServiceNote('');
                                       }}
+                                      data-guide-anchor="productForm.adicionarServicoConjunto"
                                       title="Adicionar Serviço do Conjunto"
                                       className="w-full h-11 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
                                     >
@@ -1627,6 +1641,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                               const newSectorNotes = syncAssemblySectorNotes(v.sectorNotes, list);
                                               updateVariation(activeVariationIndex, { assemblyServices: list, sectorNotes: newSectorNotes });
                                             }}
+                                            data-guide-anchor="productForm.removerServicoConjunto"
                                             title="Remover Serviço"
                                             className="text-slate-300 hover:text-rose-500 transition-colors"
                                           >
@@ -1663,6 +1678,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                     });
                                     setIsConsumptionModalOpen(true);
                                   }}
+                                  data-guide-anchor="productForm.adicionarItemConsumo"
                                   title={`Adicionar ${group.label}`}
                                   className="w-full mb-4 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                                 >
@@ -1700,8 +1716,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                             )}
                                           </div>
                                           <div className="flex items-center gap-1">
-                                             <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} title="Configurações do Item" className="p-1.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"><Settings size={14} /></button>
-                                             <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); const newSectorNotes = stripEngineeringSectorNotes(v.sectorNotes, item.id); updateVariation(activeVariationIndex, { consumptions: newC, sectorNotes: newSectorNotes }); }} title="Excluir Item" className="p-1.5 text-rose-500 bg-rose-50 dark:bg-rose-900/30 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors"><Trash2 size={14} /></button>
+                                             <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} data-guide-anchor="productForm.configItemConsumo" title="Configurações do Item" className="p-1.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"><Settings size={14} /></button>
+                                             <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); const newSectorNotes = stripEngineeringSectorNotes(v.sectorNotes, item.id); updateVariation(activeVariationIndex, { consumptions: newC, sectorNotes: newSectorNotes }); }} data-guide-anchor="productForm.excluirItemConsumo" title="Excluir Item" className="p-1.5 text-rose-500 bg-rose-50 dark:bg-rose-900/30 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors"><Trash2 size={14} /></button>
                                            </div>
                                         </div>
                                         <div className="flex flex-col pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
@@ -1789,6 +1805,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <button
                         type="button"
                         onClick={() => setShowCategoryManager(true)}
+                        data-guide-anchor="productForm.gerenciarCategorias"
                         title="Criar categorias personalizadas além de Embalagens, Químicos, Aviamentos e Outros"
                         className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-widest hover:bg-rose-600 transition-colors shadow-sm w-full sm:w-auto sm:self-start"
                       >
@@ -1839,6 +1856,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                 }
                                 await onDeleteConfigItem?.(cat.id);
                               }}
+                              data-guide-anchor="productForm.excluirCategoriaFicha"
                               title="Excluir categoria"
                               className="p-2 rounded-xl text-rose-500 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors shrink-0"
                             >
@@ -1861,6 +1879,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           type="button"
                           onClick={handleAddCategory}
                           disabled={!newCategoryName.trim() || isSavingCategory}
+                          data-guide-anchor="productForm.confirmarNovaCategoria"
                           title="Adicionar categoria"
                           aria-label="Adicionar categoria"
                           className="px-4 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 disabled:opacity-50 transition-all shrink-0"
@@ -1885,6 +1904,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       setActiveVariationIndex(null);
                     }
                   }}
+                  data-guide-anchor="productForm.proximaCor"
                   className={`bg-indigo-600/10 text-indigo-600 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 transition-all hover:bg-indigo-600 hover:text-white`}
                 >
                   {activeVariationIndex === variations.length - 1 ? 'Voltar Lista' : 'Próxima Cor'} <ChevronRight size={14} />
@@ -1896,6 +1916,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       addVariation();
                       setVarView('info');
                     }}
+                    data-guide-anchor="productForm.adicionarProximaCor"
                     className={`bg-emerald-600/10 text-emerald-600 py-4 rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 transition-all hover:bg-emerald-600 hover:text-white`}
                   >
                     <Plus size={14} /> Adicionar Próxima Cor
@@ -1903,6 +1924,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 )}
                 <button
                   onClick={handleSave}
+                  data-guide-anchor="productForm.salvarTudo"
                   className={`bg-slate-900 dark:bg-indigo-600 text-white py-4 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-xl flex items-center justify-center gap-2 transform transition-transform active:scale-95`}
                 >
                   <Save size={14} /> Salvar Tudo
@@ -2025,6 +2047,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <button
                   type="button"
                   onClick={e => { e.preventDefault(); setPhotoUrl(''); }}
+                  data-guide-anchor="productForm.removerFoto"
                   className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
                   title="Remover foto"
                 >
@@ -2084,6 +2107,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <button
                   type="button"
                   onClick={e => { e.preventDefault(); setLabelThumbnailUrl(''); }}
+                  data-guide-anchor="productForm.removerMiniaturaEtiqueta"
                   className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
                   title="Remover miniatura"
                 >
@@ -2136,6 +2160,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     setSaleTypes([...saleTypes, SaleType.WHOLESALE]);
                   }
                 }}
+                data-guide-anchor="productForm.alternarTipoVenda"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
               >
                 <Package size={14} /> Atacado
@@ -2148,6 +2173,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     setSaleTypes([...saleTypes, SaleType.RETAIL]);
                   }
                 }}
+                data-guide-anchor="productForm.alternarTipoVenda"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.RETAIL) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
               >
                 <Tag size={14} /> Varejo
@@ -2169,6 +2195,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               <button
                 type="button"
                 onClick={() => setStatus(status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
+                data-guide-anchor="productForm.alternarStatus"
                 className={`w-12 h-6 rounded-full relative transition-colors ${status === ProductStatus.ACTIVE ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
                 aria-label={status === ProductStatus.ACTIVE ? "Inativar produto" : "Ativar produto"}
                 title={status === ProductStatus.ACTIVE ? "Inativar" : "Ativar"}
@@ -2277,6 +2304,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   <button
                     type="button"
                     onClick={() => setShowSoleMapping(true)}
+                    data-guide-anchor="productForm.abrirMapeamentoSolados"
                     className={`w-full flex items-center justify-between px-5 sm:px-6 py-4 text-left transition-colors ${isDarkMode ? 'bg-slate-800/20 hover:bg-emerald-900/20' : 'bg-emerald-50/30 hover:bg-emerald-50'}`}
                   >
                     <div className="flex items-center gap-3">
@@ -2337,6 +2365,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <button
                         type="button"
                         onClick={() => setShowCostPriceCalc(true)}
+                        data-guide-anchor="productForm.calculadoraCusto"
                         className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
                         aria-label="Abrir calculadora para o preço de custo"
                         title="Calculadora"
@@ -2373,6 +2402,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         <button
                           type="button"
                           onClick={() => setShowUnitCostPriceCalc(true)}
+                          data-guide-anchor="productForm.calculadoraCustoUnitario"
                           className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-600 p-2 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-xl transition-all"
                           aria-label="Abrir calculadora para custo unitário por par"
                           title="Calculadora"
@@ -2408,6 +2438,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <button
                         type="button"
                         onClick={() => setShowSalePriceCalc(true)}
+                        data-guide-anchor="productForm.calculadoraVenda"
                         className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
                         aria-label="Abrir calculadora para o preço de venda"
                         title="Calculadora"
@@ -2444,6 +2475,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         <button
                           type="button"
                           onClick={() => setShowUnitSalePriceCalc(true)}
+                          data-guide-anchor="productForm.calculadoraVendaUnitaria"
                           className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-sky-600 p-2 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-xl transition-all"
                           aria-label="Abrir calculadora para o preço unitário por par"
                           title="Calculadora"
@@ -2652,6 +2684,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             <button
               type="button"
               onClick={() => setShowProductionRoute(prev => !prev)}
+              data-guide-anchor="productForm.alternarRoteiroProducao"
               title={showProductionRoute ? "Recolher Roteiro de Produção" : "Expandir Roteiro de Produção"}
               aria-label={showProductionRoute ? "Recolher Roteiro de Produção" : "Expandir Roteiro de Produção"}
               className={`w-full flex items-center gap-3 ${showProductionRoute ? 'mb-6' : ''}`}
@@ -2682,6 +2715,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     key={sector.id}
                     type="button"
                     onClick={() => toggleSectorInRoute(sector.id)}
+                    data-guide-anchor="productForm.selecionarSetorRoteiro"
                     className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all active:scale-[0.98] ${
                       isActive
                         ? isDarkMode ? 'bg-sky-900/20 border-sky-500 text-sky-400' : 'bg-sky-50 border-sky-400 text-sky-700'
@@ -2736,6 +2770,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         <button
                           type="button"
                           onClick={() => toggleSectorInRoute(sectorId)}
+                          data-guide-anchor="productForm.removerSetorRoteiro"
                           className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors"
                           title="Remover"
                         >
@@ -2749,6 +2784,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           type="button"
                           onClick={() => moveSectorInRoute(index, 'up')}
                           disabled={index === 0}
+                          data-guide-anchor="productForm.moverSetorRoteiro"
                           className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all disabled:opacity-25 ${isDarkMode ? 'border-slate-800 text-slate-500 hover:text-indigo-400 hover:border-indigo-500/40' : 'border-slate-200 text-slate-400 hover:text-indigo-500 hover:border-indigo-300'}`}
                           title="Mover para cima"
                         >
@@ -2758,6 +2794,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           type="button"
                           onClick={() => moveSectorInRoute(index, 'down')}
                           disabled={index === productionRoute.length - 1}
+                          data-guide-anchor="productForm.moverSetorRoteiro"
                           className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all disabled:opacity-25 ${isDarkMode ? 'border-slate-800 text-slate-500 hover:text-indigo-400 hover:border-indigo-500/40' : 'border-slate-200 text-slate-400 hover:text-indigo-500 hover:border-indigo-300'}`}
                           title="Mover para baixo"
                         >
@@ -2788,6 +2825,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               setSectorPricesDraft(draft);
               setShowSectorPricesModal(true);
             }}
+            data-guide-anchor="productForm.abrirValoresSetor"
             className={`mt-4 w-full flex items-center gap-3 p-5 rounded-[2.5rem] border-2 transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-emerald-500/40' : 'bg-white border-slate-100 hover:border-emerald-300'}`}
           >
             <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
@@ -2837,6 +2875,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <button
                         type="button"
                         onClick={() => setCalcTargetSectorId(sectorId)}
+                        data-guide-anchor="productForm.calculadoraValorSetor"
                         className={`p-1.5 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-emerald-400 hover:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
                         aria-label={`Abrir calculadora pro valor de ${sector.name}`}
                         title="Calculadora"
@@ -2875,6 +2914,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 setShowSectorPricesModal(false);
                 toast.show('Valores de serviço salvos!');
               }}
+              data-guide-anchor="productForm.salvarValoresSetor"
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-emerald-500 text-white"
             >
               <Check size={16} /> Salvar
@@ -2892,6 +2932,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             </div>
             <button
               onClick={addVariation}
+              data-guide-anchor="productForm.adicionarCor"
               className="flex items-center justify-center gap-2 text-[10px] bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
               aria-label="Adicionar nova variação de cor"
               title="Adicionar Cor"
@@ -2932,6 +2973,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
                   <button
                     onClick={() => deleteVariation(i)}
+                    data-guide-anchor="productForm.excluirVariacao"
                     className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all shadow-sm ${isDarkMode ? 'bg-slate-900 text-rose-500 hover:bg-rose-900/20' : 'bg-white text-rose-500 hover:bg-rose-50 border border-slate-100'}`}
                     aria-label={`Excluir variação ${v.colorName}`}
                     title="Excluir Variação"
@@ -2962,6 +3004,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         setCopySuccess(`Engenharia e instruções de "${v.colorName}" COPIADAS!`);
                         setTimeout(() => setCopySuccess(null), 2000);
                       }}
+                      data-guide-anchor="productForm.copiarEngenharia"
                       className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                       title="Copiar ficha técnica e instruções por setor desta cor"
                       aria-label={`Copiar engenharia e instruções da cor ${v.colorName}`}
@@ -2987,6 +3030,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         setCopySuccess(`Ficha e instruções de "${engineeringClipboard.sourceName}" coladas em "${v.colorName}"!`);
                         setTimeout(() => setCopySuccess(null), 3000);
                       }}
+                      data-guide-anchor="productForm.colarEngenharia"
                       className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all truncate max-w-[40%] ${
                         (v.consumptions || []).length === 0 && Object.keys(v.sectorNotes || {}).length === 0
                           ? `animate-pulse ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`
@@ -3003,6 +3047,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {module === 'PRODUCTION' && (
                     <button
                       onClick={() => setActiveVariationIndex(i)}
+                      data-guide-anchor="productForm.editarEngenhariaVariacao"
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                       aria-label={`Editar ficha técnica ${v.colorName}`}
                       title="Editar Engenharia"
@@ -3013,6 +3058,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {module === 'SALES' && (
                     <button
                       onClick={() => setActiveVariationIndex(i)}
+                      data-guide-anchor="productForm.editarCorVariacao"
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                       aria-label={`Editar variação ${v.colorName}`}
                       title="Editar Cor"
@@ -3040,6 +3086,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           <button
             type="button"
             onClick={onCancel}
+            data-guide-anchor="productForm.cancelar"
             title="Cancelar"
             aria-label="Cancelar edição e voltar"
             className="py-3.5 rounded-xl font-bold uppercase tracking-widest text-[10px] border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 transition-all cursor-pointer"
@@ -3049,6 +3096,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           <button
             type="button"
             onClick={handleSaveOnly}
+            data-guide-anchor="productForm.salvarContinuar"
             className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl font-bold uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all active:scale-95 cursor-pointer"
             aria-label="Salvar produto e continuar editando"
             title="Salvar"
@@ -3124,6 +3172,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             <button
                               type="button"
                               onClick={() => setSoleSizePickerFor(cabedalSize)}
+                              data-guide-anchor="productForm.abrirSeletorSola"
                               className="w-full bg-transparent border-none text-right text-sm font-black text-slate-900 dark:text-white outline-none p-0 cursor-pointer"
                               title={`Numeração da sola para o cabedal ${cabedalSize}`}
                             >
@@ -3157,7 +3206,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <h3 className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Sola para o Cabedal {soleSizePickerFor}
                 </h3>
-                <button type="button" onClick={() => setSoleSizePickerFor(null)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`} aria-label="Fechar">
+                <button type="button" onClick={() => setSoleSizePickerFor(null)} data-guide-anchor="productForm.fecharSeletorSola" className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`} aria-label="Fechar">
                   <X size={16} />
                 </button>
               </div>
@@ -3169,6 +3218,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       setSoleMapping({ ...soleMapping, [soleSizePickerFor]: s });
                       setSoleSizePickerFor(null);
                     }}
+                    data-guide-anchor="productForm.selecionarSola"
                     className={`flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-black cursor-pointer transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'} ${(soleMapping[soleSizePickerFor] || '') === s ? 'text-emerald-600 dark:text-emerald-400' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}
                   >
                     <span>{s || '--'}</span>

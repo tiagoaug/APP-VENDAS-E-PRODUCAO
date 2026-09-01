@@ -247,6 +247,7 @@ export default function ProductCostSummaryModal({
           <button
             type="button"
             onClick={onClose}
+            data-guide-anchor="productCost.fechar"
             className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? "bg-slate-800 text-slate-400 hover:text-white" : "bg-slate-50 text-slate-400 hover:text-slate-600"}`}
           >
             <X size={20} strokeWidth={2.5} />
@@ -344,6 +345,7 @@ export default function ProductCostSummaryModal({
           <button
             type="button"
             onClick={handleExportJpg}
+            data-guide-anchor="productCost.exportarJpg"
             className="w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-indigo-600"
           >
             <Share2 size={16} /> Exportar JPG
@@ -351,6 +353,7 @@ export default function ProductCostSummaryModal({
           <button
             type="button"
             onClick={onClose}
+            data-guide-anchor="productCost.fecharRodape"
             className={`w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest transition-all ${isDarkMode ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}
           >
             Fechar

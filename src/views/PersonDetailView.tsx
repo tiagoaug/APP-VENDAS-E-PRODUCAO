@@ -61,7 +61,7 @@ export default function PersonDetailView({
   return (
     <div className="flex flex-col gap-6 pb-40">
       <div className="flex items-center gap-4">
-        <button onClick={onBack} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-400" title="Voltar" aria-label="Voltar">
+        <button onClick={onBack} data-guide-anchor="personDetail.voltar" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-400" title="Voltar" aria-label="Voltar">
           <ArrowLeft size={24} />
         </button>
         <div>

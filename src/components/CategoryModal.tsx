@@ -162,6 +162,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
                 key={m}
                 type="button"
                 onClick={() => toggleModule(m)}
+                data-guide-anchor="cat.selecionarModulo"
                 className={`py-2 px-1 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all ${
                   modules.includes(m)
                     ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
@@ -188,7 +189,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
         </label>
 
         <div className="flex gap-2 pt-2">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
+          <button onClick={onClose} data-guide-anchor="cat.cancelar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
           <button
             onClick={handleSave}
             data-guide-anchor="cat.salvar"

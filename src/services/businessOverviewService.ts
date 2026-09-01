@@ -4,11 +4,6 @@ import { OverviewPeriodType } from '../utils/businessOverview';
 export type OverviewComparisonMode = 'NONE' | 'AUTO' | 'MANUAL';
 
 export interface BusinessOverviewConfig {
-  includeStock: boolean;
-  includeAccounts: boolean;
-  includeProduction: boolean;
-  includeReceivables: boolean;
-  includeAllIncome: boolean;
   periodType: OverviewPeriodType;
   periodDate: string; // "yyyy-MM" — mês/ano de referência do período selecionado
   comparisonMode: OverviewComparisonMode;
@@ -33,11 +28,6 @@ function previousMonthStr(): string {
 }
 
 export const DEFAULT_BUSINESS_OVERVIEW_CONFIG: BusinessOverviewConfig = {
-  includeStock: true,
-  includeAccounts: true,
-  includeProduction: true,
-  includeReceivables: false,
-  includeAllIncome: false,
   periodType: 'MONTH',
   periodDate: currentMonthStr(),
   comparisonMode: 'AUTO',

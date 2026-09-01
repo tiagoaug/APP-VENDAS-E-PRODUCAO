@@ -104,8 +104,9 @@ export default function PartialPaymentModal({
             </h2>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Fornecedor: {entityLabel || "---"}</p>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
+            data-guide-anchor="partialPayment.fechar"
             className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400"
             title="Fechar"
             aria-label="Fechar"
@@ -117,14 +118,16 @@ export default function PartialPaymentModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
           {/* View Toggle */}
           <div className="flex p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">
-            <button 
+            <button
               onClick={() => setViewMode('HISTORY')}
+              data-guide-anchor="partialPayment.abaHistorico"
               className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${viewMode === 'HISTORY' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
             >
               <History size={14} /> Histórico
             </button>
-            <button 
+            <button
               onClick={() => setViewMode('PAYMENT')}
+              data-guide-anchor="partialPayment.abaPagar"
               className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${viewMode === 'PAYMENT' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
             >
               <DollarSign size={14} /> Pagar Agora
@@ -161,6 +164,7 @@ export default function PartialPaymentModal({
                     <button
                       type="button"
                       onClick={() => setAmount(remaining.toFixed(2))}
+                      data-guide-anchor="partialPayment.quitarTotal"
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-sm"
                     >
                       <CheckCircle2 size={12} strokeWidth={3} />
@@ -244,6 +248,7 @@ export default function PartialPaymentModal({
                   {entity.paymentHistory && entity.paymentHistory.length > 0 && (
                     <button
                       onClick={handleCopyHistory}
+                      data-guide-anchor="partialPayment.copiarHistorico"
                       className="p-2 rounded-lg bg-white dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all border border-slate-100 dark:border-slate-700 flex items-center gap-1.5"
                     >
                       <Copy size={12} />

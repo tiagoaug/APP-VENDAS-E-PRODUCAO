@@ -13,12 +13,15 @@ import { toast } from '../utils/toast';
 import { scannerService, SCAN_HISTORY_KEY, ScanHistoryEntry } from '../services/scannerService';
 import { getLotPendingSectorGroups } from '../utils/productionRoute';
 import { getPoolQty, getStockValue } from '../utils/stockPools';
+import { computeProducedPairs } from '../utils/businessOverview';
+import MonthYearPickerPopover from '../components/MonthYearPickerPopover';
 import { isDashboardCardAllowed, collaboratorCanUseAI } from '../utils/collaborators';
 import type { Collaborator } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
 import DatePicker from '../components/DatePicker';
 import BusinessOverviewCard from '../components/BusinessOverviewCard';
+import ProducedPairsCard from '../components/ProducedPairsCard';
 import CommissionToSellersCard from '../components/CommissionToSellersCard';
 import ProviderServiceOrdersCard from '../components/ProviderServiceOrdersCard';
 import { getPeriodRange, OverviewPeriodType, STATS_PERIOD_LABELS } from '../utils/businessOverview';
@@ -185,6 +188,8 @@ export default function DashboardView({
   const [profitCompPeriodDate, setProfitCompPeriodDate] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth() - 1), 'yyyy-MM'));
   const [isProfitFiltersExpanded, setIsProfitFiltersExpanded] = useState(false);
   const [profitComparisonMode, setProfitComparisonMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
+  const [showProfitMonthPicker, setShowProfitMonthPicker] = useState(false);
+  const [showProfitCompMonthPicker, setShowProfitCompMonthPicker] = useState(false);
 
   const customersWithCredits = useMemo(() => {
     return people
@@ -525,8 +530,19 @@ export default function DashboardView({
 
     const profitDiff = previous.profit === 0 ? (current.profit > 0 ? 100 : 0) : ((current.profit - previous.profit) / Math.abs(previous.profit)) * 100;
 
-    return { current, previous, profitDiff, previousStart, previousEnd, currentStart: currentRange.start, currentEnd: currentRange.end };
-  }, [transactions, profitPeriodType, profitPeriodDate, profitCompPeriodType, profitCompPeriodDate, profitComparisonMode]);
+    // Lucro Real por Par — (Receitas − Despesas) do período ÷ pares de fato finalizados na
+    // produção (Mapas com finishedAt) no mesmo período. Diferente da margem por venda: aqui é
+    // o resultado financeiro inteiro do período (inclui despesas fixas, compras etc.) diluído
+    // pelo que a fábrica de fato produziu — mostra quanto cada par "carrega" de lucro/prejuízo
+    // real, não só a margem comercial da venda.
+    const producedPairs = computeProducedPairs(productionLots, currentRange.start, currentRange.end).total;
+    const profitPerPair = producedPairs > 0 ? current.profit / producedPairs : null;
+
+    // Taxa de Lucro — margem percentual sobre a receita: (Receitas − Despesas) ÷ Receitas.
+    const profitRate = current.income > 0 ? (current.profit / current.income) * 100 : 0;
+
+    return { current, previous, profitDiff, previousStart, previousEnd, currentStart: currentRange.start, currentEnd: currentRange.end, producedPairs, profitPerPair, profitRate };
+  }, [transactions, productionLots, profitPeriodType, profitPeriodDate, profitCompPeriodType, profitCompPeriodDate, profitComparisonMode]);
 
   const filteredDebtData = useMemo(() => {
     let list = purchases
@@ -1973,7 +1989,10 @@ export default function DashboardView({
               <div key="monthly_profit_detailed" className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 {/* Title area */}
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
-                  <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-sm font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400">Análise de Lucro</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="inline-flex items-center w-fit px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-sm font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400">Análise de Lucro</span>
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest px-1">Baseada em Receitas − Despesas do período</p>
+                  </div>
                   <button
                     title="Filtrar Período"
                     aria-label="Abrir filtros de período para análise de lucro"
@@ -2028,16 +2047,26 @@ export default function DashboardView({
                                 <option value="SEMESTER">Semestre</option>
                                 <option value="YEAR">Ano</option>
                               </select>
-                              <input 
-                                type="month" 
+                              <button
+                                type="button"
+                                onClick={() => setShowProfitMonthPicker(true)}
+                                data-guide-anchor="dash.profit.mesEscolhido"
                                 title="Data Referência"
-                                className="flex-1 bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold" 
-                                value={profitPeriodDate} 
-                                onChange={(e) => setProfitPeriodDate(e.target.value)} 
-                              />
+                                className="flex-1 flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold capitalize text-left"
+                              >
+                                <Calendar size={12} className="text-slate-400 shrink-0" />
+                                {format(new Date(profitPeriodDate + '-01T12:00:00'), 'MMMM/yyyy', { locale: ptBR })}
+                              </button>
+                              {showProfitMonthPicker && (
+                                <MonthYearPickerPopover
+                                  value={profitPeriodDate}
+                                  onChange={setProfitPeriodDate}
+                                  onClose={() => setShowProfitMonthPicker(false)}
+                                />
+                              )}
                             </div>
                           </div>
-                          
+
                           {profitComparisonMode === 'MANUAL' && (
                             <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="space-y-1.5">
                               <p className="text-[8px] font-black text-indigo-400 tracking-widest px-1">Comparar com</p>
@@ -2053,13 +2082,23 @@ export default function DashboardView({
                                   <option value="SEMESTER">Semestre</option>
                                   <option value="YEAR">Ano</option>
                                 </select>
-                                <input 
-                                  type="month" 
+                                <button
+                                  type="button"
+                                  onClick={() => setShowProfitCompMonthPicker(true)}
+                                  data-guide-anchor="dash.profit.mesComparacao"
                                   title="Data Referência Comp"
-                                  className="flex-1 bg-indigo-50 dark:bg-indigo-900/30 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400" 
-                                  value={profitCompPeriodDate} 
-                                  onChange={(e) => setProfitCompPeriodDate(e.target.value)} 
-                                />
+                                  className="flex-1 flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/30 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 capitalize text-left"
+                                >
+                                  <Calendar size={12} className="shrink-0" />
+                                  {format(new Date(profitCompPeriodDate + '-01T12:00:00'), 'MMMM/yyyy', { locale: ptBR })}
+                                </button>
+                                {showProfitCompMonthPicker && (
+                                  <MonthYearPickerPopover
+                                    value={profitCompPeriodDate}
+                                    onChange={setProfitCompPeriodDate}
+                                    onClose={() => setShowProfitCompMonthPicker(false)}
+                                  />
+                                )}
                               </div>
                             </motion.div>
                           )}
@@ -2087,6 +2126,46 @@ export default function DashboardView({
                       </p>
                     </div>
                   </div>
+                </div>
+
+                <div
+                  data-guide-anchor="dash.profit.lucroPorPar"
+                  className={`p-4 rounded-2xl border-2 flex items-center justify-between gap-3 ${isDarkMode ? 'border-emerald-900/40 bg-emerald-950/10' : 'border-emerald-100 bg-emerald-50/50'}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+                      <Footprints size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Lucro Real por Par</p>
+                      <p className="text-[8px] font-bold text-slate-400 leading-tight mt-0.5">
+                        (Receitas − Despesas) ÷ {profitAnalysis.producedPairs} {profitAnalysis.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} no período
+                      </p>
+                    </div>
+                  </div>
+                  <p className={`text-lg font-black shrink-0 ${profitAnalysis.profitPerPair === null ? 'text-slate-400' : profitAnalysis.profitPerPair >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                    {profitAnalysis.profitPerPair === null ? '—' : `R$ ${profitAnalysis.profitPerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  </p>
+                </div>
+
+                <div
+                  data-guide-anchor="dash.profit.taxaLucro"
+                  className={`p-4 rounded-2xl border-2 flex items-center justify-between gap-3 ${isDarkMode ? 'border-indigo-900/40 bg-indigo-950/10' : 'border-indigo-100 bg-indigo-50/50'}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                      <TrendingUp size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Taxa de Lucro</p>
+                      <p className="text-[8px] font-bold text-slate-400 leading-tight mt-0.5">
+                        (Receitas − Despesas) ÷ Receitas do período
+                      </p>
+                    </div>
+                  </div>
+                  <p className={`text-lg font-black shrink-0 ${profitAnalysis.profitRate >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'}`}>
+                    {profitAnalysis.profitRate.toFixed(1).replace('.', ',')}%
+                  </p>
                 </div>
 
                 <div className={`p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? "border-slate-800" : "border-slate-50"} flex flex-col gap-3`}>
@@ -2139,6 +2218,16 @@ export default function DashboardView({
                 people={people}
                 categories={categories}
                 onDeleteTransaction={onDeleteTransaction || (() => {})}
+              />
+            );
+
+          case "produced_pairs":
+            if (!modulesConfig.production) return null;
+            return (
+              <ProducedPairsCard
+                key="produced_pairs"
+                isDarkMode={isDarkMode}
+                productionLots={productionLots}
               />
             );
 

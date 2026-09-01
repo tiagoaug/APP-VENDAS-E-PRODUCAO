@@ -124,32 +124,37 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
         </div>
 
         <div className={`border p-1 rounded-2xl shadow-sm self-start ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-          <button 
+          <button
             onClick={() => setFilter('ALL')}
+            data-guide-anchor="people.selecionarFiltro"
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'ALL' ? (isDarkMode ? 'bg-indigo-600' : 'bg-slate-900') + ' text-white' : 'text-slate-400'}`}
           >
             Todos
           </button>
-          <button 
+          <button
             onClick={() => setFilter('CUSTOMER')}
+            data-guide-anchor="people.selecionarFiltro"
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'CUSTOMER' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
           >
             Clientes
           </button>
-          <button 
+          <button
             onClick={() => setFilter('SUPPLIER')}
+            data-guide-anchor="people.selecionarFiltro"
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SUPPLIER' ? 'bg-amber-600 text-white' : 'text-slate-400'}`}
           >
             Fornecedores
           </button>
-          <button 
+          <button
             onClick={() => setFilter('SELLER')}
+            data-guide-anchor="people.selecionarFiltro"
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SELLER' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
           >
             Vendedores
           </button>
-          <button 
+          <button
             onClick={() => setFilter('BUYER')}
+            data-guide-anchor="people.selecionarFiltro"
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'BUYER' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
           >
             Compradores
@@ -160,7 +165,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
       <div className="flex flex-col gap-4 pb-32">
         {filtered.map((person) => (
           <div key={person.id} className={`p-4 rounded-3xl border shadow-sm dark:shadow-none flex items-center justify-between group cursor-pointer active:scale-[0.99] transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-100 hover:border-indigo-100'}`}>
-            <div className="flex items-center gap-4 flex-1" onClick={() => onShowDetail(person.id)}>
+            <div className="flex items-center gap-4 flex-1" onClick={() => onShowDetail(person.id)} data-guide-anchor="people.abrirDetalhe">
               <div className={`w-12 h-12 flex items-center justify-center font-black text-xl transition-colors ${
                 person.isCustomer && person.isSupplier ? 'text-indigo-600 dark:text-indigo-400' :
                 person.isCustomer ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
@@ -193,7 +198,8 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
             </div>
             <div className="flex gap-1 items-center">
               <button 
-                onClick={(e) => { e.stopPropagation(); setHistoryPerson(person); setIsHistoryModalOpen(true); }} 
+                onClick={(e) => { e.stopPropagation(); setHistoryPerson(person); setIsHistoryModalOpen(true); }}
+                data-guide-anchor="people.historico"
                 className="p-2 text-rose-500 hover:text-rose-600 transition-colors"
                 title="Histórico de Pagamentos"
                 aria-label="Histórico de Pagamentos"
@@ -201,7 +207,8 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
                 <History size={18} strokeWidth={2.5} />
               </button>
                <button 
-                onClick={(e) => { e.stopPropagation(); setEditingPerson(person); setIsModalOpen(true); }} 
+                onClick={(e) => { e.stopPropagation(); setEditingPerson(person); setIsModalOpen(true); }}
+                data-guide-anchor="people.editar"
                 className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                 title="Editar Cadastro"
                 aria-label="Editar Cadastro"
@@ -209,7 +216,8 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
                 <Edit size={18} strokeWidth={2.5} />
               </button>
                <button 
-                onClick={(e) => { e.stopPropagation(); handleDeleteClick(person.id); }} 
+                onClick={(e) => { e.stopPropagation(); handleDeleteClick(person.id); }}
+                data-guide-anchor="people.excluir"
                 className="p-2 text-slate-400 dark:text-slate-500 hover:text-rose-500 transition-colors"
                 title="Excluir Cadastro"
                 aria-label="Excluir Cadastro"

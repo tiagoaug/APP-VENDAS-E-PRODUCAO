@@ -330,7 +330,7 @@ export default function SoleReceiptView({
                               <p className="text-[9px] text-slate-400 font-bold">Recebido: {max}</p>
                             </div>
                             <div className="flex items-center gap-1.5 flex-1 justify-end">
-                              <button type="button" title="Diminuir" onClick={() => setRevertQtys(p => ({ ...p, [key]: Math.max(0, val - 1) }))} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center active:scale-95 transition-all"><Minus size={12} /></button>
+                              <button type="button" title="Diminuir" data-guide-anchor="soleReceipt.reverterQtd" onClick={() => setRevertQtys(p => ({ ...p, [key]: Math.max(0, val - 1) }))} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center active:scale-95 transition-all"><Minus size={12} /></button>
                               <input
                                 type="number" min={0} max={Number(max)}
                                 value={val}
@@ -339,7 +339,7 @@ export default function SoleReceiptView({
                                 onChange={e => setRevertQtys(p => ({ ...p, [key]: Math.min(Number(max), Math.max(0, parseInt(e.target.value) || 0)) }))}
                                 className={`w-14 text-center text-sm font-black rounded-lg border-2 py-1.5 outline-none ${val > 0 ? 'border-rose-400 bg-rose-50 dark:bg-rose-950/30 text-rose-600' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400'}`}
                               />
-                              <button type="button" title="Aumentar" onClick={() => setRevertQtys(p => ({ ...p, [key]: Math.min(Number(max), val + 1) }))} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center active:scale-95 transition-all"><Plus size={12} /></button>
+                              <button type="button" title="Aumentar" data-guide-anchor="soleReceipt.reverterQtd" onClick={() => setRevertQtys(p => ({ ...p, [key]: Math.min(Number(max), val + 1) }))} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center active:scale-95 transition-all"><Plus size={12} /></button>
                             </div>
                           </div>
                         );
@@ -350,11 +350,12 @@ export default function SoleReceiptView({
               })}
             </div>
             <div className="px-4 pb-4 flex gap-3">
-              <button type="button" onClick={() => setRevertModal(null)} className="flex-1 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all">Cancelar</button>
+              <button type="button" onClick={() => setRevertModal(null)} data-guide-anchor="soleReceipt.reverterCancelar" className="flex-1 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all">Cancelar</button>
               <button
                 type="button"
                 disabled={revertingId === revertModal.purchase.id}
                 onClick={handlePartialRevert}
+                data-guide-anchor="soleReceipt.reverterConfirmar"
                 className="flex-1 py-3 rounded-xl font-bold text-sm bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {revertingId === revertModal.purchase.id ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -370,6 +371,7 @@ export default function SoleReceiptView({
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
+            data-guide-anchor="soleReceipt.voltar"
             className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/60 flex items-center justify-center text-slate-400 hover:text-cyan-500 hover:border-cyan-500/20 active:scale-95 transition-all shadow-sm"
             aria-label="Voltar"
             title="Voltar"
@@ -406,6 +408,7 @@ export default function SoleReceiptView({
             </div>
             <button
               onClick={() => setSuccessToast(null)}
+              data-guide-anchor="soleReceipt.toastFechar"
               className="text-[10px] font-black uppercase tracking-widest hover:text-emerald-500"
             >
               Fechar
@@ -422,6 +425,7 @@ export default function SoleReceiptView({
             </div>
             <button
               onClick={() => setErrorToast(null)}
+              data-guide-anchor="soleReceipt.toastFechar"
               className="text-[10px] font-black uppercase tracking-widest hover:text-rose-500"
             >
               Fechar
@@ -469,6 +473,7 @@ export default function SoleReceiptView({
             <button
               type="button"
               onClick={() => setShowReceived(true)}
+              data-guide-anchor="soleReceipt.historicoAbrir"
               className="relative shrink-0 w-14 h-14 sm:w-auto sm:px-5 sm:h-auto sm:py-4 rounded-2xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:from-cyan-400 hover:to-indigo-500 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
               title="Ver histórico de recebimentos"
               aria-label="Abrir histórico de recebimentos"
@@ -492,7 +497,7 @@ export default function SoleReceiptView({
                   <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-white">Histórico de Recebimentos</h3>
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Clique em Reverter para desfazer uma baixa</p>
                 </div>
-                <button type="button" onClick={() => setShowReceived(false)} className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" aria-label="Fechar histórico">
+                <button type="button" onClick={() => setShowReceived(false)} data-guide-anchor="soleReceipt.historicoFechar" className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" aria-label="Fechar histórico">
                   <X size={18} />
                 </button>
               </div>
@@ -555,6 +560,7 @@ export default function SoleReceiptView({
 
                         <div className="px-4 pb-5 shrink-0">
                           <button type="button" onClick={() => openRevertModal(p)}
+                            data-guide-anchor="soleReceipt.reverterAbrir"
                             className="w-full py-3 rounded-2xl text-sm font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500 border border-rose-100 dark:border-rose-800/40 hover:bg-rose-100 active:scale-95 transition-all flex items-center justify-center gap-2"
                             title="Reverter recebimento" aria-label="Reverter recebimento"
                           >
@@ -600,6 +606,7 @@ export default function SoleReceiptView({
                   {/* Card Header Row */}
                   <div
                     onClick={() => handleToggleExpand(purchase)}
+                    data-guide-anchor="soleReceipt.itemExpandir"
                     className="p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer select-none"
                   >
                     <div className="flex items-start gap-4">
@@ -693,7 +700,7 @@ export default function SoleReceiptView({
                                             <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 leading-tight">{remaining} pendente de entrega</span>
                                           </div>
                                           <div className="flex items-center gap-2 flex-1 justify-end">
-                                            <button type="button" title="Diminuir" aria-label="Diminuir" onClick={() => setReceivedQuantities(p => ({ ...p, [key]: Math.max(0, val - 1) }))} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black active:scale-95 transition-all"><Minus size={14} /></button>
+                                            <button type="button" title="Diminuir" aria-label="Diminuir" data-guide-anchor="soleReceipt.receberQtd" onClick={() => setReceivedQuantities(p => ({ ...p, [key]: Math.max(0, val - 1) }))} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black active:scale-95 transition-all"><Minus size={14} /></button>
                                             <input
                                               type="number" min={0} max={max}
                                               title={`Receber tamanho ${size}`}
@@ -702,7 +709,7 @@ export default function SoleReceiptView({
                                               onChange={e => setReceivedQuantities(p => ({ ...p, [key]: Math.min(max, Math.max(0, parseInt(e.target.value) || 0)) }))}
                                               className={`w-16 text-center text-base font-black rounded-xl border-2 py-2 outline-none transition-all ${val > 0 ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500'}`}
                                             />
-                                            <button type="button" title="Aumentar" aria-label="Aumentar" onClick={() => setReceivedQuantities(p => ({ ...p, [key]: Math.min(max, val + 1) }))} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black active:scale-95 transition-all"><Plus size={14} /></button>
+                                            <button type="button" title="Aumentar" aria-label="Aumentar" data-guide-anchor="soleReceipt.receberQtd" onClick={() => setReceivedQuantities(p => ({ ...p, [key]: Math.min(max, val + 1) }))} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black active:scale-95 transition-all"><Plus size={14} /></button>
                                           </div>
                                         </div>
                                       );
@@ -712,6 +719,7 @@ export default function SoleReceiptView({
                                     <button
                                       type="button"
                                       title="Receber parcial"
+                                      data-guide-anchor="soleReceipt.receberParcial"
                                       onClick={() => {
                                         const updates: Record<string, number> = {};
                                         Object.entries(item.quantities || {}).forEach(([size]: [string, any]) => {
@@ -726,6 +734,7 @@ export default function SoleReceiptView({
                                     <button
                                       type="button"
                                       title="Receber tudo"
+                                      data-guide-anchor="soleReceipt.receberTudo"
                                       onClick={() => {
                                         const updates: Record<string, number> = {};
                                         Object.entries(item.quantities || {}).forEach(([size, qty]: [string, any]) => {
@@ -740,6 +749,7 @@ export default function SoleReceiptView({
                                     <button
                                       type="button"
                                       title="Receber as quantidades que faltam nos mapas"
+                                      data-guide-anchor="soleReceipt.receberFaltaMapas"
                                       onClick={() => {
                                         const reservedByGrade = reservations[`${item.moldId}_${item.colorId || 'default'}`]?.reservedByGrade || {};
                                         const stockEntry = (soleStockEntries || []).find((s: any) => s.moldId === item.moldId && s.colorId === item.colorId);
@@ -766,6 +776,7 @@ export default function SoleReceiptView({
                             <button
                               type="button"
                               onClick={() => setExpandedPurchaseId(null)}
+                              data-guide-anchor="soleReceipt.itemCancelar"
                               className="px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 dark:text-slate-500 transition-colors"
                               aria-label="Cancelar recebimento"
                             >

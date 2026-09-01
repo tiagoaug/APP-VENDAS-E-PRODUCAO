@@ -66,6 +66,7 @@ export default function ProductionEngineeringView({
             <div className="flex gap-3">
               <button
                 onClick={() => setItemToDelete(null)}
+                data-guide-anchor="prodEng.excluirCancelar"
                 className="flex-1 py-3 px-4 rounded-xl font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all text-sm"
               >
                 Cancelar
@@ -75,6 +76,7 @@ export default function ProductionEngineeringView({
                   onDelete(itemToDelete);
                   setItemToDelete(null);
                 }}
+                data-guide-anchor="prodEng.excluirConfirmar"
                 className="flex-1 py-3 px-4 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all text-sm shadow-sm opacity-90"
               >
                 Excluir
@@ -103,6 +105,7 @@ export default function ProductionEngineeringView({
       <button
         type="button"
         onClick={onAdd}
+        data-guide-anchor="prodEng.novaEngenharia"
         className={`relative mt-2 rounded-[1.5rem] py-4 flex items-center justify-center gap-3 font-black tracking-widest transition-all cursor-pointer active:scale-[0.98] text-[11px] uppercase overflow-hidden ${
           isDarkMode
             ? 'bg-gradient-to-b from-slate-700 to-slate-900 border border-slate-600/40 text-white'
@@ -196,6 +199,7 @@ function EngineeringCard({
           <button
             type="button"
             onClick={onToggleStatus}
+            data-guide-anchor="prodEng.toggleStatus"
             title={`Mudar para ${product.status === ProductStatus.ACTIVE ? 'Inativo' : 'Ativo'}`}
             aria-label={`Mudar status do produto para ${product.status === ProductStatus.ACTIVE ? 'Inativo' : 'Ativo'}`}
             className={`px-2.5 py-1 rounded-lg transition-all whitespace-nowrap text-[10px] font-black uppercase tracking-wider ${product.status === ProductStatus.ACTIVE ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}
@@ -206,6 +210,7 @@ function EngineeringCard({
             <button
               type="button"
               onClick={onDuplicate}
+              data-guide-anchor="prodEng.duplicar"
               title="Duplicar Engenharia"
               className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-90 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-indigo-400' : 'bg-slate-100 text-slate-400 hover:text-indigo-500'}`}
             >
@@ -214,6 +219,7 @@ function EngineeringCard({
             <button
               type="button"
               onClick={onDelete}
+              data-guide-anchor="prodEng.excluirAbrir"
               title="Excluir Modelo"
               className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-90 ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-rose-400' : 'bg-slate-100 text-slate-400 hover:text-rose-500'}`}
             >
@@ -222,6 +228,7 @@ function EngineeringCard({
             <button
               type="button"
               onClick={onEdit}
+              data-guide-anchor="prodEng.editar"
               title="Editar Engenharia"
               className="w-9 h-9 flex items-center justify-center rounded-xl bg-amber-300 hover:bg-amber-400 text-amber-900 active:scale-90 transition-all shadow-sm"
             >

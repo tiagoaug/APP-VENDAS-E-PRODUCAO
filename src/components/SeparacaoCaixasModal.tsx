@@ -67,6 +67,7 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
           </div>
           <button
             onClick={onClose}
+            data-guide-anchor="separacaoCaixas.fechar"
             title="Fechar"
             aria-label="Fechar"
             className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}
@@ -170,6 +171,7 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
                     <button
                       type="button"
                       onClick={() => setQty(row.idx, row.maxSeparable, qty - 1)}
+                      data-guide-anchor="separacaoCaixas.diminuirQtd"
                       className={`w-8 h-8 rounded-lg flex items-center justify-center active:scale-90 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}
                       aria-label="Diminuir"
                     >
@@ -188,6 +190,7 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
                     <button
                       type="button"
                       onClick={() => setQty(row.idx, row.maxSeparable, qty + 1)}
+                      data-guide-anchor="separacaoCaixas.aumentarQtd"
                       className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center active:scale-90 transition-all"
                       aria-label="Aumentar"
                     >
@@ -237,6 +240,7 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
           <button
             type="button"
             onClick={onClose}
+            data-guide-anchor="separacaoCaixas.cancelar"
             disabled={saving}
             className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}
           >
@@ -246,6 +250,7 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
             type="button"
             disabled={saving || toApply.length === 0}
             onClick={handleConfirm}
+            data-guide-anchor="separacaoCaixas.confirmar"
             className={`flex-[1.5] py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
               toApply.length === 0
                 ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'

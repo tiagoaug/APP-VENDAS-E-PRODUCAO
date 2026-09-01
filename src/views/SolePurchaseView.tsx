@@ -259,8 +259,9 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
   return (
     <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
       <div className="flex items-center gap-4 mb-6">
-        <button 
+        <button
           onClick={onBack}
+          data-guide-anchor="solePurchase.voltar"
           className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
           <ArrowLeft size={20} />
@@ -353,6 +354,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                   }
                 }}
                 disabled={items.length >= availableMolds.length * Math.min(10, colors.length)}
+                data-guide-anchor="solePurchase.itemAdicionar"
                 className={`py-2 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${
                   items.length >= availableMolds.length * Math.min(10, colors.length)
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
@@ -422,6 +424,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                           <button
                             type="button"
                             onClick={() => addColorToMold(item.moldId)}
+                            data-guide-anchor="solePurchase.corAdicionar"
                             title="Adicionar outra cor"
                             className="p-2 rounded-xl text-cyan-500 hover:text-cyan-400 transition-colors"
                           >
@@ -431,6 +434,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                             type="button"
                             title="Remover item"
                             onClick={() => removeItem(index)}
+                            data-guide-anchor="solePurchase.itemRemover"
                             className="p-2 rounded-xl text-slate-400 hover:text-red-500 transition-colors"
                           >
                             <Trash2 size={18} />
@@ -556,6 +560,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                     setSelectedSupplierId('');
                     onNavigateToStock();
                   }}
+                  data-guide-anchor="solePurchase.sucessoVerEstoque"
                   className="w-full py-3 px-6 rounded-2xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700"
                 >
                   <Package size={16} /> Ver Estoque de Solados
@@ -568,6 +573,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                   setNotes('');
                   setSelectedSupplierId('');
                 }}
+                data-guide-anchor="solePurchase.sucessoNovaEntrada"
                 className="w-full py-3 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700"
               >
                 <Plus size={16} /> Nova Entrada

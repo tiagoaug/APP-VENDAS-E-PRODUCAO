@@ -374,8 +374,9 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
   return (
     <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
       <div className="flex items-center gap-4 mb-4">
-        <button 
+        <button
           onClick={onBack}
+          data-guide-anchor="weighing.voltar"
           title="Voltar"
           className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
@@ -390,6 +391,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
       <div className="flex gap-2 mb-6">
         <button
           onClick={() => setActiveTab('new')}
+          data-guide-anchor="weighing.abaToggle"
           title="Iniciar nova pesagem"
           aria-label="Nova pesagem"
           className={`flex-1 py-3 rounded-2xl text-[10px] font-black tracking-widest transition-all ${
@@ -402,6 +404,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
         </button>
         <button
           onClick={() => setActiveTab('history')}
+          data-guide-anchor="weighing.abaToggle"
           title="Ver histórico de pesagens"
           aria-label="Ver histórico"
           className={`flex-1 py-3 rounded-2xl text-[10px] font-black tracking-widest transition-all flex items-center justify-center gap-2 ${
@@ -493,6 +496,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                     <button
                       type="button"
                       onClick={() => setWeightSource('global')}
+                      data-guide-anchor="weighing.pesoFonte"
                       title="Usar o peso médio/geral cadastrado na matriz, ignorando o peso específico desta cor"
                       className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                         weightSource === 'global'
@@ -505,6 +509,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                     <button
                       type="button"
                       onClick={() => setWeightSource('color')}
+                      data-guide-anchor="weighing.pesoFonte"
                       title="Usar o peso específico cadastrado para esta cor"
                       className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                         weightSource === 'color'
@@ -546,6 +551,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   {(!isAccumulating || selectedSize === '') && (
                     <button
                       onClick={() => setSelectedSize('')}
+                      data-guide-anchor="weighing.tamanhoSelecionar"
                       disabled={isAccumulating}
                       className={`w-full h-12 rounded-2xl flex items-center justify-center gap-2 transition-all ${
                         selectedSize === ''
@@ -572,6 +578,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                       <button
                         key={size}
                         onClick={() => setSelectedSize(size)}
+                        data-guide-anchor="weighing.tamanhoSelecionar"
                         disabled={!sizeWeight || isAccumulating}
                         className={`min-w-[70px] h-14 rounded-2xl flex flex-col items-center justify-center transition-all ${
                           selectedSize === size 
@@ -624,6 +631,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   <span className="text-sm font-black text-slate-400">kg</span>
                   <button
                     onClick={() => setShowCalculator(true)}
+                    data-guide-anchor="weighing.pesoCalc"
                     title="Abrir Calculadora de Peso"
                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                   >
@@ -681,6 +689,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                           <button
                             type="button"
                             onClick={() => setCustomUnitWeight('')}
+                            data-guide-anchor="weighing.pesoUnitResetar"
                             className="p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
                             title="Restaurar peso original"
                           >
@@ -707,6 +716,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
               <div className="flex gap-2 mt-6">
                 <button
                   onClick={handleAddToPending}
+                  data-guide-anchor="weighing.adicionarPendente"
                   disabled={!selectedMold || !weight || quantity <= 0}
                   title="Adicionar pesagem à lista"
                   aria-label="Adicionar pesagem atual à lista de registros pendentes"
@@ -721,6 +731,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                 </button>
                 <button
                   onClick={() => setIsAccumulating(true)}
+                  data-guide-anchor="weighing.acumularIniciar"
                   disabled={!selectedMold || !weight || quantity <= 0}
                   title="Iniciar modo de acúmulo de peso"
                   aria-label="Iniciar modo de acúmulo de peso para somar várias pesagens"
@@ -741,8 +752,9 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                     <p className="text-[10px] font-black text-amber-600 uppercase">
                       Acumulando pesos
                     </p>
-                    <button 
-                      onClick={handleCancelAccumulate} 
+                    <button
+                      onClick={handleCancelAccumulate}
+                      data-guide-anchor="weighing.acumularCancelar"
                       title="Cancelar acúmulo"
                       aria-label="Cancelar modo de acúmulo e limpar pesos"
                       className="text-slate-400 p-1 hover:text-slate-600 transition-colors"
@@ -772,6 +784,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   )}
                   <button
                     onClick={handleAccumulateWeight}
+                    data-guide-anchor="weighing.acumularSomar"
                     disabled={!weight || quantity <= 0}
                     title="Somar peso atual ao acumulado"
                     aria-label="Somar peso atual ao total acumulado"
@@ -781,6 +794,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   </button>
                   <button
                     onClick={handleFinalizeAccumulated}
+                    data-guide-anchor="weighing.acumularFinalizar"
                     disabled={!accumulatedWeight || parseFloat(accumulatedWeight) <= 0}
                     className="w-full py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase"
                   >
@@ -797,6 +811,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                     </p>
                     <button
                       onClick={handleSaveAllRecords}
+                      data-guide-anchor="weighing.salvarTodas"
                       disabled={isSaving}
                       className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase"
                     >
@@ -832,6 +847,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                         </div>
                         <button
                           onClick={() => handleRemovePending(idx)}
+                          data-guide-anchor="weighing.pendenteRemover"
                           title="Remover da lista"
                           aria-label={`Remover pesagem de ${record.moldName} da lista pendente`}
                           className="p-2 text-red-400 hover:text-red-500 transition-colors"
@@ -860,6 +876,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                 <button
                   type="button"
                   onClick={() => setShowClearHistoryConfirm(true)}
+                  data-guide-anchor="weighing.historicoZerarAbrir"
                   title="Zerar todo o histórico de pesagens"
                   className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-500 hover:text-white active:scale-95 transition-all flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest shrink-0"
                 >
@@ -912,6 +929,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                         {record.size && record.size !== 'MIXED' && (
                           <button
                             onClick={() => handleUpdateStock(record)}
+                            data-guide-anchor="weighing.historicoAtualizarEstoque"
                             className="px-3 py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[8px] font-black uppercase tracking-widest flex items-center gap-1 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
                           >
                             <Warehouse size={10} /> Atualizar Estoque
@@ -919,6 +937,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                         )}
                         <button
                           onClick={() => handleDeleteRecord(record.id)}
+                          data-guide-anchor="weighing.historicoExcluir"
                           title="Excluir Registro de Pesagem"
                           className="p-2 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
                         >
@@ -976,6 +995,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
               <button
                 type="button"
                 onClick={() => setShowClearHistoryConfirm(false)}
+                data-guide-anchor="weighing.historicoZerarCancelar"
                 disabled={isClearingHistory}
                 className="flex-1 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all disabled:opacity-50"
               >
@@ -984,6 +1004,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
               <button
                 type="button"
                 onClick={handleClearAllHistory}
+                data-guide-anchor="weighing.historicoZerarConfirmar"
                 disabled={isClearingHistory}
                 className="flex-1 py-3 rounded-xl font-bold text-sm bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all shadow-sm disabled:opacity-50"
               >
@@ -1012,12 +1033,14 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl w-full mt-6">
               <button
                 onClick={() => setUpdateMode('ADD')}
+                data-guide-anchor="weighing.modoAtualizacao"
                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${updateMode === 'ADD' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}
               >
                 <PlusCircle size={14} /> Somar
               </button>
               <button
                 onClick={() => setUpdateMode('OVERWRITE')}
+                data-guide-anchor="weighing.modoAtualizacao"
                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${updateMode === 'OVERWRITE' ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400'}`}
               >
                 <Replace size={14} /> Substituir
@@ -1056,12 +1079,14 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
             <div className="flex gap-3 mt-6 w-full">
               <button
                 onClick={() => setConfirmStockRecord(null)}
+                data-guide-anchor="weighing.estoqueConfirmarCancelar"
                 className="flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmUpdateStock}
+                data-guide-anchor="weighing.estoqueConfirmarConfirmar"
                 className="flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white"
               >
                 Confirmar
@@ -1092,8 +1117,9 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
           >
             <div className="p-6 flex items-center justify-between border-b border-slate-50 dark:border-slate-800">
               <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Como Usar</h2>
-              <button 
-                onClick={() => setShowInfo(false)} 
+              <button
+                onClick={() => setShowInfo(false)}
+                data-guide-anchor="weighing.infoFechar"
                 className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400"
               >
                 <X size={20} />

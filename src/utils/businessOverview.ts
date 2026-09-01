@@ -78,6 +78,39 @@ export function computeProductionProfit(products: Product[], productionLots: Pro
   return profit;
 }
 
+// Conta os dias entre start/end (inclusive) — com excludeWeekends, pula sábado e domingo.
+// Usado pra achar a "média por dia" real de trabalho da fábrica, em vez de diluir a produção
+// pelos dias corridos do calendário (que incluem fins de semana sem produção).
+function countPeriodDays(start: number, end: number, excludeWeekends: boolean): number {
+  if (!excludeWeekends) {
+    return Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+  }
+  let count = 0;
+  const cursor = new Date(start);
+  cursor.setHours(12, 0, 0, 0); // meio-dia evita pular/repetir dia por causa de horário de verão
+  const endTime = end;
+  while (cursor.getTime() <= endTime) {
+    const day = cursor.getDay(); // 0 = domingo, 6 = sábado
+    if (day !== 0 && day !== 6) count++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return Math.max(1, count);
+}
+
+// Pares produzidos num período — soma a quantidade dos Mapas de Produção (ProductionLot)
+// cuja finalização (finishedAt) caiu dentro do período (produção de terceiro/solado pronto
+// não entra, só Mapas internos de verdade). `dailyAverage` é o total dividido pelos dias
+// trabalhados do período (ver `excludeWeekends`, configurável em Configuração de Fábrica →
+// "Considerar só dias úteis") — usado tanto no card "Pares Produzidos" do Dashboard quanto na
+// barra de estatísticas do PCP Monitor.
+export function computeProducedPairs(productionLots: ProductionLot[], start: number, end: number, excludeWeekends: boolean = false): { total: number; dailyAverage: number; workDays: number } {
+  const total = productionLots
+    .filter(l => l.finishedAt && l.finishedAt >= start && l.finishedAt <= end)
+    .reduce((acc, l) => acc + (l.quantity || 0), 0);
+  const workDays = countPeriodDays(start, end, excludeWeekends);
+  return { total, dailyAverage: total / workDays, workDays };
+}
+
 // Soma dos saldos das contas do negócio (exclui contas de uso Pessoal). Se
 // `accountIds` for informado, soma só essas contas (permite escolher quais
 // contas entram no cálculo); undefined/null soma todas as contas do negócio.

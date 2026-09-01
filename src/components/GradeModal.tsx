@@ -69,7 +69,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Numerações de Produção</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+          <button onClick={onClose} data-guide-anchor="gradeModal.fechar" className="p-2 text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -80,6 +80,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
               onClick={() => setType(GridType.FORMA)}
+              data-guide-anchor="gradeModal.selecionarTipo"
               className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
                 type === GridType.FORMA
                   ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg'
@@ -91,6 +92,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
             </button>
             <button
               onClick={() => setType(GridType.SOLADO)}
+              data-guide-anchor="gradeModal.selecionarTipo"
               className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
                 type === GridType.SOLADO
                   ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg'
@@ -102,6 +104,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
             </button>
             <button
               onClick={() => setType(GridType.FACA)}
+              data-guide-anchor="gradeModal.selecionarTipo"
               className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
                 type === GridType.FACA
                   ? 'bg-rose-600 border-rose-600 text-white shadow-lg'
@@ -113,6 +116,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
             </button>
             <button
               onClick={() => setType(GridType.EMBALAGEM)}
+              data-guide-anchor="gradeModal.selecionarTipo"
               className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
                 type === GridType.EMBALAGEM
                   ? 'bg-amber-600 border-amber-600 text-white shadow-lg'
@@ -151,6 +155,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
             />
             <button
               onClick={addSize}
+              data-guide-anchor="gradeModal.adicionarNumeracao"
               className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-3 rounded-xl font-black transition-colors flex items-center gap-1"
             >
               <Plus size={16} />
@@ -165,7 +170,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
             {sizes.map(size => (
               <span key={size} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 shadow-sm">
                 {size}
-                <button onClick={() => removeSize(size)} className="text-rose-400 hover:text-rose-600 transition-colors font-black">×</button>
+                <button onClick={() => removeSize(size)} data-guide-anchor="gradeModal.removerNumeracao" className="text-rose-400 hover:text-rose-600 transition-colors font-black">×</button>
               </span>
             ))}
             {sizes.length === 0 && (
@@ -176,7 +181,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
 
         {/* Actions */}
         <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+          <button onClick={onClose} data-guide-anchor="gradeModal.cancelar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
             Cancelar
           </button>
           <button

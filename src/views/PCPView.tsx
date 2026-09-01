@@ -22,6 +22,8 @@ import {
   LabelFile, BatchLabelItem
 } from '../types';
 import { isViewAllowed, isViewTaskAllowed, isSectorAllowed } from '../utils/collaborators';
+import { computeProducedPairs } from '../utils/businessOverview';
+import { subscribeToProductionScheduleConfig } from '../services/productionScheduleService';
 import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
 import { resolveSoleConsumption } from '../utils/soleNeeds';
 import Modal from '../components/Modal';
@@ -348,15 +350,23 @@ export default function PCPView({
 
   // Barra de estatísticas do Monitor (Produção Total / Em Produção / Mapas Ativos /
   // Atrasos) — visibilidade geral e por cartão, preferência local por dispositivo.
-  type StatsBarTile = 'total' | 'inProgress' | 'active' | 'delayed';
+  type StatsBarTile = 'total' | 'inProgress' | 'active' | 'delayed' | 'producedMonth' | 'producedDailyAvg';
   const [statsBarHidden, setStatsBarHidden] = useState(() => localStorage.getItem('pcp_stats_bar_hidden') === 'true');
   const [statsBarTiles, setStatsBarTiles] = useState<Record<StatsBarTile, boolean>>(() => {
+    const defaults = { total: true, inProgress: true, active: true, delayed: true, producedMonth: true, producedDailyAvg: true };
     try {
       const saved = JSON.parse(localStorage.getItem('pcp_stats_bar_tiles') || 'null');
-      if (saved) return { total: true, inProgress: true, active: true, delayed: true, ...saved };
+      if (saved) return { ...defaults, ...saved };
     } catch { /* ignore */ }
-    return { total: true, inProgress: true, active: true, delayed: true };
+    return defaults;
   });
+  // Considerar só dias úteis (seg-sex) na Média de Pares/Dia — configurável em Configuração
+  // de Fábrica; espelha o mesmo toggle usado pelo card "Pares Produzidos" do Dashboard.
+  const [excludeWeekendsInAvg, setExcludeWeekendsInAvg] = useState(true);
+  useEffect(() => {
+    const unsub = subscribeToProductionScheduleConfig(cfg => setExcludeWeekendsInAvg(cfg.excludeWeekends));
+    return () => unsub();
+  }, []);
   const toggleStatsBarHidden = () => {
     const next = !statsBarHidden;
     setStatsBarHidden(next);
@@ -391,15 +401,12 @@ export default function PCPView({
   // Cards de Necessidades (Materiais/Solados) agora abrem um popup com todos os detalhes do
   // grupo em vez de expandir a lista inline — guarda só a chave do grupo aberto no momento.
   const [openNeedsGroupKey, setOpenNeedsGroupKey] = useState<string | null>(null);
-  // Acordeão de cada variação dentro do popup de grupo — some com o valor bruto (Estoque/
-  // Necess./Trânsito/Falta) até o toque, pra não empilhar 2+ tabelas abertas e espremer/
-  // esconder números em telas de celular estreitas.
-  const [expandedNeedGroupItemIds, setExpandedNeedGroupItemIds] = useState<Set<string>>(new Set());
-  const toggleNeedGroupItemExpand = (id: string) => setExpandedNeedGroupItemIds(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
+  // Detalhe de grade (Estoque/Necess./Trânsito/Falta) de uma variação dentro do popup de
+  // grupo — abre em popup centralizado próprio (em vez de acordeão inline) pra não empilhar
+  // 2+ tabelas abertas e espremer/esconder números em telas de celular estreitas.
+  const [needGroupItemDetail, setNeedGroupItemDetail] = useState<{
+    item: any; colorName: string; realGradeStock: Record<string, number>; inTransitByGrade: Record<string, number>;
+  } | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'finished' | 'urgent'>('active');
   const [isFilterPopupOpen, setIsFilterPopupOpen] = useState(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
@@ -5318,6 +5325,7 @@ export default function PCPView({
           <button
             type="button"
             onClick={onBack}
+            data-guide-anchor="pcp.voltar"
             title="Voltar ao Painel"
             aria-label="Voltar para a tela anterior"
             className={`p-3 rounded-2xl transition-all flex-shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-white' : 'bg-white text-slate-400 hover:text-slate-900 shadow-sm border border-slate-100'}`}
@@ -5353,6 +5361,7 @@ export default function PCPView({
                 <button
                   type="button"
                   onClick={() => setIsFilterPopupOpen(false)}
+                  data-guide-anchor="pcp.filtrosFechar"
                   className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
                   aria-label="Fechar" title="Fechar"
                 >
@@ -5367,6 +5376,7 @@ export default function PCPView({
                     <button
                       type="button"
                       onClick={toggleStatsBarHidden}
+                      data-guide-anchor="pcp.filtrosBarraToggle"
                       aria-label={statsBarHidden ? 'Mostrar barra de estatísticas' : 'Ocultar barra de estatísticas'}
                       className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${!statsBarHidden ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
                     >
@@ -5385,6 +5395,8 @@ export default function PCPView({
                           { id: 'inProgress', label: 'Em Produção' },
                           { id: 'active', label: 'Pedidos em Produção' },
                           { id: 'delayed', label: 'Atrasos' },
+                          { id: 'producedMonth', label: 'Pares Produzidos (Mês)' },
+                          { id: 'producedDailyAvg', label: 'Média de Pares/Dia' },
                         ] as { id: StatsBarTile; label: string }[]).map(tile => {
                           const on = statsBarTiles[tile.id];
                           return (
@@ -5392,6 +5404,7 @@ export default function PCPView({
                               key={tile.id}
                               type="button"
                               onClick={() => toggleStatsBarTile(tile.id)}
+                              data-guide-anchor="pcp.filtrosTileToggle"
                               className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${on
                                 ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50'
                                 : isDarkMode ? 'bg-slate-800/40 border border-slate-700 text-slate-500' : 'bg-slate-50 border border-slate-100 text-slate-400'
@@ -5535,6 +5548,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setShowQuickActions(false)}
+                data-guide-anchor="pcp.acoesFechar"
                 className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
                 aria-label="Fechar" title="Fechar"
               >
@@ -5591,11 +5605,20 @@ export default function PCPView({
               Produção (contagem) / Atrasos. Visibilidade geral e por cartão
               configurável no popup de Filtros. */}
           {!statsBarHidden && (() => {
-            const tileDefs: { id: StatsBarTile; label: string; value: number; unit: string; color: string }[] = [
+            // Pares produzidos e média por dia — sempre "este mês calendário" aqui na barra
+            // (sem seletor de período); pra consultar outros meses/comparar, ver o card
+            // "Pares Produzidos" no Painel Inicial, que tem período e comparação completos.
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+            const producedThisMonth = computeProducedPairs(lots, monthStart, monthEnd, excludeWeekendsInAvg);
+            const tileDefs: { id: StatsBarTile; label: string; value: number | string; unit: string; color: string }[] = [
               { id: 'total', label: 'Produção Total', value: lots.reduce((acc, l) => acc + l.quantity, 0), unit: 'Pares', color: 'text-violet-600' },
               { id: 'inProgress', label: 'Em Produção', value: activePendingPairs, unit: 'Pares', color: 'text-indigo-600' },
               { id: 'active', label: 'Pedidos em Prod.', value: activeOrdersCount, unit: 'Pedidos', color: 'text-emerald-600' },
               { id: 'delayed', label: 'Atrasos', value: Object.values(sectorMetrics).reduce((acc, m) => acc + m.delayedCount, 0), unit: 'Críticos', color: 'text-rose-500' },
+              { id: 'producedMonth', label: 'Pares Produzidos (Mês)', value: producedThisMonth.total, unit: 'Pares', color: 'text-teal-600' },
+              { id: 'producedDailyAvg', label: 'Média de Pares/Dia', value: producedThisMonth.dailyAverage.toFixed(1).replace('.', ','), unit: excludeWeekendsInAvg ? 'Pares/dia útil' : 'Pares/dia', color: 'text-cyan-600' },
             ];
             const visibleTiles = tileDefs.filter(t => statsBarTiles[t.id]);
             if (visibleTiles.length === 0) return null;
@@ -5712,6 +5735,7 @@ export default function PCPView({
                   <button
                     type="button"
                     onClick={() => setSelectedSectorId(null)}
+                    data-guide-anchor="pcp.setorVoltar"
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >
                     <ChevronRight size={14} className="rotate-180" /> Voltar
@@ -5719,6 +5743,7 @@ export default function PCPView({
                   <button
                     type="button"
                     onClick={() => setIsSectorSwitcherOpen(true)}
+                    data-guide-anchor="pcp.setorMudar"
                     title="Mudar para outro setor"
                     className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-orange-500 text-white shadow-md shadow-orange-500/25 hover:bg-orange-600 transition-all active:scale-95"
                   >
@@ -5741,6 +5766,7 @@ export default function PCPView({
                           type="button"
                           title="Fechar"
                           onClick={() => setIsSectorSwitcherOpen(false)}
+                          data-guide-anchor="pcp.setorMudarFechar"
                           className={`p-1.5 rounded-full transition-all ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
                         >
                           <X size={16} />
@@ -5755,6 +5781,7 @@ export default function PCPView({
                               setSelectedSectorId(sector.id);
                               setIsSectorSwitcherOpen(false);
                             }}
+                            data-guide-anchor="pcp.setorMudarItem"
                             className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${sector.id === selectedSectorId
                               ? 'bg-orange-500 text-white'
                               : isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-50'
@@ -6042,6 +6069,7 @@ export default function PCPView({
                               <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-orange-900/40 bg-orange-950/20' : 'border-orange-200 bg-orange-50/50'}`}>
                                 <button type="button"
                                   onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
+                                  data-guide-anchor="pcp.pedidosFiltroAbrir"
                                   className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-orange-900/20' : 'hover:bg-orange-100/40'}`}
                                 >
                                   <Filter size={12} className="text-orange-500 animate-bounce" />
@@ -6064,6 +6092,7 @@ export default function PCPView({
                                         <span className="text-[11px] font-black uppercase tracking-widest">Filtrar Pedidos</span>
                                       </div>
                                       <button type="button" title="Fechar" onClick={() => { const n = new Set(fichaListOpen); n.delete(filterKey); setFichaListOpen(n); }}
+                                        data-guide-anchor="pcp.pedidosFiltroFechar"
                                         className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
                                         <X size={16} />
                                       </button>
@@ -6084,6 +6113,7 @@ export default function PCPView({
                                           {modelOptions.map(({ key, label }) => (
                                             <button type="button" key={key}
                                               onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === key ? '' : key, color: '' } }))}
+                                              data-guide-anchor="pcp.pedidosFiltroModelo"
                                               className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeFilt.model === key ? 'from-indigo-500 to-indigo-700 text-white border-indigo-800 shadow-[0_3px_0_rgba(67,56,202,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                             >{label}</button>
                                           ))}
@@ -6098,6 +6128,7 @@ export default function PCPView({
                                           {uniqueColors.map(c => (
                                             <button type="button" key={c}
                                               onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, color: activeFilt.color === c ? '' : c } }))}
+                                              data-guide-anchor="pcp.pedidosFiltroCor"
                                               className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeFilt.color === c ? 'from-amber-400 to-amber-600 text-white border-amber-700 shadow-[0_3px_0_rgba(180,83,9,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                             >{c}</button>
                                           ))}
@@ -6129,6 +6160,7 @@ export default function PCPView({
                                           {uniqueProviders.map(p => (
                                             <button type="button" key={p}
                                               onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, providerName: activeFilt.providerName === p ? '' : p } }))}
+                                              data-guide-anchor="pcp.pedidosFiltroPrestador"
                                               className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeFilt.providerName === p ? 'from-emerald-500 to-emerald-700 text-white border-emerald-800 shadow-[0_3px_0_rgba(4,120,87,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                             >{p}</button>
                                           ))}
@@ -6140,11 +6172,13 @@ export default function PCPView({
                                       {(activeFilt.model || activeFilt.color || activeFilt.search || activeFilt.customerName || activeFilt.providerName) && (
                                         <button type="button" title="Limpar filtros"
                                           onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '', search: '', customerName: '', providerName: '' } }))}
+                                          data-guide-anchor="pcp.pedidosFiltroLimpar"
                                           className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_3px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-500 border-slate-300 shadow-[0_3px_0_rgba(0,0,0,0.08)]'}`}
                                         >✕ Limpar</button>
                                       )}
                                       <button type="button"
                                         onClick={() => { const n = new Set(fichaListOpen); n.delete(filterKey); setFichaListOpen(n); }}
+                                        data-guide-anchor="pcp.pedidosFiltroAplicar"
                                         className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white border border-indigo-800 bg-gradient-to-b from-indigo-500 to-indigo-700 shadow-[0_4px_0_rgba(67,56,202,0.5)] transition-all active:translate-y-0.5 active:shadow-none"
                                       >Aplicar</button>
                                     </div>
@@ -6248,7 +6282,7 @@ export default function PCPView({
                                           />
                                         )}
 
-                                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setOpenPedidoDetailKey(gradeKey)}>
+                                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setOpenPedidoDetailKey(gradeKey)} data-guide-anchor="pcp.pedidoFichaAbrir">
                                           <div className="flex items-center justify-between gap-2 mb-1.5">
                                             <div className="flex flex-wrap items-center gap-1.5">
                                               <span className="text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0" style={{ backgroundColor: productBadgeBg, color: productBadgeText, fontWeight: productBadgeBold ? 900 : 400, fontStyle: productBadgeItalic ? 'italic' : 'normal' }}>
@@ -6316,6 +6350,7 @@ export default function PCPView({
                                         <button
                                           type="button"
                                           onClick={() => setOpenPedidoDetailKey(gradeKey)}
+                                          data-guide-anchor="pcp.pedidoFichaAbrir"
                                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                         >
                                           <ChevronDown size={12} className="-rotate-90" />
@@ -6340,7 +6375,7 @@ export default function PCPView({
                                                   PED. {f.lot.orderNumber} · MAPA{f.lot.orderNumber}
                                                 </p>
                                               </div>
-                                              <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setOpenPedidoDetailKey(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all shrink-0">
+                                              <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setOpenPedidoDetailKey(null)} data-guide-anchor="pcp.pedidoFichaFechar" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all shrink-0">
                                                 <X size={18} />
                                               </button>
                                             </div>
@@ -6501,6 +6536,7 @@ export default function PCPView({
                                                     }
                                                   }
                                                 }}
+                                                data-guide-anchor="pcp.pedidoFichaImprimirEtiqueta"
                                                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 transition-all active:scale-95"
                                               >
                                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
@@ -6515,12 +6551,14 @@ export default function PCPView({
                                             <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
                                               <button type="button"
                                                 onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: [f] })}
+                                                data-guide-anchor="pcp.pedidoFichaCompartilhar"
                                                 className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-600 text-white hover:bg-slate-700'}`}
                                               >
                                                 <Share2 size={14} /> Compartilhar Ficha
                                               </button>
                                               <button type="button"
                                                 onClick={() => setManualSectorPicker({ fichas: [f] })}
+                                                data-guide-anchor="pcp.pedidoFichaMudarSetor"
                                                 className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-violet-700 text-violet-100 hover:bg-violet-600' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
                                               >
                                                 <ArrowLeftRight size={14} /> Mudar Setor
@@ -6531,6 +6569,7 @@ export default function PCPView({
                                             {!hasOS && (f.si.qty || 0) > 1 && (
                                               <button type="button"
                                                 onClick={() => handleOpenFractionModal({ lot: f.lot, si: f.si, siIdx: f.siIdx, product: f.product, variation: f.variation, orderItem: f.orderItem })}
+                                                data-guide-anchor="pcp.pedidoFichaFracionar"
                                                 className={`w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border ${isDarkMode ? 'border-amber-700/50 bg-amber-900/20 text-amber-400 hover:bg-amber-900/35' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
                                               >
                                                 <Scissors size={14} /> Fracionar Pedido
@@ -6543,6 +6582,7 @@ export default function PCPView({
                                               <button
                                                 type="button"
                                                 onClick={() => setOpenPedidoDetailKey(null)}
+                                                data-guide-anchor="pcp.pedidoFichaFechar"
                                                 className={`w-full py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                                               >
                                                 Voltar
@@ -6573,6 +6613,7 @@ export default function PCPView({
                                     <button
                                       type="button"
                                       onClick={() => setFloatingActionMenuOpen(v => !v)}
+                                      data-guide-anchor="pcp.pedidosAcaoFlutuanteAbrir"
                                       className="fixed bottom-24 right-4 z-[9000] w-14 h-14 rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-500/40 flex items-center justify-center active:scale-90 transition-all"
                                     >
                                       {floatingActionMenuOpen ? <X size={22} /> : <ListChecks size={22} />}
@@ -6591,6 +6632,7 @@ export default function PCPView({
                                       const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
                                       setShareModal({ isOpen: true, format: 'jpg', selectedItems: selectedFichasData });
                                     }}
+                                    data-guide-anchor="pcp.pedidosAcaoCompartilharSelecionados"
                                     className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-orange-500/15 text-orange-400 hover:bg-orange-500/25' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
                                   >
                                     <Share2 size={13} /> Compartilhar {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
@@ -6608,6 +6650,7 @@ export default function PCPView({
                                       const singleLot = uniqueLotIds.size === 1 ? selectedFichasData[0]?.lot ?? null : null;
                                       openLabelPicker(batch, singleLot, null);
                                     }}
+                                    data-guide-anchor="pcp.pedidosAcaoImprimirSelecionados"
                                     className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
                                   >
                                     <Printer size={13} /> Imprimir Etiquetas — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
@@ -6618,6 +6661,7 @@ export default function PCPView({
                                       const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
                                       setManualSectorPicker({ fichas: selectedFichasData });
                                     }}
+                                    data-guide-anchor="pcp.pedidosAcaoTransferirSelecionados"
                                     className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-violet-500/15 text-violet-400 hover:bg-violet-500/25' : 'bg-violet-50 text-violet-600 hover:bg-violet-100'}`}
                                   >
                                     <ArrowLeftRight size={13} /> Transferir de Setor — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
@@ -6641,6 +6685,7 @@ export default function PCPView({
 
                                         handleOpenOSModalForOrder(uniqueLots, orderIds, undefined, sectorOvr, qtyOvr);
                                       }}
+                                      data-guide-anchor="pcp.pedidosAcaoEmitirOS"
                                       className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-sky-500/15 text-sky-400 hover:bg-sky-500/25' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
                                     >
                                       <Hammer size={13} /> Emitir OS Unificada — {selected.length} Pedidos ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
@@ -6664,6 +6709,7 @@ export default function PCPView({
                                           const qtyOvr = qty;
                                           handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
                                         }}
+                                        data-guide-anchor="pcp.pedidosAcaoEmitirOS"
                                         className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-sky-500/15 text-sky-400 hover:bg-sky-500/25' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
                                       >
                                         <Hammer size={13} /> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty} {qty === 1 ? 'par' : 'pares'}) · MAPA{lot.orderNumber}
@@ -6852,6 +6898,7 @@ export default function PCPView({
                                             setFichaSelection(new Set());
                                           }
                                         }}
+                                        data-guide-anchor="pcp.pedidosAcaoConcluirSelecionados"
                                         className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm shadow-emerald-500/20"
                                       >
                                         <CheckCircle2 size={13} /> Concluir / Dar Baixa {selected.length} Pedido(s) ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
@@ -6914,6 +6961,7 @@ export default function PCPView({
                                         {/* FILTRAR */}
                                         <button type="button"
                                           onClick={() => { const n = new Set(fichaListOpen); isOSFilterOpen ? n.delete(osFilterKey) : n.add(osFilterKey); setFichaListOpen(n); }}
+                                          data-guide-anchor="pcp.osAtivasFiltroAbrir"
                                           className={`flex flex-col items-center gap-1 py-3 px-2 transition-all active:scale-95 ${hasOSFilter || isOSFilterOpen ? (isDarkMode ? 'bg-orange-950/40' : 'bg-orange-50/80') : (isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}`}
                                         >
                                           <Filter size={14} className={hasOSFilter || isOSFilterOpen ? 'text-orange-500 animate-bounce' : 'text-slate-400'} />
@@ -6924,6 +6972,7 @@ export default function PCPView({
                                         {/* PEDIDOS */}
                                         <button type="button"
                                           onClick={() => setShowOSPedidosInline(v => !v)}
+                                          data-guide-anchor="pcp.osAtivasPedidosToggle"
                                           className={`flex flex-col items-center gap-1 py-3 px-2 transition-all active:scale-95 ${showOSPedidosInline ? (isDarkMode ? 'bg-indigo-950/40' : 'bg-indigo-50/80') : (isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}`}
                                         >
                                           <Eye size={14} className={showOSPedidosInline ? 'text-indigo-400 animate-pulse' : 'text-slate-400'} />
@@ -6934,6 +6983,7 @@ export default function PCPView({
                                         {/* GRADE */}
                                         <button type="button"
                                           onClick={() => setShowOSGradeInline(v => !v)}
+                                          data-guide-anchor="pcp.osAtivasGradeToggle"
                                           className={`flex flex-col items-center gap-1 py-3 px-2 transition-all active:scale-95 ${showOSGradeInline ? (isDarkMode ? 'bg-emerald-950/40' : 'bg-emerald-50/80') : (isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}`}
                                         >
                                           <LayoutGrid size={14} className={showOSGradeInline ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
@@ -6956,6 +7006,7 @@ export default function PCPView({
                                           <span className="text-[11px] font-black uppercase tracking-widest">Filtrar OS</span>
                                         </div>
                                         <button type="button" title="Fechar" onClick={() => { const n = new Set(fichaListOpen); n.delete(osFilterKey); setFichaListOpen(n); }}
+                                          data-guide-anchor="pcp.osAtivasFiltroFechar"
                                           className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
                                           <X size={16} />
                                         </button>
@@ -6976,6 +7027,7 @@ export default function PCPView({
                                             {osModelOptions.map(({ key, label }) => (
                                               <button type="button" key={key}
                                                 onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, model: activeOSFilt.model === key ? '' : key, color: '' } }))}
+                                                data-guide-anchor="pcp.osAtivasFiltroModelo"
                                                 className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeOSFilt.model === key ? 'from-indigo-500 to-indigo-700 text-white border-indigo-800 shadow-[0_3px_0_rgba(67,56,202,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                               >{label}</button>
                                             ))}
@@ -6990,6 +7042,7 @@ export default function PCPView({
                                             {osUniqueColors.map(c => (
                                               <button type="button" key={c}
                                                 onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, color: activeOSFilt.color === c ? '' : c } }))}
+                                                data-guide-anchor="pcp.osAtivasFiltroCor"
                                                 className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeOSFilt.color === c ? 'from-amber-400 to-amber-600 text-white border-amber-700 shadow-[0_3px_0_rgba(180,83,9,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                               >{c}</button>
                                             ))}
@@ -7021,6 +7074,7 @@ export default function PCPView({
                                             {osUniqueProviders.map(p => (
                                               <button type="button" key={p}
                                                 onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, providerName: activeOSFilt.providerName === p ? '' : p } }))}
+                                                data-guide-anchor="pcp.osAtivasFiltroPrestador"
                                                 className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeOSFilt.providerName === p ? 'from-emerald-500 to-emerald-700 text-white border-emerald-800 shadow-[0_3px_0_rgba(4,120,87,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                               >{p}</button>
                                             ))}
@@ -7032,11 +7086,13 @@ export default function PCPView({
                                         {(activeOSFilt.model || activeOSFilt.color || activeOSFilt.search || activeOSFilt.customerName || activeOSFilt.providerName) && (
                                           <button type="button" title="Limpar filtros"
                                             onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { model: '', color: '', search: '', customerName: '', providerName: '' } }))}
+                                            data-guide-anchor="pcp.osAtivasFiltroLimpar"
                                             className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_3px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-500 border-slate-300 shadow-[0_3px_0_rgba(0,0,0,0.08)]'}`}
                                           >✕ Limpar</button>
                                         )}
                                         <button type="button"
                                           onClick={() => { const n = new Set(fichaListOpen); n.delete(osFilterKey); setFichaListOpen(n); }}
+                                          data-guide-anchor="pcp.osAtivasFiltroAplicar"
                                           className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white border border-indigo-800 bg-gradient-to-b from-indigo-500 to-indigo-700 shadow-[0_4px_0_rgba(67,56,202,0.5)] transition-all active:translate-y-0.5 active:shadow-none"
                                         >Aplicar</button>
                                       </div>
@@ -7148,6 +7204,7 @@ export default function PCPView({
                                       <div className="flex flex-col gap-2">
                                         <button type="button"
                                           onClick={() => { const n = new Set(fichaListOpen); isOSActionsOpen ? n.delete(os.id + '_actions_open') : n.add(os.id + '_actions_open'); setFichaListOpen(n); }}
+                                          data-guide-anchor="pcp.osCardMaisAcoes"
                                           className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-[#e2e8f0] dark:border-[#334155] bg-[#ffffff] dark:bg-[#0f172a] transition-all active:scale-[0.98] hover:bg-[#f8fafc] dark:hover:bg-[#1e293b]"
                                         >
                                           <span className="text-[9px] font-black uppercase tracking-widest text-[#64748b] dark:text-[#94a3b8]">Mais Ações</span>
@@ -7156,17 +7213,17 @@ export default function PCPView({
 
                                         {isOSActionsOpen && (
                                           <div className="grid grid-cols-3 gap-2">
-                                            <button type="button" title="Editar OS" onClick={() => handleEditOS(os)}
+                                            <button type="button" title="Editar OS" onClick={() => handleEditOS(os)} data-guide-anchor="pcp.osEditar"
                                               className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               <Edit2 size={16} className="text-amber-500 dark:text-amber-400" />
                                               <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Editar</span>
                                             </button>
-                                            <button type="button" title="Excluir OS" onClick={() => handleDeleteOS(os)}
+                                            <button type="button" title="Excluir OS" onClick={() => handleDeleteOS(os)} data-guide-anchor="pcp.osExcluir"
                                               className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               <Trash2 size={16} className="text-rose-500 dark:text-rose-400" />
                                               <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Excluir</span>
                                             </button>
-                                            <button type="button" title="Compartilhar OS" onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })}
+                                            <button type="button" title="Compartilhar OS" onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })} data-guide-anchor="pcp.osCompartilhar"
                                               className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               <Share2 size={16} className="text-orange-500 dark:text-orange-400" />
                                               <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Compartilhar</span>
@@ -7175,11 +7232,12 @@ export default function PCPView({
                                               setPrintOSData({ os, nextSectorName: nextSName });
                                               setIsPrintOSModalOpen(true);
                                             }}
+                                              data-guide-anchor="pcp.osImprimirEtiqueta"
                                               className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               <Printer size={16} className="text-emerald-500 dark:text-emerald-400" />
                                               <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Etiqueta / OS</span>
                                             </button>
-                                            <button type="button" title="Lembretes" onClick={() => setOsNotesPopup(os)}
+                                            <button type="button" title="Lembretes" onClick={() => setOsNotesPopup(os)} data-guide-anchor="pcp.osLembretes"
                                               className={`relative flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               {(os.notes || os.reminderTitle || os.reminderAt) && (
                                                 <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -7211,6 +7269,7 @@ export default function PCPView({
                           <div className={`mt-3 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
                             <button type="button"
                               onClick={() => { const n = new Set(fichaListOpen); isOSCardOpen ? n.delete(osCardKey + '_open') : n.add(osCardKey + '_open'); setFichaListOpen(n); }}
+                              data-guide-anchor="pcp.fichasComOSAtivas"
                               className={`w-full flex items-center justify-between p-4 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-sky-50/50'}`}
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -7309,6 +7368,7 @@ export default function PCPView({
                   <button
                     type="button"
                     onClick={() => setSelectedSectorId(null)}
+                    data-guide-anchor="pcp.setorVoltar"
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >
                     <ChevronRight size={14} className="rotate-180" /> Voltar
@@ -7316,6 +7376,7 @@ export default function PCPView({
                   <button
                     type="button"
                     onClick={() => setIsSectorSwitcherOpen(true)}
+                    data-guide-anchor="pcp.setorMudar"
                     title="Mudar para outro setor"
                     className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-orange-500 text-white shadow-md shadow-orange-500/25 hover:bg-orange-600 transition-all active:scale-95"
                   >
@@ -7390,6 +7451,7 @@ export default function PCPView({
                     <button
                       type="button"
                       onClick={() => setGroupingMode(opt.id)}
+                      data-guide-anchor="pcp.agrupamentoModo"
                       className={`text-left p-4 rounded-2xl border-2 transition-all ${groupingMode === opt.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
                     >
                       <div className="flex items-center gap-3">
@@ -7419,6 +7481,7 @@ export default function PCPView({
                                   key={ref}
                                   type="button"
                                   onClick={() => setComboReferences(prev => active ? prev.filter(r => r !== ref) : [...prev, ref])}
+                                  data-guide-anchor="pcp.agrupamentoComboRef"
                                   className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 ${active
                                     ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
                                     : (isDarkMode ? 'bg-slate-900 text-slate-400 border border-slate-700' : 'bg-white text-slate-500 border border-slate-200')
@@ -7444,6 +7507,7 @@ export default function PCPView({
                 <button
                   type="button"
                   onClick={() => setIsOrderFilterOpen(v => !v)}
+                  data-guide-anchor="pcp.agrupamentoFiltroPedidosAbrir"
                   className={`text-left p-4 rounded-2xl border-2 transition-all ${suggestionFilterOrderIds.size > 0 || isOrderFilterOpen ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
                 >
                   <div className="flex items-center gap-3">
@@ -7486,6 +7550,7 @@ export default function PCPView({
                                 else next.add(order.id);
                                 return next;
                               })}
+                              data-guide-anchor="pcp.agrupamentoFiltroPedidoItem"
                               className={`flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? (isDarkMode ? 'bg-indigo-900/40' : 'bg-indigo-50') : (isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50')}`}
                             >
                               <div className={`w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : (isDarkMode ? 'border-slate-600' : 'border-slate-300')}`}>
@@ -7524,6 +7589,7 @@ export default function PCPView({
                         <button
                           type="button"
                           onClick={() => setSuggestionFilterOrderIds(new Set())}
+                          data-guide-anchor="pcp.agrupamentoFiltroLimpar"
                           className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors"
                         >
                           Limpar
@@ -7536,6 +7602,7 @@ export default function PCPView({
                 <button
                   type="button"
                   onClick={() => setIsGroupingConfigOpen(false)}
+                  data-guide-anchor="pcp.agrupamentoAplicar"
                   className="mt-2 w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-95"
                 >
                   Aplicar
@@ -7602,6 +7669,7 @@ export default function PCPView({
                               return [...filtered, ...groupItems];
                             });
                           }}
+                          data-guide-anchor="pcp.sugestaoGrupoSelecionarTodos"
                           className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all shadow-lg ${group.orders.every(gi => selectedOrderItems.some(p => p.orderId === gi.orderId && p.itemIdx === gi.itemIdx))
                             ? 'bg-rose-500 text-white shadow-rose-500/20'
                             : 'bg-indigo-600 text-white shadow-indigo-600/20 active:scale-90'
@@ -7633,6 +7701,7 @@ export default function PCPView({
                                   : [...prev, { orderId: item.orderId, itemIdx: item.itemIdx }];
                               });
                             }}
+                            data-guide-anchor="pcp.sugestaoItemSelecionar"
                             className={`flex flex-col p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
                           >
                             {/* Top row: checkbox + cliente + badge | hora + lixeira */}
@@ -7662,6 +7731,7 @@ export default function PCPView({
                                         hasSourcePurchase: !!sourcePurchase
                                       });
                                     }}
+                                    data-guide-anchor="pcp.pedidoPendenteExcluir"
                                     className="p-1 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-all"
                                     title="Excluir pedido"
                                   >
@@ -7810,6 +7880,7 @@ export default function PCPView({
                   <div className="mt-auto flex flex-col gap-4">
                     <button
                       onClick={() => setSelectedOrderItems([])}
+                      data-guide-anchor="pcp.carrinhoLimpar"
                       className="w-full py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
                     >
                       Limpar Seleção
@@ -7890,6 +7961,7 @@ export default function PCPView({
                           setNeedsSourceFilter(opt.key);
                           if (opt.key !== 'SELECTED_ORDERS') setSelectedNeedsOrderIds(new Set());
                         }}
+                        data-guide-anchor="pcp.necessidadesFiltroOpcao"
                         className={`flex flex-col items-start px-4 py-3 rounded-2xl border-2 transition-all active:scale-95 ${active
                           ? 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-600/20'
                           : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300')
@@ -7923,6 +7995,7 @@ export default function PCPView({
                         <button
                           type="button"
                           onClick={() => setSelectedNeedsOrderIds(new Set())}
+                          data-guide-anchor="pcp.necessidadesPedidoLimpar"
                           className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest"
                         >
                           Limpar
@@ -7952,6 +8025,7 @@ export default function PCPView({
                                 return next;
                               });
                             }}
+                            data-guide-anchor="pcp.necessidadesPedidoItem"
                             className={`flex items-center gap-3 px-4 py-3 text-left transition-colors ${isSelected
                               ? isDarkMode ? 'bg-indigo-900/40' : 'bg-indigo-50'
                               : isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-white'
@@ -8021,6 +8095,7 @@ export default function PCPView({
                   <button
                     type="button"
                     onClick={() => setSelectedSoleNeedIds(new Set())}
+                    data-guide-anchor="pcp.necessidadesSoladoLimpar"
                     className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                   >
                     Limpar
@@ -8052,6 +8127,7 @@ export default function PCPView({
                       }
                       setSelectedSoleNeedIds(new Set());
                     }}
+                    data-guide-anchor="pcp.necessidadesSoladoComprar"
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all"
                   >
                     <ShoppingCart size={14} />
@@ -8135,7 +8211,7 @@ export default function PCPView({
                       <button
                         key={item._gk}
                         type="button"
-                        onClick={() => { setOpenNeedsGroupKey(item._gk); setExpandedNeedGroupItemIds(new Set()); }}
+                        onClick={() => { setOpenNeedsGroupKey(item._gk); setNeedGroupItemDetail(null); }}
                         title={`Ver detalhes do grupo ${item._gBaseName}`}
                         aria-label={`Ver detalhes do grupo ${item._gBaseName}`}
                         data-guide-anchor="pcp.necessidadeCard"
@@ -8214,6 +8290,7 @@ export default function PCPView({
                           <button
                             type="button"
                             onClick={() => toggleNeedExpand(needId)}
+                            data-guide-anchor="pcp.palmilhaExpandir"
                             title={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
                             aria-label={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
                             className={`w-full flex flex-col gap-3 px-5 py-4 text-left transition-colors ${isExpanded ? isDarkMode ? 'bg-rose-950/30' : 'bg-rose-50/60' : ''}`}
@@ -8317,6 +8394,7 @@ export default function PCPView({
                                       description: `Pedido formulado a partir das Necessidades — ${item.toolName} (${item.colorName})`
                                     });
                                   }}
+                                  data-guide-anchor="pcp.palmilhaFormularPedido"
                                   className="flex items-center gap-1.5 px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all bg-rose-600 text-white shadow-rose-500/20 hover:scale-105 active:scale-95"
                                 >
                                   <ArrowUpRight size={14} strokeWidth={3} /> Formular Pedido
@@ -8388,6 +8466,7 @@ export default function PCPView({
                     key={f.id}
                     type="button"
                     onClick={() => setStatusFilter(f.id as any)}
+                    data-guide-anchor="pcp.mapasFiltroPill"
                     className={`px-3.5 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 active:scale-[0.98] ${isActive ? f.activeClass : f.idleClass}`}
                   >
                     <span>{f.label}</span>
@@ -8435,6 +8514,7 @@ export default function PCPView({
                     setSelectedLot(lot);
                     setIsDetailModalOpen(true);
                   }}
+                  data-guide-anchor="pcp.mapaCardAbrir"
                   className={`relative p-5 rounded-3xl border flex items-center gap-4 transition-all cursor-pointer ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
                 >
                   {/* Botão de Ação no canto superior direito */}
@@ -8452,6 +8532,7 @@ export default function PCPView({
                           onDeleteLot(lot.id);
                         }
                       }}
+                      data-guide-anchor="pcp.mapaExcluir"
                       className="p-2 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 hover:text-rose-600 transition-all"
                       title="Excluir Mapa"
                     >
@@ -8513,6 +8594,7 @@ export default function PCPView({
                             setColorPickerLot(lot);
                             setIsColorPickerOpen(true);
                           }}
+                          data-guide-anchor="pcp.mapaCorConfig"
                           className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 hover:text-indigo-600 transition-all flex items-center gap-1 shrink-0 ml-1 border border-indigo-100 dark:border-indigo-900/30 shadow-sm"
                           title="Configurar Cor do Mapa"
                         >
@@ -8576,6 +8658,7 @@ export default function PCPView({
                 key={item.id}
                 type="button"
                 onClick={() => onNavigate(item.id)}
+                data-guide-anchor="pcp.soladosMenuItem"
                 className={`w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98] ${index !== array.length - 1 ? (isDarkMode ? "border-b border-slate-800" : "border-b border-slate-50") : ""}`}
               >
                 <div className="flex items-center gap-6">
@@ -8594,6 +8677,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => onNavigateProduction?.('MATRIZES')}
+                data-guide-anchor="pcp.soladosMatrizes"
                 className="w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98]"
               >
                 <div className="flex items-center gap-6">
@@ -8634,6 +8718,7 @@ export default function PCPView({
                   key={t.id}
                   type="button"
                   onClick={() => setShareReportType(t.id)}
+                  data-guide-anchor="pcp.compartilharTipoRelatorio"
                   className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${shareReportType === t.id
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
                     : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'
@@ -8658,6 +8743,7 @@ export default function PCPView({
                   key={s.id}
                   type="button"
                   onClick={() => setShareFilterStatus(s.id)}
+                  data-guide-anchor="pcp.compartilharStatus"
                   className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${shareFilterStatus === s.id
                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                     : isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-white text-slate-500 border-slate-200'
@@ -8677,6 +8763,7 @@ export default function PCPView({
                 <button
                   type="button"
                   onClick={() => setShareFilterSectors(new Set())}
+                  data-guide-anchor="pcp.compartilharSetorLimpar"
                   className="text-[9px] font-black text-indigo-500 uppercase tracking-widest"
                 >
                   {shareFilterSectors.size === 0 ? 'Todos selecionados' : `${shareFilterSectors.size} filtrado(s) — limpar`}
@@ -8698,6 +8785,7 @@ export default function PCPView({
                           return next;
                         });
                       }}
+                      data-guide-anchor="pcp.compartilharSetorItem"
                       className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${active
                         ? isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'
                         : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-white border-slate-200 text-slate-400'
@@ -8732,7 +8820,7 @@ export default function PCPView({
                 className={`w-full pl-9 pr-4 py-2.5 rounded-xl text-sm font-bold border outline-none focus:ring-2 focus:ring-indigo-500/20 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400'}`}
               />
               {shareSearch && (
-                <button type="button" onClick={() => setShareSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Limpar busca" aria-label="Limpar busca">
+                <button type="button" onClick={() => setShareSearch('')} data-guide-anchor="pcp.compartilharBuscaLimpar" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Limpar busca" aria-label="Limpar busca">
                   <X size={14} />
                 </button>
               )}
@@ -8781,6 +8869,7 @@ export default function PCPView({
                         key={i}
                         type="button"
                         onClick={() => setShareSearch(s.kind === 'map' ? s.label.replace('MAPA ', '') : s.label)}
+                        data-guide-anchor="pcp.compartilharBuscaSugestao"
                         className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'} ${i > 0 ? (isDarkMode ? 'border-t border-slate-700' : 'border-t border-slate-100') : ''}`}
                       >
                         <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md ${s.kind === 'map' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
@@ -8813,6 +8902,7 @@ export default function PCPView({
                   key={opt.key}
                   type="button"
                   onClick={() => setShareOpts(prev => ({ ...prev, [opt.key]: !prev[opt.key] }))}
+                  data-guide-anchor="pcp.compartilharOpcaoConteudo"
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${shareOpts[opt.key]
                     ? isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'
                     : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-white border-slate-200 text-slate-400'
@@ -8840,6 +8930,7 @@ export default function PCPView({
                     <button
                       type="button"
                       onClick={() => setSharePreviewOpen(true)}
+                      data-guide-anchor="pcp.compartilharPreVisualizar"
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'}`}
                     >
                       <Eye size={10} strokeWidth={2.5} /> Pré-visualizar
@@ -8873,6 +8964,7 @@ export default function PCPView({
               type="button"
               disabled={!!shareGenerating || getShareData().length === 0}
               onClick={generatePCPPDF}
+              data-guide-anchor="pcp.compartilharGerarPDF"
               className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${!!shareGenerating || getShareData().length === 0
                 ? 'opacity-40 cursor-not-allowed ' + (isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400')
                 : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
@@ -8887,6 +8979,7 @@ export default function PCPView({
               type="button"
               disabled={!!shareGenerating || getShareData().length === 0}
               onClick={generatePCPImage}
+              data-guide-anchor="pcp.compartilharGerarImagem"
               className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${!!shareGenerating || getShareData().length === 0
                 ? 'opacity-40 cursor-not-allowed ' + (isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400')
                 : isDarkMode ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
@@ -8933,6 +9026,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setSharePreviewOpen(false)}
+                data-guide-anchor="pcp.compartilharPreviewFechar"
                 className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-500 text-white active:scale-95 transition-all shrink-0"
                 title="Fechar pré-visualização"
                 aria-label="Fechar pré-visualização"
@@ -9139,6 +9233,7 @@ export default function PCPView({
                 type="button"
                 disabled={!!shareGenerating}
                 onClick={() => { setSharePreviewOpen(false); generatePCPPDF(); }}
+                data-guide-anchor="pcp.compartilharGerarPDF"
                 className="flex-1 flex items-center justify-center gap-2 h-11 rounded-2xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
               >
                 <FileText size={14} strokeWidth={2.5} /> Gerar PDF
@@ -9147,6 +9242,7 @@ export default function PCPView({
                 type="button"
                 disabled={!!shareGenerating}
                 onClick={() => { setSharePreviewOpen(false); generatePCPImage(); }}
+                data-guide-anchor="pcp.compartilharGerarImagem"
                 className="flex-1 flex items-center justify-center gap-2 h-11 rounded-2xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all bg-emerald-500 text-white shadow-md shadow-emerald-500/25"
               >
                 <Share2 size={14} strokeWidth={2.5} /> Imagem
@@ -9201,6 +9297,7 @@ export default function PCPView({
                             <button
                               type="button"
                               onClick={() => setLotNotesPopup({ lot: selectedLot })}
+                              data-guide-anchor="pcp.lotObsAbrir"
                               className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all hover:opacity-80 ${isDarkMode ? 'bg-amber-900/30 border border-amber-700/40 text-amber-400' : 'bg-amber-50 border border-amber-200 text-amber-600'}`}
                               title="Ver observação do mapa"
                             >
@@ -9243,6 +9340,7 @@ export default function PCPView({
                                 }
                               });
                             }}
+                            data-guide-anchor="pcp.corIdentificadorSwatch"
                             className="w-4 h-4 rounded-full border-2 transition-all hover:scale-110 active:scale-95"
                             style={{
                               backgroundColor: c,
@@ -9569,6 +9667,7 @@ export default function PCPView({
                               filterOpen ? next.delete('__filter__') : next.add('__filter__');
                               setExpandedSourceItems(next);
                             }}
+                            data-guide-anchor="pcp.detalhePedidosFiltroAbrir"
                             className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-50 hover:bg-slate-100'}`}
                           >
                             <div className="flex items-center gap-2">
@@ -9586,6 +9685,7 @@ export default function PCPView({
                             <div className="flex items-center gap-2">
                               {hasFilter && (
                                 <button type="button" onClick={e => { e.stopPropagation(); setSourceFilterModel(''); setSourceFilterColor(''); }}
+                                  data-guide-anchor="pcp.detalhePedidosFiltroLimpar"
                                   className="text-[7px] font-black text-rose-500 px-1.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 uppercase">
                                   Limpar
                                 </button>
@@ -9600,11 +9700,13 @@ export default function PCPView({
                                   <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Modelo</p>
                                   <div className="flex flex-wrap gap-1">
                                     <button type="button" onClick={() => setSourceFilterModel('')}
+                                      data-guide-anchor="pcp.detalhePedidosFiltroModelo"
                                       className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${!sourceFilterModel ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
                                       Todos
                                     </button>
                                     {uniqueModels.map(m => (
                                       <button key={m} type="button" onClick={() => setSourceFilterModel(sourceFilterModel === m ? '' : m)}
+                                        data-guide-anchor="pcp.detalhePedidosFiltroModelo"
                                         className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${sourceFilterModel === m ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
                                         {m}
                                       </button>
@@ -9617,11 +9719,13 @@ export default function PCPView({
                                   <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Cor</p>
                                   <div className="flex flex-wrap gap-1">
                                     <button type="button" onClick={() => setSourceFilterColor('')}
+                                      data-guide-anchor="pcp.detalhePedidosFiltroCor"
                                       className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${!sourceFilterColor ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
                                       Todas
                                     </button>
                                     {uniqueColors.map(c => (
                                       <button key={c} type="button" onClick={() => setSourceFilterColor(sourceFilterColor === c ? '' : c)}
+                                        data-guide-anchor="pcp.detalhePedidosFiltroCor"
                                         className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${sourceFilterColor === c ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
                                         {c}
                                       </button>
@@ -9786,6 +9890,7 @@ export default function PCPView({
                                         e.stopPropagation();
                                         handleRepairSaleLink(order);
                                       }}
+                                      data-guide-anchor="pcp.pedidoRepararVinculo"
                                       className="mt-1 flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-all"
                                       title="A venda perdeu a referência para esta Ordem de Produção. Toque para reparar o vínculo."
                                     >
@@ -9812,6 +9917,7 @@ export default function PCPView({
                                         e.stopPropagation();
                                         handleRouteOrderToCorrectSector(selectedLot, si, correctSectorId, correctSectorName, productName);
                                       }}
+                                      data-guide-anchor="pcp.pedidoDirecionarSetorCorreto"
                                       className="mt-1 flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all"
                                       title={`Este modelo segue um roteiro de produção diferente — direcionar para "${correctSectorName}"`}
                                     >
@@ -9832,6 +9938,7 @@ export default function PCPView({
                                   isExpanded ? next.delete(key) : next.add(key);
                                   setExpandedSourceItems(next);
                                 }}
+                                data-guide-anchor="pcp.detalhePedidoGradeToggle"
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all text-[9px] font-black uppercase tracking-wider"
                               >
                                 <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
@@ -9853,6 +9960,7 @@ export default function PCPView({
                                     });
                                     setMoveSectorTarget('');
                                   }}
+                                  data-guide-anchor="pcp.detalhePedidoMudarSetor"
                                   className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95 border border-amber-600/60 shadow-[0_3px_0_0_rgba(180,83,9,0.85)] active:shadow-[0_1px_0_0_rgba(180,83,9,0.85)] active:translate-y-[2px]"
                                 >
                                   <ArrowLeftRight size={11} strokeWidth={3} /> Mudar Setor
@@ -9863,6 +9971,7 @@ export default function PCPView({
                                     <button
                                       type="button"
                                       onClick={() => handleEditOS(orderOS!)}
+                                      data-guide-anchor="pcp.osEditar"
                                       className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-white text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
                                     >
                                       <Edit2 size={11} />
@@ -9871,6 +9980,7 @@ export default function PCPView({
                                     <button
                                       type="button"
                                       onClick={() => handleDeleteOS(orderOS!)}
+                                      data-guide-anchor="pcp.osExcluir"
                                       className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all"
                                     >
                                       <Trash2 size={11} />
@@ -9888,6 +9998,7 @@ export default function PCPView({
                                   type="button"
                                   title="Retirar este pedido do mapa"
                                   onClick={() => requestRemoveItemFromLot(selectedLot, si, String(order?.saleOrderNumber || selectedLot.saleOrderNumber || ''), productName)}
+                                  data-guide-anchor="pcp.detalhePedidoRetirarMapa"
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 border border-rose-700/60 shadow-[0_3px_0_0_rgba(159,18,57,0.85)] active:shadow-[0_1px_0_0_rgba(159,18,57,0.85)] active:translate-y-[2px]"
                                 >
                                   <MinusCircle size={12} />
@@ -9985,6 +10096,7 @@ export default function PCPView({
                                           const itemSizeGrid = sizeEntries.map(([sz, s]) => `${sz}x${s.toProduction}`).join('-');
                                           openLabelPicker([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx }], selectedLot, null);
                                         }}
+                                        data-guide-anchor="pcp.detalhePedidoImprimirEtiqueta"
                                         className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
                                       >
                                         <Printer size={11} />
@@ -10003,6 +10115,7 @@ export default function PCPView({
                                         e.stopPropagation();
                                         setSharePedidoPopupKey(sharePedidoPopupKey === key ? null : key);
                                       }}
+                                      data-guide-anchor="pcp.detalhePedidoCompartilharAbrir"
                                       className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-slate-600 text-white hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
                                     >
                                       {isPedidoShareExporting && sharePedidoPopupKey === key
@@ -10015,10 +10128,10 @@ export default function PCPView({
                                         <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); }} />
                                         <div className={`absolute bottom-full right-0 mb-1.5 rounded-2xl shadow-2xl border z-50 p-2 flex flex-col gap-1 min-w-[190px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
                                           <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha do Pedido</p>
-                                          <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'pdf'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'pdf'); }} data-guide-anchor="pcp.detalhePedidoCompartilharPDF" className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
                                             <Share2 size={11} className="shrink-0" /> PDF — Impressão
                                           </button>
-                                          <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'jpg'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'jpg'); }} data-guide-anchor="pcp.detalhePedidoCompartilharJPG" className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
                                             <Share2 size={11} className="shrink-0" /> JPG — Imagem
                                           </button>
                                         </div>
@@ -10127,6 +10240,7 @@ export default function PCPView({
                                       isExpanded ? next.delete(key) : next.add(key);
                                       setExpandedSourceItems(next);
                                     }}
+                                    data-guide-anchor="pcp.detalhePedidoGradeToggle"
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all text-[9px] font-black uppercase tracking-wider"
                                   >
                                     <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
@@ -10146,6 +10260,7 @@ export default function PCPView({
                                         });
                                         setMoveSectorTarget('');
                                       }}
+                                      data-guide-anchor="pcp.detalhePedidoMudarSetor"
                                       className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95 border border-amber-600/60 shadow-[0_3px_0_0_rgba(180,83,9,0.85)] active:shadow-[0_1px_0_0_rgba(180,83,9,0.85)] active:translate-y-[2px]"
                                     >
                                       <ArrowLeftRight size={11} strokeWidth={3} /> Mudar Setor
@@ -10160,6 +10275,7 @@ export default function PCPView({
                                       type="button"
                                       title="Retirar este pedido do mapa"
                                       onClick={() => requestRemoveItemFromLot(selectedLot, si, String(order?.saleOrderNumber || selectedLot.saleOrderNumber || ''), productName)}
+                                      data-guide-anchor="pcp.detalhePedidoRetirarMapa"
                                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 border border-rose-700/60 shadow-[0_3px_0_0_rgba(159,18,57,0.85)] active:shadow-[0_1px_0_0_rgba(159,18,57,0.85)] active:translate-y-[2px]"
                                     >
                                       <MinusCircle size={12} />
@@ -10508,6 +10624,7 @@ export default function PCPView({
                             });
                             setMoveSectorTarget(availableSectors[0]?.id || '');
                           }}
+                          data-guide-anchor="pcp.detalheMoverProximoSetor"
                           className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
                         >
                           <ChevronRight size={13} strokeWidth={3} /> Mover para Próximo Setor
@@ -10607,14 +10724,14 @@ export default function PCPView({
                                       });
                                     });
                                     setShareModal({ isOpen: true, format: 'jpg', selectedItems: mappedFichas });
-                                  }} className="flex-1 text-[11px] font-black uppercase text-orange-600 bg-orange-50 dark:bg-orange-950/20 hover:bg-orange-100 py-2.5 rounded-xl transition-all text-center">Compartilhar</button>
+                                  }} data-guide-anchor="pcp.osCompartilhar" className="flex-1 text-[11px] font-black uppercase text-orange-600 bg-orange-50 dark:bg-orange-950/20 hover:bg-orange-100 py-2.5 rounded-xl transition-all text-center">Compartilhar</button>
                                   <button type="button" onClick={() => {
                                     const printNextSectorName = selectedLot ? computeOSAdvanceOutcome(os, selectedLot, products, sectors).nextSectorName : 'CONCLUÍDO';
                                     setPrintOSData({ os, nextSectorName: printNextSectorName });
                                     setIsPrintOSModalOpen(true);
-                                  }} className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
-                                  <button type="button" onClick={() => handleEditOS(os)} className="flex-1 text-[11px] font-black uppercase text-white bg-amber-400 hover:bg-amber-500 py-2.5 rounded-xl transition-all text-center active:scale-95">Editar</button>
-                                  <button type="button" onClick={() => handleDeleteOS(os)} className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center">Excluir</button>
+                                  }} data-guide-anchor="pcp.osImprimirEtiqueta" className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
+                                  <button type="button" onClick={() => handleEditOS(os)} data-guide-anchor="pcp.osEditar" className="flex-1 text-[11px] font-black uppercase text-white bg-amber-400 hover:bg-amber-500 py-2.5 rounded-xl transition-all text-center active:scale-95">Editar</button>
+                                  <button type="button" onClick={() => handleDeleteOS(os)} data-guide-anchor="pcp.osExcluir" className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center">Excluir</button>
                                 </div>
 
                                 {/* Stats */}
@@ -10740,6 +10857,7 @@ export default function PCPView({
                                                   isItemExp ? next.delete(`${os.id}-${k}`) : next.add(`${os.id}-${k}`);
                                                   setExpandedOSItemKeys(next);
                                                 }}
+                                                data-guide-anchor="pcp.osItemGradeToggle"
                                                 className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
                                               >
                                                 <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
@@ -10823,6 +10941,7 @@ export default function PCPView({
                           <button
                             type="button"
                             onClick={() => handleOpenOSModal(selectedLot)}
+                            data-guide-anchor="pcp.mapaEmitirOS"
                             className="px-5 py-3.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-95"
                           >
                             <Plus size={14} strokeWidth={3} /> Emitir OS
@@ -10856,6 +10975,7 @@ export default function PCPView({
                                 <button
                                   type="button"
                                   onClick={() => openSectorChangeConfirm(selectedLot, '', 'Baixa de expedição manual.')}
+                                  data-guide-anchor="pcp.mapaConcluirBaixar"
                                   className="px-5 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-95 shadow-md shadow-emerald-500/25"
                                 >
                                   <CheckCircle2 size={14} strokeWidth={3} /> Concluir e Baixar Lote
@@ -10887,6 +11007,7 @@ export default function PCPView({
                                 <button
                                   type="button"
                                   onClick={() => openSectorChangeConfirm(selectedLot, '', 'Avanço manual de setor.')}
+                                  data-guide-anchor="pcp.mapaAvancarLote"
                                   className="px-5 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-95 shadow-md shadow-amber-500/25"
                                 >
                                   <ChevronRight size={14} strokeWidth={3} /> Avançar Lote Inteiro
@@ -10907,6 +11028,7 @@ export default function PCPView({
                 <button
                   type="button"
                   onClick={() => setHistoryExpanded(!historyExpanded)}
+                  data-guide-anchor="pcp.detalheHistoricoToggle"
                   className="w-full flex items-center justify-between px-1 py-1 group"
                 >
                   <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 group-hover:text-slate-500 transition-colors">Histórico de Movimentação</h4>
@@ -10940,6 +11062,7 @@ export default function PCPView({
                             <button
                               type="button"
                               onClick={() => handleRevertLot(selectedLot)}
+                              data-guide-anchor="pcp.detalheReverterHistorico"
                               title="Reverter esta movimentação"
                               className="self-end flex items-center gap-1 px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all"
                             >
@@ -11000,7 +11123,7 @@ export default function PCPView({
                   <ShoppingCart size={16} className="text-amber-600 dark:text-amber-400" />
                   <h3 className="text-sm font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">Compras em Trânsito</h3>
                 </div>
-                <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setInTransitPopupItem(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 transition-all">
+                <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setInTransitPopupItem(null)} data-guide-anchor="pcp.transitoPopupFechar" className="p-1 rounded-lg text-slate-400 hover:text-slate-600 transition-all">
                   <X size={16} />
                 </button>
               </div>
@@ -11073,13 +11196,75 @@ export default function PCPView({
             </div>
 
             <div className="px-4 pb-4">
-              <button type="button" onClick={() => setInTransitPopupItem(null)} className="w-full py-3 rounded-2xl font-black text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all">
+              <button type="button" onClick={() => setInTransitPopupItem(null)} data-guide-anchor="pcp.transitoPopupFechar" className="w-full py-3 rounded-2xl font-black text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all">
                 Fechar
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Popup: quantidade de cada numeração de uma variação (dentro do popup de grupo) ── */}
+      {needGroupItemDetail && (() => {
+        const { item, colorName, realGradeStock, inTransitByGrade } = needGroupItemDetail;
+        const grades = Object.keys(item.sizeShortages || {}).sort((a, b) => parseFloat(a) - parseFloat(b));
+        return (
+          <div className="fixed inset-0 z-[195] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setNeedGroupItemDetail(null)} />
+            <div className={`relative w-full max-w-sm max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+              <div className={`px-5 py-4 border-b shrink-0 ${isDarkMode ? 'border-slate-800 bg-slate-800/60' : 'border-slate-100 bg-slate-50'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    {colorName && (
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>{colorName}</p>
+                    )}
+                    <h3 className={`text-xs font-bold uppercase tracking-widest truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                      {formatContributingSources(item.contributingLots, item.contributingOrders)}
+                    </h3>
+                  </div>
+                  <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setNeedGroupItemDetail(null)} data-guide-anchor="pcp.necessidadeItemDetalheFechar" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all shrink-0">
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto overflow-x-auto custom-scrollbar flex-1 min-h-0">
+                <div className="min-w-[420px]">
+                  <div className={`grid grid-cols-5 gap-1 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400'}`}>
+                    <span>Grade</span>
+                    <span className="text-center">Estoque</span>
+                    <span className="text-center">Necess.</span>
+                    <span className="text-center">Trânsito</span>
+                    <span className="text-right">Falta</span>
+                  </div>
+                  {grades.map(grade => {
+                    const stock = realGradeStock[grade] || 0;
+                    const req = (item.sizeShortages as any)[grade].required;
+                    const gross = Math.max(0, req - stock);
+                    const transit = Math.min(inTransitByGrade[grade] || 0, gross);
+                    const falta = gross - transit;
+                    return (
+                      <div key={grade} className={`grid grid-cols-5 gap-1 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800/60' : 'border-slate-100'}`}>
+                        <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
+                        <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
+                        <span className="text-center text-slate-400">{req}</span>
+                        <span className={`text-center ${transit > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
+                        <span className={`text-right ${falta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="p-4 shrink-0">
+                <button type="button" onClick={() => setNeedGroupItemDetail(null)} data-guide-anchor="pcp.necessidadeItemDetalheFechar" className="w-full py-3 rounded-2xl font-black text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {openNeedsGroupKey && (() => {
         const groupItems = needsGroupsFlat.filter(i => i._gk === openNeedsGroupKey);
@@ -11170,7 +11355,7 @@ export default function PCPView({
                       </p>
                     </div>
                   </div>
-                  <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setOpenNeedsGroupKey(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all shrink-0">
+                  <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setOpenNeedsGroupKey(null)} data-guide-anchor="pcp.necessidadeGrupoFechar" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all shrink-0">
                     <X size={18} />
                   </button>
                 </div>
@@ -11195,15 +11380,17 @@ export default function PCPView({
                   const inTransitByGrade = net.inTransitByGrade || {};
                   const itemShortage = net.totalNet;
                   const colorName = item.type === 'SOLE' ? item.name.split(' - ').slice(1).join(' - ') : '';
-                  const isItemExpanded = expandedNeedGroupItemIds.has(item.id);
+                  const hasGradeDetail = item.type === 'SOLE' && !!item.sizeShortages;
 
                   return (
                     <div key={item.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
                       <button
                         type="button"
-                        onClick={() => toggleNeedGroupItemExpand(item.id)}
-                        title={isItemExpanded ? 'Recolher grade' : 'Ver grade detalhada'}
-                        aria-label={isItemExpanded ? 'Recolher grade' : 'Ver grade detalhada'}
+                        onClick={() => hasGradeDetail && setNeedGroupItemDetail({ item, colorName, realGradeStock, inTransitByGrade })}
+                        disabled={!hasGradeDetail}
+                        title={hasGradeDetail ? 'Ver quantidade de cada numeração' : undefined}
+                        aria-label={hasGradeDetail ? 'Ver quantidade de cada numeração' : undefined}
+                        data-guide-anchor="pcp.necessidadeGrupoItemToggle"
                         className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left"
                       >
                         <div className="min-w-0">
@@ -11224,43 +11411,9 @@ export default function PCPView({
                               <p className="text-[8px] font-bold text-amber-500 mt-0.5">{Math.round(net.totalInTransit)} em trânsito</p>
                             )}
                           </div>
-                          {item.type === 'SOLE' && item.sizeShortages && (
-                            isItemExpanded
-                              ? <ChevronUp size={16} className="text-slate-400 shrink-0" />
-                              : <ChevronDown size={16} className="text-slate-400 shrink-0" />
-                          )}
+                          {hasGradeDetail && <ChevronRight size={16} className="text-slate-400 shrink-0" />}
                         </div>
                       </button>
-
-                      {isItemExpanded && item.type === 'SOLE' && item.sizeShortages && (
-                        <div className={`overflow-x-auto custom-scrollbar border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                          <div className="min-w-[420px]">
-                            <div className={`grid grid-cols-5 gap-1 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400'}`}>
-                              <span>Grade</span>
-                              <span className="text-center">Estoque</span>
-                              <span className="text-center">Necess.</span>
-                              <span className="text-center">Trânsito</span>
-                              <span className="text-right">Falta</span>
-                            </div>
-                            {Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
-                              const stock = realGradeStock[grade] || 0;
-                              const req = (item.sizeShortages as any)[grade].required;
-                              const gross = Math.max(0, req - stock);
-                              const transit = Math.min(inTransitByGrade[grade] || 0, gross);
-                              const falta = gross - transit;
-                              return (
-                                <div key={grade} className={`grid grid-cols-5 gap-1 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800/60' : 'border-slate-100'}`}>
-                                  <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
-                                  <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
-                                  <span className="text-center text-slate-400">{req}</span>
-                                  <span className={`text-center ${transit > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
-                                  <span className={`text-right ${falta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
 
                       {/* Solicitar numa linha própria, abaixo da tabela — junto com "Estoque:"
                           na mesma linha (layout antigo) o botão ficava espremido/escondido no
@@ -11307,6 +11460,7 @@ export default function PCPView({
                                 setRequestingId(null);
                               }
                             }}
+                            data-guide-anchor="pcp.necessidadeGrupoItemSolicitar"
                             className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${requestingId === item.id
                               ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
                               : 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30'
@@ -11331,6 +11485,7 @@ export default function PCPView({
                   <button
                     type="button"
                     onClick={handleFormularPedidoGrupo}
+                    data-guide-anchor="pcp.necessidadeFormularPedidoGrupo"
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all"
                   >
                     <ShoppingCart size={14} />
@@ -11340,6 +11495,7 @@ export default function PCPView({
                     <button
                       type="button"
                       onClick={handleFormularPedidoMesmoFornecedor}
+                      data-guide-anchor="pcp.necessidadeFormularPedidoFornecedor"
                       className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-indigo-700 text-indigo-400 hover:bg-indigo-950/30' : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'}`}
                     >
                       <Factory size={14} />
@@ -11529,6 +11685,7 @@ export default function PCPView({
                     setIsSoleOrderModalOpen(false);
                   }}
                   disabled={totalPedido === 0}
+                  data-guide-anchor="pcp.soladoPedidoLancarCompra"
                   className={`w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-xl transition-all ${totalPedido > 0
                     ? 'bg-emerald-600 text-white shadow-emerald-500/20 hover:bg-emerald-700 active:scale-[0.99]'
                     : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
@@ -11586,6 +11743,7 @@ export default function PCPView({
                       setRequestingId(null);
                     }
                   }}
+                  data-guide-anchor="pcp.soladoPedidoSolicitar"
                   className={`w-full py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${totalPedido > 0 && requestingId !== selectedSoleNeed.id
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 active:scale-[0.98]'
                     : 'bg-slate-100 text-slate-400 cursor-not-allowed'
@@ -11655,6 +11813,7 @@ export default function PCPView({
                 aria-label="Fechar"
                 title="Fechar"
                 onClick={() => { setQrBaixaModal(null); setQrBaixaConfirm(null); setQrBaixaManualCode(''); setQrBaixaShowWebCamera(false); }}
+                data-guide-anchor="pcp.qrBaixaFechar"
                 className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
               >
                 <X size={18} />
@@ -11712,6 +11871,7 @@ export default function PCPView({
                     <button
                       type="button"
                       onClick={() => setQrBaixaConfirm(null)}
+                      data-guide-anchor="pcp.qrBaixaCancelar"
                       className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                     >
                       Cancelar
@@ -11726,6 +11886,7 @@ export default function PCPView({
                         setQrBaixaShowWebCamera(false);
                         await handleCompleteOS(os);
                       }}
+                      data-guide-anchor="pcp.qrBaixaConfirmar"
                       className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
                     >
                       <CheckSquare size={14} /> Confirmar Baixa
@@ -11778,6 +11939,7 @@ export default function PCPView({
                           setQrBaixaShowWebCamera(true);
                         }
                       }}
+                      data-guide-anchor="pcp.qrBaixaEscanear"
                       className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all active:scale-98 ${qrBaixaScanning
                         ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20 animate-pulse'
                         : isDarkMode
@@ -11831,6 +11993,7 @@ export default function PCPView({
                       type="button"
                       disabled={!qrBaixaManualCode.trim()}
                       onClick={() => handleQrBaixaResolve(qrBaixaManualCode)}
+                      data-guide-anchor="pcp.qrBaixaBuscarManual"
                       className="px-4 py-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 shrink-0"
                     >
                       Buscar
@@ -11867,6 +12030,7 @@ export default function PCPView({
                       key={sec.id}
                       type="button"
                       onClick={() => setMoveSectorTarget(sec.id)}
+                      data-guide-anchor="pcp.moverSetorEscolher"
                       className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all active:scale-95 ${moveSectorTarget === sec.id
                         ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
                         : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
@@ -11913,6 +12077,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => { setMoveSectorModal(null); setMoveSectorTarget(''); }}
+                data-guide-anchor="pcp.moverSetorCancelar"
                 className={`flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
               >
                 Cancelar
@@ -11921,6 +12086,7 @@ export default function PCPView({
                 type="button"
                 disabled={!moveSectorTarget}
                 onClick={() => handleMoveOrdersToSector(moveSectorModal.lotId, moveSectorModal.items, moveSectorTarget)}
+                data-guide-anchor="pcp.moverSetorConfirmar"
                 className="flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 disabled:opacity-40 active:scale-95 transition-all"
               >
                 Confirmar →
@@ -11979,7 +12145,7 @@ export default function PCPView({
                 </div>
               </div>
               {stockRepairModal.phase !== 'running' && (
-                <button type="button" onClick={() => setStockRepairModal(null)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                <button type="button" onClick={() => setStockRepairModal(null)} data-guide-anchor="pcp.reparaCaixasFechar" className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
                   <X size={16} />
                 </button>
               )}
@@ -12101,6 +12267,7 @@ export default function PCPView({
                         type="button"
                         onClick={() => dismissStockRepairItem(it)}
                         disabled={stockRepairModal.phase === 'running'}
+                        data-guide-anchor="pcp.reparaCaixasJaResolvi"
                         className={`self-start text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
                         title="Já incluí essa caixa no estoque por fora (Balanço/edição direta) — não mexe em estoque, só some daqui"
                       >
@@ -12119,6 +12286,7 @@ export default function PCPView({
                   type="button"
                   onClick={() => setStockRepairModal(null)}
                   disabled={stockRepairModal.phase === 'running'}
+                  data-guide-anchor="pcp.reparaCaixasCancelar"
                   className={`flex-1 py-3.5 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                 >
                   Cancelar
@@ -12127,6 +12295,7 @@ export default function PCPView({
                   type="button"
                   onClick={executeStockRepair}
                   disabled={stockRepairModal.phase === 'running' || !stockRepairModal.items.some(it => it.selected)}
+                  data-guide-anchor="pcp.reparaCaixasCorrigir"
                   className="flex-1 py-3.5 rounded-2xl bg-amber-500 text-white font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {stockRepairModal.phase === 'running' ? <><Loader2 size={14} className="animate-spin" /> Corrigindo...</> : `Corrigir ${stockRepairModal.items.filter(it => it.selected).length} entrada(s)`}
@@ -12135,7 +12304,7 @@ export default function PCPView({
             )}
             {stockRepairModal.phase === 'done' && (
               <div className={`shrink-0 p-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                <button type="button" onClick={() => setStockRepairModal(null)} className="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-all">
+                <button type="button" onClick={() => setStockRepairModal(null)} data-guide-anchor="pcp.reparaCaixasFechar" className="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-all">
                   Fechar
                 </button>
               </div>
@@ -12159,7 +12328,7 @@ export default function PCPView({
                   <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">{osNotesPopup.osNumber}</p>
                 </div>
               </div>
-              <button type="button" title="Fechar" onClick={() => setOsNotesPopup(null)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+              <button type="button" title="Fechar" onClick={() => setOsNotesPopup(null)} data-guide-anchor="pcp.osLembretesFechar" className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
                 <X size={16} />
               </button>
             </div>
@@ -12214,6 +12383,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={() => setOsNotesPopup(null)}
+              data-guide-anchor="pcp.osLembretesConcluido"
               className="w-full py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-amber-500 text-white shadow-lg shadow-amber-500/20 active:scale-95 transition-all hover:bg-amber-600"
             >
               Concluído
@@ -12250,6 +12420,7 @@ export default function PCPView({
                 type="button"
                 title="Fechar"
                 onClick={() => setOsBaixaPanel(null)}
+                data-guide-anchor="pcp.osBaixaFechar"
                 className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
               >
                 <X size={16} />
@@ -12259,6 +12430,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={toggleOsBaixaSelectAll}
+              data-guide-anchor="pcp.osBaixaSelecionarTodos"
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border transition-colors ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/50' : 'border-slate-200 hover:bg-slate-50'}`}
             >
               <input
@@ -12325,6 +12497,7 @@ export default function PCPView({
                           type="button"
                           title={`Setor de destino para ${item.productName}`}
                           onClick={() => setOsBaixaSectorPickerFor(item.key)}
+                          data-guide-anchor="pcp.osBaixaEscolherSetorItem"
                           className={`flex-1 min-w-0 flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${isPending
                             ? `border-dashed ${isDarkMode ? 'border-slate-600 bg-slate-900/50' : 'border-slate-300 bg-slate-100'}`
                             : 'border-orange-300 bg-orange-50 dark:border-orange-700/50 dark:bg-orange-900/20'
@@ -12357,6 +12530,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setOsBaixaPanel(null)}
+                data-guide-anchor="pcp.osBaixaCancelar"
                 className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 Cancelar
@@ -12365,6 +12539,7 @@ export default function PCPView({
                 type="button"
                 disabled={!osBaixaPanel.items.some(it => it.included)}
                 onClick={executeOsBaixaPanel}
+                data-guide-anchor="pcp.osBaixaExecutar"
                 className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all ${!osBaixaPanel.items.some(it => it.included)
                   ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
                   : 'bg-emerald-600 hover:bg-emerald-700'
@@ -12409,7 +12584,7 @@ export default function PCPView({
                       {isBulk ? `${includedCount} pedido${includedCount === 1 ? '' : 's'} marcado${includedCount === 1 ? '' : 's'}` : `${item!.productName}${item!.colorName ? ` · ${item!.colorName}` : ''}`}
                     </p>
                   </div>
-                  <button onClick={() => setOsBaixaSectorPickerFor(null)} className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} title="Fechar" aria-label="Fechar seleção de setor">
+                  <button onClick={() => setOsBaixaSectorPickerFor(null)} data-guide-anchor="pcp.osBaixaSetorFechar" className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} title="Fechar" aria-label="Fechar seleção de setor">
                     <X size={20} />
                   </button>
                 </div>
@@ -12417,6 +12592,7 @@ export default function PCPView({
                   <button
                     type="button"
                     onClick={() => applySector('')}
+                    data-guide-anchor="pcp.osBaixaSetorAplicar"
                     className={`flex items-center justify-between gap-2 px-4 py-3 rounded-2xl transition-all border-2 ${
                       !isBulk && item!.chosenSectorId === ''
                         ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
@@ -12430,6 +12606,7 @@ export default function PCPView({
                       key={sector.id}
                       type="button"
                       onClick={() => applySector(sector.id)}
+                      data-guide-anchor="pcp.osBaixaSetorAplicar"
                       className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all border-2 ${
                         !isBulk && item!.chosenSectorId === sector.id
                           ? 'border-orange-400 bg-orange-50 dark:bg-orange-900/20'
@@ -12474,6 +12651,7 @@ export default function PCPView({
                 type="button"
                 title="Fechar"
                 onClick={() => setFractionModal(null)}
+                data-guide-anchor="pcp.fracionarFechar"
                 className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
               >
                 <X size={16} />
@@ -12513,6 +12691,7 @@ export default function PCPView({
                       </span>
                       {!isLast && fractionModal.fractions.length > 2 && (
                         <button type="button" title="Remover fração" onClick={() => removeFractionRow(idx)}
+                          data-guide-anchor="pcp.fracionarRemoverFracao"
                           className={`p-1 rounded-full shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-700 hover:text-white' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}>
                           <X size={13} />
                         </button>
@@ -12528,6 +12707,7 @@ export default function PCPView({
                         <div className="flex items-center gap-2">
                           <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>× Grade</span>
                           <button type="button" onClick={() => updateFractionMultiplier(idx, fr.multiplier - 1)}
+                            data-guide-anchor="pcp.fracionarMultiplicador"
                             className={`w-7 h-7 rounded-lg text-sm font-black ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>−</button>
                           <input type="number" min={0} value={fr.multiplier}
                             onChange={(e) => updateFractionMultiplier(idx, Number(e.target.value))}
@@ -12535,6 +12715,7 @@ export default function PCPView({
                             className={`w-14 text-center text-[11px] font-black rounded-lg px-1 py-1.5 border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}
                           />
                           <button type="button" onClick={() => updateFractionMultiplier(idx, fr.multiplier + 1)}
+                            data-guide-anchor="pcp.fracionarMultiplicador"
                             className={`w-7 h-7 rounded-lg text-sm font-black ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>+</button>
                         </div>
                       )
@@ -12586,6 +12767,7 @@ export default function PCPView({
             </div>
 
             <button type="button" onClick={addFractionRow}
+              data-guide-anchor="pcp.fracionarAdicionar"
               className={`w-full py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-dashed transition-all ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800/50' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}`}
             >
               + Adicionar Fração
@@ -12595,6 +12777,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setFractionModal(null)}
+                data-guide-anchor="pcp.fracionarCancelar"
                 className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 Cancelar
@@ -12603,6 +12786,7 @@ export default function PCPView({
                 type="button"
                 disabled={!isFractionPlanValid(fractionModal)}
                 onClick={executeFractionFicha}
+                data-guide-anchor="pcp.fracionarExecutar"
                 className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all ${!isFractionPlanValid(fractionModal)
                   ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
                   : 'bg-amber-600 hover:bg-amber-700'
@@ -12671,6 +12855,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={() => setOsFeedback(null)}
+              data-guide-anchor="pcp.osFeedbackContinuar"
               className="shrink-0 w-full py-4 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
             >
               Continuar
@@ -12874,6 +13059,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setFinalizeSelectedConfirm(null)}
+                data-guide-anchor="pcp.finalizarConfirmCancelar"
                 className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 Cancelar
@@ -12894,6 +13080,7 @@ export default function PCPView({
                     toast.show('Erro ao finalizar pedido(s). Verifique o estoque e tente novamente.');
                   }
                 }}
+                data-guide-anchor="pcp.finalizarConfirmOk"
                 className="flex-1 py-4 rounded-2xl bg-violet-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
               >
                 OK
@@ -12932,6 +13119,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={() => setLotNotesPopup(null)}
+              data-guide-anchor="pcp.lotObsFechar"
               className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               Fechar
@@ -12965,6 +13153,7 @@ export default function PCPView({
                 type="button"
                 title="Fechar"
                 onClick={() => setManualSectorPicker(null)}
+                data-guide-anchor="pcp.manualSetorFechar"
                 className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
               >
                 <X size={16} />
@@ -12989,6 +13178,7 @@ export default function PCPView({
                       });
                       setManualSectorPicker(null);
                     }}
+                    data-guide-anchor="pcp.manualSetorEscolher"
                     className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${isCurrent
                       ? `cursor-not-allowed opacity-40 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`
                       : isDarkMode ? 'text-slate-300 hover:bg-orange-500 hover:text-white' : 'text-slate-600 hover:bg-orange-500 hover:text-white'
@@ -13025,6 +13215,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setManualSectorMoveConfirm(null)}
+                data-guide-anchor="pcp.manualSetorConfirmFechar"
                 className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
               >
                 <X size={16} />
@@ -13097,6 +13288,7 @@ export default function PCPView({
                     handleManualFichasSectorOverride(manualSectorMoveConfirm.fichas, manualSectorMoveConfirm.targetSectorId);
                   }
                 }}
+                data-guide-anchor="pcp.manualSetorConfirmar"
                 className="w-full py-3.5 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all active:scale-[0.98] bg-indigo-600 text-white shadow-indigo-100 dark:shadow-none hover:bg-indigo-700"
               >
                 Sim, mover pedido(s)
@@ -13104,6 +13296,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setManualSectorMoveConfirm(null)}
+                data-guide-anchor="pcp.manualSetorConfirmCancelar"
                 className="w-full py-3.5 rounded-2xl font-black uppercase tracking-widest text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
               >
                 Cancelar
@@ -13140,6 +13333,7 @@ export default function PCPView({
                 type="button"
                 title="Fechar"
                 onClick={closeSectorChangeConfirm}
+                data-guide-anchor="pcp.mudarSetorConfirmFechar"
                 className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
               >
                 <X size={16} />
@@ -13204,6 +13398,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={closeSectorChangeConfirm}
+                data-guide-anchor="pcp.mudarSetorConfirmFechar"
                 className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 Cancelar
@@ -13212,6 +13407,7 @@ export default function PCPView({
                 type="button"
                 disabled={sectorChangeConfirm.items.some(item => item.chosenSectorId === '__PENDING_SELECTION__')}
                 onClick={handleConfirmSectorChange}
+                data-guide-anchor="pcp.mudarSetorConfirmar"
                 className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all ${sectorChangeConfirm.items.some(item => item.chosenSectorId === '__PENDING_SELECTION__')
                   ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
                   : 'bg-orange-500 hover:bg-orange-600'
@@ -13261,6 +13457,7 @@ export default function PCPView({
                 setMappingDiagnosticCopied(true);
                 setTimeout(() => setMappingDiagnosticCopied(false), 2000);
               }}
+              data-guide-anchor="pcp.mappingWarningCopiar"
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] hover:bg-indigo-700 transition-all active:scale-[0.98]"
             >
               {mappingDiagnosticCopied ? <><CheckCircle2 size={16} /> Copiado!</> : <><ClipboardList size={16} /> Copiar diagnóstico</>}
@@ -13297,6 +13494,7 @@ export default function PCPView({
                   onDeleteProductionOrder?.(orderDeleteConfirm.orderId);
                   setOrderDeleteConfirm(null);
                 }}
+                data-guide-anchor="pcp.orderDeleteConfirmar"
                 className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all active:scale-[0.98] bg-rose-500 text-white shadow-rose-100 dark:shadow-none hover:bg-rose-600"
               >
                 Sim, excluir pedido
@@ -13304,6 +13502,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setOrderDeleteConfirm(null)}
+                data-guide-anchor="pcp.orderDeleteCancelar"
                 className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
               >
                 Agora não
@@ -13341,6 +13540,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={executeRepairSaleLink}
+                data-guide-anchor="pcp.repararVinculoConfirmar"
                 className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all active:scale-[0.98] bg-indigo-600 text-white shadow-indigo-100 dark:shadow-none hover:bg-indigo-700"
               >
                 Sim, reparar vínculo
@@ -13348,6 +13548,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => setRepairLinkConfirm(null)}
+                data-guide-anchor="pcp.repararVinculoCancelar"
                 className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
               >
                 Cancelar
@@ -13457,6 +13658,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={() => setShowViewOSGrid(v => !v)}
+              data-guide-anchor="pcp.osVerGradeToggle"
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
             >
               <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Mostrar Grade por Tamanho</span>
@@ -13529,6 +13731,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={() => { setMapaBadgePickerSearch(''); setMapaBadgePickerOpen(true); }}
+              data-guide-anchor="pcp.badgeMapaEscolher"
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50'}`}
             >
               {colorPickerLot ? (
@@ -13549,7 +13752,7 @@ export default function PCPView({
               <div className={`relative w-full max-w-sm max-h-[80vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 <div className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                   <h3 className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Selecionar Mapa</h3>
-                  <button type="button" onClick={() => setMapaBadgePickerOpen(false)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`} aria-label="Fechar">
+                  <button type="button" onClick={() => setMapaBadgePickerOpen(false)} data-guide-anchor="pcp.badgeMapaFechar" className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`} aria-label="Fechar">
                     <X size={16} />
                   </button>
                 </div>
@@ -13582,6 +13785,7 @@ export default function PCPView({
                         {showDefault && (
                           <button type="button"
                             onClick={() => { setColorPickerLot(null); setMapaBadgePickerOpen(false); }}
+                            data-guide-anchor="pcp.badgeMapaItem"
                             className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${!colorPickerLot ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
                           >
                             <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ backgroundColor: mapBadgeBg, color: mapBadgeText }}>PADRÃO</span>
@@ -13595,6 +13799,7 @@ export default function PCPView({
                           return (
                             <button key={lot.id} type="button"
                               onClick={() => { setColorPickerLot(lot); setMapaBadgePickerOpen(false); }}
+                              data-guide-anchor="pcp.badgeMapaItem"
                               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${isSel ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
                             >
                               <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ backgroundColor: lBg, color: lTxt }}>MAPA {lot.orderNumber}</span>
@@ -13668,6 +13873,7 @@ export default function PCPView({
                         updateMapBadgeColors(c, txt);
                       }
                     }}
+                    data-guide-anchor="pcp.badgeMapaCorSwatch"
                     className={`w-7 h-7 rounded-lg border transition-all ${(colorPickerLot ? ((colorPickerLot as any).metadata?.badgeColor || mapBadgeBg) : mapBadgeBg) === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
                     style={{ backgroundColor: c }}
                     title={c}
@@ -13689,6 +13895,7 @@ export default function PCPView({
                     updateMapBadgeColors(mapBadgeBg, '#ffffff');
                   }
                 }}
+                data-guide-anchor="pcp.mapaCorTextoBranco"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${(colorPickerLot ? ((colorPickerLot as any).metadata?.badgeTextColor || mapBadgeText) : mapBadgeText) === '#ffffff'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13706,6 +13913,7 @@ export default function PCPView({
                     updateMapBadgeColors(mapBadgeBg, '#000000');
                   }
                 }}
+                data-guide-anchor="pcp.mapaCorTextoPreto"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${(colorPickerLot ? ((colorPickerLot as any).metadata?.badgeTextColor || mapBadgeText) : mapBadgeText) === '#000000'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13720,6 +13928,7 @@ export default function PCPView({
           <button
             type="button"
             onClick={() => { setIsColorPickerOpen(false); setColorPickerLot(null); }}
+            data-guide-anchor="pcp.mapaCorConfirmar"
             className="w-full mt-2 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
           >
             Confirmar Cor
@@ -13785,6 +13994,7 @@ export default function PCPView({
                       key={c}
                       type="button"
                       onClick={() => updateProductBadgeColors(c, getContrastingColor(c))}
+                      data-guide-anchor="pcp.badgeProdutoCorSwatch"
                       className={`w-7 h-7 rounded-lg border transition-all ${productBadgeBg === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
                       style={{ backgroundColor: c }}
                       title={c}
@@ -13797,6 +14007,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => updateProductBadgeColors(productBadgeBg, '#ffffff')}
+                data-guide-anchor="pcp.badgeProdutoTextoBranco"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeText === '#ffffff'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13808,6 +14019,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => updateProductBadgeColors(productBadgeBg, '#000000')}
+                data-guide-anchor="pcp.badgeProdutoTextoPreto"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeText === '#000000'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13821,6 +14033,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleProductBadgeBold}
+                data-guide-anchor="pcp.badgeProdutoNegrito"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeBold
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13831,6 +14044,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleProductBadgeItalic}
+                data-guide-anchor="pcp.badgeProdutoItalico"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeItalic
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13891,6 +14105,7 @@ export default function PCPView({
                       key={c}
                       type="button"
                       onClick={() => updateSectorBadgeColor(c)}
+                      data-guide-anchor="pcp.badgeSetorCorSwatch"
                       className={`w-7 h-7 rounded-lg border transition-all ${sectorBadgeColor === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
                       style={{ backgroundColor: c }}
                       title={c}
@@ -13903,6 +14118,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleSectorBadgeBold}
+                data-guide-anchor="pcp.badgeSetorNegrito"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${sectorBadgeBold
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13913,6 +14129,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleSectorBadgeItalic}
+                data-guide-anchor="pcp.badgeSetorItalico"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${sectorBadgeItalic
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13924,6 +14141,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={toggleHideSectorBadge}
+              data-guide-anchor="pcp.badgeSetorOcultarToggle"
               className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${hideSectorBadge
                 ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -13986,6 +14204,7 @@ export default function PCPView({
                       key={c}
                       type="button"
                       onClick={() => updateOSBadgeColors(c, getContrastingColor(c))}
+                      data-guide-anchor="pcp.badgeOSCorSwatch"
                       className={`w-7 h-7 rounded-lg border transition-all ${osBadgeBg === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
                       style={{ backgroundColor: c }}
                       title={c}
@@ -13998,6 +14217,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => updateOSBadgeColors(osBadgeBg, '#ffffff')}
+                data-guide-anchor="pcp.badgeOSTextoBranco"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeText === '#ffffff'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14009,6 +14229,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => updateOSBadgeColors(osBadgeBg, '#000000')}
+                data-guide-anchor="pcp.badgeOSTextoPreto"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeText === '#000000'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14022,6 +14243,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleOSBadgeBold}
+                data-guide-anchor="pcp.badgeOSNegrito"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeBold
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14032,6 +14254,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleOSBadgeItalic}
+                data-guide-anchor="pcp.badgeOSItalico"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeItalic
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14094,6 +14317,7 @@ export default function PCPView({
                       key={c}
                       type="button"
                       onClick={() => updateProviderBadgeColors(c, getContrastingColor(c))}
+                      data-guide-anchor="pcp.badgeFornecedorCorSwatch"
                       className={`w-7 h-7 rounded-lg border transition-all ${providerBadgeBg === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
                       style={{ backgroundColor: c }}
                       title={c}
@@ -14106,6 +14330,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => updateProviderBadgeColors(providerBadgeBg, '#ffffff')}
+                data-guide-anchor="pcp.badgeFornecedorTextoBranco"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeText === '#ffffff'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14117,6 +14342,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => updateProviderBadgeColors(providerBadgeBg, '#000000')}
+                data-guide-anchor="pcp.badgeFornecedorTextoPreto"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeText === '#000000'
                   ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14130,6 +14356,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleProviderBadgeBold}
+                data-guide-anchor="pcp.badgeFornecedorNegrito"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeBold
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14140,6 +14367,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={toggleProviderBadgeItalic}
+                data-guide-anchor="pcp.badgeFornecedorItalico"
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeItalic
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
@@ -14153,6 +14381,7 @@ export default function PCPView({
           <button
             type="button"
             onClick={() => setIsBadgeColorPickerOpen(false)}
+            data-guide-anchor="pcp.badgeColorsConfirmar"
             className="w-full mt-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
           >
             Confirmar Cores

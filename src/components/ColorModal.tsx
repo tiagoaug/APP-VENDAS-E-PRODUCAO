@@ -53,7 +53,7 @@ export default function ColorModal({ isOpen, onClose, onSave, color }: ColorModa
         </label>
 
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
+          <button onClick={onClose} data-guide-anchor="color.cancelar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
           <button
             onClick={() => {
               onSave({ name, hex: '#000000', isComposite });

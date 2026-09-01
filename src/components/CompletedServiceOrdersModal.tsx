@@ -304,7 +304,7 @@ export default function CompletedServiceOrdersModal({
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">{filtered.length} de {completedOS.length} ordens</p>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Fechar" title="Fechar"
+            <button type="button" onClick={onClose} data-guide-anchor="completedOS.fechar" aria-label="Fechar" title="Fechar"
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}>
               <X size={20} strokeWidth={2.5} />
             </button>
@@ -312,6 +312,7 @@ export default function CompletedServiceOrdersModal({
 
           <div className="px-6 py-3 flex gap-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
             <button type="button" onClick={() => setIsFilterOpen(true)}
+              data-guide-anchor="completedOS.filtro"
               className={`relative flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
               <Filter size={13} className="text-violet-500" /> Filtrar
               {activeFilterCount > 0 && (
@@ -325,6 +326,7 @@ export default function CompletedServiceOrdersModal({
                 return next;
               });
             }}
+              data-guide-anchor="completedOS.selecionarToggle"
               className={`relative flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isSelectionMode ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
               <ListChecks size={13} className={isSelectionMode ? 'text-white' : 'text-violet-500'} /> Selecionar
               {selectedIds.size > 0 && (
@@ -332,6 +334,7 @@ export default function CompletedServiceOrdersModal({
               )}
             </button>
             <button type="button" onClick={() => setIsExportOpen(true)}
+              data-guide-anchor="completedOS.exportar"
               className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
               <Download size={13} className="text-emerald-500" /> Exportar
             </button>
@@ -345,10 +348,12 @@ export default function CompletedServiceOrdersModal({
                 </span>
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => setSelectedIds(new Set(filtered.map(os => os.id)))}
+                    data-guide-anchor="completedOS.selecionarTodas"
                     className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600">
                     Selecionar Todas
                   </button>
                   <button type="button" onClick={() => setSelectedIds(new Set())}
+                    data-guide-anchor="completedOS.limparSelecao"
                     className="text-[9px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-600">
                     Limpar
                   </button>
@@ -379,7 +384,7 @@ export default function CompletedServiceOrdersModal({
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0 flex items-center gap-2">
                       {isSelectionMode && (
-                        <button type="button" onClick={() => toggleSelect(os.id)} aria-label="Selecionar OS" title="Selecionar"
+                        <button type="button" onClick={() => toggleSelect(os.id)} data-guide-anchor="completedOS.itemSelecionar" aria-label="Selecionar OS" title="Selecionar"
                           className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-all ${isSelected ? 'bg-violet-600 border-violet-600 text-white' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
                           {isSelected && <Check size={12} strokeWidth={3.5} />}
                         </button>
@@ -428,23 +433,28 @@ export default function CompletedServiceOrdersModal({
                   <div className="flex flex-col gap-1.5">
                     <div className="grid grid-cols-2 gap-1.5">
                       <button type="button" title="Visualizar" onClick={() => onViewOS(os)}
+                        data-guide-anchor="completedOS.visualizar"
                         className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                         <Eye size={12} className="text-indigo-500" /> Visualizar
                       </button>
                       <button type="button" title="Excluir" onClick={() => onDeleteOS(os)}
+                        data-guide-anchor="completedOS.excluir"
                         className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                         <Trash2 size={12} className="text-rose-500" /> Excluir
                       </button>
                     </div>
                     <button type="button" title="Compartilhar" onClick={() => onShareOS(os)}
+                      data-guide-anchor="completedOS.compartilhar"
                       className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       <Share2 size={12} className="text-orange-500" /> Compartilhar
                     </button>
                     <button type="button" title="Imprimir Etiqueta / OS" onClick={() => onPrintOS(os)}
+                      data-guide-anchor="completedOS.imprimir"
                       className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       <Printer size={12} className="text-emerald-500" /> Imprimir Etiqueta / OS
                     </button>
                     <button type="button" onClick={() => onOpenReminders(os)}
+                      data-guide-anchor="completedOS.lembretes"
                       className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       <Bell size={12} className="text-amber-500" /> Lembretes
                       {(os.notes || os.reminderTitle || os.reminderAt) && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
@@ -482,6 +492,7 @@ export default function CompletedServiceOrdersModal({
                 <span className="text-[11px] font-black uppercase tracking-widest">Filtrar OS Concluídas</span>
               </div>
               <button type="button" title="Fechar" onClick={() => setIsFilterOpen(false)}
+                data-guide-anchor="completedOS.filtroFechar"
                 className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
                 <X size={16} />
               </button>
@@ -522,6 +533,7 @@ export default function CompletedServiceOrdersModal({
                   {options.map(opt => (
                     <button type="button" key={opt}
                       onClick={() => setFilters(f => ({ ...f, [key]: f[key] === opt ? '' : opt }))}
+                      data-guide-anchor="completedOS.filtroOpcao"
                       className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${filters[key] === opt ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
                     >
                       {opt}
@@ -534,11 +546,13 @@ export default function CompletedServiceOrdersModal({
             <div className="flex items-center gap-2 pt-1">
               {activeFilterCount > 0 && (
                 <button type="button" onClick={() => setFilters(emptyFilters)}
+                  data-guide-anchor="completedOS.filtroLimpar"
                   className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-500 border-slate-300'}`}>
                   Limpar
                 </button>
               )}
               <button type="button" onClick={() => setIsFilterOpen(false)}
+                data-guide-anchor="completedOS.filtroAplicar"
                 className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-violet-600 hover:bg-violet-700">
                 Aplicar
               </button>
@@ -564,6 +578,7 @@ export default function CompletedServiceOrdersModal({
                 </div>
               </div>
               <button type="button" title="Fechar" onClick={() => { setIsExportOpen(false); setPreviewUrls([]); }}
+                data-guide-anchor="completedOS.exportarFechar"
                 className={`p-1.5 rounded-lg shrink-0 ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
                 <X size={16} />
               </button>
@@ -584,7 +599,7 @@ export default function CompletedServiceOrdersModal({
               <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-3 bg-white dark:bg-slate-800">
                 <div className="flex items-center justify-between mb-3 px-1">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Pré-visualização</span>
-                  <button type="button" onClick={() => setPreviewUrls([])} className="text-[9px] font-black uppercase tracking-widest text-white bg-rose-500 hover:bg-rose-600 active:scale-95 transition-all px-3 py-1.5 rounded-full shadow-sm">Fechar Preview</button>
+                  <button type="button" onClick={() => setPreviewUrls([])} data-guide-anchor="completedOS.previewFechar" className="text-[9px] font-black uppercase tracking-widest text-white bg-rose-500 hover:bg-rose-600 active:scale-95 transition-all px-3 py-1.5 rounded-full shadow-sm">Fechar Preview</button>
                 </div>
                 <div className="w-full bg-slate-100 dark:bg-slate-900 rounded-xl overflow-hidden shadow-inner max-h-[50vh] overflow-y-auto">
                   {exportFormat === 'pdf' ? (
@@ -601,6 +616,7 @@ export default function CompletedServiceOrdersModal({
               <div className="flex gap-1.5">
                 {(['pdf', 'jpg'] as const).map(fmt => (
                   <button type="button" key={fmt} onClick={() => { setExportFormat(fmt); setPreviewUrls([]); }}
+                    data-guide-anchor="completedOS.formatoToggle"
                     className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportFormat === fmt ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                     {fmt.toUpperCase()}
                   </button>
@@ -612,10 +628,12 @@ export default function CompletedServiceOrdersModal({
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Modo</p>
               <div className="flex gap-1.5">
                 <button type="button" onClick={() => { setExportMode('none'); setPreviewUrls([]); }}
+                  data-guide-anchor="completedOS.modoToggle"
                   className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportMode === 'none' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                   Lista
                 </button>
                 <button type="button" onClick={() => { setExportMode(m => m === 'none' ? 'month' : m); setPreviewUrls([]); }}
+                  data-guide-anchor="completedOS.modoToggle"
                   className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportMode !== 'none' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                   Agrupado por Período
                 </button>
@@ -628,6 +646,7 @@ export default function CompletedServiceOrdersModal({
                 <div className="flex gap-1.5">
                   {([['day', 'Dia'], ['week', 'Semana'], ['month', 'Mês'], ['custom', 'Entre Datas']] as const).map(([val, label]) => (
                     <button type="button" key={val} onClick={() => { setExportMode(val); setPreviewUrls([]); }}
+                      data-guide-anchor="completedOS.agruparPor"
                       className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportMode === val ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                       {label}
                     </button>
@@ -657,10 +676,12 @@ export default function CompletedServiceOrdersModal({
               </div>
               <div className={`p-3 flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                 <button type="button" onClick={handlePreview} disabled={exportableOS.length === 0 || isPreviewLoading}
+                  data-guide-anchor="completedOS.visualizarArquivo"
                   className="w-full py-3 text-white rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
                   {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
                 </button>
                 <button type="button" onClick={handleExport} disabled={exportableOS.length === 0}
+                  data-guide-anchor="completedOS.gerarArquivo"
                   className={`w-full py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${exportFormat === 'pdf' ? 'bg-rose-500 shadow-rose-500/20' : 'bg-emerald-600 shadow-emerald-500/20'} text-white`}>
                   <Download size={14} /> Gerar {exportFormat.toUpperCase()} ({exportableOS.length} OS)
                 </button>

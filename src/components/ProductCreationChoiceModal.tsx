@@ -22,6 +22,7 @@ export default function ProductCreationChoiceModal({ isOpen, onClose, onChooseGu
         <button
           type="button"
           onClick={onChooseGuided}
+          data-guide-anchor="productCreationChoice.guiado"
           className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-[0.98] ${
             isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50 hover:border-indigo-600' : 'bg-indigo-50/50 border-indigo-100 hover:border-indigo-400'
           }`}
@@ -39,6 +40,7 @@ export default function ProductCreationChoiceModal({ isOpen, onClose, onChooseGu
         <button
           type="button"
           onClick={onChooseDirect}
+          data-guide-anchor="productCreationChoice.direto"
           className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-[0.98] ${
             isDarkMode ? 'bg-slate-800/50 border-slate-800 hover:border-slate-700' : 'bg-slate-50 border-slate-100 hover:border-slate-300'
           }`}
@@ -55,6 +57,7 @@ export default function ProductCreationChoiceModal({ isOpen, onClose, onChooseGu
 
         <button
           onClick={onClose}
+          data-guide-anchor="productCreationChoice.cancelar"
           className={`py-3 rounded-xl font-bold text-sm ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
         >
           Cancelar
