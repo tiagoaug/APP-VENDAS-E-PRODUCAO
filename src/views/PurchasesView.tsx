@@ -32,6 +32,7 @@ import PartialPaymentModal from "../components/PartialPaymentModal";
 import { exportPurchase } from "../utils/purchaseExport";
 import { toast } from '../utils/toast';
 import { firebaseService } from '../services/firebaseService';
+import { financeService } from '../services/financeService';
 
 // Persiste filtros/visualização de Compras entre navegações e recarregamentos —
 // sem isso, sair e voltar para a tela resetava as escolhas (Tipo, Período, Cards,
@@ -58,6 +59,10 @@ function usePersistedState<T>(key: string, defaultValue: T): [T, (v: T | ((prev:
 
 interface PurchasesViewProps {
   purchases: Purchase[];
+  // Usado só para reajustar a Transaction vinculada quando itens são somados a uma compra
+  // já salva (ver handleConfirmAddEntries) — sem isso, "Adicionar Lançamento" atualizava
+  // o total da compra mas o valor já lançado em Despesas ficava parado no valor antigo.
+  transactions: Transaction[];
   suppliers: Person[];
   // Lista COMPLETA de pessoas (não só `suppliers`, que é filtrada a isSupplier) — itens
   // "Fornecedor/Terceirizado" da Compra Geral podem apontar pra uma pessoa marcada só como
@@ -87,6 +92,7 @@ interface PurchasesViewProps {
 
 export default function PurchasesView({
   purchases,
+  transactions,
   suppliers,
   people,
   products,
@@ -220,7 +226,7 @@ export default function PurchasesView({
     }
   };
 
-  const handleConfirmAddEntries = (newItems: GeneralPurchaseItem[]) => {
+  const handleConfirmAddEntries = async (newItems: GeneralPurchaseItem[]) => {
     if (!addEntryPurchase) return;
     const addedTotal = newItems.reduce((acc, item) => acc + (item.value || 0) * (item.quantity || 1), 0);
     onUpdate({
@@ -228,6 +234,21 @@ export default function PurchasesView({
       generalItems: [...(addEntryPurchase.generalItems || []), ...newItems],
       total: addEntryPurchase.total + addedTotal,
     });
+
+    // A compra já pode ter gerado uma Transaction de despesa (compra à vista, ver App.tsx
+    // onSave do PurchaseFormView) — sem reajustar o valor dela aqui, o total da compra sobe
+    // mas Despesas do Período continua contando só o valor antigo (pré-lançamento extra).
+    const linkedTx = transactions.find(t => t.relatedId === addEntryPurchase.id && t.type === TransactionType.EXPENSE);
+    if (linkedTx) {
+      try {
+        await financeService.updateTransaction(linkedTx.id, { amount: linkedTx.amount + addedTotal });
+      } catch (err: any) {
+        toast.show('Lançamento adicionado, mas houve erro ao atualizar a despesa vinculada: ' + (err.message || err));
+        setAddEntryPurchase(null);
+        return;
+      }
+    }
+
     toast.show('Lançamento adicionado à compra!');
     setAddEntryPurchase(null);
   };
@@ -337,6 +358,41 @@ export default function PurchasesView({
       return acc + Math.max(0, p.total - totalPaid);
     }, 0);
   }, [filteredPurchases]);
+
+  // Compras Gerais à vista cuja Transaction vinculada ficou com valor desatualizado —
+  // acontecia quando "Adicionar Lançamento" (handleConfirmAddEntries) somava itens ao total
+  // da compra sem reajustar a despesa já lançada (bug corrigido, mas não retroativo: compras
+  // editadas ANTES da correção continuam com a Transaction presa no valor antigo, fazendo
+  // Despesas do Período/Análise de Lucro nunca refletirem os itens somados depois).
+  const mismatchedCashPurchases = useMemo(() => {
+    const result: { purchase: Purchase; transaction: Transaction }[] = [];
+    for (const p of effectivePurchases) {
+      if (p.type !== PurchaseType.GENERAL || p.generateTransaction === false || p.paymentTerm !== PaymentTerm.CASH) continue;
+      const tx = transactions.find(t => t.relatedId === p.id && t.type === TransactionType.EXPENSE);
+      if (tx && Math.abs(tx.amount - p.total) > 0.01) {
+        result.push({ purchase: p, transaction: tx });
+      }
+    }
+    return result;
+  }, [effectivePurchases, transactions]);
+
+  const [showReconcileConfirm, setShowReconcileConfirm] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+
+  const handleReconcileMismatches = async () => {
+    setIsReconciling(true);
+    try {
+      for (const { purchase, transaction } of mismatchedCashPurchases) {
+        await financeService.updateTransaction(transaction.id, { amount: purchase.total });
+      }
+      toast.show(`${mismatchedCashPurchases.length} despesa(s) corrigida(s)!`);
+      setShowReconcileConfirm(false);
+    } catch (err: any) {
+      toast.show('Erro ao corrigir: ' + (err.message || err));
+    } finally {
+      setIsReconciling(false);
+    }
+  };
 
   // Visão Geral de Pagamentos Recorrentes — agrupa as ocorrências de cada série (ver
   // Purchase.recurrenceGroupId, gerado no momento de salvar em PurchaseFormView) e resume
@@ -494,6 +550,17 @@ export default function PurchasesView({
         isDanger={true}
       />
 
+      <ConfirmDialog
+        isOpen={showReconcileConfirm}
+        title="Corrigir Despesas Desatualizadas?"
+        message={`${mismatchedCashPurchases.length} compra(s) geral(is) à vista tiveram itens somados depois de já lançar a despesa, e o valor lançado ficou desatualizado. Vamos ajustar cada despesa pro total atual da compra (e corrigir o saldo da conta correspondente).`}
+        confirmLabel={isReconciling ? 'Corrigindo...' : 'Sim, Corrigir'}
+        cancelLabel="Agora não"
+        onConfirm={() => { if (!isReconciling) handleReconcileMismatches(); }}
+        onCancel={() => setShowReconcileConfirm(false)}
+        isDanger={false}
+      />
+
       {paymentPurchase && (
         <PartialPaymentModal
           isOpen={!!paymentPurchase}
@@ -602,6 +669,18 @@ export default function PurchasesView({
                 R$ {totalPendingTermPurchases.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
+          )}
+          {mismatchedCashPurchases.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowReconcileConfirm(true)}
+              data-guide-anchor="purchases.corrigirDespesasDesatualizadas"
+              className="flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg w-fit bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 active:scale-95 transition-all"
+            >
+              <span className="text-[8px] font-black uppercase tracking-widest">
+                {mismatchedCashPurchases.length} despesa(s) desatualizada(s) · toque para corrigir
+              </span>
+            </button>
           )}
         </div>
         {canLancarPedidos && (

@@ -5281,6 +5281,7 @@ export default function App() {
           <PurchasesView
             activeCollaborator={activeCollaborator}
             purchases={purchases}
+            transactions={transactions}
             suppliers={suppliers}
             people={people}
             products={products}
