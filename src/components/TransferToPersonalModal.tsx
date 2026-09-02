@@ -9,17 +9,26 @@ interface TransferToPersonalModalProps {
   onConfirm: (fromAccountId: string, amount: number) => Promise<void>;
   businessAccounts: Account[];
   isDarkMode: boolean;
+  // Título/subtítulo e valor inicial — opcionais, pra reaproveitar este modal em outros fluxos
+  // de transferência pra Pessoal além do "Receber da Empresa" original (ex.: pagar Pró-labore
+  // de um Gerente direto na Conta Pessoal, ver CommissionToSellersCard.tsx).
+  title?: string;
+  subtitle?: string;
+  initialAmount?: number;
 }
 
-export default function TransferToPersonalModal({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  businessAccounts, 
-  isDarkMode 
+export default function TransferToPersonalModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  businessAccounts,
+  isDarkMode,
+  title = 'Receber da Empresa',
+  subtitle = 'Transferência para Pessoal',
+  initialAmount = 0,
 }: TransferToPersonalModalProps) {
   const [selectedAccountId, setSelectedAccountId] = useState(businessAccounts[0]?.id || '');
-  const [amount, setAmount] = useState<number | string>(0);
+  const [amount, setAmount] = useState<number | string>(initialAmount);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;

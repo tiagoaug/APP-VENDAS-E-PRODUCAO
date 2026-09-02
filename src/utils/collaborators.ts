@@ -10,8 +10,8 @@ export interface SectorTask { id: string; label: string; }
 // 'none'/'view'/'edit' — ver taskPermissions em Collaborator e getTaskLevel abaixo). O `id` não
 // pode mudar depois de publicado (é a chave salva em taskPermissions dos colaboradores já
 // cadastrados); só o `label` é livre pra editar.
-// COLLABORATORS_CONFIG propositalmente não aparece em nenhum setor — só quem é
-// isUnrestricted (ou ninguém logado em nenhum colaborador ainda) alcança aquela tela.
+// COLLABORATORS_CONFIG e RH_MENU propositalmente não aparecem em nenhum setor — só quem é
+// isUnrestricted (ou ninguém logado em nenhum colaborador ainda) alcança essas telas.
 export const SECTORS: { id: SectorId; label: string; icon: string; tasks: SectorTask[]; views: ViewType[] }[] = [
   {
     id: 'vendas', label: 'Vendas', icon: 'ShoppingBag',
@@ -111,6 +111,15 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: Sector
     views: [ViewType.PERSONAL_FINANCIAL],
   },
   {
+    id: 'rh', label: 'RH', icon: 'UserCog',
+    // Só o Simulador de Rescisão fica aqui — Colaboradores/RH_MENU continuam de propósito fora
+    // de qualquer setor (só isUnrestricted alcança), ver comentário acima de SECTORS. Isso deixa
+    // o simulador utilizável por um responsável específico (RH, contabilidade) sem dar acesso
+    // ao cadastro de colaboradores, PINs e permissões.
+    tasks: [{ id: 'simulador_rescisao', label: 'Simulador de Rescisão' }],
+    views: [ViewType.LABOR_TERMINATION_SIMULATOR, ViewType.LABOR_SIM_PARAMS],
+  },
+  {
     id: 'sistema', label: 'Sistema e Backup', icon: 'Database',
     tasks: [
       { id: 'backup', label: 'Backup' },
@@ -134,6 +143,36 @@ export function getTaskLevel(collab: Collaborator | null, sectorId: SectorId, ta
 // Pode executar a ação de verdade (criar/editar) — usado pra esconder o BOTÃO da função.
 export function canEditTask(collab: Collaborator | null, sectorId: SectorId, taskId: string): boolean {
   return getTaskLevel(collab, sectorId, taskId) === 'edit';
+}
+
+// Total "Salário + Comissão" do período (aba Financeira de Colaboradores) — mesma lógica de
+// comissão do CommissionToSellersCard.tsx (soma Sale.commissionAmount já "assado" na venda,
+// separando recebida/pendente conforme Sale.paymentStatus), só que pra UM colaborador só e
+// somando o salário base dele por cima. `includePending` espelha o mesmo toggle "incluir
+// pendente" do card de Comissão, pra não duplicar duas contas divergentes no app.
+export function computeCollaboratorPayroll(
+  collab: Collaborator,
+  sales: { sellerId?: string; status: string; isAccounting?: boolean; date: number; paymentStatus: string; commissionAmount?: number }[],
+  start: number,
+  end: number,
+  includePending: boolean
+): { salary: number; proLabore: number; receivedCommission: number; pendingCommission: number; total: number } {
+  const isDirector = collab.cargo === 'diretor';
+  // Diretor não tem salário base — mesmo que o campo tenha algum valor salvo (ex.: mudou de
+  // cargo depois), não entra na conta; só o Pró-labore.
+  const salary = isDirector ? 0 : (collab.salary || 0);
+  const proLabore = isDirector ? (collab.proLaboreValue || 0) : 0;
+  if (!collab.isSeller) return { salary, proLabore, receivedCommission: 0, pendingCommission: 0, total: salary + proLabore };
+
+  const collabSales = sales.filter(s =>
+    s.sellerId === collab.id &&
+    s.status !== 'QUOTE' && s.status !== 'CANCELLED' && s.isAccounting !== false &&
+    s.date >= start && s.date <= end
+  );
+  const receivedCommission = collabSales.filter(s => s.paymentStatus === 'PAID').reduce((acc, s) => acc + (s.commissionAmount || 0), 0);
+  const pendingCommission = collabSales.filter(s => s.paymentStatus !== 'PAID').reduce((acc, s) => acc + (s.commissionAmount || 0), 0);
+  const commission = receivedCommission + (includePending ? pendingCommission : 0);
+  return { salary, proLabore, receivedCommission, pendingCommission, total: salary + proLabore + commission };
 }
 
 // Pode pelo menos ver a função (inclui quem também pode editar) — usado pra esconder a função
@@ -193,6 +232,9 @@ export const VIEW_TASK_MAP: Partial<Record<ViewType, [SectorId, string]>> = {
   [ViewType.REPORTS]: ['financeiro', 'relatorios'],
   [ViewType.REPORT_DETAILED]: ['financeiro', 'relatorios'],
   [ViewType.PAYMENT_METHODS]: ['financeiro', 'meios_recebimento'],
+
+  [ViewType.LABOR_TERMINATION_SIMULATOR]: ['rh', 'simulador_rescisao'],
+  [ViewType.LABOR_SIM_PARAMS]: ['rh', 'simulador_rescisao'],
 
   [ViewType.BACKUP]: ['sistema', 'backup'],
   [ViewType.MODULES_CONFIG]: ['sistema', 'modulos'],

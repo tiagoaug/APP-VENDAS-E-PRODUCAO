@@ -639,7 +639,7 @@ export default function TransactionModal({
           <button
             type="button"
             onClick={handleSave}
-            className="w-full bg-gradient-to-r from-indigo-500 via-indigo-650 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800 text-white py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/30 transition-all active:scale-[0.98] outline-none border-none"
+            className="w-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800 text-white py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/30 transition-all active:scale-[0.98] outline-none border-none"
           >
             Confirmar Lançamento
           </button>

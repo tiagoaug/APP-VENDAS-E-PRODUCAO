@@ -71,6 +71,11 @@ export const NAV_TAB_COLORS: Record<string, string> = {
   bling: '#15803d',       // Bling — verde escuro
   financial: '#0891b2',   // Finan. — cyan
   personal: '#db2777',    // Pessoal — pink
+  rh: '#c026d3',          // RH — fuchsia forte
+  pcp: '#4338ca',         // PCP — indigo escuro
+  stock: '#b45309',       // Estoque — amber escuro
+  people: '#0369a1',      // Pessoas — azul
+  reports: '#65a30d',     // Relatórios — lima
   settings: '#475569',    // Mais — slate
 };
 

@@ -25,19 +25,29 @@ import {
   LayoutDashboard,
   Percent,
   Camera,
+  IdCard,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  DollarSign,
+  User,
+  HandCoins,
 } from 'lucide-react';
-import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel } from '../types';
-import { SECTORS, isDashboardCardAllowed, getTaskLevel } from '../utils/collaborators';
+import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel, Sale, RhGlobalConfig, CollaboratorLoan } from '../types';
+import { SECTORS, isDashboardCardAllowed, getTaskLevel, computeCollaboratorPayroll } from '../utils/collaborators';
 import { NAV_MONO_PALETTE } from '../utils/themes';
 import { generateId } from '../utils/id';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { toast } from '../utils/toast';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 const TASK_LEVEL_LABELS: Record<TaskPermissionLevel, string> = { none: 'Sem acesso', view: 'Visualizar', edit: 'Editar' };
 
 const SECTOR_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
-  ShoppingBag, ShoppingCart, Package, Boxes, Factory, PackageOpen, Wallet, Users, Landmark, Database, Building2,
+  ShoppingBag, ShoppingCart, Package, Boxes, Factory, PackageOpen, Wallet, Users, Landmark, Database, Building2, UserCog,
 };
 
 interface CollaboratorsConfigViewProps {
@@ -50,6 +60,18 @@ interface CollaboratorsConfigViewProps {
   // filtrado pelos setores dele (isDashboardCardAllowed), então essa tela só deixa REFINAR
   // pra menos dentro do que os setores já liberam, nunca liberar um card fora deles.
   dashboardCards: DashboardCardConfig[];
+  // Vendas — só pra calcular "Salário + Comissão" na aba Financeira, exibido como referência
+  // (ver computeCollaboratorPayroll). O pagamento de verdade nasce na Folha de Pagamento
+  // (CommissionToSellersCard.tsx), não aqui — sem sales, a aba ainda funciona, só não mostra
+  // comissão.
+  sales?: Sale[];
+  // Dia de pagamento/adiantamento de referência da empresa toda (RH → Configurações Globais) —
+  // usado só como sugestão de preenchimento aqui; o vencimento salvo no colaborador continua
+  // independente e não muda se a config global mudar depois.
+  rhConfig?: RhGlobalConfig;
+  // Empréstimos ativos (RH → Empréstimos) — só pra mostrar o Restante em aberto no card de cada
+  // colaborador; gerenciar (criar/pagar) fica todo na tela de Empréstimos, não aqui.
+  loans?: CollaboratorLoan[];
 }
 
 function emptyDraft(): Collaborator {
@@ -64,18 +86,22 @@ function emptyDraft(): Collaborator {
   };
 }
 
-export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode, dashboardCards }: CollaboratorsConfigViewProps) {
+type FormTab = 'personal' | 'financial' | 'access';
+
+export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode, dashboardCards, sales = [], rhConfig, loans = [] }: CollaboratorsConfigViewProps) {
   const [draft, setDraft] = useState<Collaborator | null>(null);
+  const [formTab, setFormTab] = useState<FormTab>('personal');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
   const [revealedPinId, setRevealedPinId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [sectorPopup, setSectorPopup] = useState<SectorId | null>(null);
+  const [includePendingCommission, setIncludePendingCommission] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState<{ url: string; name: string } | null>(null);
 
-  const startNew = () => { setDraft(emptyDraft()); setShowPin(false); };
-  const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); };
+  const startNew = () => { setDraft(emptyDraft()); setShowPin(false); setFormTab('personal'); };
+  const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); setFormTab('personal'); };
 
   const isExistingDraft = !!draft && collaborators.some(c => c.id === draft.id);
   // Colaborador novo exige PIN de 6 dígitos. Editando um já existente, só exige que
@@ -123,6 +149,18 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
     setDraft({ ...draft, dashboardConfig: next });
   };
 
+  // "Salário + Comissão" do mês corrente — mesma base de cálculo do card Comissão a
+  // Vendedores (ver computeCollaboratorPayroll em utils/collaborators.ts), só que somando o
+  // salário base por cima. Sempre o mês atual (a folha de pagamento é mensal por natureza,
+  // diferente do filtro de período livre que o card de Comissão oferece).
+  const payroll = draft ? (() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+    return computeCollaboratorPayroll(draft, sales as any, start, end, includePendingCommission);
+  })() : null;
+  const payrollPeriodLabel = format(new Date(), 'MMMM/yyyy', { locale: ptBR });
+
   // onSave não era esperado aqui (await ausente) — o modal fechava (setDraft(null))
   // antes da escrita no Firestore terminar, então qualquer erro de gravação (rede,
   // etc.) ficava engolido em silêncio e a edição (ex.: setor marcado/desmarcado)
@@ -165,121 +203,177 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           <div className="p-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
             <UserCog size={24} />
           </div>
-          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Colaboradores</h2>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Equipe</h2>
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed italic">
-          Cadastre quem usa o sistema e escolha quais setores cada um pode acessar. Sem nenhum
-          colaborador cadastrado, o acesso continua livre para todos.
+          Cadastre quem usa o sistema — Diretor, Gerente ou Colaborador — e escolha quais setores
+          cada um pode acessar. Sem ninguém cadastrado, o acesso continua livre para todos.
         </p>
       </header>
 
       {collaborators.length === 0 && !draft && (
         <div className={`p-8 rounded-[3rem] border-2 border-dashed text-center flex flex-col items-center gap-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           <p className="text-xs text-slate-400 font-medium italic max-w-md mx-auto leading-relaxed">
-            Nenhum colaborador cadastrado ainda — atualmente, todos que acessam o app têm acesso completo a todas as telas.
+            Nenhum membro da equipe cadastrado ainda — atualmente, todos que acessam o app têm acesso completo a todas as telas.
           </p>
           <button
             type="button"
-            onClick={() => setDraft({ ...emptyDraft(), name: 'Gerente', isUnrestricted: true })}
+            onClick={() => setDraft({ ...emptyDraft(), name: 'Diretor', isUnrestricted: true, cargo: 'diretor' })}
             className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-95"
           >
-            Criar primeiro colaborador
+            Criar primeiro membro da equipe
           </button>
         </div>
       )}
 
-      {collaborators.length > 0 && !draft && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {collaborators.map(collab => {
-            const isRevealed = revealedPinId === collab.id;
-            return (
-              <div
-                key={collab.id}
-                className={`flex flex-col gap-3 p-5 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {collab.photoUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => setExpandedPhoto({ url: collab.photoUrl!, name: collab.name })}
-                        title="Ampliar foto"
-                        aria-label={`Ampliar foto de ${collab.name}`}
-                        className="w-10 h-10 rounded-2xl shrink-0 overflow-hidden"
-                      >
-                        <img src={collab.photoUrl} alt={collab.name} className="w-full h-full object-cover" />
-                      </button>
-                    ) : (
-                      <div className="w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center text-white font-black text-sm" style={{ backgroundColor: collab.colorHex }}>
-                        {collab.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button type="button" onClick={() => startEdit(collab)} title="Editar" aria-label={`Editar ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
-                      <Pencil size={15} />
+      {collaborators.length > 0 && !draft && (() => {
+        const directors = collaborators.filter(c => c.cargo === 'diretor');
+        const managers = collaborators.filter(c => c.cargo === 'gerente');
+        const regulars = collaborators.filter(c => c.cargo !== 'diretor' && c.cargo !== 'gerente');
+
+        const renderCard = (collab: Collaborator) => {
+          const isRevealed = revealedPinId === collab.id;
+          return (
+            <div
+              key={collab.id}
+              className={`flex flex-col gap-3 p-5 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {collab.photoUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPhoto({ url: collab.photoUrl!, name: collab.name })}
+                      title="Ampliar foto"
+                      aria-label={`Ampliar foto de ${collab.name}`}
+                      className="w-10 h-10 rounded-2xl shrink-0 overflow-hidden"
+                    >
+                      <img src={collab.photoUrl} alt={collab.name} className="w-full h-full object-cover" />
                     </button>
-                    <button type="button" onClick={() => setDeleteTarget(collab.id)} title="Excluir" aria-label={`Excluir ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center text-white font-black text-sm" style={{ backgroundColor: collab.colorHex }}>
+                      {collab.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
                 </div>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={() => startEdit(collab)} title="Editar" aria-label={`Editar ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+                    <Pencil size={15} />
+                  </button>
+                  <button type="button" onClick={() => setDeleteTarget(collab.id)} title="Excluir" aria-label={`Excluir ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {collab.cargo === 'diretor' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 text-[9px] font-black uppercase tracking-wider">
+                    <UserCog size={12} /> Diretor · Pró-labore R$ {(collab.proLaboreValue ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                ) : collab.cargo === 'gerente' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[9px] font-black uppercase tracking-wider">
+                    <UserCog size={12} /> Gerente
+                  </span>
+                ) : collab.roleTitle ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase tracking-wider">
+                    <User size={12} /> {collab.roleTitle}
+                  </span>
+                ) : null}
                 {collab.isSeller && (
-                  <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider">
                     <Percent size={12} /> Vendedor · {collab.commissionPercent ?? 0}% comissão
                   </span>
                 )}
-                {collab.isUnrestricted ? (
-                  <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-black uppercase tracking-wider">
-                    <ShieldCheck size={12} /> Acesso Total
-                  </span>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {collab.sectors.length === 0 && (
-                      <span className="text-[10px] text-slate-400 italic">Nenhum setor liberado</span>
-                    )}
-                    {collab.sectors.map(sId => (
-                      <span key={sId} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        {SECTORS.find(s => s.id === sId)?.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {collab.locked && (
-                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/20">
-                    <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-rose-500">
-                      <Lock size={13} /> Bloqueado (5 tentativas)
+                {(() => {
+                  const loan = loans.find(l => l.collaboratorId === collab.id && l.totalValue - l.payments.reduce((acc, p) => acc + p.amount, 0) > 0.01);
+                  if (!loan) return null;
+                  const remaining = loan.totalValue - loan.payments.reduce((acc, p) => acc + p.amount, 0);
+                  return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider">
+                      <HandCoins size={12} /> Restante em aberto: R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onSave({ ...collab, locked: false, failedAttempts: 0 })}
-                      className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest transition-colors"
-                    >
-                      Desbloquear
-                    </button>
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setRevealedPinId(isRevealed ? null : collab.id)}
-                  className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
-                >
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">PIN</span>
-                  <span className="flex items-center gap-2">
-                    <span className={`text-sm font-black tracking-[0.3em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                      {isRevealed ? collab.pin : '••••••'}
-                    </span>
-                    {isRevealed ? <EyeOff size={14} className="text-slate-400" /> : <Eye size={14} className="text-slate-400" />}
-                  </span>
-                </button>
+                  );
+                })()}
               </div>
-            );
-          })}
-        </div>
-      )}
+              {collab.isUnrestricted ? (
+                <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-black uppercase tracking-wider">
+                  <ShieldCheck size={12} /> Acesso Total
+                </span>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {collab.sectors.length === 0 && (
+                    <span className="text-[10px] text-slate-400 italic">Nenhum setor liberado</span>
+                  )}
+                  {collab.sectors.map(sId => (
+                    <span key={sId} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      {SECTORS.find(s => s.id === sId)?.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {collab.locked && (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/20">
+                  <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-rose-500">
+                    <Lock size={13} /> Bloqueado (5 tentativas)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onSave({ ...collab, locked: false, failedAttempts: 0 })}
+                    className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest transition-colors"
+                  >
+                    Desbloquear
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setRevealedPinId(isRevealed ? null : collab.id)}
+                className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+              >
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">PIN</span>
+                <span className="flex items-center gap-2">
+                  <span className={`text-sm font-black tracking-[0.3em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {isRevealed ? collab.pin : '••••••'}
+                  </span>
+                  {isRevealed ? <EyeOff size={14} className="text-slate-400" /> : <Eye size={14} className="text-slate-400" />}
+                </span>
+              </button>
+            </div>
+          );
+        };
+
+        return (
+          <div className="flex flex-col gap-6">
+            {directors.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <h3 className="px-1 text-[11px] font-black uppercase tracking-[0.2em] text-violet-500">Diretoria</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {directors.map(renderCard)}
+                </div>
+              </div>
+            )}
+            {managers.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <h3 className="px-1 text-[11px] font-black uppercase tracking-[0.2em] text-blue-500">Gerentes</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {managers.map(renderCard)}
+                </div>
+              </div>
+            )}
+            {regulars.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {(directors.length > 0 || managers.length > 0) && <h3 className="px-1 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Colaboradores</h3>}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {regulars.map(renderCard)}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {!draft && (
         <button
@@ -304,6 +398,35 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             </button>
           </div>
 
+          {/* Abas — separa Cadastro Pessoal, Financeira (RH) e Acessos do Programa por Telas,
+              que antes era tudo um formulário só, cada vez mais longo. */}
+          <div className={`flex p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+            {([
+              { id: 'personal' as FormTab, label: 'Pessoal', icon: User },
+              { id: 'financial' as FormTab, label: 'Financeira', icon: DollarSign },
+              { id: 'access' as FormTab, label: 'Acessos', icon: ShieldCheck },
+            ]).map(tab => {
+              const TabIcon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFormTab(tab.id)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    formTab === tab.id
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`}
+                >
+                  <TabIcon size={13} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {formTab === 'personal' && (
+          <>
           <div className="flex justify-center">
             <label className="relative cursor-pointer group" title="Toque para adicionar foto do colaborador">
               <div className={`w-24 h-24 rounded-3xl overflow-hidden border-2 flex items-center justify-center transition-all ${draft.photoUrl ? 'border-indigo-300 dark:border-indigo-600' : 'border-dashed border-slate-200 dark:border-slate-700'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
@@ -368,6 +491,262 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><IdCard size={11} /> RG</label>
+              <input
+                type="text"
+                value={draft.rg || ''}
+                onChange={e => setDraft({ ...draft, rg: e.target.value })}
+                placeholder="00.000.000-0"
+                className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><IdCard size={11} /> CPF</label>
+              <input
+                type="text"
+                value={draft.cpf || ''}
+                onChange={e => setDraft({ ...draft, cpf: e.target.value })}
+                placeholder="000.000.000-00"
+                className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><Mail size={11} /> E-mail</label>
+            <input
+              type="email"
+              value={draft.email || ''}
+              onChange={e => setDraft({ ...draft, email: e.target.value })}
+              placeholder="nome@exemplo.com"
+              className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><Phone size={11} /> Telefone</label>
+            <input
+              type="tel"
+              value={draft.phone || ''}
+              onChange={e => setDraft({ ...draft, phone: e.target.value })}
+              placeholder="(00) 00000-0000"
+              className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><MapPin size={11} /> Endereço</label>
+            <input
+              type="text"
+              value={draft.address || ''}
+              onChange={e => setDraft({ ...draft, address: e.target.value })}
+              placeholder="Rua, número, bairro, cidade"
+              className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+            />
+          </div>
+          </>
+          )}
+
+          {formTab === 'financial' && (
+          <>
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><Calendar size={11} /> Data de Admissão</label>
+            <input
+              type="date"
+              value={draft.admissionDate ? format(draft.admissionDate, 'yyyy-MM-dd') : ''}
+              onChange={e => setDraft({ ...draft, admissionDate: e.target.value ? new Date(e.target.value + 'T12:00:00').getTime() : undefined })}
+              className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+            />
+          </div>
+
+          {draft.cargo !== 'diretor' && (
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><DollarSign size={11} /> Salário Base (R$)</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.01}
+              value={draft.salary ?? ''}
+              onChange={e => setDraft({ ...draft, salary: Math.max(0, Number(e.target.value) || 0) })}
+              placeholder="0,00"
+              className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+            />
+          </div>
+          )}
+
+          <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${draft.paymentFrequency === 'BIWEEKLY' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+            <button
+              type="button"
+              onClick={() => setDraft({ ...draft, paymentFrequency: draft.paymentFrequency === 'BIWEEKLY' ? 'MONTHLY' : 'BIWEEKLY' })}
+              className="flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3 text-left">
+                <Calendar size={20} className={draft.paymentFrequency === 'BIWEEKLY' ? 'text-indigo-500' : 'text-slate-400'} />
+                <div>
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Recebe Adiantamento Quinzenal?</p>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Sim: parte no adiantamento, parte no pagamento. Não: salário cheio só no pagamento.</p>
+                </div>
+              </div>
+              <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.paymentFrequency === 'BIWEEKLY' ? 'bg-indigo-500' : 'bg-slate-200'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.paymentFrequency === 'BIWEEKLY' ? 'left-7' : 'left-1'}`} />
+              </div>
+            </button>
+            <p className="text-[9px] font-bold text-slate-400 pl-8">
+              {draft.paymentFrequency === 'BIWEEKLY'
+                ? <>{rhConfig?.advancePercent ?? 50}% dia {rhConfig?.advanceDay ?? 20} (Adiantamento) · {100 - (rhConfig?.advancePercent ?? 50)}% no Fechamento ({rhConfig?.paymentDayMode === 'business_day_5' ? '5º dia útil' : `dia ${rhConfig?.paymentDay ?? 5}`}) <span className="italic">(config. globais de RH)</span></>
+                : <>Pagamento {rhConfig?.paymentDayMode === 'business_day_5' ? 'no 5º dia útil' : `dia ${rhConfig?.paymentDay ?? 5}`} <span className="italic">(config. global de RH → Configurações Globais)</span></>}
+            </p>
+          </div>
+
+          <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${draft.isSeller ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+            <button
+              type="button"
+              onClick={() => setDraft({ ...draft, isSeller: !draft.isSeller })}
+              className="flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3 text-left">
+                <Percent size={20} className={draft.isSeller ? 'text-amber-500' : 'text-slate-400'} />
+                <div>
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>É Vendedor</p>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Pode ser escolhido em Lançamento de Venda</p>
+                </div>
+              </div>
+              <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.isSeller ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.isSeller ? 'left-7' : 'left-1'}`} />
+              </div>
+            </button>
+            {draft.isSeller && (
+              <div className="flex items-center gap-3 pl-[52px]">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 shrink-0">Comissão</label>
+                <div className="relative flex-1 max-w-[140px]">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={draft.commissionPercent ?? ''}
+                    onChange={e => setDraft({ ...draft, commissionPercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    placeholder="0"
+                    className={`w-full pl-3 pr-7 py-2 rounded-xl border-2 text-sm font-bold outline-none focus:border-amber-500 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">%</span>
+                </div>
+                <p className="text-[9px] text-slate-400 font-medium leading-tight flex-1">sobre o total de cada venda dele</p>
+              </div>
+            )}
+          </div>
+
+          <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 ${draft.cargo === 'diretor' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : draft.cargo === 'gerente' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Cargo</label>
+            <div className={`flex p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, cargo: 'diretor' })}
+                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'diretor' ? 'bg-violet-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+              >
+                Diretor
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, cargo: 'gerente' })}
+                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'gerente' ? 'bg-blue-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+              >
+                Gerente
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, cargo: 'colaborador' })}
+                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!draft.cargo || draft.cargo === 'colaborador') ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+              >
+                Colaborador
+              </button>
+            </div>
+
+            {draft.cargo === 'diretor' && (
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 shrink-0">Pró-labore</label>
+                <div className="relative flex-1 max-w-[160px]">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">R$</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={0.01}
+                    value={draft.proLaboreValue ?? ''}
+                    onChange={e => setDraft({ ...draft, proLaboreValue: Math.max(0, Number(e.target.value) || 0) })}
+                    placeholder="0,00"
+                    className={`w-full pl-8 pr-3 py-2 rounded-xl border-2 text-sm font-bold outline-none focus:border-violet-500 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 font-medium leading-tight flex-1">Diretor não tem salário base — só pró-labore, que pode ser pago direto na Conta Pessoal</p>
+              </div>
+            )}
+            {(!draft.cargo || draft.cargo === 'colaborador') && (
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Função</label>
+                <input
+                  type="text"
+                  value={draft.roleTitle ?? ''}
+                  onChange={e => setDraft({ ...draft, roleTitle: e.target.value })}
+                  placeholder="Ex: Vendedor, Estoquista, Motorista de Entrega..."
+                  className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Total calculado — Salário + Pró-labore + Comissão do mês corrente. Só informativo
+              aqui; o pagamento de verdade (Compra Geral, ou transferência direta pra Conta
+              Pessoal no caso de Pró-labore) se gera na Folha de Pagamento (RH e Financeiro), que
+              já lista todos os colaboradores de uma vez — ver CommissionToSellersCard.tsx. */}
+          {payroll && (draft.salary || draft.isSeller || draft.cargo === 'diretor') && (
+            <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'border-indigo-900/50 bg-indigo-950/20' : 'border-indigo-100 bg-indigo-50'}`}>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Total — {payrollPeriodLabel}</p>
+                {draft.isSeller && (
+                  <button
+                    type="button"
+                    onClick={() => setIncludePendingCommission(v => !v)}
+                    className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-all ${includePendingCommission ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'}`}
+                  >
+                    {includePendingCommission ? 'Com comissão pendente' : 'Só comissão recebida'}
+                  </button>
+                )}
+              </div>
+              {draft.cargo !== 'diretor' && (
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                  <span>Salário</span>
+                  <span>R$ {payroll.salary.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {draft.cargo === 'diretor' && (
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                  <span>Pró-labore</span>
+                  <span>R$ {payroll.proLabore.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              {draft.isSeller && (
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                  <span>Comissão</span>
+                  <span>R$ {(includePendingCommission ? payroll.receivedCommission + payroll.pendingCommission : payroll.receivedCommission).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-indigo-900/50' : 'border-indigo-200'}`}>
+                <span className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Total a Pagar</span>
+                <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">R$ {payroll.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <p className="text-[9px] font-bold text-indigo-400 text-center italic">Gere o pagamento em Financeiro/RH → Folha de Pagamento.</p>
+            </div>
+          )}
+          </>
+          )}
+
+          {formTab === 'access' && (
+          <>
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">PIN (6 dígitos)</label>
             <div className="relative">
@@ -442,45 +821,6 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.canUseAI ? 'left-7' : 'left-1'}`} />
             </div>
           </button>
-
-          <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${draft.isSeller ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
-            <button
-              type="button"
-              onClick={() => setDraft({ ...draft, isSeller: !draft.isSeller })}
-              className="flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3 text-left">
-                <Percent size={20} className={draft.isSeller ? 'text-amber-500' : 'text-slate-400'} />
-                <div>
-                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>É Vendedor</p>
-                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Pode ser escolhido em Lançamento de Venda</p>
-                </div>
-              </div>
-              <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.isSeller ? 'bg-amber-500' : 'bg-slate-200'}`}>
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.isSeller ? 'left-7' : 'left-1'}`} />
-              </div>
-            </button>
-            {draft.isSeller && (
-              <div className="flex items-center gap-3 pl-[52px]">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 shrink-0">Comissão</label>
-                <div className="relative flex-1 max-w-[140px]">
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    max={100}
-                    step={0.5}
-                    value={draft.commissionPercent ?? ''}
-                    onChange={e => setDraft({ ...draft, commissionPercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
-                    placeholder="0"
-                    className={`w-full pl-3 pr-7 py-2 rounded-xl border-2 text-sm font-bold outline-none focus:border-amber-500 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">%</span>
-                </div>
-                <p className="text-[9px] text-slate-400 font-medium leading-tight flex-1">sobre o total de cada venda dele</p>
-              </div>
-            )}
-          </div>
 
           {!draft.isUnrestricted && (
             <div className="flex flex-col gap-2">
@@ -637,6 +977,8 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               </div>
             );
           })()}
+          </>
+          )}
 
           <button
             type="button"

@@ -77,7 +77,7 @@ export default function MonthYearPickerPopover({ value, onChange, onClose }: Mon
             const isCurrent = year === now.getFullYear() && month === now.getMonth();
             let btnClass = "h-12 flex items-center justify-center rounded-2xl text-[11px] font-black uppercase tracking-wide transition-all active:scale-95 outline-none ";
             if (isSelected) {
-              btnClass += "bg-indigo-650 shadow-lg shadow-indigo-500/25 text-white ";
+              btnClass += "bg-indigo-600 shadow-lg shadow-indigo-500/25 text-white ";
             } else if (isCurrent) {
               btnClass += "text-red-500 dark:text-red-400 ";
             } else {

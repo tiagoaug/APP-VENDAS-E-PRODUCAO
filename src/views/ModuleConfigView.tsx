@@ -16,7 +16,8 @@ import {
   AlertTriangle,
   Sparkles,
   Truck,
-  Building2
+  Building2,
+  UserCog
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
@@ -67,7 +68,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setConfirmTitle("Desativar Vendas");
         setConfirmMessage(`Ao desativar o Módulo de Vendas, o Módulo de ${dependents} também será desativado automaticamente. Deseja continuar?`);
       } else {
-        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : module === 'entregas' ? 'Entregas' : module === 'bling' ? 'Bling' : 'Assistente de IA';
+        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : module === 'entregas' ? 'Entregas' : module === 'bling' ? 'Bling' : module === 'rh' ? 'RH' : 'Assistente de IA';
         setConfirmTitle(`Desativar ${moduleName}`);
         setConfirmMessage(`Tem certeza que deseja ocultar o Módulo ${moduleName}? Os dados não serão apagados, mas as funções ficarão inacessíveis.`);
       }
@@ -151,6 +152,15 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       active: config.bling,
       color: 'bg-green-700',
       features: ['Vinculação de Produtos', 'Pedidos de Marketplaces', 'Emissão de NF-e']
+    },
+    {
+      id: 'rh',
+      name: 'Módulo RH',
+      description: 'Cadastro de colaboradores, permissões de acesso e folha de pagamento.',
+      icon: <UserCog size={28} />,
+      active: config.rh,
+      color: 'bg-fuchsia-600',
+      features: ['Colaboradores', 'Permissões por Setor', 'Folha de Pagamento']
     }
   ];
 
@@ -164,6 +174,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     { label: 'Conexão Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, module: 'bling' },
     { label: 'Estoque Central', icon: <Boxes size={20} />, view: ViewType.STOCK, module: 'sales' },
     { label: 'Finanças Pessoais', icon: <Users size={20} />, view: ViewType.PERSONAL_FINANCIAL, module: 'personal' },
+    { label: 'RH', icon: <UserCog size={20} />, view: ViewType.RH_MENU, module: 'rh' },
   ];
 
   return (

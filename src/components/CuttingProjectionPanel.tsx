@@ -2245,7 +2245,7 @@ export default function CuttingAreaPanel({
                                 </span>
                               </div>
                               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                <span>Faca: <span className="text-indigo-650 dark:text-indigo-400 font-black">{tool?.name || piece.toolId || 'Não Vinculada'}</span></span>
+                                <span>Faca: <span className="text-indigo-600 dark:text-indigo-400 font-black">{tool?.name || piece.toolId || 'Não Vinculada'}</span></span>
                                 <span className="text-slate-350 dark:text-slate-700">•</span>
                                 <span>Ref: <span className="font-black text-slate-650 dark:text-slate-300">{tool?.metadata?.reference || '---'}</span></span>
                               </p>
@@ -2607,7 +2607,7 @@ export default function CuttingAreaPanel({
                                           : 'bg-indigo-50/40 border-indigo-150'
                                       }`}>
                                         <div>
-                                          <p className="font-black text-indigo-650 dark:text-indigo-400 uppercase text-[8px] tracking-wider flex items-center gap-1">
+                                          <p className="font-black text-indigo-600 dark:text-indigo-400 uppercase text-[8px] tracking-wider flex items-center gap-1">
                                             <Sparkles size={8} /> Melhor Configuração Única
                                           </p>
                                           <p className="font-black text-slate-850 dark:text-white uppercase mt-0.5">
@@ -2657,7 +2657,7 @@ export default function CuttingAreaPanel({
                                         )}
                                       </div>
                                       <p className="font-bold text-slate-650 dark:text-slate-300 leading-relaxed">
-                                        Cortar <span className="font-black text-indigo-650 dark:text-indigo-400">{totalConsumoMetros.toFixed(2)} {materialUnit}</span> dobrados em <span className="font-black text-slate-805 dark:text-white">{layers} camadas</span> de <span className="font-black text-slate-805 dark:text-white">{singleLayerLength.toFixed(2)} {materialUnit}</span>.
+                                        Cortar <span className="font-black text-indigo-600 dark:text-indigo-400">{totalConsumoMetros.toFixed(2)} {materialUnit}</span> dobrados em <span className="font-black text-slate-805 dark:text-white">{layers} camadas</span> de <span className="font-black text-slate-805 dark:text-white">{singleLayerLength.toFixed(2)} {materialUnit}</span>.
                                       </p>
                                     </div>
 

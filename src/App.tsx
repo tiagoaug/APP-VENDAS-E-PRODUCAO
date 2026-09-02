@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, ReactNode, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, ReactNode, lazy, Suspense } from "react";
 import {
   LayoutDashboard,
   Package,
@@ -26,6 +26,7 @@ import {
   ClipboardList,
   PackageOpen,
   ChevronRight,
+  ChevronLeft,
   FileText,
   User as UserIcon,
   AlertCircle,
@@ -44,7 +45,8 @@ import {
   Navigation,
   Compass,
   Building2,
-  Info
+  Info,
+  UserCog
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -97,6 +99,10 @@ import {
   ProductionScreenType,
   WeighingRecord,
   AppModulesConfig,
+  BottomNavConfig,
+  BottomNavItemId,
+  RhGlobalConfig,
+  CollaboratorLoan,
   CompanyProfile,
   SoleStockEntry,
   SolePurchaseItem,
@@ -160,6 +166,10 @@ const ProductionConfigView = lazy(() => import("./views/ProductionConfigView"));
 const PersonalFinancialView = lazy(() => import("./views/PersonalFinancialView"));
 const ModuleConfigView = lazy(() => import("./views/ModuleConfigView"));
 const CollaboratorsConfigView = lazy(() => import("./views/CollaboratorsConfigView"));
+const RhView = lazy(() => import("./views/RhView"));
+const LaborTerminationSimulatorView = lazy(() => import("./views/LaborTerminationSimulatorView"));
+const LaborSimParamsView = lazy(() => import("./views/LaborSimParamsView"));
+const LoansView = lazy(() => import("./views/LoansView"));
 const CompanyProfileView = lazy(() => import("./views/CompanyProfileView"));
 const CollaboratorGateView = lazy(() => import("./views/CollaboratorGateView"));
 const ManualView = lazy(() => import("./views/ManualView"));
@@ -215,6 +225,7 @@ import { generateId } from './utils/id';
 import { seedProductionOrderSequence } from './utils/sequenceSeeds';
 import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
 import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession, isViewTaskAllowed, isSectorAllowed } from './utils/collaborators';
+import { LaborSimParams, DEFAULT_LABOR_SIM_PARAMS } from './utils/laborTermination';
 import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
 
 const MODAL_VIEWS = [
@@ -331,7 +342,7 @@ function TabItem({
       title={label}
       aria-label={`Ir para ${label}`}
       data-guide-anchor={anchorKey}
-      className="flex flex-col items-center justify-center gap-0.5 flex-1 py-2 transition-all"
+      className="flex flex-col items-center justify-center gap-0.5 w-16 shrink-0 py-2 transition-all"
     >
       <div className="w-10 h-7 flex items-center justify-center rounded-xl transition-all" style={pillStyle}>
         <span className="transition-all" style={iconStyle}>
@@ -766,7 +777,7 @@ export default function App() {
       { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 9, module: 'sales' },
       { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 10, module: 'sales' },
       { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 11, module: 'sales' },
-      { id: 'commission_to_sellers', label: 'Comissão a Vendedores', visible: true, order: 11.5, module: 'sales' },
+      { id: 'commission_to_sellers', label: 'Folha de Pagamento', visible: true, order: 11.5, module: 'sales' },
       { id: 'provider_service_orders', label: 'Ordens de Serviço a Fornecedores', visible: true, order: 11.7, module: 'sales' },
       { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 13, module: 'sales' },
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
@@ -896,6 +907,7 @@ export default function App() {
     ai: true,
     entregas: false,
     bling: false,
+    rh: true,
   };
 
   const [modulesConfig, setModulesConfig] = useState<AppModulesConfig>(() => {
@@ -929,6 +941,138 @@ export default function App() {
     if (user) {
       await firebaseService.saveDocument("app_modules_config", { ...newConfig, id: 'main_modules_config' });
     }
+  };
+
+  // Personalização da barra de navegação (Configurações > Personalizar Navegação) — mesmo
+  // padrão de persistência do app_modules_config acima. RH some por padrão (hidden) pra não
+  // aparecer sozinho pra quem já tinha o app instalado antes desse módulo existir — quem quiser
+  // liga em Personalização.
+  const defaultBottomNavConfig: BottomNavConfig = {
+    order: ['purchases', 'sales', 'production', 'bling', 'entregas', 'financial', 'personal', 'rh', 'pcp', 'stock', 'people', 'reports'],
+    // Tudo que é módulo inteiro (já tinha ícone fixo antes do carrossel existir) some só o RH,
+    // que é novo. Os atalhos de tela específica (pcp/stock/people/reports) começam todos
+    // escondidos — são adição nova, opt-in via Personalização, pra não mudar a barra de quem já
+    // usava o app sem avisar.
+    hidden: ['rh', 'pcp', 'stock', 'people', 'reports'],
+  };
+
+  const [bottomNavConfig, setBottomNavConfig] = useState<BottomNavConfig>(() => {
+    const saved = localStorage.getItem('bottom_nav_config');
+    return saved ? { ...defaultBottomNavConfig, ...JSON.parse(saved) } : defaultBottomNavConfig;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('bottom_nav_config', JSON.stringify(bottomNavConfig));
+  }, [bottomNavConfig]);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubBottomNavConfig = firebaseService.subscribeToCollection<BottomNavConfig & { id: string }>(
+      "app_bottom_nav_config",
+      (data) => {
+        const config = data.find(c => c.id === 'main_bottom_nav_config');
+        if (config) {
+          const { id, ...rest } = config;
+          setBottomNavConfig(rest as BottomNavConfig);
+        }
+      }
+    );
+    return () => unsubBottomNavConfig();
+  }, [user]);
+
+  const saveBottomNavConfig = async (newConfig: BottomNavConfig) => {
+    setBottomNavConfig(newConfig);
+    if (user) {
+      await firebaseService.saveDocument("app_bottom_nav_config", { ...newConfig, id: 'main_bottom_nav_config' });
+    }
+  };
+
+  // Parâmetros do Simulador de Rescisão (tabelas de INSS/IRRF, %FGTS, multas, aviso prévio) —
+  // mesmo padrão de app_modules_config acima. Editável em RH → Simulador de Rescisão →
+  // Parâmetros, pra quando a lei ou os valores base mudarem sem depender de atualização do app.
+  const [laborSimParams, setLaborSimParams] = useState<LaborSimParams>(() => {
+    const saved = localStorage.getItem('labor_sim_params');
+    return saved ? { ...DEFAULT_LABOR_SIM_PARAMS, ...JSON.parse(saved) } : DEFAULT_LABOR_SIM_PARAMS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('labor_sim_params', JSON.stringify(laborSimParams));
+  }, [laborSimParams]);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubLaborSimParams = firebaseService.subscribeToCollection<LaborSimParams & { id: string }>(
+      "app_labor_sim_params",
+      (data) => {
+        const config = data.find(c => c.id === 'main_labor_sim_params');
+        if (config) {
+          const { id, ...rest } = config;
+          setLaborSimParams(rest as LaborSimParams);
+        }
+      }
+    );
+    return () => unsubLaborSimParams();
+  }, [user]);
+
+  const saveLaborSimParams = async (newParams: LaborSimParams) => {
+    setLaborSimParams(newParams);
+    if (user) {
+      await firebaseService.saveDocument("app_labor_sim_params", { ...newParams, id: 'main_labor_sim_params' });
+    }
+  };
+
+  // Configurações globais de RH (dia de pagamento/adiantamento da empresa) — mesmo padrão de
+  // app_modules_config acima. Ver RhView.tsx.
+  const defaultRhConfig: RhGlobalConfig = { paymentDay: 5, advanceDay: 20, advancePercent: 50 };
+  const [rhConfig, setRhConfig] = useState<RhGlobalConfig>(() => {
+    const saved = localStorage.getItem('rh_global_config');
+    return saved ? { ...defaultRhConfig, ...JSON.parse(saved) } : defaultRhConfig;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('rh_global_config', JSON.stringify(rhConfig));
+  }, [rhConfig]);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubRhConfig = firebaseService.subscribeToCollection<RhGlobalConfig & { id: string }>(
+      "app_rh_config",
+      (data) => {
+        const config = data.find(c => c.id === 'main_rh_config');
+        if (config) {
+          const { id, ...rest } = config;
+          setRhConfig(rest as RhGlobalConfig);
+        }
+      }
+    );
+    return () => unsubRhConfig();
+  }, [user]);
+
+  const saveRhConfig = async (newConfig: RhGlobalConfig) => {
+    setRhConfig(newConfig);
+    if (user) {
+      await firebaseService.saveDocument("app_rh_config", { ...newConfig, id: 'main_rh_config' });
+    }
+  };
+
+  // Empréstimos da empresa a colaboradores (RH → Empréstimos) — mesmo padrão de coleção do
+  // Firestore usado em "collaborators" acima. Ver LoansView.tsx e CollaboratorLoan em types.ts.
+  const [loans, setLoans] = useState<CollaboratorLoan[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const unsubLoans = firebaseService.subscribeToCollection<CollaboratorLoan>(
+      "collaborator_loans",
+      setLoans,
+    );
+    return () => unsubLoans();
+  }, [user]);
+
+  const saveLoan = async (loan: CollaboratorLoan) => {
+    await firebaseService.saveDocument("collaborator_loans", loan);
+  };
+
+  const deleteLoan = async (id: string) => {
+    await firebaseService.deleteDocument("collaborator_loans", id);
   };
 
   // Identidade da empresa (Personalizar Empresa) — mesmo padrão de app_modules_config acima.
@@ -4738,6 +4882,9 @@ export default function App() {
                 toast.show('Erro ao excluir: ' + (err.message || err));
               }
             }}
+            advancePercent={rhConfig.advancePercent}
+            loans={loans}
+            onSaveLoan={saveLoan}
             onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
             activeCollaborator={activeCollaborator}
             aiEnabled={aiEnabled}
@@ -4795,6 +4942,8 @@ export default function App() {
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
             onOpenProductCreationChoice={handleOpenProductCreationChoice}
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
+            bottomNavConfig={bottomNavConfig}
+            onSaveBottomNavConfig={saveBottomNavConfig}
           />
         );
       case ViewType.PRODUCTS:
@@ -5062,8 +5211,7 @@ export default function App() {
             sales={sales}
             transactions={transactions}
             onSelectReport={(reportId) => {
-              setSelectedReportId(reportId);
-              setCurrentView(ViewType.REPORT_DETAILED);
+              navigateTo(ViewType.REPORT_DETAILED, reportId);
             }}
             onOpenPrintCenter={() => navigateTo(ViewType.PRINT_CENTER)}
           />
@@ -5080,14 +5228,15 @@ export default function App() {
             people={people}
             categories={categories}
             monthlySnapshots={monthlySnapshots}
-            onBack={() => setCurrentView(ViewType.REPORTS)}
+            collaborators={collaborators}
+            onBack={goBack}
           />
         );
       case ViewType.DATA_CLEANUP:
         return (
           <DataCleanupView
             isDarkMode={isDarkMode}
-            onBack={() => setCurrentView(ViewType.SETTINGS)}
+            onBack={goBack}
             cleanupConfig={cleanupConfig}
             monthlySnapshots={monthlySnapshots}
             people={people}
@@ -6209,6 +6358,9 @@ export default function App() {
             serviceOrders={serviceOrders}
             onPayProviderServiceOrders={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
             isDarkMode={isDarkMode}
+            advancePercent={rhConfig.advancePercent}
+            loans={loans}
+            onSaveLoan={saveLoan}
           />
         );
       case ViewType.ACCOUNTS:
@@ -6705,7 +6857,15 @@ export default function App() {
                   <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Configurações</h3>
                   <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                     <button
-                      onClick={() => navigateTo(ViewType.PRODUCTION_CONFIG)}
+                      onClick={() => {
+                        // navigateTo propositalmente NÃO reseta productionSubScreen quando o
+                        // destino é PRODUCTION_CONFIG (pra servir tours/atalhos que abrem direto
+                        // numa sub-aba, ver navigateToProduction) — então esse botão do menu
+                        // principal precisa forçar 'MENU' explicitamente, senão herda a última
+                        // sub-aba visitada (ex.: 'FACAS' de um tour anterior) em vez do menu.
+                        setProductionSubScreen('MENU');
+                        navigateTo(ViewType.PRODUCTION_CONFIG);
+                      }}
                       className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                     >
                       <div className="flex items-center gap-4">
@@ -7517,6 +7677,53 @@ export default function App() {
             onDelete={deleteCollaborator}
             isDarkMode={isDarkMode}
             dashboardCards={(dashboardConfig || defaultDashboardConfig).cards}
+            sales={sales}
+            rhConfig={rhConfig}
+            loans={loans}
+          />
+        );
+      case ViewType.RH_MENU:
+        return (
+          <RhView
+            isDarkMode={isDarkMode}
+            sales={sales}
+            collaborators={collaborators}
+            people={people}
+            companyProfile={companyProfile}
+            onPayCommission={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
+            onOpenSale={(id) => navigateTo(ViewType.SALE_FORM, id)}
+            onNavigate={navigateTo}
+            rhConfig={rhConfig}
+            onSaveRhConfig={saveRhConfig}
+            loans={loans}
+            onSaveLoan={saveLoan}
+          />
+        );
+      case ViewType.LABOR_TERMINATION_SIMULATOR:
+        return (
+          <LaborTerminationSimulatorView
+            isDarkMode={isDarkMode}
+            collaborators={collaborators}
+            laborSimParams={laborSimParams}
+            onOpenParams={() => navigateTo(ViewType.LABOR_SIM_PARAMS)}
+          />
+        );
+      case ViewType.LABOR_SIM_PARAMS:
+        return (
+          <LaborSimParamsView
+            isDarkMode={isDarkMode}
+            params={laborSimParams}
+            onSave={saveLaborSimParams}
+          />
+        );
+      case ViewType.COLLABORATOR_LOANS:
+        return (
+          <LoansView
+            isDarkMode={isDarkMode}
+            collaborators={collaborators}
+            loans={loans}
+            onSave={saveLoan}
+            onDelete={deleteLoan}
           />
         );
       case ViewType.COMPANY_PROFILE:
@@ -7574,10 +7781,13 @@ export default function App() {
       return "purchases";
     if ([ViewType.SALES, ViewType.SALE_FORM].includes(currentView))
       return "sales";
+    // PCP tem atalho próprio (opt-in em Personalização) — checa antes do balde geral de
+    // "production" pra destacar o ícone certo quando os dois estiverem na barra ao mesmo tempo.
+    if ([ViewType.PRODUCTION_PCP].includes(currentView))
+      return "pcp";
     if (
       [
         ViewType.PRODUCTION_MENU,
-        ViewType.PRODUCTION_PCP,
         ViewType.PRODUCTION_STOCK,
         ViewType.PRODUCTION_PURCHASE_NEEDS,
         ViewType.PRODUCTION_CONFIG,
@@ -7617,18 +7827,24 @@ export default function App() {
       return "financial";
     if ([ViewType.PERSONAL_FINANCIAL].includes(currentView))
       return "personal";
+    if ([ViewType.RH_MENU, ViewType.COLLABORATORS_CONFIG, ViewType.LABOR_TERMINATION_SIMULATOR, ViewType.LABOR_SIM_PARAMS, ViewType.COLLABORATOR_LOANS].includes(currentView))
+      return "rh";
+    // Estoque, Pessoas e Relatórios também têm atalho próprio (opt-in) — mesma lógica do PCP
+    // acima, checados antes do balde geral de "settings" que os continha antes.
+    if ([ViewType.STOCK, ViewType.STOCK_GLANCE].includes(currentView))
+      return "stock";
+    if ([ViewType.PEOPLE].includes(currentView))
+      return "people";
+    if ([ViewType.REPORTS].includes(currentView))
+      return "reports";
     if (
       [
         ViewType.SETTINGS,
         ViewType.PRODUCTS,
-        ViewType.STOCK,
-        ViewType.STOCK_GLANCE,
-        ViewType.PEOPLE,
         ViewType.CATEGORIES,
         ViewType.GRIDS,
         ViewType.COLORS,
         ViewType.PAYMENT_METHODS,
-        ViewType.REPORTS,
         ViewType.BACKUP,
         ViewType.PRODUCT_SHEET,
       ].includes(currentView)
@@ -7636,6 +7852,77 @@ export default function App() {
       return "settings";
     return "dashboard";
   }, [currentView]);
+
+  // Itens do meio da barra de navegação (tudo menos Home/Mais, que ficam fixos nas pontas) —
+  // mesmas condições de módulo/permissão de sempre, só que agora computadas numa lista pra dar
+  // pra reordenar/esconder em Personalização (ver BottomNavConfigModal) em vez de um JSX fixo.
+  const middleNavItems = useMemo(() => {
+    const candidates: { id: BottomNavItemId; label: string; icon: ReactNode; view: ViewType; anchorKey?: string; allowed: boolean }[] = [
+      { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={20} />, view: ViewType.PURCHASES, anchorKey: 'nav.compras', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PURCHASES) },
+      { id: 'sales', label: 'Vendas', icon: <ShoppingBag size={20} />, view: ViewType.SALES, anchorKey: 'nav.vendas', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
+      { id: 'production', label: 'Prod.', icon: <Factory size={20} />, view: ViewType.PRODUCTION_MENU, anchorKey: 'nav.producao', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) },
+      { id: 'bling', label: 'Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, allowed: modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) },
+      { id: 'entregas', label: 'Entregas', icon: <Truck size={20} />, view: ViewType.DELIVERY_MENU, allowed: modulesConfig.sales && modulesConfig.entregas && isViewAllowed(activeCollaborator, ViewType.DELIVERY_MENU) },
+      { id: 'financial', label: 'Finan.', icon: <DollarSign size={20} />, view: ViewType.FINANCIAL, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.FINANCIAL) && isViewTaskAllowed(activeCollaborator, ViewType.FINANCIAL) },
+      { id: 'personal', label: 'Pessoal', icon: <UserIcon size={20} />, view: ViewType.PERSONAL_FINANCIAL, allowed: modulesConfig.personal && isViewAllowed(activeCollaborator, ViewType.PERSONAL_FINANCIAL) },
+      { id: 'rh', label: 'RH', icon: <UserCog size={20} />, view: ViewType.RH_MENU, allowed: modulesConfig.rh && isViewAllowed(activeCollaborator, ViewType.RH_MENU) },
+      { id: 'pcp', label: 'PCP', icon: <GanttChartSquare size={20} />, view: ViewType.PRODUCTION_PCP, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_PCP) },
+      { id: 'stock', label: 'Estoque', icon: <Boxes size={20} />, view: ViewType.STOCK, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.STOCK) },
+      { id: 'people', label: 'Pessoas', icon: <Users size={20} />, view: ViewType.PEOPLE, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PEOPLE) },
+      { id: 'reports', label: 'Relat.', icon: <BarChart3 size={20} />, view: ViewType.REPORTS, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.REPORTS) },
+    ];
+
+    const visible = candidates.filter(c => c.allowed && !bottomNavConfig.hidden.includes(c.id));
+    const byId = new Map(visible.map(c => [c.id, c]));
+    const ordered: typeof visible = [];
+    bottomNavConfig.order.forEach(id => {
+      const item = byId.get(id);
+      if (item) { ordered.push(item); byId.delete(id); }
+    });
+    // Sobra: itens visíveis que não estavam em `order` (ex.: módulo novo) — mantém a ordem
+    // padrão de `candidates` pra ficar previsível.
+    candidates.forEach(c => { if (byId.has(c.id)) ordered.push(byId.get(c.id)!); });
+    return ordered;
+  }, [modulesConfig, activeCollaborator, bottomNavConfig]);
+
+  // Setas de "tem mais ícone pra esse lado" no carrossel deslizante do meio da nav — sem isso,
+  // nada na tela avisa que dá pra arrastar quando os ícones não cabem inteiros na largura.
+  // Usa um CALLBACK REF (não useRef+useEffect) de propósito: um useEffect com `middleNavItems`
+  // na dependência só reage a mudanças de módulo/permissão/personalização, mas essa lista já
+  // estabiliza logo no carregamento inicial (antes da barra de navegação real existir na tela,
+  // durante a tela de auth/loading) — o efeito rodava, achava as refs nulas (o <nav> ainda nem
+  // tinha montado) e nunca mais tinha motivo pra rodar de novo, deixando a seta travada em "não
+  // tem mais nada" pra sempre (o arraste manual continuava funcionando normal, só a seta que
+  // nunca acompanhava — bug real, não só timing de fonte). O callback ref dispara exatamente
+  // quando ESTE elemento é criado de verdade, então não tem como perder o timing certo.
+  const middleNavScrollRef = useRef<HTMLDivElement | null>(null);
+  const middleNavScrollCleanupRef = useRef<(() => void) | null>(null);
+  const [navScrollHint, setNavScrollHint] = useState({ left: false, right: false });
+
+  const attachMiddleNavScrollRef = useCallback((el: HTMLDivElement | null) => {
+    middleNavScrollCleanupRef.current?.();
+    middleNavScrollCleanupRef.current = null;
+    middleNavScrollRef.current = el;
+    if (!el) return;
+    const content = el.firstElementChild as HTMLElement | null;
+    const update = () => {
+      setNavScrollHint({
+        left: el.scrollLeft > 4,
+        right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+      });
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    if (content) ro.observe(content);
+    middleNavScrollCleanupRef.current = () => {
+      el.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      ro.disconnect();
+    };
+  }, []);
 
   const viewTitle = useMemo(() => {
     switch (currentView) {
@@ -7753,6 +8040,14 @@ export default function App() {
         return "Detalhes do Cadastro";
       case ViewType.COMPANY_PROFILE:
         return "Personalizar Empresa";
+      case ViewType.COLLABORATORS_CONFIG:
+        return "Equipe";
+      case ViewType.LABOR_TERMINATION_SIMULATOR:
+        return "Simulador de Rescisão";
+      case ViewType.LABOR_SIM_PARAMS:
+        return "Parâmetros do Simulador";
+      case ViewType.COLLABORATOR_LOANS:
+        return "Empréstimos";
       default:
         return "Detalhes";
     }
@@ -8151,120 +8446,91 @@ export default function App() {
         })()}
       </Modal>
 
-      {/* Bottom Tab Navigation */}
+      {/* Bottom Tab Navigation — Home e Mais ficam fixos nas pontas; o meio é um carrossel
+          deslizante (overflow-x-auto) cujo conteúdo/ordem vem de middleNavItems, personalizável
+          em Configurações > Personalizar Navegação (ver BottomNavConfigModal). */}
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
-        <div className={`relative flex items-center justify-around w-full max-w-md px-2 py-2 rounded-[2rem] overflow-hidden pointer-events-auto ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
-          {/* 3D top highlight streak */}
-          <div className="absolute top-0 left-4 right-4 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
-          {/* 3D bottom shadow line */}
-          <div className="absolute bottom-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent pointer-events-none" />
-          <TabItem
-            icon={<LayoutDashboard size={20} />}
-            label="Home"
-            active={activeTab === "dashboard"}
-            onClick={() => resetTo(ViewType.DASHBOARD)}
-            appTheme={appTheme}
-            iconMode={navIconMode}
-            tintColor={NAV_TAB_COLORS.dashboard}
-            monoColor={navMonoColor}
-          />
-          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PURCHASES) && (
+        {/* Wrapper sem overflow-hidden — só pra servir de referência de posição pras setas, que
+            precisam ficar ACIMA e FORA do pill (o pill em si mantém overflow-hidden pros
+            traços 3D e cantos arredondados; se a seta estivesse dentro dele, seria cortada). */}
+        <div className="relative w-full max-w-md pointer-events-auto">
+          <div className={`relative flex items-center w-full px-2 py-2 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
+            {/* 3D top highlight streak */}
+            <div className="absolute top-0 left-4 right-4 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
+            {/* 3D bottom shadow line */}
+            <div className="absolute bottom-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent pointer-events-none" />
             <TabItem
-              icon={<ShoppingCart size={20} />}
-              label="Compras"
-              active={activeTab === "purchases"}
-              onClick={() => resetTo(ViewType.PURCHASES)}
+              icon={<LayoutDashboard size={20} />}
+              label="Home"
+              active={activeTab === "dashboard"}
+              onClick={() => resetTo(ViewType.DASHBOARD)}
               appTheme={appTheme}
               iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.purchases}
+              tintColor={NAV_TAB_COLORS.dashboard}
               monoColor={navMonoColor}
-              anchorKey="nav.compras"
             />
-          )}
-          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) && (
+            <div className="flex-1 min-w-0">
+              <div ref={attachMiddleNavScrollRef} className="flex items-center overflow-x-auto no-scrollbar">
+                <div className="flex items-center">
+                  {middleNavItems.map(item => (
+                    <TabItem
+                      key={item.id}
+                      icon={item.icon}
+                      label={item.label}
+                      active={activeTab === item.id}
+                      // Estoque/Pessoas/Relatórios abrem dentro do Modal global (ver
+                      // MODAL_VIEWS) com X/"Voltar" que dependem do histórico pra funcionar —
+                      // resetTo() zera o histórico (correto pros itens que são tela cheia sem
+                      // botão de fechar, ex. Compras/Vendas), o que deixava esse X sem efeito
+                      // pra quem chegou neles direto pelo ícone da nav. navigateTo() empilha
+                      // normal, então fechar volta pra tela de onde o usuário veio.
+                      onClick={() => MODAL_VIEWS.includes(item.view) ? navigateTo(item.view) : resetTo(item.view)}
+                      appTheme={appTheme}
+                      iconMode={navIconMode}
+                      tintColor={NAV_TAB_COLORS[item.id]}
+                      monoColor={navMonoColor}
+                      anchorKey={item.anchorKey}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
             <TabItem
-              icon={<ShoppingBag size={20} />}
-              label="Vendas"
-              active={activeTab === "sales"}
-              onClick={() => resetTo(ViewType.SALES)}
+              icon={<Settings size={20} />}
+              label="Mais"
+              active={activeTab === "settings"}
+              onClick={() => resetTo(ViewType.SETTINGS)}
               appTheme={appTheme}
               iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.sales}
-              monoColor={navMonoColor}
-              anchorKey="nav.vendas"
-            />
-          )}
-          {modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) && (
-            <TabItem
-              icon={<Factory size={20} />}
-              label="Prod."
-              active={activeTab === "production"}
-              onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.production}
-              monoColor={navMonoColor}
-              anchorKey="nav.producao"
-            />
-          )}
-          {modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) && (
-            <TabItem
-              icon={<Building2 size={20} />}
-              label="Bling"
-              active={activeTab === "bling"}
-              onClick={() => resetTo(ViewType.BLING_CONNECTION)}
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.bling}
+              tintColor={NAV_TAB_COLORS.settings}
               monoColor={navMonoColor}
             />
+          </div>
+          {/* Setas de "tem mais ícone pra esse lado" — pequenas, flutuando ACIMA do pill (fora
+              da área dos ícones, não em cima deles), alinhadas com a borda do carrossel do meio
+              (logo depois de Home / logo antes de Mais, cada um w-16). Pulsam devagar pra chamar
+              atenção da primeira vez. Só aparecem quando dá pra rolar naquela direção, e também
+              servem de atalho de toque pra rolar um "passo". */}
+          {navScrollHint.left && (
+            <button
+              type="button"
+              onClick={() => middleNavScrollRef.current?.scrollBy({ left: -64, behavior: 'smooth' })}
+              aria-label="Ver ícones anteriores"
+              className="absolute left-16 -top-1.5 z-10 pointer-events-auto w-4 h-4 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-900/30 flex items-center justify-center animate-pulse active:scale-90 transition-transform"
+            >
+              <ChevronLeft size={10} strokeWidth={3} />
+            </button>
           )}
-          {modulesConfig.sales && modulesConfig.entregas && isViewAllowed(activeCollaborator, ViewType.DELIVERY_MENU) && (
-            <TabItem
-              icon={<Truck size={20} />}
-              label="Entregas"
-              active={activeTab === "entregas"}
-              onClick={() => resetTo(ViewType.DELIVERY_MENU)}
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.entregas}
-              monoColor={navMonoColor}
-            />
+          {navScrollHint.right && (
+            <button
+              type="button"
+              onClick={() => middleNavScrollRef.current?.scrollBy({ left: 64, behavior: 'smooth' })}
+              aria-label="Ver mais ícones"
+              className="absolute right-16 -top-1.5 z-10 pointer-events-auto w-4 h-4 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-900/30 flex items-center justify-center animate-pulse active:scale-90 transition-transform"
+            >
+              <ChevronRight size={10} strokeWidth={3} />
+            </button>
           )}
-          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.FINANCIAL) && isViewTaskAllowed(activeCollaborator, ViewType.FINANCIAL) && (
-            <TabItem
-              icon={<DollarSign size={20} />}
-              label="Finan."
-              active={activeTab === "financial"}
-              onClick={() => resetTo(ViewType.FINANCIAL)}
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.financial}
-              monoColor={navMonoColor}
-            />
-          )}
-          {modulesConfig.personal && isViewAllowed(activeCollaborator, ViewType.PERSONAL_FINANCIAL) && (
-            <TabItem
-              icon={<UserIcon size={20} />}
-              label="Pessoal"
-              active={activeTab === "personal"}
-              onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.personal}
-              monoColor={navMonoColor}
-            />
-          )}
-          <TabItem
-            icon={<Settings size={20} />}
-            label="Mais"
-            active={activeTab === "settings"}
-            onClick={() => resetTo(ViewType.SETTINGS)}
-            appTheme={appTheme}
-            iconMode={navIconMode}
-            tintColor={NAV_TAB_COLORS.settings}
-            monoColor={navMonoColor}
-          />
         </div>
       </nav>
       <ProductCreationChoiceModal

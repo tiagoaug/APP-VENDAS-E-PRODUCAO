@@ -36,12 +36,15 @@ import {
   Rocket,
   Building2,
   ScanText,
-  Calculator
+  Calculator,
+  MoveHorizontal,
+  Scissors
 } from 'lucide-react';
-import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
+import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
 import AIAssistantSettings from '../components/AIAssistantSettings';
+import BottomNavConfigModal from '../components/BottomNavConfigModal';
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
@@ -72,6 +75,9 @@ interface SettingsViewProps {
   // Abre a Impressão de Etiquetas (Ablemark) — antes era um ícone fixo no topo do app; agora
   // vive só aqui e no card do Painel Inicial (ver App.tsx handleOpenLabelPrintStudio).
   onOpenLabelPrintStudio: () => void;
+  // Personalização da barra de navegação inferior (ver App.tsx middleNavItems/BottomNavConfigModal).
+  bottomNavConfig: BottomNavConfig;
+  onSaveBottomNavConfig: (config: BottomNavConfig) => void;
 }
 
 export default function SettingsView({
@@ -101,7 +107,10 @@ export default function SettingsView({
   onOpenOnboardingWizard,
   onOpenProductCreationChoice,
   onOpenLabelPrintStudio,
+  bottomNavConfig,
+  onSaveBottomNavConfig,
 }: SettingsViewProps) {
+  const [showNavConfig, setShowNavConfig] = useState(false);
   const [showA11y, setShowA11y] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -174,7 +183,7 @@ export default function SettingsView({
     {
       title: "Sistema & Backup",
       items: [
-        { id: ViewType.COLLABORATORS_CONFIG, label: "Colaboradores", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
+        { id: ViewType.RH_MENU, label: "RH", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'rh' },
         { id: ViewType.COMPANY_PROFILE, label: "Personalizar Empresa", icon: <Building2 size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'any' },
         { id: 'ONBOARDING_WIZARD', label: "Assistente de Configuração", icon: <Rocket size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'any' },
         { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'ai' },
@@ -188,6 +197,10 @@ export default function SettingsView({
         { id: ViewType.OCR_TEXT_EXTRACTOR, label: "Extrator de Texto (OCR)", icon: <ScanText size={22} />, color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-50 dark:bg-cyan-900/20", module: 'any' },
         { id: 'LABEL_PRINT_STUDIO', label: "Ajustes de PDF e JPG", icon: <Printer size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'production' },
         { id: ViewType.RULE_OF_THREE, label: "Calculadora de Regra de Três", icon: <Calculator size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'any' },
+        // Aparece só pra quem tem o setor RH liberado com a função "Simulador de Rescisão" (ou
+        // é Acesso Total) — diferente dos outros itens de Extras, que são abertos a qualquer
+        // colaborador. Ver SECTORS['rh'] em utils/collaborators.ts.
+        { id: ViewType.LABOR_TERMINATION_SIMULATOR, label: "Simulador de Rescisão", icon: <Scissors size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'rh' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
     }
   ];
@@ -328,6 +341,25 @@ export default function SettingsView({
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
             </button>
 
+            {/* ── PERSONALIZAR NAVEGAÇÃO ── */}
+            <button
+              onClick={() => setShowNavConfig(true)}
+              title="Personalizar Navegação"
+              aria-label="Escolher e ordenar os ícones da barra de navegação"
+              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                  <MoveHorizontal size={22} />
+                </div>
+                <div className="text-left">
+                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Escolha e ordene os ícones da barra</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+            </button>
+
             {/* ── LIMPEZA E ARQUIVAMENTO DE DADOS ── */}
             <button
               onClick={() => onNavigate(ViewType.DATA_CLEANUP)}
@@ -379,6 +411,15 @@ export default function SettingsView({
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
+      <BottomNavConfigModal
+        isOpen={showNavConfig}
+        onClose={() => setShowNavConfig(false)}
+        config={bottomNavConfig}
+        onSave={onSaveBottomNavConfig}
+        modulesConfig={modulesConfig}
+        isDarkMode={isDarkMode}
+      />
+
       {showA11y && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowA11y(false)}>
           <div
@@ -642,7 +683,7 @@ export default function SettingsView({
             <div className="p-5 flex flex-col gap-3">
               {collaborators.length === 0 && (
                 <p className="text-xs text-slate-400 italic text-center py-4">
-                  Nenhum colaborador cadastrado ainda. Cadastre em "Colaboradores", no menu Sistema & Backup.
+                  Nenhum colaborador cadastrado ainda. Cadastre em "RH", no menu Sistema & Backup.
                 </p>
               )}
 
@@ -686,7 +727,7 @@ export default function SettingsView({
                     {isTarget && collab.locked && (
                       <div className="flex flex-col gap-2 px-1 py-1 animate-in fade-in slide-in-from-top-1 duration-150">
                         <p className="text-[10px] font-bold text-rose-500 text-center leading-relaxed">
-                          Conta bloqueada após 5 tentativas incorretas. Peça para o administrador desbloquear em Colaboradores.
+                          Conta bloqueada após 5 tentativas incorretas. Peça para o administrador desbloquear em RH.
                         </p>
                       </div>
                     )}

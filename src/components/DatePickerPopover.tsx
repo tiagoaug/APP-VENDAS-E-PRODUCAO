@@ -149,7 +149,7 @@ export default function DatePickerPopover({ value, onChange, onClose }: DatePick
             let btnClass = "w-9 h-9 flex items-center justify-center rounded-full text-xs font-bold transition-all relative active:scale-90 outline-none ";
 
             if (isSelected) {
-              btnClass += "bg-indigo-650 shadow-lg shadow-indigo-500/25 ";
+              btnClass += "bg-indigo-600 shadow-lg shadow-indigo-500/25 ";
               if (isToday) {
                 btnClass += "text-red-500 dark:text-red-400 font-black ";
               } else {

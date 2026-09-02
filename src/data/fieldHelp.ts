@@ -653,6 +653,66 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'collab.novo': { text: 'Cadastra um colaborador novo, com PIN de acesso próprio e permissões controladas por setor.' },
   'collab.salvar': { text: 'Salva o colaborador com os dados preenchidos.' },
 
+  // Hub do RH (RhView) — atalhos pra Colaboradores e pro Simulador de Rescisão.
+  'rh.configGlobal': { text: 'Referências de pagamento da empresa toda — não substituem o dia de vencimento individual configurado na aba Financeira de cada colaborador, só servem pra contagem regressiva e visão geral aqui no RH.' },
+  'rh.expandirConfigGlobal': { text: 'Abre ou fecha os campos de dia de pagamento/adiantamento — os números de contagem regressiva e a visão geral logo abaixo ficam sempre visíveis, mesmo fechado.' },
+  'rh.modoPagamentoFixo': { text: 'O pagamento cai sempre no mesmo dia do mês (o número ao lado) — se esse dia não existir num mês curto (ex.: dia 31 em fevereiro), usa o último dia do mês.' },
+  'rh.modoPagamento5DiaUtil': { text: 'O pagamento cai sempre no 5º dia útil do mês (contando só de segunda a sexta — feriados não são descontados). Comum em empresas que seguem a convenção da categoria de pagar até o 5º dia útil.' },
+  'rh.diaPagamento': { text: 'Dia do mês do pagamento mensal (ex.: dia 5) — usado só pra calcular "Faltam p/ Pagamento" abaixo. Só aparece no modo "Dia Fixo".' },
+  'rh.diaAdiantamento': { text: 'Dia do mês do adiantamento/quinzena (ex.: dia 20) — usado só pra calcular "Faltam p/ Adiantamento" abaixo.' },
+  'rh.percentualAdiantamento': { text: 'Percentual do salário/pró-labore pago no dia de Adiantamento — o resto vai pro Fechamento. Ex.: 40 = 40% no Adiantamento e 60% no Fechamento. Só afeta quem tem "Recebe Adiantamento Quinzenal?" ligado (aba Financeira do colaborador); comissão de vendas nunca é antecipada, sempre entra no Fechamento.' },
+  'rh.diasAtePagamento': { text: 'Quantos dias faltam até o próximo dia de pagamento configurado ao lado — conta a partir de hoje.' },
+  'rh.diasAteAdiantamento': { text: 'Quantos dias faltam até o próximo dia de adiantamento configurado ao lado — conta a partir de hoje.' },
+  'rh.quantidadeColaboradores': { text: 'Total de colaboradores cadastrados no sistema (RH → Colaboradores), sem filtro de setor ou permissão.' },
+  'rh.valorFolhaPagamento': { text: 'Soma em tempo real de salário + pró-labore + comissão (recebida e pendente) de todos os colaboradores com salário, pró-labore ou marcados como vendedor, no mês atual — mesmo cálculo do card Folha de Pagamento logo abaixo.' },
+  'rh.aPagarAdiantamento': { text: 'Parte da folha que sai no dia de Adiantamento — metade do salário/pró-labore de quem tem "Recebe Adiantamento Quinzenal?" ligado (aba Financeira). Comissão de vendas nunca entra aqui, só no Fechamento.' },
+  'rh.aPagarFechamento': { text: 'Parte da folha que sai no dia de Pagamento (fechamento): o salário/pró-labore cheio de quem não recebe adiantamento, a outra metade de quem recebe, e toda a comissão de vendas do período.' },
+  'rh.colaboradores': { text: 'Abre o cadastro da Equipe (Gerentes e Colaboradores) — dados pessoais, financeiros (salário/pró-labore, admissão, pagamento) e permissões de acesso por setor.' },
+  'rh.emprestimos': { text: 'Abre os Empréstimos da empresa a colaboradores — cadastre o valor total e, se quiser, um desconto mensal automático que é abatido sozinho do Fechamento da Folha de Pagamento até quitar. Também dá pra registrar pagamentos feitos por fora, direto pelo colaborador.' },
+
+  // Simulador de Rescisão (LaborTerminationSimulatorView) — ver utils/laborTermination.ts pras
+  // fórmulas. Dois modos de cálculo (completo x simplificado) e duas origens de dados
+  // (colaborador cadastrado x valores manuais), compartilhados entre os dois modos.
+  'laborSim.calcModeCompleto': { text: 'Modo "Rescisão Completa": estimativa cheia de uma rescisão CLT, com aviso prévio, tipo de rescisão e desconto de INSS/IRRF — use pra simular o desligamento de verdade de um colaborador.' },
+  'laborSim.calcModeSimplificado': { text: 'Modo "Acerto Simplificado": fechamento leve de um período (sem impostos, sem tipo de rescisão) — útil pra conferir quanto falta pagar a um colaborador que recebe adiantamento quinzenal, sem ser necessariamente um desligamento.' },
+  'laborSim.origemColaborador': { text: 'Usa o salário e a data de admissão já cadastrados de um colaborador do RH — escolha o nome logo abaixo.' },
+  'laborSim.origemManual': { text: 'Digite o salário e a data de admissão na hora, sem precisar ter um colaborador cadastrado — útil pra simular um cenário hipotético ou de alguém que ainda não está no sistema.' },
+  'laborSim.colaboradorSelect': { text: 'Escolha o colaborador — salário e data de admissão são preenchidos automaticamente a partir do cadastro dele (RH → Colaboradores → aba Financeira).' },
+  'laborSim.manualSalario': { text: 'Salário bruto mensal usado como base de todos os cálculos da simulação.' },
+  'laborSim.manualAdmissao': { text: 'Data em que o colaborador começou a trabalhar — usada pra calcular tempo de serviço, férias e 13º proporcionais.' },
+  'laborSim.dataRescisaoCompleto': { text: 'Data do desligamento — último dia de trabalho considerado no cálculo da rescisão.' },
+  'laborSim.tipoRescisao': { text: 'Motivo do desligamento — muda o que o colaborador tem direito a receber: sem justa causa dá direito a tudo (aviso, multa de 40% do FGTS); com justa causa perde aviso prévio, férias e 13º proporcionais e a multa do FGTS; pedido de demissão e acordo mútuo ficam no meio do caminho.' },
+  'laborSim.avisoPrevio': { text: 'Se o colaborador trabalhou os dias do aviso prévio (sem indenização extra) ou não trabalhou e a empresa paga o período em dinheiro (indenizado) — só aparece quando o tipo de rescisão dá direito a aviso prévio.' },
+  'laborSim.feriasVencidas': { text: 'Quantos períodos de férias completos o colaborador já tinha direito e nunca tirou — cada período soma um salário + 1/3 extra no resultado.' },
+  'laborSim.dependentesIrrf': { text: 'Quantidade de dependentes declarados pro Imposto de Renda — cada um abate R$ 189,59 da base de cálculo do IRRF, reduzindo o imposto descontado.' },
+  'laborSim.fgtsSaldoInformado': { text: 'Se você souber o saldo real do FGTS (extrato do app Caixa Trabalhador ou caixa.gov.br), informe aqui pra um cálculo mais preciso da multa; deixando em branco, o app estima 8% do salário por mês trabalhado.' },
+  'laborSim.chipFerias': { text: 'Liga/desliga se as férias proporcionais + 1/3 entram na conta — desligue só se quiser simular um cenário sem essa verba.' },
+  'laborSim.chip13': { text: 'Liga/desliga se o 13º salário proporcional entra na conta.' },
+  'laborSim.chipFgts': { text: 'Liga/desliga se o FGTS e a multa entram na conta.' },
+  'laborSim.copiarResultado': { text: 'Copia o resumo da simulação (todas as verbas e os totais) pra área de transferência, pronto pra colar num WhatsApp, nota ou e-mail.' },
+  'laborSim.dataFechamentoSimplificado': { text: 'Data até quando o período está sendo fechado — usada pra calcular os dias, férias e 13º proporcionais até essa data.' },
+  'laborSim.dataRecebimento': { text: 'Data em que o pagamento desse acerto vai ser feito — é só uma referência que aparece no resumo, não muda os valores calculados.' },
+  'laborSim.jaRecebeuProporcional': { text: 'Marque se o saldo de salário (dias trabalhados no mês) já foi pago antes desse fechamento — assim ele não entra de novo no total.' },
+  'laborSim.recebeQuinzenal': { text: 'Marque se esse colaborador recebe uma quinzena como adiantamento do salário — ao marcar, aparece um campo pra informar o valor já recebido, que é descontado do total apurado.' },
+  'laborSim.adiantamentoValor': { text: 'Valor que o colaborador já recebeu como adiantamento quinzenal — é descontado do total líquido do acerto.' },
+  'laborSim.fgtsSaldoInformadoSimp': { text: 'Mesmo campo do modo completo: informe o saldo real do FGTS pra um cálculo mais preciso, ou deixe em branco pra usar a estimativa de 8% do salário por mês.' },
+  'laborSim.simpChipFerias': { text: 'Liga/desliga a verba de férias (proporcionais do período atual + os períodos vencidos selecionados logo abaixo) nesse fechamento — o 1/3 é um toggle separado.' },
+  'laborSim.simpFeriasVencidas': { text: 'Quantos períodos aquisitivos completos (12 meses) o colaborador já tem e ainda não gozou nem foi pago — cada período soma um mês inteiro de salário (+ 1/3, se esse toggle estiver ligado) além da fração proporcional do período atual. O app não sabe se férias já foram tiradas no passado, então esse número depende de quem preenche.' },
+  'laborSim.simpChipTercoFerias': { text: 'Liga/desliga o 1/3 constitucional sobre as férias proporcionais — no modo simplificado, é um valor separado da base das férias, pra você poder incluir só um dos dois se precisar.' },
+  'laborSim.simpChip13': { text: 'Liga/desliga o 13º salário proporcional nesse fechamento.' },
+  'laborSim.simpChipFgts': { text: 'Liga/desliga o valor do FGTS do período nesse fechamento.' },
+  'laborSim.simpChipTercoFgts': { text: '"1/3 do FGTS" não existe na lei (o 1/3 constitucional é só sobre férias) — esse toggle só existe pra quem tem um acordo interno específico que prevê esse valor extra; deixe desligado se não for o seu caso.' },
+  'laborSim.abrirParametros': { text: 'Abre a tela de Configurações do Simulador — tabelas de INSS/IRRF, % de FGTS, multas e regras de aviso prévio usadas nos cálculos, editáveis caso a lei ou algum valor base mude.' },
+  'laborSim.exportarPdf': { text: 'Gera um PDF com o resumo da simulação, pronto pra compartilhar — mesmo aviso de "somente consulta" impresso no rodapé do arquivo.' },
+  'laborSim.exportarJpg': { text: 'Gera uma imagem (JPG) com o resumo da simulação, pronta pra mandar por WhatsApp — mesmo aviso de "somente consulta" impresso na imagem.' },
+
+  // Parâmetros do Simulador de Rescisão (LaborSimParamsView) — tabelas e valores base editáveis.
+  'laborParams.inssTabela': { text: 'Tabela progressiva de INSS: cada faixa desconta sua alíquota só sobre a parte do valor que cai dentro dela. Ajuste o "Até R$" e a alíquota de cada faixa quando o governo publicar uma tabela nova.' },
+  'laborParams.irrfTabela': { text: 'Tabela do Imposto de Renda mensal: base de cálculo (depois do INSS e dos dependentes) × alíquota, menos o valor a deduzir de cada faixa. A última faixa não tem teto — qualquer valor acima dela usa a alíquota e dedução dela.' },
+  'laborParams.outrosValores': { text: 'Valores soltos usados nos cálculos: dedução por dependente do IRRF, % de FGTS estimado por mês, % de multa do FGTS em cada tipo de rescisão e as regras de dias do aviso prévio.' },
+  'laborParams.restaurarPadroes': { text: 'Carrega de volta os valores padrão (tabelas de INSS/IRRF e demais parâmetros vigentes na última atualização do app) — ainda precisa tocar em Salvar pra confirmar.' },
+  'laborParams.salvar': { text: 'Salva os parâmetros — passam a valer em todas as simulações feitas depois, tanto neste aparelho quanto pros outros colaboradores que usarem o app.' },
+
   // Ordem de Serviço (terceirizado)
   'serviceOrder.emitir': { text: 'Emite a Ordem de Serviço com os itens e o valor definidos — já gera o valor a pagar no Financeiro pro prestador, sem precisar lançar manualmente.' },
 
@@ -764,16 +824,18 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'dash.overview.receitasConcluir': { text: 'Fecha o detalhamento de receitas.' },
   'dash.overview.carrinhoFechar': { text: 'Fecha o carrinho de itens da compra.' },
 
-  // Card "Comissão a Vendedores" (CommissionToSellersCard) — dentro do Painel Inicial
-  'dash.commission.expandir': { text: 'Abre ou fecha o card de Comissão a Vendedores, com o total a pagar por vendedor no período.' },
-  'dash.commission.periodo': { text: 'Escolhe o período usado pra somar as vendas com comissão (dia, semana, mês, ano ou total).' },
+  // Card "Folha de Pagamento" (CommissionToSellersCard, antes só "Comissão a Vendedores") —
+  // dentro do Painel Inicial e do Financeiro. Soma Salário + Comissão de cada colaborador.
+  'dash.commission.expandir': { text: 'Abre ou fecha o card de Folha de Pagamento, com o total a pagar (salário + comissão) por colaborador no período.' },
+  'dash.commission.periodo': { text: 'Escolhe o período usado pra somar as vendas com comissão (dia, semana, mês, ano ou total) — o salário sempre considera o mês atual.' },
   'dash.commission.mesEscolhido': { text: 'Escolhe o mês/ano exato do período de comissão.' },
   'dash.commission.incluirPendentes': { text: 'Ligado, soma no total a pagar também a comissão de vendas cujo cliente ainda não pagou; desligado, só conta o que já é dinheiro recebido.' },
-  'dash.commission.vendedorItem': { text: 'Expande esse vendedor pra ver a lista de vendas que geraram comissão no período.' },
+  'dash.commission.vendedorItem': { text: 'Expande esse colaborador pra ver o salário, a lista de vendas com comissão no período (se for vendedor) e o botão de pagar.' },
   'dash.commission.abrirVenda': { text: 'Abre essa venda específica.' },
-  'dash.commission.copiar': { text: 'Copia o valor da comissão desse vendedor pra área de transferência.' },
-  'dash.commission.pagar': { text: 'Abre uma Compra já preenchida com o valor da comissão, pra registrar o pagamento ao vendedor.' },
+  'dash.commission.copiar': { text: 'Copia o valor total (salário + comissão) desse colaborador pra área de transferência.' },
+  'dash.commission.pagar': { text: '"Lançar nos Gastos" abre uma Compra já preenchida com salário, pró-labore e/ou comissão desse colaborador (Purchase/Fornecedor) — inclusive a de Pró-labore de Diretores. Quem tem "Recebe Adiantamento Quinzenal?" ligado ganha três botões: Adiantamento (só essa parte), Fechamento (o restante + comissão) ou Total (tudo de uma vez — use só se não for separar as duas datas). Depois de lançado, o botão mostra "Editar" — toque de novo pra reabrir a Compra e corrigir se algo saiu errado (ela pode ser editada ou excluída normalmente em Financeiro/Compras).' },
   'dash.commission.exportar': { text: 'Gera um PDF ou uma imagem com o detalhamento da comissão desse vendedor no período.' },
+  'dash.commission.exportarFolha': { text: 'Gera um PDF ou uma imagem com a Folha de Pagamento inteira do período (todos os colaboradores, salário/pró-labore/comissão/desconto de empréstimo e o líquido de cada um) — diferente do exportar individual, que só mostra um colaborador por vez.' },
 
   // Card "Ordens de Serviço a Fornecedores" (ProviderServiceOrdersCard) — dentro do Painel Inicial
   'dash.providerOS.expandir': { text: 'Abre ou fecha o card de Ordens de Serviço a Fornecedores, com o total em aberto acumulado de todos os fornecedores.' },

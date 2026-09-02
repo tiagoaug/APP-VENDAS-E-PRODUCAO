@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Download, ArrowLeft, Calendar, Filter, MessageCircle, Copy, Share2, Search } from 'lucide-react';
-import { Sale, Transaction, Product, Person, SaleStatus, TransactionType, Category, MonthlySnapshot } from '../types';
+import { Sale, Transaction, Product, Person, SaleStatus, TransactionType, Category, MonthlySnapshot, Collaborator } from '../types';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -22,6 +22,7 @@ interface ReportDetailedViewProps {
   people: Person[];
   categories: Category[];
   monthlySnapshots?: MonthlySnapshot[];
+  collaborators?: Collaborator[];
 }
 
 export default function ReportDetailedView({
@@ -35,10 +36,15 @@ export default function ReportDetailedView({
   people,
   categories,
   monthlySnapshots = [],
+  collaborators = [],
 }: ReportDetailedViewProps) {
-  const [startDate, setStartDate] = useState('');
+  // "Desempenho de Vendedores" já abre filtrado no mês atual por padrão — é a leitura mais
+  // comum desse relatório ("mensalmente"); os outros continuam sem filtro de período (mostram
+  // tudo) até o usuário escolher. Só roda uma vez (lazy init), então trocar de relatório sem
+  // desmontar o componente não reseta um período que o usuário já tenha ajustado.
+  const [startDate, setStartDate] = useState(() => reportId === 'desempenho-vendedores' ? format(startOfMonth(new Date()), 'yyyy-MM-dd') : '');
   const [expandedSnapshotMonth, setExpandedSnapshotMonth] = useState<string | null>(null);
-  const [endDate, setEndDate] = useState('');
+  const [endDate, setEndDate] = useState(() => reportId === 'desempenho-vendedores' ? format(endOfMonth(new Date()), 'yyyy-MM-dd') : '');
   const [customerSearch, setCustomerSearch] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [accountingFilter, setAccountingFilter] = useState<'ALL' | 'ACCOUNTING' | 'NON_ACCOUNTING'>('ALL');
@@ -71,6 +77,7 @@ export default function ReportDetailedView({
       case 'dividas-fornecedor': return 'Dívidas por Fornecedor';
       case 'informacao-estoque': return 'Informação de Estoques';
       case 'relacionamento-cliente': return 'Relacionamento com Cliente';
+      case 'desempenho-vendedores': return 'Desempenho de Vendedores';
       case 'historico-mensal': return 'Histórico Mensal (Arquivado)';
       default: return 'Relatório';
     }
@@ -151,6 +158,27 @@ export default function ReportDetailedView({
 
     return Object.values(byCustomer).sort((a, b) => b.total - a.total);
   }, [sales, people, reportId, startDate, endDate]);
+
+  // Desempenho de Vendedores — ranking dos colaboradores marcados como Vendedor (mesma base de
+  // cálculo do card Folha de Pagamento, ver CommissionToSellersCard.tsx: soma
+  // Sale.commissionAmount já "assado" na venda), dentro do período dos filtros acima (que já
+  // abre no mês atual por padrão pra esse relatório).
+  const sellerPerformanceData = useMemo(() => {
+    if (reportId !== 'desempenho-vendedores') return [];
+    const sellers = collaborators.filter(c => c.isSeller);
+    if (sellers.length === 0) return [];
+    const realSales = sales.filter(s => s.status === SaleStatus.SALE && s.isAccounting !== false && filterByDateRange(s.date));
+    return sellers
+      .map(c => {
+        const collabSales = realSales.filter(s => s.sellerId === c.id);
+        const salesCount = collabSales.length;
+        const totalSold = collabSales.reduce((acc, s) => acc + s.total, 0);
+        const commission = collabSales.reduce((acc, s) => acc + (s.commissionAmount || 0), 0);
+        const avgTicket = salesCount > 0 ? totalSold / salesCount : 0;
+        return { collaborator: c, salesCount, totalSold, commission, avgTicket };
+      })
+      .sort((a, b) => b.totalSold - a.totalSold);
+  }, [sales, collaborators, reportId, startDate, endDate]);
 
   // Produtos Curva A
   const curvaAData = useMemo(() => {
@@ -389,6 +417,17 @@ export default function ReportDetailedView({
         `R$ ${r.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         `R$ ${r.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         `R$ ${r.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      ]);
+      autoTable(doc, { startY: 40, head, body, theme: 'grid' });
+    } else if (reportId === 'desempenho-vendedores') {
+      const head = [['#', 'Vendedor', 'Vendas', 'Total Vendido', 'Ticket Médio', 'Comissão']];
+      const body = sellerPerformanceData.map((r, i) => [
+        (i + 1).toString(),
+        r.collaborator.name,
+        r.salesCount.toString(),
+        `R$ ${r.totalSold.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `R$ ${r.avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `R$ ${r.commission.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       ]);
       autoTable(doc, { startY: 40, head, body, theme: 'grid' });
     } else if (reportId === 'dividas-fornecedor') {
@@ -716,6 +755,51 @@ export default function ReportDetailedView({
                             {topCustomersData.length === 0 && (
                                 <tr>
                                     <td colSpan={4} className="p-6 text-center text-xs text-slate-400 font-bold">Nenhum dado encontrado.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {reportId === 'desempenho-vendedores' && (
+                 <div className="overflow-x-auto no-scrollbar">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr>
+                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">#</th>
+                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">Vendedor</th>
+                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800 text-right">Vendas</th>
+                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800 text-right">Total Vendido</th>
+                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800 text-right">Ticket Médio</th>
+                                <th className="p-3 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800 text-right">Comissão</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sellerPerformanceData.map((r, i) => (
+                                <tr key={r.collaborator.id} className={`border-b last:border-0 dark:border-slate-800 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}>
+                                    <td className="p-3 text-xs font-bold text-slate-400">{i + 1}º</td>
+                                    <td className="p-3 text-xs font-bold">
+                                        <div className="flex items-center gap-2">
+                                            {r.collaborator.photoUrl ? (
+                                                <img src={r.collaborator.photoUrl} className="w-7 h-7 rounded-lg object-cover shrink-0" />
+                                            ) : (
+                                                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-white text-[10px] font-black" style={{ backgroundColor: r.collaborator.colorHex || '#64748b' }}>
+                                                    {r.collaborator.name?.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span>{r.collaborator.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="p-3 text-xs text-right font-bold text-slate-500">{r.salesCount}</td>
+                                    <td className="p-3 text-xs text-right font-black text-emerald-500">R$ {r.totalSold.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td className="p-3 text-xs text-right font-bold text-slate-500">R$ {r.avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td className="p-3 text-xs text-right font-bold text-indigo-500">R$ {r.commission.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            ))}
+                            {sellerPerformanceData.length === 0 && (
+                                <tr>
+                                    <td colSpan={6} className="p-6 text-center text-xs text-slate-400 font-bold">Nenhum vendedor cadastrado ou nenhuma venda no período.</td>
                                 </tr>
                             )}
                         </tbody>

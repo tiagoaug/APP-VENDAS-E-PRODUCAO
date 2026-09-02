@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator, CompanyProfile, ServiceOrder, GeneralPurchaseItem } from '../types';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator, CompanyProfile, ServiceOrder, GeneralPurchaseItem, CollaboratorLoan } from '../types';
 import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, ChevronRight, Tag, FileText, Repeat, Send, FileDown, Image as ImageIcon, Hammer, Factory, X, Layers, Download, Upload } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -13,6 +13,7 @@ import { firebaseService } from '../services/firebaseService';
 import { getPeriodRange, computePeriodFinancials, computeSalesProfitInPeriod, computePendingReceivables, computePendingPayables, OverviewPeriodType, STATS_PERIOD_LABELS } from '../utils/businessOverview';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import CommissionToSellersCard from '../components/CommissionToSellersCard';
+import TransactionListCard from '../components/TransactionListCard';
 import ProviderServiceOrdersCard from '../components/ProviderServiceOrdersCard';
 
 const STATS_PERIOD_PHRASE: Record<OverviewPeriodType, string> = { MONTH: 'no mês', QUARTER: 'no trimestre', SEMESTER: 'no semestre', YEAR: 'no ano' };
@@ -53,6 +54,13 @@ interface FinancialViewProps {
   /** Abre o Lançamento de Compra (Compras Gerais) pré-preenchido com a comissão de um
    * vendedor, pronto pra virar um título a pagar — ver CommissionToSellersCard.tsx. */
   onPayCommission?: (params: { supplierId?: string; initialGeneralItems: { id: string; description: string; quantity: number; value: number; kind: 'general' }[]; initialDescription: string }) => void;
+  /** % do salário/pró-labore pago no Adiantamento (RH → Configurações Globais) — ver
+   * CommissionToSellersCard.tsx. */
+  advancePercent?: number;
+  /** Empréstimos ativos a colaboradores (RH → Empréstimos) — ver CommissionToSellersCard.tsx,
+   * que abate o desconto mensal do Fechamento e registra o pagamento aqui. */
+  loans?: CollaboratorLoan[];
+  onSaveLoan?: (loan: CollaboratorLoan) => void | Promise<void>;
   isDarkMode: boolean;
   /** Colaboradores marcados como Vendedor (ver Collaborator.isSeller) — alimenta o painel
    * "Comissão a Vendedores" abaixo, somando Sale.commissionAmount de cada um. */
@@ -94,6 +102,9 @@ export default function FinancialView({
   companyProfile = null,
   serviceOrders = [],
   onPayProviderServiceOrders,
+  advancePercent,
+  loans,
+  onSaveLoan,
 }: FinancialViewProps) {
   const hidePrivacy = usePrivacyMode();
   const [filterType, setFilterType] = useState<TransactionType | 'ALL' | 'PAYABLE'>('ALL');
@@ -240,6 +251,12 @@ export default function FinancialView({
 
   const filtered = effectiveTransactions
     .filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL)
+    // Mão de Obra de Ordens de Serviço (terceirizados) some da listagem — continua contando
+    // normalmente em Despesas/Lucro (esse filtro só afeta a lista visual), e passa a ser
+    // consultada pelo card "Consultas" em vez de poluir o dia a dia do Financeiro. Sem um
+    // marcador estável no schema (ver ServiceOrderFormView.tsx), o único jeito de identificar
+    // é pelo prefixo fixo da descrição gerada ao emitir a OS.
+    .filter(t => !(t.description || '').startsWith('Mão de Obra - OS '))
     .filter(t => {
       const matchesFilter = filterType === 'ALL' || t.type === filterType;
       const desc = t.description || '';
@@ -535,10 +552,15 @@ export default function FinancialView({
         transactions={transactions}
         purchases={purchases}
         sales={sales}
+        products={products}
         accounts={businessAccounts}
         onSettle={handleSettle}
         onEdit={handleEdit}
         onDeleteClick={handleDeleteClick}
+        onOpenPurchase={onOpenPurchase}
+        onOpenSale={onOpenSale}
+        settlingId={settlingId}
+        deletingId={deletingId}
         isDarkMode={isDarkMode}
       />
 
@@ -555,18 +577,9 @@ export default function FinancialView({
 
         {/* Summary Card — Lucro com Vendas/Receitas/Despesas, lançamento manual e Visualização
             do Meu Negócio, tudo num card só (ver `embedded` em BusinessOverviewCard). */}
-        <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-gradient-to-br from-sky-100 via-blue-100 to-sky-200 border-sky-200 text-sky-900 shadow-sky-100'}`}>
+        <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200 text-black shadow-slate-200'}`}>
           <div className="p-6 relative">
-             <div className="absolute top-6 right-6">
-                <button
-                  onClick={() => setIsQueryModalOpen(true)}
-                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-2xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-indigo-400 border border-slate-700' : 'bg-white/60 text-sky-700 backdrop-blur-md border border-sky-200 shadow-sm'}`}
-                >
-                  <ClipboardCheck size={22} strokeWidth={2.5} />
-                  <span className="text-[7px] font-black tracking-[0.1em]">Consultas</span>
-                </button>
-             </div>
-             <p className={`text-[10px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Lucro com Vendas {STATS_PERIOD_PHRASE[statsPeriodType]}</p>
+             <p className={`text-[10px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-black'}`}>Lucro com Vendas {STATS_PERIOD_PHRASE[statsPeriodType]}</p>
              <h2 className={`text-3xl font-black mt-2 tracking-tighter transition-all ${periodSalesProfit >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-500')} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                R$ {periodSalesProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
              </h2>
@@ -581,7 +594,7 @@ export default function FinancialView({
                        type="button"
                        onClick={() => setStatsPeriodType(pt)}
                        className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
-                         statsPeriodType === pt ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-sky-700'
+                         statsPeriodType === pt ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-700'
                        }`}
                      >
                        {STATS_PERIOD_LABELS[pt]}
@@ -590,15 +603,15 @@ export default function FinancialView({
                 </div>
                 <div
                   onClick={openStatsMonthPicker}
-                  className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white/60 border-sky-200'}`}
+                  className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white/60 border-slate-200'}`}
                 >
-                  <Calendar size={12} className="text-sky-500 shrink-0" />
+                  <Calendar size={12} className="text-slate-500 shrink-0" />
                   <input
                     ref={statsDateInputRef}
                     type="month"
                     value={statsPeriodDate}
                     onChange={(e) => setStatsPeriodDate(e.target.value)}
-                    className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-sky-700'}`}
+                    className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
                   />
                 </div>
              </div>
@@ -610,7 +623,7 @@ export default function FinancialView({
                   type="button"
                   onClick={() => setShowPendingStats(false)}
                   className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
-                    !showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-sky-700'
+                    !showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-700'
                   }`}
                 >
                   Sem valores a receber
@@ -619,7 +632,7 @@ export default function FinancialView({
                   type="button"
                   onClick={() => setShowPendingStats(true)}
                   className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
-                    showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-sky-700'
+                    showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-700'
                   }`}
                 >
                   Com valores a receber
@@ -628,15 +641,15 @@ export default function FinancialView({
 
              <div className={`grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800 transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 <div>
-                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Receitas</p>
+                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-black'}`}>Receitas</p>
                    <p className={`text-sm font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>R$ {totalReceitas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div>
-                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Despesas</p>
+                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-black'}`}>Despesas</p>
                    <p className={`text-sm font-bold ${isDarkMode ? 'text-rose-400' : 'text-rose-500'}`}>R$ {totalDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div>
-                   <p className={`text-[8px] font-black tracking-widest truncate ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Receitas - Despesas</p>
+                   <p className={`text-[8px] font-black tracking-widest truncate ${isDarkMode ? 'text-slate-500' : 'text-black'}`}>Receitas - Despesas</p>
                    <p className={`text-sm font-bold ${(totalReceitas - totalDespesas) >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-500')}`}>
                      R$ {(totalReceitas - totalDespesas).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                    </p>
@@ -646,11 +659,11 @@ export default function FinancialView({
              {showPendingStats && (
                <div className={`grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800 transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   <div>
-                     <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Vendas a Receber</p>
+                     <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-black'}`}>Vendas a Receber</p>
                      <p className={`text-sm font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>R$ {pendingReceivables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                   <div>
-                     <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Contas a Pagar</p>
+                     <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-black'}`}>Contas a Pagar</p>
                      <p className={`text-sm font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>R$ {pendingPayables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                </div>
@@ -660,11 +673,11 @@ export default function FinancialView({
           {/* Cápsula de lançamento manual — substitui os antigos botões "+" flutuantes; agora
               do tamanho do card acima, com o nome de cada função, e confirma o que vai fazer
               antes de abrir o formulário (ver `manualEntryConfirmType`). */}
-          <div className={`grid grid-cols-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-200'}`}>
+          <div className={`grid grid-cols-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
              <button
                type="button"
                onClick={() => setManualEntryConfirmType(TransactionType.INCOME)}
-               className={`flex items-center justify-center gap-2 py-4 border-r font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400 border-slate-800' : 'bg-emerald-50 text-emerald-600 border-sky-200'}`}
+               className={`flex items-center justify-center gap-2 py-4 border-r font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400 border-slate-800' : 'bg-emerald-50 text-emerald-600 border-slate-200'}`}
              >
                <TrendingUp size={16} strokeWidth={3} /> Nova Entrada
              </button>
@@ -679,7 +692,7 @@ export default function FinancialView({
 
           {/* Visualização do Meu Negócio — embutida no mesmo card (ver prop `embedded`), em vez
               de um card avulso separado abaixo. */}
-          <div className={`p-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-200'}`}>
+          <div className={`p-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
             <BusinessOverviewCard
               isDarkMode={isDarkMode}
               products={products}
@@ -696,96 +709,6 @@ export default function FinancialView({
             />
           </div>
         </div>
-
-        <CommissionToSellersCard
-          isDarkMode={isDarkMode}
-          sales={sales}
-          collaborators={collaborators}
-          people={people}
-          companyProfile={companyProfile}
-          onPayCommission={onPayCommission}
-          onOpenSale={onOpenSale}
-        />
-        <ProviderServiceOrdersCard
-          isDarkMode={isDarkMode}
-          serviceOrders={serviceOrders}
-          transactions={transactions}
-          people={people}
-          products={products}
-          companyProfile={companyProfile}
-          onPayProviderServiceOrders={onPayProviderServiceOrders}
-        />
-
-        {/* Despesas Recorrentes — séries de Compra Recorrente (ver Purchase.recurrenceGroupId,
-            gerada em PurchaseFormView). "Restantes" cai sozinho conforme cada parcela é quitada
-            em Compras — não é um contador próprio, é recalculado a cada render a partir do
-            paymentStatus de cada ocorrência. */}
-        {recurringExpenseGroups.length > 0 && (
-          <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <button
-              type="button"
-              onClick={() => setIsRecurringExpensesExpanded(v => !v)}
-              className="w-full flex items-center justify-between gap-3 p-6"
-            >
-              <div className="flex items-center gap-3 text-left min-w-0">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-cyan-900/20 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}>
-                  <Repeat size={18} strokeWidth={2.5} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Despesas Recorrentes</p>
-                  <p className={`text-lg font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {recurringExpenseGroups.length} {recurringExpenseGroups.length === 1 ? 'série ativa' : 'séries ativas'}
-                  </p>
-                </div>
-              </div>
-              <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isRecurringExpensesExpanded ? 'rotate-180' : ''}`} />
-            </button>
-            {isRecurringExpensesExpanded && (
-              <div className={`flex flex-col gap-4 px-6 pb-6 border-t pt-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                {/* Filtro de período — "quanto devo" num mês específico, inclusive futuro */}
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1">Quanto devo em...</p>
-                  <div
-                    onClick={openRecurringMonthPicker}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
-                  >
-                    <Calendar size={13} className="text-cyan-500 shrink-0" />
-                    <input
-                      ref={recurringMonthInputRef}
-                      type="month"
-                      value={recurringLookupMonth}
-                      onChange={(e) => setRecurringLookupMonth(e.target.value)}
-                      className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[11px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
-                    />
-                  </div>
-                  <p className={`text-xl font-black tracking-tighter mt-2 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
-                    R$ {recurringMonthlyTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  {recurringExpenseGroups.map(g => (
-                    <div key={g.groupId} className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
-                      <div className="min-w-0">
-                        <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.description}</p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 truncate">
-                          {g.supplierName} · <span className={`transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {g.installmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mês</span>
-                          {g.nextDue && ` · próx. ${format(g.nextDue.dueDate || g.nextDue.date, 'dd/MM/yyyy')}`}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className={`text-sm font-black ${g.remainingCount > 0 ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')}`}>
-                          {g.remainingCount} restantes
-                        </p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">de {g.totalInstallments} · {g.paidCount} pagas</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         <ConfirmDialog
           isOpen={manualEntryConfirmType !== null}
@@ -1007,229 +930,26 @@ export default function FinancialView({
                 );
               })
           ) : (
-            filtered.map((transaction) => {
-            const category = categories.find(c => c.id === transaction.categoryId);
-            const account = accounts.find(a => a.id === transaction.accountId);
-            const isPending = transaction.status === 'PENDING';
-
-            const relatedSale = sales.find(s => s.id === transaction.relatedId);
-            const relatedPurchase = purchases.find(p => p.id === transaction.relatedId);
-            const isPartialPayment = /pagto parcial/i.test(transaction.description || '');
-            let displayTitle = transaction.description;
-            if (relatedPurchase) {
-              const baseLabel = relatedPurchase.type === PurchaseType.REPLENISHMENT
-                ? 'Abastecimento de Estoque'
-                : relatedPurchase.type === PurchaseType.SOLE
-                ? 'Compra de Solados'
-                : 'Compra Geral';
-              displayTitle = isPartialPayment ? `Pagamento Parcial - ${baseLabel}` : baseLabel;
-            } else if (relatedSale) {
-              displayTitle = `Venda #${relatedSale.orderNumber}`;
-            }
-            const canNavigate = !!((relatedPurchase && onOpenPurchase) || (relatedSale && onOpenSale));
-
-            return (
-              <div
-                key={transaction.id}
-                onClick={canNavigate ? () => {
-                  if (relatedPurchase && onOpenPurchase) onOpenPurchase(relatedPurchase.id);
-                  else if (relatedSale && onOpenSale) onOpenSale(relatedSale.id);
-                } : undefined}
-                className={`p-4 rounded-3xl border shadow-sm flex flex-col gap-3 ${canNavigate ? 'cursor-pointer active:scale-[0.99] transition-transform' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
-              >
-                {/* Linha do topo: título sempre visível por completo */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className={`font-black text-base uppercase tracking-tight leading-snug flex-1 min-w-0 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                    {displayTitle}
-                  </h3>
-                  {relatedSale && (
-                     <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 text-[9px] font-black tracking-widest shrink-0">Venda</span>
-                  )}
-                  {relatedPurchase && (
-                     <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 text-[9px] font-black tracking-widest shrink-0">Compra</span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${transaction.type === TransactionType.INCOME ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400'}`}>
-                      {transaction.type === TransactionType.INCOME ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      {/* Sale Details if applicable */}
-                      {(() => {
-                        const sale = relatedSale;
-                        if (sale) {
-                          return (
-                            <div className="mt-1.5 space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <User size={10} className="text-indigo-400" />
-                                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">
-                                  {sale.customerName || people.find(p => p.id === sale.customerId)?.name || 'Consumidor'}
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] font-bold text-slate-400 tracking-widest">
-                                <span className="flex items-center gap-1">
-                                  <Clipboard size={10} />
-                                  Pedido #{sale.orderNumber}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Package size={10} />
-                                  {(() => {
-                                    const totalItems = sale.items.reduce((acc, item) => acc + item.quantity, 0);
-                                    const firstItem = sale.items[0];
-                                    const firstProduct = products.find(p => p.id === firstItem?.productId);
-                                    if (sale.items.length === 1 && firstProduct) {
-                                      return `${firstItem.quantity}x ${firstProduct.name}`;
-                                    }
-                                    if (sale.items.length > 1 && firstProduct) {
-                                      return `${totalItems} Itens (${firstProduct.name}...)`;
-                                    }
-                                    return `${totalItems} Itens`;
-                                  })()}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        const purchase = relatedPurchase;
-                        if (purchase) {
-                          const supplier = people.find(p => p.id === purchase.supplierId);
-                          return (
-                            <div className="mt-1.5 space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
-                                  {supplier?.name || 'Fornecedor'}
-                                </span>
-                              </div>
-                              {purchase.notes && (
-                                <p className="text-[8px] font-bold text-slate-400 truncate max-w-[200px]">
-                                  {purchase.notes}
-                                </p>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        if (transaction.contactName) {
-                          return (
-                            <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 tracking-widest mt-0.5">
-                              <User size={10} /> {transaction.contactName}
-                            </div>
-                          );
-                        }
-
-                        // Beneficiário/Prestador via personId (OS de corte, mão de obra)
-                        const beneficiary = transaction.personId
-                          ? people.find(p => p.id === transaction.personId)
-                          : null;
-                        if (beneficiary) {
-                          return (
-                            <div className="flex items-center gap-1 text-[9px] font-black text-indigo-500 dark:text-indigo-400 tracking-widest mt-0.5">
-                              <User size={10} /> {beneficiary.name}
-                            </div>
-                          );
-                        }
-
-                        return null;
-                      })()}
-
-                      {transaction.items && transaction.items.length > 0 && (
-                        <div className="mt-3 space-y-1 pl-3 border-l-2 border-slate-100 dark:border-slate-800/50">
-                          {transaction.items.map((item, idx) => (
-                            <div key={item.id || idx} className="flex justify-between items-center text-[8px] font-bold text-slate-500 dark:text-slate-400 tracking-widest">
-                              <span className="truncate max-w-[150px]">{item.description || 'Item sem descrição'}</span>
-                              <span className="shrink-0 ml-2">R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={`font-black text-base tracking-tight transition-all ${transaction.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
-                      {transaction.type === TransactionType.INCOME ? '+' : '-'} R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest mt-1 ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
-                      {isPending ? <Clock size={10} /> : <CheckCircle2 size={10} />}
-                      {isPending ? 'Pendente' : 'Confirmado'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-800">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-[10px] text-indigo-400 dark:text-indigo-500 font-black uppercase tracking-widest flex items-center gap-1">
-                      <Wallet size={10} />
-                      {account?.name || 'Conta'}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
-                      <Calendar size={10} />
-                      {format(transaction.date, "dd MMM yyyy", { locale: ptBR })}
-                    </span>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    {isPending && (
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSettle(transaction);
-                        }}
-                        disabled={settlingId === transaction.id}
-                        className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-[10px] font-black tracking-widest shadow-xl transition-all active:scale-95 ${
-                          settlingId === transaction.id 
-                            ? 'bg-slate-200 text-slate-500 animate-pulse' 
-                            : 'bg-emerald-500 text-white shadow-emerald-100 hover:bg-emerald-600'
-                        }`}
-                      >
-                        {settlingId === transaction.id ? (
-                          <> <RefreshCcw size={14} className="animate-spin" /> Processando... </>
-                        ) : (
-                          <> <CheckCircle2 size={16} strokeWidth={3} /> Dar Baixa </>
-                        )}
-                      </button>
-                    )}
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(transaction);
-                      }} 
-                      className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-500 active:bg-indigo-50 transition-all"
-                      title="Editar Lançamento"
-                      aria-label="Editar Lançamento"
-                    >
-                      <Edit size={18} strokeWidth={2.5} />
-                    </button>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteClick(transaction.id);
-                      }}
-                      disabled={deletingId === transaction.id}
-                      className={`p-3 rounded-xl transition-all ${
-                        deletingId === transaction.id
-                          ? 'bg-slate-100 text-slate-300 animate-pulse'
-                          : 'bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-rose-500 active:bg-rose-50'
-                      }`}
-                      title="Excluir Lançamento"
-                      aria-label="Excluir Lançamento"
-                    >
-                      {deletingId === transaction.id ? (
-                        <RefreshCcw size={18} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={18} strokeWidth={2.5} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+            // A listagem item a item de Tudo/Entradas/Saídas saiu daqui — o mesmo card completo
+            // (com busca por cliente/fornecedor, filtro de status e período) agora vive só no
+            // card "Consultas" acima de Ordens de Serviço a Fornecedores, pra não duplicar a
+            // mesma lista em dois lugares da tela.
+            <button
+              type="button"
+              onClick={() => setIsQueryModalOpen(true)}
+              className={`w-full flex flex-col items-center justify-center gap-3 py-12 rounded-[2.5rem] border border-dashed transition-all active:scale-[0.99] ${isDarkMode ? 'border-slate-800 hover:bg-slate-900/50' : 'border-slate-200 hover:bg-slate-50'}`}
+            >
+              <ClipboardCheck size={40} className="text-slate-300 dark:text-slate-700" strokeWidth={1.5} />
+              <p className="text-xs text-slate-400 font-bold tracking-widest italic px-8 text-center leading-relaxed">
+                Os lançamentos agora ficam em "Consultas" — toque aqui para abrir
+              </p>
+            </button>
         )}
 
-          {/* Lançamentos antigos e já liquidados não ficam carregados por padrão — busca sob demanda */}
+          {/* Lançamentos antigos e já liquidados não ficam carregados por padrão — busca sob
+              demanda. Continua aqui (independente da listagem acima ter virado um atalho pra
+              Consultas) porque também alimenta os totais de Receitas/Despesas de períodos
+              antigos no card do topo (ver `effectiveTransactions`/`periodFinancials`). */}
           {searchTerm.trim() && !olderTransactions && (
             <button
               type="button"
@@ -1240,14 +960,120 @@ export default function FinancialView({
               {isLoadingHistory ? 'Carregando...' : 'Carregar lançamentos mais antigos'}
             </button>
           )}
-
-          {filtered.length === 0 && filterType !== 'PAYABLE' && (
-            <div className="text-center py-12">
-              <AlertCircle size={48} className="mx-auto text-slate-100 dark:text-slate-800 mb-4" strokeWidth={1} />
-              <p className="text-xs text-slate-300 dark:text-slate-700 font-bold tracking-widest italic">Nenhuma transação encontrada</p>
-            </div>
-          )}
         </div>
+
+        <CommissionToSellersCard
+          isDarkMode={isDarkMode}
+          sales={sales}
+          collaborators={collaborators}
+          people={people}
+          companyProfile={companyProfile}
+          onPayCommission={onPayCommission}
+          onOpenSale={onOpenSale}
+          advancePercent={advancePercent}
+          loans={loans}
+          onSaveLoan={onSaveLoan}
+        />
+        <ProviderServiceOrdersCard
+          isDarkMode={isDarkMode}
+          serviceOrders={serviceOrders}
+          transactions={transactions}
+          people={people}
+          products={products}
+          companyProfile={companyProfile}
+          onPayProviderServiceOrders={onPayProviderServiceOrders}
+        />
+
+        {/* Consultas — promovido do botão pequeno que ficava dentro do card "Lucro com Vendas"
+            pra um card próprio aqui, mais visível. Abre o mesmo FinancialQueryModal de sempre
+            (busca lançamentos por cliente/fornecedor, com baixa/edição/exclusão). */}
+        <button
+          type="button"
+          onClick={() => setIsQueryModalOpen(true)}
+          data-guide-anchor="financial.consultasAbrir"
+          className={`w-full flex items-center gap-4 p-6 rounded-[2.5rem] border shadow-sm transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800/50' : 'bg-white border-slate-100 hover:bg-slate-50'}`}
+        >
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-sky-900/30 text-sky-400' : 'bg-sky-50 text-sky-600'}`}>
+            <ClipboardCheck size={24} strokeWidth={2.5} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Consultas</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Buscar lançamentos por cliente ou fornecedor</p>
+          </div>
+          <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+        </button>
+
+        {/* Despesas Recorrentes — séries de Compra Recorrente (ver Purchase.recurrenceGroupId,
+            gerada em PurchaseFormView). "Restantes" cai sozinho conforme cada parcela é quitada
+            em Compras — não é um contador próprio, é recalculado a cada render a partir do
+            paymentStatus de cada ocorrência. */}
+        {recurringExpenseGroups.length > 0 && (
+          <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setIsRecurringExpensesExpanded(v => !v)}
+              className="w-full flex items-center justify-between gap-3 p-6"
+            >
+              <div className="flex items-center gap-3 text-left min-w-0">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-cyan-900/20 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}>
+                  <Repeat size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Despesas Recorrentes</p>
+                  <p className={`text-lg font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {recurringExpenseGroups.length} {recurringExpenseGroups.length === 1 ? 'série ativa' : 'séries ativas'}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isRecurringExpensesExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {isRecurringExpensesExpanded && (
+              <div className={`flex flex-col gap-4 px-6 pb-6 border-t pt-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                {/* Filtro de período — "quanto devo" num mês específico, inclusive futuro */}
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1">Quanto devo em...</p>
+                  <div
+                    onClick={openRecurringMonthPicker}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                  >
+                    <Calendar size={13} className="text-cyan-500 shrink-0" />
+                    <input
+                      ref={recurringMonthInputRef}
+                      type="month"
+                      value={recurringLookupMonth}
+                      onChange={(e) => setRecurringLookupMonth(e.target.value)}
+                      className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[11px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
+                    />
+                  </div>
+                  <p className={`text-xl font-black tracking-tighter mt-2 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                    R$ {recurringMonthlyTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {recurringExpenseGroups.map(g => (
+                    <div key={g.groupId} className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                      <div className="min-w-0">
+                        <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.description}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 truncate">
+                          {g.supplierName} · <span className={`transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {g.installmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mês</span>
+                          {g.nextDue && ` · próx. ${format(g.nextDue.dueDate || g.nextDue.date, 'dd/MM/yyyy')}`}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-black ${g.remainingCount > 0 ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')}`}>
+                          {g.remainingCount} restantes
+                        </p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">de {g.totalInstallments} · {g.paidCount} pagas</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
     </div>

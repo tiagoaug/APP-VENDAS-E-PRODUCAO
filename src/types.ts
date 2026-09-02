@@ -941,6 +941,21 @@ export enum ViewType {
   RULE_OF_THREE = 'RULE_OF_THREE',
   PRINT_CENTER = 'PRINT_CENTER',
   COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
+  // Módulo RH — hub que reúne Colaboradores (cadastro/PIN/permissões) e Comissão a Vendedores,
+  // que antes viviam espalhados em Configurações e Financeiro (ver RhView.tsx).
+  RH_MENU = 'RH_MENU',
+  // Simulador de rescisão trabalhista CLT dentro do RH — calcula saldo de salário, aviso prévio,
+  // férias (vencidas/proporcionais + 1/3), 13º proporcional e FGTS+multa a partir de um
+  // Collaborator cadastrado OU de valores digitados manualmente (ver LaborTerminationSimulatorView.tsx
+  // e utils/laborTermination.ts).
+  LABOR_TERMINATION_SIMULATOR = 'LABOR_TERMINATION_SIMULATOR',
+  // Tela de parâmetros do Simulador de Rescisão (tabelas de INSS/IRRF, %FGTS, multas, aviso
+  // prévio) — editável pra quando a lei ou os valores base mudarem, sem depender de atualização
+  // do app. Ver LaborSimParamsView.tsx e LaborSimParams em utils/laborTermination.ts.
+  LABOR_SIM_PARAMS = 'LABOR_SIM_PARAMS',
+  // Empréstimos da empresa a colaboradores, com desconto mensal na Folha de Pagamento — ver
+  // CollaboratorLoan em types.ts e LoansView.tsx.
+  COLLABORATOR_LOANS = 'COLLABORATOR_LOANS',
   COMPANY_PROFILE = 'COMPANY_PROFILE',
   // Hub da impressora térmica Ablemark BR-L100 (conexão, tamanhos, arquivos) — editor de
   // etiqueta livre, sem relação com o antigo módulo nativo HP/Epson (removido).
@@ -1072,6 +1087,34 @@ export type AppModulesConfig = {
   ai: boolean;
   entregas: boolean;
   bling: boolean;
+  rh: boolean;
+};
+
+// Personalização da barra de navegação inferior (ver App.tsx, nav "carrossel deslizante") —
+// "dashboard" e "settings" (Home/Mais) ficam sempre fixos nas pontas e fora deste controle, só
+// os itens do meio entram em `order`/`hidden`. Itens ausentes de `order` caem no fim, na ordem
+// padrão de sempre — assim adicionar um item novo (ex.: um módulo futuro) nunca quebra a config
+// salva de quem já personalizou antes.
+export type BottomNavItemId = 'purchases' | 'sales' | 'production' | 'bling' | 'entregas' | 'financial' | 'personal' | 'rh' | 'pcp' | 'stock' | 'people' | 'reports';
+export type BottomNavConfig = {
+  order: BottomNavItemId[];
+  hidden: BottomNavItemId[];
+};
+
+// Configurações globais de RH — dia de pagamento e de adiantamento (quinzena) usados como
+// referência da empresa toda, distintos de Collaborator.paymentDueDay/paymentDueDay2 (que são
+// por colaborador, pra quem tem vencimento individual diferente). Ver RhView.tsx.
+export type RhGlobalConfig = {
+  // Só usado quando paymentDayMode é 'fixed' (ou ausente) — dia fixo do mês.
+  paymentDay: number;
+  // 'fixed' (dia fixo, paymentDay) ou 'business_day_5' (5º dia útil do mês, sem contar
+  // feriados — só considera fins de semana). Ausente = 'fixed', mesmo comportamento de sempre.
+  paymentDayMode?: 'fixed' | 'business_day_5';
+  advanceDay: number;
+  // % do salário/pró-labore pago no dia de Adiantamento (o resto vai pro Fechamento) — só se
+  // aplica a quem tem "Recebe Adiantamento Quinzenal?" ligado (Collaborator.paymentFrequency
+  // BIWEEKLY). Ex.: 40 = 40% no adiantamento, 60% no fechamento.
+  advancePercent: number;
 };
 
 // Identidade visual da empresa — nome/logo/telefone/endereço, opcionalmente inseridos no
@@ -1256,7 +1299,7 @@ export type BlingDevolucao = {
 export type SectorId =
   | 'vendas' | 'compras' | 'cadastro_produtos' | 'cadastro_insumos'
   | 'producao_pcp' | 'estoque' | 'financeiro' | 'clientes_fornecedores'
-  | 'pessoal' | 'sistema' | 'entregas' | 'bling';
+  | 'pessoal' | 'sistema' | 'entregas' | 'bling' | 'rh';
 
 // Nível de permissão de uma função específica dentro de um setor liberado (ver SECTORS em
 // utils/collaborators.ts) — 'edit' é o padrão implícito (mesmo comportamento de sempre, acesso
@@ -1299,6 +1342,61 @@ export type Collaborator = {
   failedAttempts?: number;
   locked?: boolean;
   dashboardConfig?: DashboardCardConfig[];
+
+  // ── Cadastro Pessoal (RH) ──────────────────────────────────────────────
+  cpf?: string;
+  rg?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+
+  // ── Dados Financeiros / Folha de Pagamento (RH) ─────────────────────────
+  // Timestamp (ms) da data de admissão.
+  admissionDate?: number;
+  // Salário base — junto com commissionPercent (acima, já usado por Comissão a Vendedores)
+  // alimenta o total "Salário + Comissão" calculado em RhView (ver computeSalaryTotal em
+  // utils/collaborators.ts), que pode virar um pagamento (Compra Geral) igual o fluxo que a
+  // Comissão a Vendedores já usa.
+  salary?: number;
+  // BIWEEKLY = recebe adiantamento quinzenal (parte no dia de adiantamento, parte no dia de
+  // pagamento) + MONTHLY = recebe o valor cheio só no dia de pagamento. Os dias em si não são
+  // configuráveis por colaborador — sempre usam o padrão global (RhGlobalConfig.paymentDay/
+  // advanceDay, RH → Configurações Globais), pra manter todo mundo na mesma data.
+  paymentFrequency?: 'MONTHLY' | 'BIWEEKLY';
+  // Cargo — Diretor (sem salário base, recebe só Pró-labore), Gerente (salário normal, sem
+  // Pró-labore) ou Colaborador (salário normal + Função livre em roleTitle). Ausente = tratado
+  // como Colaborador. Ver computeCollaboratorPayroll em utils/collaborators.ts e a Folha de
+  // Pagamento (CommissionToSellersCard.tsx).
+  cargo?: 'diretor' | 'gerente' | 'colaborador';
+  proLaboreValue?: number;
+  // Função desempenhada — texto livre, só faz sentido pra cargo 'colaborador' (Diretor e
+  // Gerente já têm o cargo como identificação).
+  roleTitle?: string;
+};
+
+// Um abatimento registrado num Empréstimo de colaborador — 'payroll' quando descontado
+// automaticamente na Folha de Pagamento (ver handlePayCommission em CommissionToSellersCard.tsx),
+// 'manual' quando o colaborador paga por fora, direto (ver LoansView.tsx).
+export type LoanPayment = {
+  id: string;
+  date: number;
+  amount: number;
+  type: 'payroll' | 'manual';
+};
+
+// Empréstimo da empresa a um colaborador — RH → Empréstimos (LoansView.tsx). O saldo Restante
+// (totalValue - soma dos payments) some sozinho da lista quando chega a zero. monthlyDeduction
+// é o valor abatido automaticamente do salário/pró-labore dele a cada Fechamento da Folha de
+// Pagamento (0 = sem desconto automático, só pagamentos manuais).
+export type CollaboratorLoan = {
+  id: string;
+  collaboratorId: string;
+  collaboratorName: string;
+  totalValue: number;
+  monthlyDeduction: number;
+  date: number;
+  payments: LoanPayment[];
+  notes?: string;
 };
 
 // Config central única (doc id sempre 'main_config', mesmo padrão de DashboardConfig) —

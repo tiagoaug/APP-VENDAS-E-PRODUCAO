@@ -116,8 +116,21 @@ export default function ServiceOrderFormView({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Guarda contra o efeito de inicialização abaixo rodar de novo a cada snapshot do
+  // Firestore (serviceOrders/lots/products etc. trocam de referência a cada atualização,
+  // mesmo sem relação com esta OS) — sem isso, editar o toggle Contábil/valor por par era
+  // revertido sozinho pro estado salvo assim que qualquer coleção reemitia (mesmo padrão
+  // de bug já corrigido em TransactionModal.tsx via isInitialized/prevTransactionIdRef).
+  const isInitialized = useRef(false);
+  const prevServiceOrderIdRef = useRef<string | null | undefined>(undefined);
+
   // Initialize sequential OS number and default dropdowns (when creating)
   useEffect(() => {
+    const osChanged = serviceOrderId !== prevServiceOrderIdRef.current;
+    if (isInitialized.current && !osChanged) return;
+    isInitialized.current = true;
+    prevServiceOrderIdRef.current = serviceOrderId;
+
     if (isEditing && existingOS) {
       setOsNumber(existingOS.osNumber);
       setOsType(existingOS.type);

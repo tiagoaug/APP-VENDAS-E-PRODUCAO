@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder, ProductionConfigItem, CompanyProfile, GeneralPurchaseItem } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell, HelpCircle } from "lucide-react";
+import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder, ProductionConfigItem, CompanyProfile, GeneralPurchaseItem, CollaboratorLoan } from "../types";
+import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell, HelpCircle, Award } from "lucide-react";
 import { format, differenceInDays, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ConfigMenuItem from '../components/ConfigMenuItem';
@@ -63,6 +63,12 @@ interface DashboardViewProps {
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
   onDeleteTransaction?: (id: string) => Promise<void> | void;
+  /** % do salário/pró-labore pago no Adiantamento (RH → Configurações Globais) — ver
+   * CommissionToSellersCard.tsx. */
+  advancePercent?: number;
+  /** Empréstimos ativos a colaboradores (RH → Empréstimos) — ver CommissionToSellersCard.tsx. */
+  loans?: CollaboratorLoan[];
+  onSaveLoan?: (loan: CollaboratorLoan) => void | Promise<void>;
   onOpenAIAssistant: () => void;
   // Abre a Impressão de Etiquetas (Ablemark) — usado pelo card "print_labels" abaixo.
   onOpenLabelPrintStudio: () => void;
@@ -99,6 +105,9 @@ export default function DashboardView({
   onAddProduct,
   onAddTransaction,
   onDeleteTransaction,
+  advancePercent,
+  loans,
+  onSaveLoan,
   onOpenAIAssistant,
   onOpenLabelPrintStudio,
   aiEnabled = true,
@@ -732,6 +741,9 @@ export default function DashboardView({
                 companyProfile={companyProfile}
                 onPayCommission={onPayCommission}
                 onOpenSale={(id) => onNavigate(ViewType.SALE_FORM, id)}
+                advancePercent={advancePercent}
+                loans={loans}
+                onSaveLoan={onSaveLoan}
               />
             );
 
@@ -962,6 +974,22 @@ export default function DashboardView({
                     <div>
                       <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest leading-none mb-1">Ranking</p>
                       <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Top Produtos</p>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "desempenho-vendedores")}
+                    data-guide-anchor="dash.quickReports.item"
+                    title="Ver Desempenho de Vendedores"
+                    aria-label="Ranking mensal de desempenho dos vendedores"
+                    className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-fuchsia-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-fuchsia-50'}`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-fuchsia-500 text-white flex items-center justify-center shadow-lg shadow-fuchsia-500/20">
+                      <Award size={16} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest leading-none mb-1">Ranking (Mês)</p>
+                      <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Vendedores</p>
                     </div>
                   </button>
                 </div>

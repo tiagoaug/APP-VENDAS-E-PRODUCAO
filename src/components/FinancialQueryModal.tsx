@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Person, Transaction, TransactionType, Sale, Purchase, Account } from '../types';
-import { Search, X, User, DollarSign, TrendingUp, TrendingDown, Clock, CheckCircle2, Calendar, ChevronDown, ChevronUp, Filter, Wallet, Edit, Trash2 } from 'lucide-react';
+import { Person, Transaction, TransactionType, Sale, Purchase, Account, Product } from '../types';
+import { Search, X, User, Calendar, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import DatePicker from './DatePicker';
+import TransactionListCard from './TransactionListCard';
 
 interface FinancialQueryModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface FinancialQueryModalProps {
   transactions: Transaction[];
   purchases: Purchase[];
   sales: Sale[];
+  products: Product[];
   accounts: Account[];
   onSettle: (transaction: Transaction) => Promise<void>;
   // Mesmos handlers já usados na lista principal do Financeiro (ver FinancialView.tsx
@@ -18,6 +20,10 @@ interface FinancialQueryModalProps {
   // montados lá (z-index maior que este popup, aparecem por cima normalmente).
   onEdit: (transaction: Transaction) => void;
   onDeleteClick: (id: string) => void;
+  onOpenPurchase?: (id: string) => void;
+  onOpenSale?: (id: string) => void;
+  settlingId?: string | null;
+  deletingId?: string | null;
   isDarkMode: boolean;
 }
 
@@ -28,10 +34,15 @@ export default function FinancialQueryModal({
   transactions,
   purchases,
   sales,
+  products,
   accounts,
   onSettle,
   onEdit,
   onDeleteClick,
+  onOpenPurchase,
+  onOpenSale,
+  settlingId,
+  deletingId,
   isDarkMode
 }: FinancialQueryModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,25 +61,48 @@ export default function FinancialQueryModal({
     ).slice(0, 5);
   }, [people, searchTerm]);
 
-  const selectedPerson = useMemo(() => 
-    people.find(p => p.id === selectedPersonId), 
+  const selectedPerson = useMemo(() =>
+    people.find(p => p.id === selectedPersonId),
   [people, selectedPersonId]);
+
+  // Resolve o nome/id de "dono" de um lançamento pra filtro por nome — o mesmo dado exibido no
+  // card (ver TransactionListCard.tsx): cliente da Venda, fornecedor da Compra, prestador via
+  // personId (OS de mão de obra) ou o contactName manual. Sem isso, buscar "Gustavo" não achava
+  // a Venda #04000 dele, porque Transaction.contactName fica vazio em lançamentos gerados por
+  // Venda/Compra — o nome só existe no registro relacionado (Sale.customerName/Purchase.supplierId).
+  const resolveTxPerson = (t: Transaction): { id?: string; name?: string } => {
+    const sale = t.relatedId ? sales.find(s => s.id === t.relatedId) : undefined;
+    if (sale) return { id: sale.customerId, name: sale.customerName || people.find(p => p.id === sale.customerId)?.name };
+    const purchase = t.relatedId ? purchases.find(p => p.id === t.relatedId) : undefined;
+    if (purchase) return { id: purchase.supplierId, name: people.find(p => p.id === purchase.supplierId)?.name };
+    if (t.contactName || t.contactId) return { id: t.contactId, name: t.contactName };
+    if (t.personId) return { id: t.personId, name: people.find(p => p.id === t.personId)?.name };
+    return {};
+  };
 
   const filteredTransactions = useMemo(() => {
     let list = transactions;
 
     // Filter by person if selected
     if (selectedPersonId) {
-      list = list.filter(t => t.contactId === selectedPersonId || t.contactName === selectedPerson?.name);
+      list = list.filter(t => {
+        const owner = resolveTxPerson(t);
+        return owner.id === selectedPersonId || (!!owner.name && owner.name === selectedPerson?.name);
+      });
     } else if (searchTerm) {
-      // If no person selected, but search term exists, try to match description or IDs
+      // If no person selected, but search term exists, try to match description, IDs or the
+      // resolved cliente/fornecedor/prestador — parte do nome já basta (match parcial).
       const term = searchTerm.toLowerCase();
-      list = list.filter(t => 
-        t.description.toLowerCase().includes(term) ||
-        t.id.toLowerCase().includes(term) ||
-        t.relatedId?.toLowerCase().includes(term) ||
-        t.contactName?.toLowerCase().includes(term)
-      );
+      list = list.filter(t => {
+        const owner = resolveTxPerson(t);
+        return (
+          t.description.toLowerCase().includes(term) ||
+          t.id.toLowerCase().includes(term) ||
+          t.relatedId?.toLowerCase().includes(term) ||
+          t.contactName?.toLowerCase().includes(term) ||
+          !!owner.name?.toLowerCase().includes(term)
+        );
+      });
     }
 
     // Filter by status
@@ -87,7 +121,7 @@ export default function FinancialQueryModal({
     }
 
     return list;
-  }, [transactions, selectedPersonId, selectedPerson, searchTerm, statusFilter, startDate, endDate]);
+  }, [transactions, selectedPersonId, selectedPerson, searchTerm, statusFilter, startDate, endDate, sales, purchases, people]);
 
   const stats = useMemo(() => {
     const pendingIncome = filteredTransactions
@@ -346,97 +380,25 @@ export default function FinancialQueryModal({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {filteredTransactions.map(tx => {
-                    const account = accounts.find(a => a.id === tx.accountId);
-                    return (
-                    <div
+                  {filteredTransactions.map(tx => (
+                    <TransactionListCard
                       key={tx.id}
-                      className={`p-4 rounded-[2rem] border flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${tx.type === TransactionType.INCOME ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400'}`}>
-                          {tx.type === TransactionType.INCOME ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                             <p className="text-[10px] font-black uppercase tracking-tight truncate leading-none text-current">{tx.description}</p>
-                             <span className={`shrink-0 text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${tx.status === 'PENDING' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/20' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/20'}`}>
-                                {tx.status === 'PENDING' ? 'Pendente' : 'Quitada'}
-                             </span>
-                          </div>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate">
-                            {tx.contactName || 'Sem contato'} • {new Date(tx.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                            {(() => {
-                              if (!tx.relatedId) return null;
-                              const purchase = purchases.find(p => p.id === tx.relatedId);
-                              if (purchase?.batchNumber) return ` • ID: ${purchase.batchNumber}`;
-                              const sale = sales.find(s => s.id === tx.relatedId);
-                              if (sale?.orderNumber) return ` • ID: ${sale.orderNumber}`;
-                              return ` • ID: ${tx.relatedId.slice(-6).toUpperCase()}`;
-                            })()}
-                          </p>
-                          {tx.items && tx.items.length > 0 && (
-                            <div className="mt-2 space-y-0.5 pl-2 border-l border-slate-100 dark:border-slate-800">
-                              {tx.items.map((item, idx) => (
-                                <div key={item.id || idx} className="flex justify-between items-center text-[7px] font-bold text-slate-500 uppercase tracking-widest">
-                                  <span className="truncate max-w-[120px]">{item.description}</span>
-                                  <span className="shrink-0 ml-2">R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-right flex flex-col items-end shrink-0 ml-auto">
-                        <p className={`text-[11px] font-black whitespace-nowrap ${tx.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {tx.type === TransactionType.INCOME ? '+' : '-'} R$ {tx.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 mt-1">
-                           REF: {tx.id.slice(-6).toUpperCase()}
-                        </p>
-                      </div>
-                      </div>
-
-                      <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-50'}`}>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-[9px] text-indigo-400 dark:text-indigo-500 font-black uppercase tracking-widest flex items-center gap-1">
-                            <Wallet size={10} />
-                            {account?.name || 'Conta'}
-                          </span>
-                        </div>
-                        <div className="flex gap-2">
-                          {tx.status === 'PENDING' && (
-                            <button
-                              onClick={() => onSettle(tx)}
-                              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500 text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all shrink-0"
-                              title="Dar Baixa"
-                            >
-                              <CheckCircle2 size={14} strokeWidth={3} /> Dar Baixa
-                            </button>
-                          )}
-                          <button
-                            onClick={() => onEdit(tx)}
-                            className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-indigo-400' : 'bg-slate-50 text-slate-400 hover:text-indigo-500'}`}
-                            title="Editar Lançamento"
-                            aria-label="Editar Lançamento"
-                          >
-                            <Edit size={16} strokeWidth={2.5} />
-                          </button>
-                          <button
-                            onClick={() => onDeleteClick(tx.id)}
-                            className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-rose-400' : 'bg-slate-50 text-slate-400 hover:text-rose-500'}`}
-                            title="Excluir Lançamento"
-                            aria-label="Excluir Lançamento"
-                          >
-                            <Trash2 size={16} strokeWidth={2.5} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    );
-                  })}
+                      transaction={tx}
+                      accounts={accounts}
+                      people={people}
+                      products={products}
+                      sales={sales}
+                      purchases={purchases}
+                      isDarkMode={isDarkMode}
+                      onOpenPurchase={onOpenPurchase}
+                      onOpenSale={onOpenSale}
+                      onSettle={onSettle}
+                      onEdit={onEdit}
+                      onDeleteClick={onDeleteClick}
+                      settlingId={settlingId}
+                      deletingId={deletingId}
+                    />
+                  ))}
                 </div>
               )}
            </div>
