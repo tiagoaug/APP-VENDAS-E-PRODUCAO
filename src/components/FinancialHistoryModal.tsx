@@ -42,7 +42,7 @@ export default function FinancialHistoryModal({
   const totalDebit = personTransactions.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
 
   const modalContent = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+    <div className="fixed inset-0 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" style={{ zIndex: 60000 }}>
       <div className={`w-full max-w-lg flex flex-col max-h-[90vh] rounded-3xl p-6 shadow-2xl ${isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-900"}`}>
         <div className="flex justify-between items-center mb-6 shrink-0">
           <h2 className="text-lg font-black uppercase tracking-widest">Histórico: {person.name}</h2>

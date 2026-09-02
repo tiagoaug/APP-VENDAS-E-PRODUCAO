@@ -233,11 +233,11 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
             />
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-2">
-            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
-              <input 
-                type="checkbox" 
-                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+          <div className="flex flex-col gap-2 pt-2">
+            <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+              <input
+                type="checkbox"
+                className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
                 checked={isCustomer}
                 onChange={(e) => {
                   const checked = e.target.checked;
@@ -246,12 +246,15 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                   if (checked) setContactPrompt({ role: 'Comprador', step: 'ask', name: '' });
                 }}
               />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Cliente</span>
+              <div className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Cliente</span>
+                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque quando essa pessoa/empresa compra de você. Ela passa a aparecer como opção de cliente na tela de Venda.</span>
+              </div>
             </label>
-            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+            <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
               <input
                 type="checkbox"
-                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+                className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
                 checked={isSupplier}
                 onChange={(e) => {
                   const checked = e.target.checked;
@@ -259,34 +262,46 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                   if (checked) setContactPrompt({ role: 'Vendedor', step: 'ask', name: '' });
                 }}
               />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Fornecedor</span>
+              <div className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Fornecedor</span>
+                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque quando essa pessoa/empresa vende matéria-prima, produtos ou serviços para você. Ela aparece como opção nas Compras e Ordens de Serviço.</span>
+              </div>
             </label>
-            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
-              <input 
-                type="checkbox" 
-                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
-                checked={isSeller} 
-                onChange={(e) => setIsSeller(e.target.checked)} 
-              />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Vendedor</span>
-            </label>
-            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+            <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
               <input
                 type="checkbox"
-                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+                className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
+                checked={isSeller}
+                onChange={(e) => setIsSeller(e.target.checked)}
+              />
+              <div className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Vendedor</span>
+                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque para uma pessoa (não colaborador) que pode ser escolhida como Vendedor/Responsável no lançamento de uma Venda — ex.: representante externo.</span>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+              <input
+                type="checkbox"
+                className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
                 checked={isBuyer}
                 onChange={(e) => setIsBuyer(e.target.checked)}
               />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Comprador</span>
+              <div className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Comprador</span>
+                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque para uma pessoa que pode ser escolhida como Comprador/Representante no lançamento de uma Compra — ex.: quem negociou com o fornecedor.</span>
+              </div>
             </label>
-            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+            <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
               <input
                 type="checkbox"
-                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+                className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
                 checked={isServiceProvider}
                 onChange={(e) => setIsServiceProvider(e.target.checked)}
               />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Prestador de Serviço</span>
+              <div className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Prestador de Serviço</span>
+                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque quando essa pessoa presta um serviço (ex.: terceirização, conserto). Ela aparece como opção na Ordem de Serviço.</span>
+              </div>
             </label>
           </div>
 

@@ -310,7 +310,7 @@ export default function LaborTerminationSimulatorView({ isDarkMode, collaborator
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <label className={labelClass}>Dependentes para IRRF (-R$ 189,59/dep.)</label>
-                <input type="number" inputMode="numeric" min={0} value={dependentesIRRF} onChange={e => setDependentesIRRF(Math.max(0, Number(e.target.value)))} data-guide-anchor="laborSim.dependentesIrrf" className={inputClass(isDarkMode)} />
+                <input type="number" inputMode="numeric" min={0} value={dependentesIRRF || ''} onChange={e => setDependentesIRRF(Math.max(0, Number(e.target.value) || 0))} data-guide-anchor="laborSim.dependentesIrrf" className={inputClass(isDarkMode)} />
               </div>
               <div className="flex flex-col gap-2">
                 <label className={labelClass}>Saldo FGTS na Caixa (R$) <span className="normal-case font-semibold text-slate-400">— opcional</span></label>

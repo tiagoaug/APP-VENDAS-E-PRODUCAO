@@ -375,8 +375,8 @@ export default function CommissionToSellersCard({
                         {collaborator.isSeller && <>{salesCount} {salesCount === 1 ? 'venda' : 'vendas'} · {collaborator.commissionPercent ?? 0}% · <span className={hidePrivacy ? PRIVACY_BLUR_CLASS : ''}>R$ {totalSales.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> vendido</>}
                       </p>
                       {loan && (
-                        <p className="text-[9px] font-bold text-rose-500 uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                          <HandCoins size={10} /> Empréstimo -R$ {loanDeduction.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · restante R$ {(loan.totalValue - loan.payments.reduce((acc, p) => acc + p.amount, 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        <p className="text-[12px] font-black text-rose-500 uppercase tracking-wide mt-1 flex items-center gap-1.5">
+                          <HandCoins size={14} /> Empréstimo -R$ {loanDeduction.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} · restante R$ {(loan.totalValue - loan.payments.reduce((acc, p) => acc + p.amount, 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
                       )}
                     </div>
@@ -449,7 +449,7 @@ export default function CommissionToSellersCard({
                                   onClick={() => handlePayCommission(sc, p.key)}
                                   title={done ? 'Já lançado — toque pra abrir a Compra de novo e editar' : undefined}
                                   data-guide-anchor="dash.commission.pagar"
-                                  className={`flex ${isSplit ? 'flex-col' : 'flex-row'} items-center justify-center gap-0.5 ${isSplit ? 'py-2 text-[8px]' : 'py-2.5 text-[9px]'} rounded-xl font-black uppercase tracking-wide ${
+                                  className={`flex ${isSplit ? 'flex-col' : 'w-full flex-row'} items-center justify-center gap-0.5 ${isSplit ? 'py-2 text-[8px]' : 'py-2.5 text-[9px]'} rounded-xl font-black uppercase tracking-wide ${
                                     done ? doneClass : p.outline ? `border-2 border-indigo-600 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}` : 'bg-indigo-600 text-white'
                                   }`}
                                 >

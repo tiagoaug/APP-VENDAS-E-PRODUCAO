@@ -179,7 +179,7 @@ export default function RhView({
                 {(rhConfig.paymentDayMode ?? 'fixed') === 'fixed' ? (
                   <input
                     type="number" inputMode="numeric" min={1} max={31}
-                    value={rhConfig.paymentDay}
+                    value={rhConfig.paymentDay || ''}
                     onChange={e => onSaveRhConfig({ ...rhConfig, paymentDay: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
                     data-guide-anchor="rh.diaPagamento"
                     className={inputClass}
@@ -192,7 +192,7 @@ export default function RhView({
                 <label className={labelClass}>Dia de Adiantamento (quinzena)</label>
                 <input
                   type="number" inputMode="numeric" min={1} max={31}
-                  value={rhConfig.advanceDay}
+                  value={rhConfig.advanceDay || ''}
                   onChange={e => onSaveRhConfig({ ...rhConfig, advanceDay: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
                   data-guide-anchor="rh.diaAdiantamento"
                   className={inputClass}
@@ -202,7 +202,7 @@ export default function RhView({
                 <label className={labelClass}>% do Salário no Adiantamento</label>
                 <input
                   type="number" inputMode="numeric" min={0} max={100}
-                  value={rhConfig.advancePercent}
+                  value={rhConfig.advancePercent || ''}
                   onChange={e => onSaveRhConfig({ ...rhConfig, advancePercent: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
                   data-guide-anchor="rh.percentualAdiantamento"
                   className={inputClass}
@@ -231,7 +231,7 @@ export default function RhView({
           <div className={`p-4 rounded-2xl flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`} data-guide-anchor="rh.quantidadeColaboradores">
             <div className="flex items-center gap-1.5 text-slate-400">
               <Users2 size={13} />
-              <span className="text-[9px] font-black uppercase tracking-widest">Colaboradores</span>
+              <span className="text-[9px] font-black uppercase tracking-widest">Equipe</span>
             </div>
             <span className="text-lg font-black text-slate-700 dark:text-slate-200">{collaborators.length}</span>
           </div>

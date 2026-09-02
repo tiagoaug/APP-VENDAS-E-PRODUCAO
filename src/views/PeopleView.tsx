@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Person, Sale, Purchase, Transaction } from '../types';
-import { Search, Plus, User, Mail, Phone, Trash2, Edit, Truck, ShieldCheck, ChevronRight, History, Tag, ShoppingBag } from 'lucide-react';
+import { Search, Plus, User, Mail, Phone, Trash2, Edit, Truck, ShieldCheck, ChevronRight, ChevronDown, History, Tag, ShoppingBag } from 'lucide-react';
 import PersonModal from '../components/PersonModal';
 import FinancialHistoryModal from '../components/FinancialHistoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -48,6 +48,8 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
 
   const [historyPerson, setHistoryPerson] = useState<Person | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  const [expandedPersonId, setExpandedPersonId] = useState<string | null>(null);
 
   const filtered = people.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -164,68 +166,80 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
 
       <div className="flex flex-col gap-4 pb-32">
         {filtered.map((person) => (
-          <div key={person.id} className={`p-4 rounded-3xl border shadow-sm dark:shadow-none flex items-center justify-between group cursor-pointer active:scale-[0.99] transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-100 hover:border-indigo-100'}`}>
-            <div className="flex items-center gap-4 flex-1" onClick={() => onShowDetail(person.id)} data-guide-anchor="people.abrirDetalhe">
-              <div className={`w-12 h-12 flex items-center justify-center font-black text-xl transition-colors ${
-                person.isCustomer && person.isSupplier ? 'text-indigo-600 dark:text-indigo-400' :
-                person.isCustomer ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
-              }`}>
-                {person.name.charAt(0)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-bold text-sm tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{person.name}</h3>
-                  <div className="flex gap-1">
-                    {person.isCustomer && <ShieldCheck size={14} className="text-emerald-500" />}
-                    {person.isSupplier && <Truck size={14} className="text-amber-500" />}
-                    {person.isSeller && <Tag size={14} className="text-indigo-500" />}
-                    {person.isBuyer && <ShoppingBag size={14} className="text-emerald-500" />}
+          <div key={person.id} className={`rounded-3xl border shadow-sm dark:shadow-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-100 hover:border-indigo-100'}`}>
+            <div className="p-4 flex items-center justify-between group cursor-pointer active:scale-[0.99] transition-all">
+              <div className="flex items-center gap-4 flex-1 min-w-0" onClick={() => onShowDetail(person.id)} data-guide-anchor="people.abrirDetalhe">
+                <div className={`w-12 h-12 flex items-center justify-center font-black text-xl transition-colors ${
+                  person.isCustomer && person.isSupplier ? 'text-indigo-600 dark:text-indigo-400' :
+                  person.isCustomer ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                }`}>
+                  {person.name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className={`font-bold text-sm tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{person.name}</h3>
+                    <div className="flex gap-1">
+                      {person.isCustomer && <ShieldCheck size={14} className="text-emerald-500" />}
+                      {person.isSupplier && <Truck size={14} className="text-amber-500" />}
+                      {person.isSeller && <Tag size={14} className="text-indigo-500" />}
+                      {person.isBuyer && <ShoppingBag size={14} className="text-emerald-500" />}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1.5 overflow-x-auto no-scrollbar">
+                    {person.email && (
+                      <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-widest whitespace-nowrap">
+                        <Mail size={12} /> {person.email}
+                      </div>
+                    )}
+                    {person.phone && (
+                      <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-widest whitespace-nowrap">
+                        <Phone size={12} /> {person.phone}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3 mt-1.5 overflow-x-auto no-scrollbar">
-                  {person.email && (
-                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-widest whitespace-nowrap">
-                      <Mail size={12} /> {person.email}
-                    </div>
-                  )}
-                  {person.phone && (
-                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-widest whitespace-nowrap">
-                      <Phone size={12} /> {person.phone}
-                    </div>
-                  )}
-                </div>
+              </div>
+              <div className="flex gap-1 items-center shrink-0">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteClick(person.id); }}
+                  data-guide-anchor="people.excluir"
+                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-rose-500 transition-colors"
+                  title="Excluir Cadastro"
+                  aria-label="Excluir Cadastro"
+                >
+                  <Trash2 size={18} strokeWidth={2.5} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setExpandedPersonId(expandedPersonId === person.id ? null : person.id); }}
+                  data-guide-anchor="people.expandirAcoes"
+                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  title="Editar / Histórico"
+                  aria-label="Editar / Histórico"
+                >
+                  {expandedPersonId === person.id
+                    ? <ChevronDown size={20} />
+                    : <ChevronRight size={20} className="group-hover:text-slate-400 transition-colors" />}
+                </button>
               </div>
             </div>
-            <div className="flex gap-1 items-center">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setHistoryPerson(person); setIsHistoryModalOpen(true); }}
-                data-guide-anchor="people.historico"
-                className="p-2 text-rose-500 hover:text-rose-600 transition-colors"
-                title="Histórico de Pagamentos"
-                aria-label="Histórico de Pagamentos"
-              >
-                <History size={18} strokeWidth={2.5} />
-              </button>
-               <button 
-                onClick={(e) => { e.stopPropagation(); setEditingPerson(person); setIsModalOpen(true); }}
-                data-guide-anchor="people.editar"
-                className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                title="Editar Cadastro"
-                aria-label="Editar Cadastro"
-              >
-                <Edit size={18} strokeWidth={2.5} />
-              </button>
-               <button 
-                onClick={(e) => { e.stopPropagation(); handleDeleteClick(person.id); }}
-                data-guide-anchor="people.excluir"
-                className="p-2 text-slate-400 dark:text-slate-500 hover:text-rose-500 transition-colors"
-                title="Excluir Cadastro"
-                aria-label="Excluir Cadastro"
-              >
-                <Trash2 size={18} strokeWidth={2.5} />
-              </button>
-              <ChevronRight size={20} className="text-slate-200 dark:text-slate-800 group-hover:text-slate-400 transition-colors" />
-            </div>
+            {expandedPersonId === person.id && (
+              <div className={`flex items-center gap-2 px-4 pb-4 pt-1 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEditingPerson(person); setIsModalOpen(true); }}
+                  data-guide-anchor="people.editar"
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wide transition-colors ${isDarkMode ? 'bg-slate-800 text-indigo-400 hover:bg-slate-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                >
+                  <Edit size={16} strokeWidth={2.5} /> Editar Cadastro
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setHistoryPerson(person); setIsHistoryModalOpen(true); }}
+                  data-guide-anchor="people.historico"
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wide transition-colors ${isDarkMode ? 'bg-slate-800 text-rose-400 hover:bg-slate-700' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
+                >
+                  <History size={16} strokeWidth={2.5} /> Histórico
+                </button>
+              </div>
+            )}
           </div>
         ))}
 

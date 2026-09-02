@@ -325,14 +325,27 @@ export default function BusinessOverviewCard({
     const profitPerPair = producedPairs > 0 ? profit / producedPairs : null;
 
     // Preço médio de venda (todos os modelos vendidos no período) — receita total das vendas
-    // fechadas ÷ total de pares vendidos, pra dar uma referência de ticket médio junto do
+    // fechadas ÷ total de PARES vendidos, pra dar uma referência de ticket médio junto do
     // Lucro por Par (que usa pares PRODUZIDOS, não vendidos — números propositalmente
     // diferentes, um mede fábrica, o outro mede venda).
+    // Item.quantity é pares no Varejo, mas CAIXAS no Atacado (SaleItem.quantity: "pairs or
+    // boxes") — somar direto inflava o divisor tratando embalagem como se fosse par. Pra
+    // Atacado, reconstrói o nº real de pares da linha via receita-da-linha ÷ unitPrice (preço
+    // por par já cadastrado no item); sem unitPrice, não dá pra saber o par real dessa linha,
+    // então ela fica de fora do total (melhor não contar do que contar caixa como par).
     const periodSales = sales.filter(s => s.status === SaleStatus.SALE && s.isAccounting !== false && s.date >= start && s.date <= end);
     let totalPairsSold = 0;
     let totalRevenueSold = 0;
     for (const sale of periodSales) {
-      for (const item of sale.items || []) totalPairsSold += item.quantity || 0;
+      for (const item of sale.items || []) {
+        if (item.saleType === SaleType.WHOLESALE) {
+          if (item.unitPrice && item.unitPrice > 0) {
+            totalPairsSold += (item.quantity * item.price) / item.unitPrice;
+          }
+        } else {
+          totalPairsSold += item.quantity || 0;
+        }
+      }
       totalRevenueSold += sale.total;
     }
     const avgSalePricePerPair = totalPairsSold > 0 ? totalRevenueSold / totalPairsSold : null;
@@ -357,7 +370,7 @@ export default function BusinessOverviewCard({
       comparison = { profit: compProfit, delta, label };
     }
 
-    return { infoSources, expenses, income, profit, margin, comparison, producedPairs, profitPerPair, avgSalePricePerPair, totalPairsSold };
+    return { infoSources, expenses, income, profit, margin, comparison, producedPairs, profitPerPair, avgSalePricePerPair, totalPairsSold: Math.round(totalPairsSold) };
   }, [overviewConfig, products, productionLots, packagingItems, transactions, sales]);
 
   const cashFlowTrend = useMemo(() => {
@@ -656,7 +669,7 @@ export default function BusinessOverviewCard({
                             {businessOverview.avgSalePricePerPair === null ? '—' : `R$ ${businessOverview.avgSalePricePerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest ml-1">Preço Médio de Venda (todos os modelos)</span>
                           </p>
-                          <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Receita das vendas fechadas ÷ {businessOverview.totalPairsSold} {businessOverview.totalPairsSold === 1 ? 'par vendido' : 'pares vendidos'} no período — média de todos os modelos, não os pares produzidos.</p>
+                          <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Receita das vendas fechadas ÷ {businessOverview.totalPairsSold} {businessOverview.totalPairsSold === 1 ? 'par vendido' : 'pares vendidos'} no período — média de todos os modelos, não os pares produzidos. Atacado conta os pares reais (não a caixa) usando o preço por par cadastrado no item.</p>
                         </div>
                       </div>
                     </div>

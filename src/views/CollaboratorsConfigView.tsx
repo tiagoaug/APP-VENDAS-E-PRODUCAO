@@ -391,7 +391,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
         <div className={`flex flex-col gap-6 p-6 rounded-[2.5rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xl'}`}>
           <div className="flex items-center justify-between">
             <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              {isExistingDraft ? 'Editar Colaborador' : 'Novo Colaborador'}
+              {isExistingDraft ? 'Editar Dados' : 'Novo Colaborador'}
             </h3>
             <button type="button" onClick={() => setDraft(null)} aria-label="Cancelar" title="Cancelar" className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600">
               <X size={18} />
@@ -705,15 +705,15 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               já lista todos os colaboradores de uma vez — ver CommissionToSellersCard.tsx. */}
           {payroll && (draft.salary || draft.isSeller || draft.cargo === 'diretor') && (
             <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'border-indigo-900/50 bg-indigo-950/20' : 'border-indigo-100 bg-indigo-50'}`}>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-2">
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Total — {payrollPeriodLabel}</p>
                 {draft.isSeller && (
                   <button
                     type="button"
                     onClick={() => setIncludePendingCommission(v => !v)}
-                    className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-all ${includePendingCommission ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'}`}
+                    className={`self-start text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-all ${includePendingCommission ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'}`}
                   >
-                    {includePendingCommission ? 'Com comissão pendente' : 'Só comissão recebida'}
+                    {includePendingCommission ? 'Com comissão pendente' : 'Só comissão de vendas recebidas pela empresa'}
                   </button>
                 )}
               </div>
@@ -987,7 +987,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             data-guide-anchor="collab.salvar"
             className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
           >
-            {isSaving ? 'Salvando...' : 'Salvar Colaborador'}
+            {isSaving ? 'Salvando...' : 'Salvar Informações'}
           </button>
         </div>
       )}
