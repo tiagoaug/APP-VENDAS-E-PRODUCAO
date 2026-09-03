@@ -833,14 +833,17 @@ export default function PurchaseNeedsView({
         )}
       </div>
 
+      {/* bottom-36 + left-24/right-24 (não mais bottom-24 left-4/right-4) — mesmo ajuste
+          feito em Vendas/Compras: a barra de navegação cresceu e bottom-24 full-width
+          ficava por cima dela. */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-24 left-4 right-4 z-50">
+        <div className="fixed bottom-40 left-24 right-24 z-50">
           <button
             type="button"
             onClick={handleBatchOrder}
             disabled={isBatchProcessing}
             data-guide-anchor="purchaseNeeds.comprarLote"
-            className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60"
+            className="w-full py-3 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-xs shadow-2xl shadow-indigo-500/40 flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60"
           >
             {isBatchProcessing ? (
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

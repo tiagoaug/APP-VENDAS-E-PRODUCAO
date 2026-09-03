@@ -680,15 +680,18 @@ export default function PalmilhaStockView({
         </div>
       </div>
 
+      {/* bottom-36 + left-24/right-24 (não mais bottom-24 left-4/right-4) — mesmo ajuste
+          feito em Vendas/Compras: a barra de navegação cresceu e bottom-24 full-width
+          ficava por cima dela. */}
       {isFormularPedidoMode && (
-        <div className="fixed bottom-24 left-4 right-4 z-50">
+        <div className="fixed bottom-40 left-24 right-24 z-50">
           <button
             onClick={handleFazerPedido}
             data-guide-anchor="palmilhaStock.pedidoConfirmar"
             disabled={!hasAnyOrderQty}
-            className="w-full py-5 rounded-[2rem] bg-emerald-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-500/40 flex items-center justify-center gap-3 hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full py-3 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-widest text-xs shadow-2xl shadow-emerald-500/40 flex items-center justify-center gap-2 hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <ShoppingCart size={20} /> Fazer o Pedido
+            <ShoppingCart size={18} /> Fazer o Pedido
           </button>
         </div>
       )}

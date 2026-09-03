@@ -423,13 +423,16 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
         })}
       </div>
 
+      {/* bottom-36 + left-24/right-24 (não mais bottom-24 left-4/right-4) — mesmo ajuste
+          feito em Vendas/Compras: a barra de navegação cresceu e bottom-24 full-width
+          ficava por cima dela. */}
       {balancoMode && pendingCount > 0 && (
-        <div className="fixed bottom-24 left-4 right-4 z-50">
+        <div className="fixed bottom-40 left-24 right-24 z-50">
           <button
             type="button"
             onClick={handleSaveBalanco}
             disabled={savingBalanco}
-            className="w-full flex items-center justify-center gap-2 h-14 rounded-2xl bg-amber-500 text-white shadow-2xl shadow-amber-500/30 font-black text-xs uppercase tracking-widest disabled:opacity-60 active:scale-[0.98] transition-all"
+            className="w-full flex items-center justify-center gap-2 h-11 rounded-2xl bg-amber-500 text-white shadow-2xl shadow-amber-500/30 font-black text-xs uppercase tracking-widest disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             {savingBalanco ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {savingBalanco ? 'Salvando Balanço...' : `Salvar Balanço (${pendingCount})`}

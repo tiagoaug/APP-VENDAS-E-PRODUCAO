@@ -5379,7 +5379,8 @@ export default function PCPView({
         onCancel={() => setRemoveItemConfirm(null)}
       />
       <header className="flex flex-col gap-4">
-        {/* Linha 1: Voltar + Título */}
+        {/* Linha 1: Voltar — o título "PCP Central" já vem no cabeçalho fixo do app logo
+            acima (ver App.tsx <header>), repeti-lo aqui de novo era redundante. */}
         <div className="flex items-center gap-4 px-2">
           <button
             type="button"
@@ -5391,10 +5392,6 @@ export default function PCPView({
           >
             <ChevronRight className="rotate-180" size={20} />
           </button>
-          <div>
-            <h2 className="text-2xl font-black uppercase tracking-tight leading-none">PCP Central</h2>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Planejamento e Controle de Produção</p>
-          </div>
         </div>
 
         {/* As Ações Rápidas (Escanear, Filtros, Compartilhar, Mapas) ficam agora no
@@ -5500,15 +5497,18 @@ export default function PCPView({
           </div>
         )}
 
-        {/* Navegação — card único com 6 divisões (5 entradas + Ações Rápidas) */}
+        {/* Navegação — card único com 6 divisões (5 entradas + Ações Rápidas). Grade 2x3 no
+            celular (6x1 em telas largas via sm:grid-cols-6) com linhas divisórias de verdade
+            (border-r/border-b, não mais o truque de gap-px+bg sangrando por trás — ficava sutil
+            demais pra notar) — mesmo padrão "grade moderna" usado na nav inferior. */}
         <div className={`w-full rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-100 shadow-sm'}`}>
-          <div className={`grid grid-cols-3 sm:grid-cols-6 gap-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+          <div className="grid grid-cols-3 sm:grid-cols-6">
             {/* Monitor */}
             <button
               type="button"
               onClick={() => { setActiveTab('monitor'); setSelectedSectorId(null); }}
               data-guide-anchor="pcp.tabMonitor"
-              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'monitor' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 border-r border-b sm:border-b-0 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${activeTab === 'monitor' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
             >
               <LayoutDashboard size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'monitor' ? 'text-white' : 'text-indigo-500'}`} />
               <span className="text-[9px] font-black uppercase tracking-wide truncate">Monitor</span>
@@ -5518,7 +5518,7 @@ export default function PCPView({
               type="button"
               onClick={() => setIsCuttingAreaOpen(true)}
               data-guide-anchor="pcp.tabCorte"
-              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 border-r border-b sm:border-b-0 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
             >
               <Scissors size={15} strokeWidth={2.5} className="shrink-0 text-indigo-500" />
               <span className="text-[9px] font-black uppercase tracking-wide truncate">Corte</span>
@@ -5533,7 +5533,7 @@ export default function PCPView({
               type="button"
               onClick={() => { setActiveTab('orders'); setSelectedSectorId(null); }}
               data-guide-anchor="pcp.tabPedidos"
-              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'orders' ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 border-b sm:border-b-0 sm:border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${activeTab === 'orders' ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
             >
               <ClipboardList size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'orders' ? 'text-white' : 'text-violet-500'}`} />
               <span className="text-[9px] font-black uppercase tracking-wide truncate">Pedidos</span>
@@ -5548,7 +5548,7 @@ export default function PCPView({
               type="button"
               onClick={() => { setActiveTab('needs'); setSelectedSectorId(null); }}
               data-guide-anchor="pcp.tabNecessidades"
-              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'needs' ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${activeTab === 'needs' ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
             >
               <AlertCircle size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'needs' ? 'text-white' : 'text-amber-500'}`} />
               <span className="text-[9px] font-black uppercase tracking-wide truncate">Necessid.</span>
@@ -5568,7 +5568,7 @@ export default function PCPView({
               type="button"
               onClick={() => { setActiveTab('solados'); setSelectedSectorId(null); }}
               data-guide-anchor="pcp.tabSolados"
-              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'solados' ? 'bg-cyan-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${activeTab === 'solados' ? 'bg-cyan-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
             >
               <Footprints size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'solados' ? 'text-white' : 'text-cyan-500'}`} />
               <span className="text-[9px] font-black uppercase tracking-wide truncate">Solados</span>

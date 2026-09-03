@@ -1,7 +1,7 @@
 import {
   X, ShoppingCart, ShoppingBag, Factory, Building2, Truck, DollarSign, User as UserIcon, UserCog,
   Eye, EyeOff, ChevronUp, ChevronDown, LayoutDashboard, Settings, GripVertical,
-  GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, ClipboardList, AlertTriangle,
+  GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
 } from 'lucide-react';
 import { AppModulesConfig, BottomNavConfig, BottomNavItemId } from '../types';
 
@@ -29,8 +29,9 @@ const CANDIDATES: { id: BottomNavItemId; label: string; icon: React.ReactNode; r
   { id: 'reports', label: 'Relatórios', icon: <BarChart3 size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
   { id: 'soleStock', label: 'Solados', icon: <Footprints size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
   { id: 'engineering', label: 'Engenharia', icon: <Database size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
-  { id: 'serviceOrder', label: 'OS', icon: <ClipboardList size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
   { id: 'purchaseNeeds', label: 'Necessidades', icon: <AlertTriangle size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
+  { id: 'ruleOfThree', label: 'Regra de Três', icon: <Calculator size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
+  { id: 'labelPrintStudio', label: 'Ajustes de PDF e JPG', icon: <Printer size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
 ];
 
 // Personalização da barra de navegação — Home e Mais são fixos (não entram aqui, ver

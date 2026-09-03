@@ -79,8 +79,9 @@ export const NAV_TAB_COLORS: Record<string, string> = {
   settings: '#475569',    // Mais — slate
   soleStock: '#0f766e',   // Solados — teal escuro
   engineering: '#7c3aed', // Engenharia — violeta
-  serviceOrder: '#be123c',// OS — rose escuro
   purchaseNeeds: '#d97706', // Necessidades — âmbar
+  ruleOfThree: '#0d9488', // Regra de Três — teal
+  labelPrintStudio: '#4f46e5', // Ajustes de PDF/JPG — indigo
 };
 
 // 25 cores para o modo "Monocromático" — do escuro ao claro, cobrindo várias

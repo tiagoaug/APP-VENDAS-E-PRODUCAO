@@ -2924,7 +2924,7 @@ export default function SalesView({
         title="Nova venda"
         onClick={() => setAddChoiceOpen(true)}
         data-guide-anchor="sales.novoPedido"
-        className="fixed bottom-36 left-24 right-24 z-50 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-zinc-800 text-white shadow-2xl active:scale-[0.98] transition-all border-2 border-white dark:border-slate-800"
+        className="fixed bottom-40 left-24 right-24 z-50 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-zinc-800 text-white shadow-2xl active:scale-[0.98] transition-all border-2 border-white dark:border-slate-800"
       >
          <Plus size={18} strokeWidth={3} />
          <span className="text-xs font-black uppercase tracking-widest">Nova Venda</span>

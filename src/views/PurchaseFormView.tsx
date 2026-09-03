@@ -792,6 +792,12 @@ export default function PurchaseFormView({
 
   const handleSave = async () => {
     if (isSaving) return;
+    // Sem fornecedor/prestador escolhido, a compra salvava mesmo assim — pedido do usuário:
+    // bloquear e avisar que ficou pendente, em vez de deixar passar em branco.
+    if (!supplierId) {
+      toast.show('Selecione o fornecedor ou prestador de serviços antes de salvar — ficou pendente.');
+      return;
+    }
     setIsSaving(true);
     try {
     const finalItems: PurchaseItem[] = [];
@@ -1321,9 +1327,9 @@ export default function PurchaseFormView({
                 : 'text-slate-400 dark:text-slate-500 hover:text-indigo-500'
             }`}
             aria-label="Tipo de compra estoque"
-            title="Estoque"
+            title="Produtos"
           >
-            <Package size={14} strokeWidth={2.5} /> Estoque
+            <Package size={14} strokeWidth={2.5} /> Produtos
           </button>
           <button
             onClick={() => setType(PurchaseType.GENERAL)}
@@ -2182,14 +2188,22 @@ export default function PurchaseFormView({
                   : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-sky-300 hover:text-sky-600'
             }`}
           >
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isProductionOrder ? 'bg-white/20' : isDarkMode ? 'bg-slate-700' : 'bg-white'}`}>
-              <Factory size={14} strokeWidth={2.5} className={isProductionOrder ? 'text-white' : 'text-sky-500'} />
-            </div>
+            <span className={`relative shrink-0 flex items-center justify-center w-7 h-7 rounded-lg ${isProductionOrder ? 'bg-white/20' : isDarkMode ? 'bg-slate-700' : 'bg-white'}`}>
+              {/* Pulsa só enquanto desligado — chama atenção pra opção existir; some assim
+                  que o usuário ativa (já fica óbvio pelo botão inteiro virar azul). */}
+              {!isProductionOrder && <span className="absolute inset-0 rounded-lg bg-sky-400/40 animate-ping" />}
+              <Factory size={14} strokeWidth={2.5} className={`relative ${isProductionOrder ? 'text-white' : 'text-sky-500'}`} />
+            </span>
             <div className="text-left flex-1">
               <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isProductionOrder ? 'text-white' : ''}`}>Pedido de Produção (OP)</p>
               <p className={`text-[9px] font-bold mt-0.5 leading-none ${isProductionOrder ? 'text-sky-100' : 'text-slate-400'}`}>
                 {isProductionOrder ? `${blocks.length} produto(s) selecionado(s)` : 'Gera mapa de produção para o estoque'}
               </p>
+              {!isProductionOrder && (
+                <p className="text-[9px] font-bold mt-0.5 leading-snug text-slate-400 normal-case">
+                  Clique aqui se o pedido tiver que ser produzido e não apenas comprado
+                </p>
+              )}
             </div>
             <div className={`w-8 h-4 rounded-full relative shrink-0 transition-all ${isProductionOrder ? 'bg-white/30' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
               <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isProductionOrder ? 'left-4' : 'left-0.5'}`} />

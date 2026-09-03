@@ -654,57 +654,43 @@ export default function PurchasesView({
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-4">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Despesas Gerais
-          </h2>
-          <p className="text-xs text-slate-500 font-medium">
-            Histórico de entradas
-          </p>
-          {totalPendingTermPurchases > 0 && (
-            <div className="flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg w-fit bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <span className="text-[8px] font-black uppercase tracking-widest">Pendente a prazo</span>
-              <span className="text-[11px] font-black tracking-tight">
-                R$ {totalPendingTermPurchases.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-          )}
-          {mismatchedCashPurchases.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowReconcileConfirm(true)}
-              data-guide-anchor="purchases.corrigirDespesasDesatualizadas"
-              className="flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg w-fit bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 active:scale-95 transition-all"
-            >
-              <span className="text-[8px] font-black uppercase tracking-widest">
-                {mismatchedCashPurchases.length} despesa(s) desatualizada(s) · toque para corrigir
-              </span>
-            </button>
-          )}
-        </div>
-        {canLancarPedidos && (
-          <button
-            onClick={onAdd}
-            title="Nova Compra"
-            aria-label="Adicionar nova compra"
-            data-guide-anchor="purchases.novaCompra"
-            className="bg-blue-600 text-white p-3 rounded-[1rem] shadow-sm active:scale-95 transition-all flex items-center justify-center cursor-pointer hover:bg-blue-700"
-          >
-            <Plus size={20} strokeWidth={2.5} />
-          </button>
-        )}
-      </div>
-
-      {/* Tipo de Compra — sempre visível no topo, em vez de escondido no popup de Filtros */}
-      <div className={`flex p-1 rounded-2xl border gap-1 mt-3 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+      {/* Título "Despesas Gerais" removido daqui (pedido do usuário: ocupava espaço à toa) —
+          o botão "+" que morava junto já é redundante com o card fixo "Nova Compra" (ver
+          fixed bottom-40 mais abaixo nesta view). Os filtros de tipo agora abrem a tela, e o
+          badge de Pendente a Prazo (+ o aviso de despesas desatualizadas) desceu pra logo
+          abaixo deles. */}
+      <div className={`flex p-1 rounded-2xl border gap-1 pt-4 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
         {(['ALL', PurchaseType.GENERAL, PurchaseType.SOLE, PurchaseType.REPLENISHMENT] as const).map((v) => (
           <button key={v} type="button" onClick={() => setTypeFilter(v)}
             data-guide-anchor="purchases.selecionarTipo"
             className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${typeFilter === v ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-700'}`}>
-            {v === 'ALL' ? 'Todos' : v === PurchaseType.GENERAL ? 'Geral' : v === PurchaseType.SOLE ? 'Solados' : 'Estoque'}
+            {v === 'ALL' ? 'Todos' : v === PurchaseType.GENERAL ? 'Geral' : v === PurchaseType.SOLE ? 'Solados' : 'Produtos'}
           </button>
         ))}
+      </div>
+
+      {/* Badge de Pendente a Prazo sempre visível (mesmo zerado) — antes só aparecia quando
+          havia saldo, o que deixava um vão vazio aqui embaixo dos filtros quando não havia
+          nada pendente; agora o valor (R$ 0,00 incluso) sempre ocupa esse espaço. */}
+      <div className="flex flex-wrap items-center gap-2 mt-3">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg w-fit bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
+          <span className="text-[8px] font-black uppercase tracking-widest">Pendente a prazo</span>
+          <span className="text-[11px] font-black tracking-tight">
+            R$ {totalPendingTermPurchases.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        </div>
+        {mismatchedCashPurchases.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowReconcileConfirm(true)}
+            data-guide-anchor="purchases.corrigirDespesasDesatualizadas"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg w-fit bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 active:scale-95 transition-all"
+          >
+            <span className="text-[8px] font-black uppercase tracking-widest">
+              {mismatchedCashPurchases.length} despesa(s) desatualizada(s) · toque para corrigir
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Visão Geral de Pagamentos Recorrentes — só aparece se houver alguma série de compra
@@ -1147,7 +1133,7 @@ export default function PurchasesView({
           aria-label="Adicionar nova compra"
           onClick={onAdd}
           data-guide-anchor="purchases.novaCompraFixo"
-          className="fixed bottom-36 left-24 right-24 z-50 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-zinc-800 text-white shadow-2xl active:scale-[0.98] transition-all border-2 border-white dark:border-slate-800"
+          className="fixed bottom-40 left-24 right-24 z-50 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-zinc-800 text-white shadow-2xl active:scale-[0.98] transition-all border-2 border-white dark:border-slate-800"
         >
           <Plus size={18} strokeWidth={3} />
           <span className="text-xs font-black uppercase tracking-widest">Nova Compra</span>

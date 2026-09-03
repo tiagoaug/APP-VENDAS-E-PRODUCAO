@@ -46,7 +46,8 @@ import {
   Compass,
   Building2,
   Info,
-  UserCog
+  UserCog,
+  Calculator
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -7892,8 +7893,12 @@ export default function App() {
       { id: 'reports', label: 'Relat.', icon: <BarChart3 size={20} />, view: ViewType.REPORTS, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.REPORTS) },
       { id: 'soleStock', label: 'Solados', icon: <Footprints size={20} />, view: ViewType.PRODUCTION_SOLE_STOCK, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_SOLE_STOCK) },
       { id: 'engineering', label: 'Engenh.', icon: <Database size={20} />, view: ViewType.PRODUCTION_ENGINEERING, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_ENGINEERING) },
-      { id: 'serviceOrder', label: 'OS', icon: <ClipboardList size={20} />, view: ViewType.PRODUCTION_SERVICE_ORDER_FORM, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_SERVICE_ORDER_FORM) },
       { id: 'purchaseNeeds', label: 'Necess.', icon: <AlertTriangle size={20} />, view: ViewType.PRODUCTION_PURCHASE_NEEDS, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_PURCHASE_NEEDS) },
+      { id: 'ruleOfThree', label: 'R. de 3', icon: <Calculator size={20} />, view: ViewType.RULE_OF_THREE, allowed: true },
+      // Clique tem tratamento especial (ver onClick abaixo) — precisa passar por
+      // handleOpenLabelPrintStudio (checagem de Bluetooth da impressora Ablemark), não pode
+      // navegar direto igual aos outros itens.
+      { id: 'labelPrintStudio', label: 'Ajustes PDF', icon: <Printer size={20} />, view: ViewType.LABEL_PRINT_STUDIO, allowed: modulesConfig.production },
     ];
 
     const visible = candidates.filter(c => c.allowed && !bottomNavConfig.hidden.includes(c.id));
@@ -7992,7 +7997,7 @@ export default function App() {
       case ViewType.PURCHASES:
         return "Despesas Gerais";
       case ViewType.SALES:
-        return "Loja Virtual & Vendas";
+        return "Vendas";
       case ViewType.FINANCIAL:
         return "Financeiro";
       case ViewType.ACCOUNTS:
@@ -8545,7 +8550,10 @@ export default function App() {
                           // botão de fechar, ex. Compras/Vendas), o que deixava esse X sem efeito
                           // pra quem chegou neles direto pelo ícone da nav. navigateTo() empilha
                           // normal, então fechar volta pra tela de onde o usuário veio.
-                          onClick={() => MODAL_VIEWS.includes(item.view) ? navigateTo(item.view) : resetTo(item.view)}
+                          // "Ajustes PDF" foge da regra: precisa passar pela checagem de
+                          // Bluetooth da impressora Ablemark (handleOpenLabelPrintStudio) antes
+                          // de navegar, senão abre a tela sem o pareamento verificado.
+                          onClick={() => item.id === 'labelPrintStudio' ? handleOpenLabelPrintStudio() : (MODAL_VIEWS.includes(item.view) ? navigateTo(item.view) : resetTo(item.view))}
                           appTheme={appTheme}
                           iconMode={navIconMode}
                           tintColor={NAV_TAB_COLORS[item.id]}
