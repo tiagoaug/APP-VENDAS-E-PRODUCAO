@@ -26,7 +26,7 @@ import {
   ClipboardList,
   PackageOpen,
   ChevronRight,
-  ChevronLeft,
+  ChevronDown,
   FileText,
   User as UserIcon,
   AlertCircle,
@@ -311,6 +311,12 @@ interface TabItemProps {
   // Chave de ancoragem pro motor de tours guiados (ver GuidedTourOverlay.tsx) — vira o atributo
   // data-guide-anchor no botão real, sem mudar nenhum comportamento do item.
   anchorKey?: string;
+  // Home/Mais são "cards" maiores e fixos nas pontas da nav — visualmente distintos da grade
+  // de ícones do meio (ver uso em App() logo abaixo do <nav>).
+  big?: boolean;
+  // Itens da grade do meio: ocupam 100% da coluna do grid (que usa fr, não px fixo) em vez de
+  // w-16 fixo, pra sempre caber certinho não importa quantas colunas cabem na tela.
+  fluid?: boolean;
 }
 
 function TabItem({
@@ -323,6 +329,8 @@ function TabItem({
   tintColor = '#4f46e5',
   monoColor = '#4f46e5',
   anchorKey,
+  big = false,
+  fluid = false,
 }: TabItemProps) {
   const isColored = iconMode === 'colored';
 
@@ -342,14 +350,14 @@ function TabItem({
       title={label}
       aria-label={`Ir para ${label}`}
       data-guide-anchor={anchorKey}
-      className="flex flex-col items-center justify-center gap-0.5 w-16 shrink-0 py-2 transition-all"
+      className={`flex flex-col items-center justify-center gap-0.5 transition-all rounded-2xl ${big ? 'w-20 py-2.5 shrink-0 bg-black/[0.035] dark:bg-white/[0.06]' : fluid ? 'w-full py-1.5' : 'w-16 shrink-0 py-1.5'}`}
     >
-      <div className="w-10 h-7 flex items-center justify-center rounded-xl transition-all" style={pillStyle}>
+      <div className={`flex items-center justify-center rounded-xl transition-all ${big ? 'w-12 h-9' : 'w-10 h-7'}`} style={pillStyle}>
         <span className="transition-all" style={iconStyle}>
           {icon}
         </span>
       </div>
-      <span className="text-[10px] font-bold tracking-tight transition-all" style={iconStyle}>
+      <span className={`font-bold tracking-tight transition-all ${big ? 'text-[11px]' : 'text-[10px]'}`} style={iconStyle}>
         {label}
       </span>
     </button>
@@ -380,6 +388,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('show_engineering_thumbnails', String(showEngineeringThumbnails));
   }, [showEngineeringThumbnails]);
+  // Espaço extra no topo do cabeçalho — em alguns iPhones (notch/Dynamic Island) o WebView do
+  // Capacitor renderiza embaixo da área de status, e o padding-top fixo do <header> não é
+  // suficiente sozinho pra não ficar atrás da câmera; é uma opção manual (não detecção
+  // automática de plataforma) porque a altura do recorte varia por aparelho.
+  const [extraHeaderTopSpace, setExtraHeaderTopSpace] = useState<boolean>(() => {
+    return localStorage.getItem('extra_header_top_space') === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('extra_header_top_space', String(extraHeaderTopSpace));
+  }, [extraHeaderTopSpace]);
   // Modo Privacidade Financeira — borra valores no Financeiro/Dashboard (ver PrivacyContext).
   const [hideFinancialValues, setHideFinancialValues] = useState<boolean>(() => {
     return localStorage.getItem('hide_financial_values') === 'true';
@@ -4939,6 +4957,8 @@ export default function App() {
             setShowEngineeringThumbnails={setShowEngineeringThumbnails}
             hideFinancialValues={hideFinancialValues}
             setHideFinancialValues={setHideFinancialValues}
+            extraHeaderTopSpace={extraHeaderTopSpace}
+            setExtraHeaderTopSpace={setExtraHeaderTopSpace}
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
             onOpenProductCreationChoice={handleOpenProductCreationChoice}
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
@@ -7870,6 +7890,10 @@ export default function App() {
       { id: 'stock', label: 'Estoque', icon: <Boxes size={20} />, view: ViewType.STOCK, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.STOCK) },
       { id: 'people', label: 'Pessoas', icon: <Users size={20} />, view: ViewType.PEOPLE, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PEOPLE) },
       { id: 'reports', label: 'Relat.', icon: <BarChart3 size={20} />, view: ViewType.REPORTS, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.REPORTS) },
+      { id: 'soleStock', label: 'Solados', icon: <Footprints size={20} />, view: ViewType.PRODUCTION_SOLE_STOCK, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_SOLE_STOCK) },
+      { id: 'engineering', label: 'Engenh.', icon: <Database size={20} />, view: ViewType.PRODUCTION_ENGINEERING, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_ENGINEERING) },
+      { id: 'serviceOrder', label: 'OS', icon: <ClipboardList size={20} />, view: ViewType.PRODUCTION_SERVICE_ORDER_FORM, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_SERVICE_ORDER_FORM) },
+      { id: 'purchaseNeeds', label: 'Necess.', icon: <AlertTriangle size={20} />, view: ViewType.PRODUCTION_PURCHASE_NEEDS, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_PURCHASE_NEEDS) },
     ];
 
     const visible = candidates.filter(c => c.allowed && !bottomNavConfig.hidden.includes(c.id));
@@ -7885,44 +7909,53 @@ export default function App() {
     return ordered;
   }, [modulesConfig, activeCollaborator, bottomNavConfig]);
 
-  // Setas de "tem mais ícone pra esse lado" no carrossel deslizante do meio da nav — sem isso,
-  // nada na tela avisa que dá pra arrastar quando os ícones não cabem inteiros na largura.
-  // Usa um CALLBACK REF (não useRef+useEffect) de propósito: um useEffect com `middleNavItems`
-  // na dependência só reage a mudanças de módulo/permissão/personalização, mas essa lista já
-  // estabiliza logo no carregamento inicial (antes da barra de navegação real existir na tela,
-  // durante a tela de auth/loading) — o efeito rodava, achava as refs nulas (o <nav> ainda nem
-  // tinha montado) e nunca mais tinha motivo pra rodar de novo, deixando a seta travada em "não
-  // tem mais nada" pra sempre (o arraste manual continuava funcionando normal, só a seta que
-  // nunca acompanhava — bug real, não só timing de fonte). O callback ref dispara exatamente
-  // quando ESTE elemento é criado de verdade, então não tem como perder o timing certo.
-  const middleNavScrollRef = useRef<HTMLDivElement | null>(null);
-  const middleNavScrollCleanupRef = useRef<(() => void) | null>(null);
-  const [navScrollHint, setNavScrollHint] = useState({ left: false, right: false });
+  // Paginação do meio da nav — a barra em si é 100% fixa (nada desliza/anima de lado), Home e
+  // Mais ficam parados nas pontas; o meio mostra os ícones numa grade 3x2 (mínimo 3 colunas —
+  // cresce em telas largas, nunca cai abaixo de 3 — por 2 linhas), e clicar na seta troca a
+  // página inteira de uma vez (ver navPage/navPages abaixo), em vez de rolar aos poucos. As
+  // colunas usam fr (não px fixo) e os itens do meio são "fluid" (ver TabItem `fluid`) pra
+  // sempre caber exatamente no espaço disponível, sem estourar o container.
+  // Usa um CALLBACK REF (não useRef+useEffect) de propósito: um useEffect rodando só na
+  // montagem acharia a ref nula (o <nav> ainda nem montou durante a tela de auth/loading) e
+  // nunca mais teria motivo pra rodar de novo, deixando itemsPerRow travado no valor inicial
+  // pra sempre. O callback ref dispara exatamente quando ESTE elemento é criado de verdade.
+  const middleNavContainerRef = useRef<HTMLDivElement | null>(null);
+  const middleNavContainerCleanupRef = useRef<(() => void) | null>(null);
+  const [middleNavItemsPerRow, setMiddleNavItemsPerRow] = useState(3);
+  const [navPage, setNavPage] = useState(0);
 
-  const attachMiddleNavScrollRef = useCallback((el: HTMLDivElement | null) => {
-    middleNavScrollCleanupRef.current?.();
-    middleNavScrollCleanupRef.current = null;
-    middleNavScrollRef.current = el;
+  const attachMiddleNavContainerRef = useCallback((el: HTMLDivElement | null) => {
+    middleNavContainerCleanupRef.current?.();
+    middleNavContainerCleanupRef.current = null;
+    middleNavContainerRef.current = el;
     if (!el) return;
-    const content = el.firstElementChild as HTMLElement | null;
-    const update = () => {
-      setNavScrollHint({
-        left: el.scrollLeft > 4,
-        right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
-      });
-    };
+    // Nunca menos que 3 colunas (pedido explícito: grade 3x3 no celular); em telas mais largas
+    // cresce pra caber mais por página. Cada TabItem "fluid" cabe em qualquer largura de coluna.
+    const update = () => setMiddleNavItemsPerRow(Math.max(3, Math.floor(el.clientWidth / 64)));
     update();
-    el.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
     const ro = new ResizeObserver(update);
     ro.observe(el);
-    if (content) ro.observe(content);
-    middleNavScrollCleanupRef.current = () => {
-      el.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
-      ro.disconnect();
-    };
+    middleNavContainerCleanupRef.current = () => ro.disconnect();
   }, []);
+
+  const middleNavRowsPerPage = 2;
+  const middleNavPageSize = middleNavItemsPerRow * middleNavRowsPerPage;
+
+  const navPages = useMemo(() => {
+    const pages: typeof middleNavItems[] = [];
+    for (let i = 0; i < middleNavItems.length; i += middleNavPageSize) {
+      pages.push(middleNavItems.slice(i, i + middleNavPageSize));
+    }
+    return pages.length > 0 ? pages : [[]];
+  }, [middleNavItems, middleNavPageSize]);
+
+  // Se a lista de itens/página mudar (permissão, personalização, rotação de tela) e a página
+  // atual deixar de existir, volta pra última válida em vez de ficar numa página vazia.
+  useEffect(() => {
+    if (navPage > navPages.length - 1) setNavPage(Math.max(0, navPages.length - 1));
+  }, [navPages, navPage]);
+
+  const activeNavPageItems = navPages[navPage] || [];
 
   const viewTitle = useMemo(() => {
     switch (currentView) {
@@ -8186,8 +8219,14 @@ export default function App() {
       className={`flex flex-col h-screen ${themeVisual.outerBg} font-sans ${themeVisual.baseText} overflow-hidden overflow-x-hidden`}
     >
       <ToastContainer />
-      {/* Header */}
-      <header className={`sticky top-0 z-10 shrink-0 px-4 pt-10 pb-3 ${themeVisual.headerGradient}`}>
+      {/* Header — pt-10 base + env(safe-area-inset-top) (notch/Dynamic Island; só tem efeito
+          com viewport-fit=cover no index.html) + um empurrão manual extra opcional (ver
+          "Espaço no Topo (iPhone)" em Configurações > Aparência), pra quando o safe-area
+          sozinho não é suficiente no WebView do Capacitor nesse aparelho específico. */}
+      <header
+        className={`sticky top-0 z-10 shrink-0 px-4 pb-3 ${themeVisual.headerGradient}`}
+        style={{ paddingTop: `calc(2.5rem + env(safe-area-inset-top, 0px)${extraHeaderTopSpace ? ' + 40px' : ''})` }}
+      >
         <div className={`relative flex items-center justify-between px-4 py-2.5 rounded-[1.75rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.07)]`}>
           {/* 3D top highlight */}
           <div className="absolute top-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
@@ -8446,21 +8485,22 @@ export default function App() {
         })()}
       </Modal>
 
-      {/* Bottom Tab Navigation — Home e Mais ficam fixos nas pontas; o meio é um carrossel
-          deslizante (overflow-x-auto) cujo conteúdo/ordem vem de middleNavItems, personalizável
-          em Configurações > Personalizar Navegação (ver BottomNavConfigModal). */}
+      {/* Bottom Tab Navigation — Home e Mais ficam fixos nas pontas; o meio é paginado por setas
+          laterais (sem swipe manual — o container é overflow-hidden, só as setas mudam a página
+          visível) cujo conteúdo/ordem vem de middleNavItems, personalizável em Configurações >
+          Personalizar Navegação (ver BottomNavConfigModal). */}
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
-        {/* Wrapper sem overflow-hidden — só pra servir de referência de posição pras setas, que
-            precisam ficar ACIMA e FORA do pill (o pill em si mantém overflow-hidden pros
+        {/* Wrapper sem overflow-hidden — só pra servir de referência de posição pra seta, que
+            precisa ficar ACIMA e FORA do pill (o pill em si mantém overflow-hidden pros
             traços 3D e cantos arredondados; se a seta estivesse dentro dele, seria cortada). */}
         <div className="relative w-full max-w-md pointer-events-auto">
-          <div className={`relative flex items-center w-full px-2 py-2 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
+          <div className={`relative flex items-center w-full px-2 py-1.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
             {/* 3D top highlight streak */}
             <div className="absolute top-0 left-4 right-4 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
             {/* 3D bottom shadow line */}
             <div className="absolute bottom-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent pointer-events-none" />
             <TabItem
-              icon={<LayoutDashboard size={20} />}
+              icon={<LayoutDashboard size={24} />}
               label="Home"
               active={activeTab === "dashboard"}
               onClick={() => resetTo(ViewType.DASHBOARD)}
@@ -8468,35 +8508,59 @@ export default function App() {
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.dashboard}
               monoColor={navMonoColor}
+              big
             />
-            <div className="flex-1 min-w-0">
-              <div ref={attachMiddleNavScrollRef} className="flex items-center overflow-x-auto no-scrollbar">
-                <div className="flex items-center">
-                  {middleNavItems.map(item => (
-                    <TabItem
-                      key={item.id}
-                      icon={item.icon}
-                      label={item.label}
-                      active={activeTab === item.id}
-                      // Estoque/Pessoas/Relatórios abrem dentro do Modal global (ver
-                      // MODAL_VIEWS) com X/"Voltar" que dependem do histórico pra funcionar —
-                      // resetTo() zera o histórico (correto pros itens que são tela cheia sem
-                      // botão de fechar, ex. Compras/Vendas), o que deixava esse X sem efeito
-                      // pra quem chegou neles direto pelo ícone da nav. navigateTo() empilha
-                      // normal, então fechar volta pra tela de onde o usuário veio.
-                      onClick={() => MODAL_VIEWS.includes(item.view) ? navigateTo(item.view) : resetTo(item.view)}
-                      appTheme={appTheme}
-                      iconMode={navIconMode}
-                      tintColor={NAV_TAB_COLORS[item.id]}
-                      monoColor={navMonoColor}
-                      anchorKey={item.anchorKey}
-                    />
-                  ))}
-                </div>
-              </div>
+            <div ref={attachMiddleNavContainerRef} className="flex-1 min-w-0 overflow-hidden">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={navPage}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.12 }}
+                  // Grid com colunas em fr (não px fixo) — divide o espaço disponível em partes
+                  // iguais, então as colunas sempre cabem certinho (ver TabItem `fluid`) sem
+                  // estourar o container, e o item N+1 sempre cai exatamente embaixo do item N
+                  // na linha de cima. Com dois flex+justify-center cada fila centralizava
+                  // sozinha e desalinhava as colunas entre si.
+                  className="grid gap-x-0"
+                  style={{ gridTemplateColumns: `repeat(${middleNavItemsPerRow}, minmax(0, 1fr))` }}
+                >
+                  {activeNavPageItems.map((item, idx) => {
+                    // Traços finos entre colunas/filas — "grade moderna" separando os ícones do
+                    // meio (Home/Mais não entram nessa grade, são cards à parte nas pontas).
+                    const col = idx % middleNavItemsPerRow;
+                    const totalRows = Math.ceil(activeNavPageItems.length / middleNavItemsPerRow);
+                    const row = Math.floor(idx / middleNavItemsPerRow);
+                    const gridLineClass = `${col < middleNavItemsPerRow - 1 ? 'border-r' : ''} ${row < totalRows - 1 ? 'border-b' : ''} ${isDarkMode ? 'border-slate-600' : 'border-slate-300'}`;
+                    return (
+                      <div key={item.id} className={`flex items-center justify-center ${gridLineClass}`}>
+                        <TabItem
+                          icon={item.icon}
+                          label={item.label}
+                          active={activeTab === item.id}
+                          // Estoque/Pessoas/Relatórios abrem dentro do Modal global (ver
+                          // MODAL_VIEWS) com X/"Voltar" que dependem do histórico pra funcionar —
+                          // resetTo() zera o histórico (correto pros itens que são tela cheia sem
+                          // botão de fechar, ex. Compras/Vendas), o que deixava esse X sem efeito
+                          // pra quem chegou neles direto pelo ícone da nav. navigateTo() empilha
+                          // normal, então fechar volta pra tela de onde o usuário veio.
+                          onClick={() => MODAL_VIEWS.includes(item.view) ? navigateTo(item.view) : resetTo(item.view)}
+                          appTheme={appTheme}
+                          iconMode={navIconMode}
+                          tintColor={NAV_TAB_COLORS[item.id]}
+                          monoColor={navMonoColor}
+                          anchorKey={item.anchorKey}
+                          fluid
+                        />
+                      </div>
+                    );
+                  })}
+                </motion.div>
+              </AnimatePresence>
             </div>
             <TabItem
-              icon={<Settings size={20} />}
+              icon={<Settings size={24} />}
               label="Mais"
               active={activeTab === "settings"}
               onClick={() => resetTo(ViewType.SETTINGS)}
@@ -8504,31 +8568,24 @@ export default function App() {
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.settings}
               monoColor={navMonoColor}
+              big
             />
           </div>
-          {/* Setas de "tem mais ícone pra esse lado" — pequenas, flutuando ACIMA do pill (fora
-              da área dos ícones, não em cima deles), alinhadas com a borda do carrossel do meio
-              (logo depois de Home / logo antes de Mais, cada um w-16). Pulsam devagar pra chamar
-              atenção da primeira vez. Só aparecem quando dá pra rolar naquela direção, e também
-              servem de atalho de toque pra rolar um "passo". */}
-          {navScrollHint.left && (
+          {/* Seta, FORA do card, perto do Mais (mais alcançável com o polegar) — a barra nunca
+              desliza/anima de lado; um toque troca TODOS os ícones do meio de uma vez pela
+              próxima página (ver navPage/navPages acima), voltando pra 1ª depois da última. Só
+              aparece quando há mais de 1 página. */}
+          {navPages.length > 1 && (
             <button
               type="button"
-              onClick={() => middleNavScrollRef.current?.scrollBy({ left: -64, behavior: 'smooth' })}
-              aria-label="Ver ícones anteriores"
-              className="absolute left-16 -top-1.5 z-10 pointer-events-auto w-4 h-4 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-900/30 flex items-center justify-center animate-pulse active:scale-90 transition-transform"
-            >
-              <ChevronLeft size={10} strokeWidth={3} />
-            </button>
-          )}
-          {navScrollHint.right && (
-            <button
-              type="button"
-              onClick={() => middleNavScrollRef.current?.scrollBy({ left: 64, behavior: 'smooth' })}
+              onClick={() => setNavPage(p => (p + 1) % navPages.length)}
               aria-label="Ver mais ícones"
-              className="absolute right-16 -top-1.5 z-10 pointer-events-auto w-4 h-4 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-900/30 flex items-center justify-center animate-pulse active:scale-90 transition-transform"
+              // right-[28px]: com o pill em px-2 (8px) e o card do Mais em w-20 (80px) encostado
+              // na borda direita, o centro da engrenagem fica a 48px da borda — 28px de offset
+              // pro botão (w-10, raio 20) deixa o CENTRO do botão exatamente sob a engrenagem.
+              className="absolute -top-5 right-[28px] z-10 w-10 h-10 rounded-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-100 dark:border-slate-700 shadow-md shadow-indigo-900/20 flex items-center justify-center animate-pulse hover:animate-none active:scale-90 active:bg-indigo-50 dark:active:bg-slate-700 transition-all"
             >
-              <ChevronRight size={10} strokeWidth={3} />
+              <ChevronDown size={20} strokeWidth={3} />
             </button>
           )}
         </div>

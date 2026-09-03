@@ -77,6 +77,10 @@ export const NAV_TAB_COLORS: Record<string, string> = {
   people: '#0369a1',      // Pessoas — azul
   reports: '#65a30d',     // Relatórios — lima
   settings: '#475569',    // Mais — slate
+  soleStock: '#0f766e',   // Solados — teal escuro
+  engineering: '#7c3aed', // Engenharia — violeta
+  serviceOrder: '#be123c',// OS — rose escuro
+  purchaseNeeds: '#d97706', // Necessidades — âmbar
 };
 
 // 25 cores para o modo "Monocromático" — do escuro ao claro, cobrindo várias

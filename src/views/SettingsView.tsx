@@ -70,6 +70,10 @@ interface SettingsViewProps {
   setShowEngineeringThumbnails?: (v: boolean) => void;
   hideFinancialValues?: boolean;
   setHideFinancialValues?: (v: boolean) => void;
+  // Empurra o cabeçalho um pouco mais pra baixo — pra iPhones com notch/Dynamic Island onde o
+  // espaço padrão não é suficiente (ver App.tsx <header> style).
+  extraHeaderTopSpace?: boolean;
+  setExtraHeaderTopSpace?: (v: boolean) => void;
   onOpenOnboardingWizard: () => void;
   onOpenProductCreationChoice: () => void;
   // Abre a Impressão de Etiquetas (Ablemark) — antes era um ícone fixo no topo do app; agora
@@ -104,6 +108,8 @@ export default function SettingsView({
   setShowEngineeringThumbnails,
   hideFinancialValues = false,
   setHideFinancialValues,
+  extraHeaderTopSpace = false,
+  setExtraHeaderTopSpace,
   onOpenOnboardingWizard,
   onOpenProductCreationChoice,
   onOpenLabelPrintStudio,
@@ -448,12 +454,12 @@ export default function SettingsView({
 
             <div className="p-5 flex flex-col gap-5">
               {/* Dark Mode toggle — atalho rápido */}
-              <div className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-amber-50 text-amber-500'}`}>
+              <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-amber-50 text-amber-500'}`}>
                     {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo {isDarkMode ? 'Noturno' : 'Diurno'}</p>
                     <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Atalho rápido</p>
                   </div>
@@ -462,7 +468,7 @@ export default function SettingsView({
                   onClick={toggleDarkMode}
                   title="Alternar modo claro/escuro"
                   aria-label="Alternar modo claro/escuro"
-                  className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                  className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-200'}`}
                 >
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${isDarkMode ? 'left-7' : 'left-1'}`} />
                 </button>
@@ -470,12 +476,12 @@ export default function SettingsView({
 
               {/* Miniaturas dos modelos na Engenharia de Produto */}
               {setShowEngineeringThumbnails && (
-                <div className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
                       {showEngineeringThumbnails ? <Eye size={18} /> : <EyeOff size={18} />}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Miniaturas dos Modelos</p>
                       <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Foto nas listas de produtos cadastrados</p>
                     </div>
@@ -484,7 +490,7 @@ export default function SettingsView({
                     onClick={() => setShowEngineeringThumbnails(!showEngineeringThumbnails)}
                     title="Mostrar/ocultar miniaturas dos modelos"
                     aria-label="Mostrar ou ocultar miniaturas dos modelos na Engenharia de Produto"
-                    className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                    className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${showEngineeringThumbnails ? 'left-7' : 'left-1'}`} />
                   </button>
@@ -494,12 +500,12 @@ export default function SettingsView({
               {/* Modo Privacidade Financeira — borra valores no Financeiro e nos cards do
                   Dashboard, pra poder mostrar a tela pra alguém sem expor números. */}
               {setHideFinancialValues && (
-                <div className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
                       {hideFinancialValues ? <EyeOff size={18} /> : <Eye size={18} />}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo Privacidade Financeira</p>
                       <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Borra valores no Financeiro e no Dashboard</p>
                     </div>
@@ -508,9 +514,33 @@ export default function SettingsView({
                     onClick={() => setHideFinancialValues(!hideFinancialValues)}
                     title="Ativar/desativar Modo Privacidade Financeira"
                     aria-label="Ativar ou desativar o Modo Privacidade Financeira"
-                    className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${hideFinancialValues ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                    className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${hideFinancialValues ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${hideFinancialValues ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+              )}
+
+              {/* Espaço no Topo (iPhone) — empurra o cabeçalho pra baixo em aparelhos com
+                  notch/Dynamic Island, onde a área de status pode cobrir parte dele. */}
+              {setExtraHeaderTopSpace && (
+                <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                      <Layout size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo (iPhone)</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Abaixa o cabeçalho pra não ficar atrás da câmera/notch</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setExtraHeaderTopSpace(!extraHeaderTopSpace)}
+                    title="Ativar/desativar espaço extra no topo do cabeçalho"
+                    aria-label="Ativar ou desativar espaço extra no topo do cabeçalho"
+                    className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${extraHeaderTopSpace ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${extraHeaderTopSpace ? 'left-7' : 'left-1'}`} />
                   </button>
                 </div>
               )}

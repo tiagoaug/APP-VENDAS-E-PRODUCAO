@@ -4120,18 +4120,77 @@ export default function PCPView({
           finishedAt: Date.now(),
         });
       } else {
-        // Baixa parcial: a OS continua a MESMA, PENDENTE, agora só com os pedidos que
-        // ficaram de fora.
+        // Baixa parcial: a OS original continua PENDENTE, agora só com os pedidos que
+        // ficaram de fora (mesmo comportamento de antes).
         const remainingKeys = os.sourceItemKeys && os.sourceItemKeys.length > 0
           ? stayedItems.map(it => `${it.lotId}::${it.orderId}::${it.siIdx}`)
           : undefined;
         const remainingOrderIds = !remainingKeys
           ? Array.from(new Set(stayedItems.map(it => it.orderId)))
           : undefined;
-        await firebaseService.updateDocument('serviceOrders', os.id, {
-          ...(remainingKeys ? { sourceItemKeys: remainingKeys } : {}),
-          ...(remainingOrderIds ? { sourceOrderIds: remainingOrderIds } : {}),
-        });
+
+        // Pra OUTSOURCED, o pedido do usuário é a ficha baixada virar "a pagar" na hora,
+        // sem esperar a OS inteira terminar (ver ProviderServiceOrdersCard: só soma
+        // openBalance de OS com status COMPLETED). Solução: separa a parte já baixada num
+        // registro COMPLETED próprio — mesmo fornecedor/preço, só com a quantidade/valor
+        // do que voltou agora — e a OS original segue PENDENTE só com o valor do que
+        // ainda falta. INTERNAL não tem "a pagar" nenhum, então mantém como sempre foi
+        // (só encolhe sourceItemKeys, sem criar registro extra).
+        if (os.type === 'OUTSOURCED') {
+          const includedQty = includedItems.reduce((s, it) => s + (it.qty || 0), 0);
+          const stayedQty = stayedItems.reduce((s, it) => s + (it.qty || 0), 0);
+          const includedValue = Math.round(os.valuePerPair * includedQty * 100) / 100;
+          const remainingValue = Math.max(0, Math.round(((Number(os.totalValue) || 0) - includedValue) * 100) / 100);
+
+          const splitKeys = os.sourceItemKeys && os.sourceItemKeys.length > 0
+            ? includedItems.map(it => `${it.lotId}::${it.orderId}::${it.siIdx}`)
+            : undefined;
+          const splitOrderIds = !splitKeys
+            ? Array.from(new Set(includedItems.map(it => it.orderId)))
+            : undefined;
+
+          // Sufixo -A, -B, -C... pra cada baixa parcial dessa OS ficar com um osNumber
+          // próprio (ex.: "OS-0122-A"), distinguível na lista de Fornecedores a Pagar mas
+          // ainda claramente ligado ao número original.
+          const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+          const usedSuffixes = new Set(
+            (serviceOrders || [])
+              .filter(o => o.osNumber === os.osNumber || o.osNumber.startsWith(`${os.osNumber}-`))
+              .map(o => o.osNumber.slice(os.osNumber.length))
+          );
+          let suffix = '';
+          for (let i = 0; i < letters.length; i++) {
+            const candidate = `-${letters[i]}`;
+            if (!usedSuffixes.has(candidate)) { suffix = candidate; break; }
+          }
+
+          const { id: _splitOmitId, ...osBase } = os;
+          await firebaseService.saveDocument('serviceOrders', {
+            ...osBase,
+            id: generateId(),
+            osNumber: `${os.osNumber}${suffix}`,
+            quantity: includedQty,
+            totalValue: includedValue,
+            status: 'COMPLETED',
+            finishedAt: Date.now(),
+            transactionId: undefined,
+            paidNaoContabil: undefined,
+            sourceItemKeys: splitKeys,
+            sourceOrderIds: splitOrderIds,
+          });
+
+          await firebaseService.updateDocument('serviceOrders', os.id, {
+            quantity: stayedQty,
+            totalValue: remainingValue,
+            ...(remainingKeys ? { sourceItemKeys: remainingKeys } : {}),
+            ...(remainingOrderIds ? { sourceOrderIds: remainingOrderIds } : {}),
+          });
+        } else {
+          await firebaseService.updateDocument('serviceOrders', os.id, {
+            ...(remainingKeys ? { sourceItemKeys: remainingKeys } : {}),
+            ...(remainingOrderIds ? { sourceOrderIds: remainingOrderIds } : {}),
+          });
+        }
       }
 
       setOsBaixaPanel(null);

@@ -793,14 +793,14 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             onClick={() => setDraft({ ...draft, isUnrestricted: !draft.isUnrestricted })}
             className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${draft.isUnrestricted ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
           >
-            <div className="flex items-center gap-3 text-left">
-              <ShieldCheck size={20} className={draft.isUnrestricted ? 'text-emerald-500' : 'text-slate-400'} />
-              <div>
+            <div className="flex items-center gap-3 text-left min-w-0">
+              <ShieldCheck size={20} className={`shrink-0 ${draft.isUnrestricted ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <div className="min-w-0">
                 <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Acesso Total (sem restrições)</p>
                 <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Ex: Gerente — vê e faz tudo</p>
               </div>
             </div>
-            <div className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${draft.isUnrestricted ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+            <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.isUnrestricted ? 'bg-emerald-500' : 'bg-slate-200'}`}>
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.isUnrestricted ? 'left-7' : 'left-1'}`} />
             </div>
           </button>
@@ -810,14 +810,14 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             onClick={() => setDraft({ ...draft, canUseAI: !draft.canUseAI })}
             className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${draft.canUseAI ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
           >
-            <div className="flex items-center gap-3 text-left">
-              <Sparkles size={20} className={draft.canUseAI ? 'text-violet-500' : 'text-slate-400'} />
-              <div>
+            <div className="flex items-center gap-3 text-left min-w-0">
+              <Sparkles size={20} className={`shrink-0 ${draft.canUseAI ? 'text-violet-500' : 'text-slate-400'}`} />
+              <div className="min-w-0">
                 <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pode usar Assistente IA</p>
                 <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Acesso ao assistente inteligente</p>
               </div>
             </div>
-            <div className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${draft.canUseAI ? 'bg-violet-500' : 'bg-slate-200'}`}>
+            <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.canUseAI ? 'bg-violet-500' : 'bg-slate-200'}`}>
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.canUseAI ? 'left-7' : 'left-1'}`} />
             </div>
           </button>

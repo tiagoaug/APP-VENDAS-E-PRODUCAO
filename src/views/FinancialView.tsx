@@ -933,17 +933,9 @@ export default function FinancialView({
             // A listagem item a item de Tudo/Entradas/Saídas saiu daqui — o mesmo card completo
             // (com busca por cliente/fornecedor, filtro de status e período) agora vive só no
             // card "Consultas" acima de Ordens de Serviço a Fornecedores, pra não duplicar a
-            // mesma lista em dois lugares da tela.
-            <button
-              type="button"
-              onClick={() => setIsQueryModalOpen(true)}
-              className={`w-full flex flex-col items-center justify-center gap-3 py-12 rounded-[2.5rem] border border-dashed transition-all active:scale-[0.99] ${isDarkMode ? 'border-slate-800 hover:bg-slate-900/50' : 'border-slate-200 hover:bg-slate-50'}`}
-            >
-              <ClipboardCheck size={40} className="text-slate-300 dark:text-slate-700" strokeWidth={1.5} />
-              <p className="text-xs text-slate-400 font-bold tracking-widest italic px-8 text-center leading-relaxed">
-                Os lançamentos agora ficam em "Consultas" — toque aqui para abrir
-              </p>
-            </button>
+            // mesma lista em dois lugares da tela. Sem card de atalho aqui embaixo também
+            // (pedido do usuário: ocupava espaço grande demais na tela à toa).
+            null
         )}
 
           {/* Lançamentos antigos e já liquidados não ficam carregados por padrão — busca sob

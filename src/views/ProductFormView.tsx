@@ -2182,12 +2182,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           )}
 
           {module === 'SALES' && showSection('status') && (
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${status === ProductStatus.ACTIVE ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+            <div className="flex items-center justify-between gap-3 p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${status === ProductStatus.ACTIVE ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
                   <Toggle className={status === ProductStatus.ACTIVE ? '' : 'rotate-180'} size={20} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white">{status === ProductStatus.ACTIVE ? 'Em Uso' : 'Inativo'}</p>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500">Bloqueia compra/venda se inativo</p>
                 </div>
@@ -2196,7 +2196,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 type="button"
                 onClick={() => setStatus(status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
                 data-guide-anchor="productForm.alternarStatus"
-                className={`w-12 h-6 rounded-full relative transition-colors ${status === ProductStatus.ACTIVE ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                className={`w-12 h-6 rounded-full relative shrink-0 transition-colors ${status === ProductStatus.ACTIVE ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
                 aria-label={status === ProductStatus.ACTIVE ? "Inativar produto" : "Ativar produto"}
                 title={status === ProductStatus.ACTIVE ? "Inativar" : "Ativar"}
               >

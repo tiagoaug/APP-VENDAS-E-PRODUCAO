@@ -1134,8 +1134,12 @@ export default function PurchasesView({
         )}
       </div>
 
-      {/* Botão fixo de nova compra — mesmo padrão do "+" de Nova Venda em Vendas, pra não
-          precisar rolar até o topo pra lançar uma compra nova. */}
+      {/* Botão fixo de nova compra — mesmo padrão do "Nova Venda" em Vendas. Card cheio (não
+          mais um círculo no canto): o círculo antigo em bottom-24 right-6 ficava bem em cima
+          do ícone "Mais" da navegação, que também mora na ponta direita da barra. Centralizado
+          e com texto explícito, não sobrepõe nenhum ícone. bottom-36 (não mais bottom-24) pra
+          ficar ACIMA do card de navegação, não em cima dele — a barra cresceu (grade 2 linhas +
+          cards maiores de Home/Mais) desde que bottom-24 foi calibrado. */}
       {canLancarPedidos && (
         <button
           type="button"
@@ -1143,9 +1147,10 @@ export default function PurchasesView({
           aria-label="Adicionar nova compra"
           onClick={onAdd}
           data-guide-anchor="purchases.novaCompraFixo"
-          className="fixed bottom-24 right-6 w-16 h-16 bg-slate-900 dark:bg-indigo-600 text-white rounded-[2rem] shadow-2xl flex items-center justify-center active:scale-95 transition-all z-50 border-4 border-white dark:border-slate-800"
+          className="fixed bottom-36 left-24 right-24 z-50 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-zinc-800 text-white shadow-2xl active:scale-[0.98] transition-all border-2 border-white dark:border-slate-800"
         >
-          <Plus size={36} strokeWidth={2.5} />
+          <Plus size={18} strokeWidth={3} />
+          <span className="text-xs font-black uppercase tracking-widest">Nova Compra</span>
         </button>
       )}
 
