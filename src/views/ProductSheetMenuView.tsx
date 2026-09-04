@@ -1,5 +1,5 @@
-import { 
-  Package, 
+import {
+  Package,
   ArrowLeft,
   ChevronRight,
   Database,
@@ -13,7 +13,8 @@ import {
   FileText,
   Search,
   ExternalLink,
-  Palette
+  Palette,
+  Bookmark
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, Product, Grid } from '../types';
 import { motion } from 'motion/react';
@@ -73,14 +74,32 @@ export default function ProductSheetMenuView({
           bg: "bg-emerald-50",
           onClick: onAddProduct
         },
-        { 
+        {
           id: 'COLORS',
-          label: "Paleta de Cores", 
+          label: "Paleta de Cores",
           desc: "Gerenciar cores e variações",
-          icon: <Palette size={24} />, 
+          icon: <Palette size={24} />,
           color: "text-pink-600",
           bg: "bg-pink-50",
           onClick: () => onNavigate(ViewType.COLORS)
+        },
+        {
+          id: 'BRANDS',
+          label: "Marcas",
+          desc: "Gerenciar marcas dos produtos",
+          icon: <Bookmark size={24} />,
+          color: "text-amber-600",
+          bg: "bg-amber-50",
+          onClick: () => onNavigate(ViewType.BRANDS)
+        },
+        {
+          id: 'MODELS',
+          label: "Modelos",
+          desc: "Gerenciar modelos dos produtos",
+          icon: <Layers size={24} />,
+          color: "text-teal-600",
+          bg: "bg-teal-50",
+          onClick: () => onNavigate(ViewType.MODELS)
         },
       ]
     },

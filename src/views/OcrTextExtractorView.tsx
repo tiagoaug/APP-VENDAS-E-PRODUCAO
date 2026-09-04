@@ -358,6 +358,9 @@ export default function OcrTextExtractorView({ onBack, isDarkMode, onExportToSal
             Escolha uma imagem. Depois, pinte só a área que quer ler (opcional) ou use "OCR da
             Imagem Inteira".
           </p>
+          <p className="text-[9px] text-indigo-500 dark:text-indigo-400 font-bold uppercase tracking-wider leading-relaxed">
+            Útil pra copiar um número de código de barras ou qualquer texto direto de uma foto ou print, sem digitar.
+          </p>
 
           <div className="flex gap-2" data-guide-anchor="ocrTool.entrada">
             <button

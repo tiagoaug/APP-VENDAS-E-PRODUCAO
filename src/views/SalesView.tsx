@@ -2,9 +2,15 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Share as CapacitorShare } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation, BatchLabelItem, LabelFile, OrderTextAlias } from '../types';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation, BatchLabelItem, LabelFile, OrderTextAlias, CatalogLink, CatalogRequest, CatalogProfile, Category, Brand } from '../types';
 import LabelProfilePickerModal from '../components/LabelProfilePickerModal';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer, ClipboardPaste, Image as ImageIcon2 } from 'lucide-react';
+import CatalogProductPickerModal from '../components/CatalogProductPickerModal';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer, Link2 } from 'lucide-react';
+
+// Domínio do Firebase Hosting do projeto (app-vendas-e-producao) — quem abre o link do
+// catálogo é sempre o cliente pelo NAVEGADOR dele, nunca o app nativo (capacitor://localhost),
+// por isso não dá pra montar essa URL a partir de window.location dentro do app.
+const PUBLIC_CATALOG_BASE_URL = 'https://app-vendas-e-producao.web.app';
 import PasteOrderModal from '../components/PasteOrderModal';
 import { DraftSaleBlockInput } from '../utils/orderTextParser';
 import ConfigMenuItem from '../components/ConfigMenuItem';
@@ -102,6 +108,23 @@ interface SalesViewProps {
   // "Colar Pedido Digitado" — texto livre já revisado/confirmado no PasteOrderModal, pronto
   // pra virar SaleBlock[] pré-preenchido no SaleFormView (ver App.tsx, navigateTo com params).
   onOpenPastedOrder: (draft: { draftBlocks: DraftSaleBlockInput[]; draftCustomerId?: string }) => void;
+  // "Enviar Catálogo" — Link de Pedido (catálogo público) por cliente. Reaproveita o mesmo
+  // handleGenerateCatalogLink de App.tsx usado em PersonDetailView; aqui a diferença é que já
+  // sai direto pro compartilhamento nativo em vez de só mostrar/copiar o link.
+  catalogLinks?: CatalogLink[];
+  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean) => Promise<string>;
+  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean) => Promise<void>;
+  // Perfil de Envio de Catálogo — seleção de produtos salva com nome, reaplicável em outros
+  // envios sem escolher de novo (ver CatalogProductPickerModal e CatalogProfile em types.ts).
+  catalogProfiles?: CatalogProfile[];
+  onSaveCatalogProfile?: (name: string, productIds: string[]) => Promise<void>;
+  onDeleteCatalogProfile?: (profileId: string) => Promise<void>;
+  categories?: Category[];
+  brands?: Brand[];
+  // "Pedidos Recebidos" — tela central com TODOS os pedidos vindos do Catálogo Público, de
+  // qualquer cliente, pra revisar/confirmar (ver CatalogRequestsView).
+  catalogRequests?: CatalogRequest[];
+  onNavigateCatalogRequests?: () => void;
   // "Exportar para Vendas" do Extrator de Texto (OCR, tela em Configurações > Extras) — chega
   // via navigateTo(ViewType.SALES, { prefillPasteText }), abre o PasteOrderModal direto com
   // esse texto pronto pra revisar (ver App.tsx).
@@ -184,6 +207,16 @@ export default function SalesView({
   sectors,
   onAdd,
   onOpenPastedOrder,
+  catalogLinks = [],
+  onGenerateCatalogLink,
+  onSetCatalogLinkProducts,
+  catalogProfiles = [],
+  onSaveCatalogProfile,
+  onDeleteCatalogProfile,
+  categories = [],
+  brands = [],
+  catalogRequests = [],
+  onNavigateCatalogRequests,
   initialPasteText,
   onEdit,
   onCancelOnly,
@@ -293,7 +326,53 @@ export default function SalesView({
   // Popup de escolha do botão "+": "Cadastrar Pedido" (fluxo de sempre, chama onAdd) ou "Colar
   // Pedido Digitado" (abre o PasteOrderModal) — ver "Colar Pedido Digitado" (orderTextParser.ts).
   const [addChoiceOpen, setAddChoiceOpen] = useState(false);
+  // "Enviar Catálogo" — escolher um cliente pra mandar o Link de Pedido (catálogo público)
+  // dele via compartilhamento nativo. `sendingCatalogToId` trava o botão daquele cliente
+  // específico enquanto gera o link + abre a folha de compartilhar (evita duplo toque).
+  const [catalogSendOpen, setCatalogSendOpen] = useState(false);
+  const [catalogSendSearch, setCatalogSendSearch] = useState('');
+  const [sendingCatalogToId, setSendingCatalogToId] = useState<string | null>(null);
+  // Quais produtos vão nesse envio — vazio = Catálogo Completo. Escolhido no
+  // CatalogProductPickerModal antes de escolher o cliente; sincronizado no link (novo ou
+  // reaproveitado) dentro de handleSendCatalogTo, pra não precisar de outro popup.
+  const [catalogSendProductIds, setCatalogSendProductIds] = useState<string[]>([]);
+  const [catalogSendHidePrices, setCatalogSendHidePrices] = useState(false);
+  const [catalogProductPickerOpen, setCatalogProductPickerOpen] = useState(false);
   const [pasteOrderOpen, setPasteOrderOpen] = useState(false);
+
+  const handleSendCatalogTo = async (person: Person) => {
+    if (!onGenerateCatalogLink || sendingCatalogToId) return;
+    setSendingCatalogToId(person.id);
+    try {
+      // Reaproveita o link ativo já existente pra esse cliente (mesma lógica de
+      // PersonDetailView) em vez de gerar um novo toda vez que reenviar.
+      const existing = catalogLinks.find(l => l.personId === person.id && l.isActive);
+      let token: string;
+      if (existing) {
+        token = existing.token;
+        // Sincroniza a seleção de produtos e a opção de ocultar preços escolhida agora no link
+        // já existente — mesmo link/URL de sempre pro cliente, só muda o que ele vê da próxima
+        // vez que abrir.
+        if (onSetCatalogLinkProducts) await onSetCatalogLinkProducts(existing.id, catalogSendProductIds, catalogSendHidePrices);
+      } else {
+        token = await onGenerateCatalogLink(person.id, catalogSendProductIds, catalogSendHidePrices);
+      }
+      const url = `${PUBLIC_CATALOG_BASE_URL}/pedido/${token}`;
+      await CapacitorShare.share({
+        title: 'Catálogo de Pedido',
+        text: `Olá, ${person.name}! Monte seu pedido pelo link: ${url}`,
+        dialogTitle: 'Enviar catálogo',
+      });
+      setCatalogSendOpen(false);
+      setCatalogSendSearch('');
+    } catch (err: any) {
+      // Cancelar a folha de compartilhar também cai aqui — não é erro de verdade, só não avisa.
+      if (err?.message?.includes('cancel')) return;
+      toast.show('Erro ao enviar catálogo: ' + (err?.message || err));
+    } finally {
+      setSendingCatalogToId(null);
+    }
+  };
   // "Colar Print" (atalho do "+") abre o mesmo PasteOrderModal já disparando a leitura da
   // área de transferência, em vez de esperar o usuário tocar num botão lá dentro.
   const [pasteOrderAutoOcr, setPasteOrderAutoOcr] = useState(false);
@@ -1307,7 +1386,10 @@ export default function SalesView({
             alcançada de dentro de Gerenciamento (Cruzamento, Diagnósticos e Correções,
             Expedição, Estoque, Lotes, Fazer Balanço). */}
         <div className={`p-2 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100/80 border-slate-100'}`}>
-          <div className="grid grid-cols-3 gap-2">
+          {/* Grade 2x2 (não mais flex numa linha só) — com Gerenciamento/Disponível/Pedidos
+              (Filtros saiu daqui, ver busca abaixo) numa única fileira, o texto ficava
+              espremido/cortado; 2 colunas dão espaço de sobra a cada botão. */}
+          <div className="grid grid-cols-2 gap-2">
             {showManagementCard !== undefined && (
               <button
                 onClick={() => {
@@ -1324,23 +1406,6 @@ export default function SalesView({
               </button>
             )}
             <button
-              onClick={() => setShowFilters(true)}
-              data-guide-anchor="sales.filtros"
-              className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 relative shadow-sm ${showFilters ? 'bg-rose-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-rose-400' : 'bg-white text-slate-600 hover:text-rose-500'}`}
-              title="Configurações e Filtros"
-            >
-              <div className="relative">
-                <Filter size={18} strokeWidth={2.5} className={showFilters ? '' : 'text-rose-500'} />
-                {activeFiltersCount > 0 && (
-                  <span className="absolute -top-3 -right-3 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
-                    {activeFiltersCount}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] font-black tracking-[0.15em]">Filtros</span>
-            </button>
-
-            <button
               onClick={onNavigateStockGlance}
               data-guide-anchor="sales.disponivel"
               className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-sky-400' : 'bg-white text-slate-600 hover:text-sky-600'}`}
@@ -1348,6 +1413,38 @@ export default function SalesView({
             >
               <Eye size={18} strokeWidth={2.5} className={isIndustrial ? 'text-sky-600' : 'text-sky-500'} />
               <span className="text-[10px] font-black tracking-[0.15em]">Disponível</span>
+            </button>
+
+            {onNavigateCatalogRequests && (
+              <button
+                onClick={onNavigateCatalogRequests}
+                data-guide-anchor="sales.pedidosRecebidos"
+                className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 relative shadow-sm ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-violet-400' : 'bg-white text-slate-600 hover:text-violet-600'}`}
+                title="Pedidos Recebidos pelo Catálogo Público"
+              >
+                <div className="relative">
+                  <Link2 size={18} strokeWidth={2.5} className="text-violet-500" />
+                  {catalogRequests.filter(r => r.status === 'PENDING').length > 0 && (
+                    <span className="absolute -top-3 -right-3 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
+                      {catalogRequests.filter(r => r.status === 'PENDING').length}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-black tracking-[0.15em]">Pedidos por Catálogo</span>
+              </button>
+            )}
+
+            {/* "Nova Venda" saiu de botão fixo flutuando por cima da tela (inclusive por cima
+                de painéis internos como Cruzamento de Estoque, onde não devia aparecer) e virou
+                um botão normal aqui na grade — ocupa a célula que sobrava vazia quando só 3 dos
+                4 itens estavam presentes. */}
+            <button
+              onClick={() => setAddChoiceOpen(true)}
+              data-guide-anchor="sales.novoPedido"
+              className="py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm bg-zinc-800 text-white active:scale-[0.98]"
+            >
+              <Plus size={18} strokeWidth={3} />
+              <span className="text-[10px] font-black tracking-[0.15em]">Nova Venda</span>
             </button>
           </div>
         </div>
@@ -1743,24 +1840,42 @@ export default function SalesView({
           </div>
         )}
 
-        {/* Search - Always Visible */}
-        <div data-guide-anchor="sales.busca" className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} strokeWidth={2.5} />
-          <input
-            type="text"
-            placeholder="Pesquisar cliente ou pedido..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full h-14 pl-12 pr-4 rounded-2xl border text-[12px] font-bold tracking-widest transition-all outline-none focus:ring-2 focus:ring-indigo-600/20 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-800 placeholder:text-slate-300'}`}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white"
-            >
-              <X size={16} strokeWidth={2.5} />
-            </button>
-          )}
+        {/* Search - Always Visible — Filtros saiu da fileira de cima (Gerenciamento/Disponível/
+            Pedidos estava espremendo/cortando "Disponível" com 4 itens) e virou o botão redondo
+            ao lado da busca, mesmo padrão já usado em Despesas Gerais. */}
+        <div className="flex items-center gap-2">
+          <div data-guide-anchor="sales.busca" className="relative flex-1 min-w-0">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} strokeWidth={2.5} />
+            <input
+              type="text"
+              placeholder="Pesquisar cliente ou pedido..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`w-full h-14 pl-12 pr-4 rounded-2xl border text-[12px] font-bold tracking-widest transition-all outline-none focus:ring-2 focus:ring-indigo-600/20 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-800 placeholder:text-slate-300'}`}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              >
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowFilters(true)}
+            data-guide-anchor="sales.filtros"
+            className={`relative w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-all shadow-sm ${showFilters ? 'bg-rose-600 text-white' : isDarkMode ? 'bg-slate-900 border border-slate-800 text-rose-400' : 'bg-white border border-slate-100 text-rose-500'}`}
+            title="Configurações e Filtros"
+            aria-label="Configurações e Filtros"
+          >
+            <Filter size={20} strokeWidth={2.5} />
+            {activeFiltersCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Vendas antigas e já pagas não ficam carregadas por padrão — busca de uma vez sob demanda.
@@ -1856,9 +1971,13 @@ export default function SalesView({
         )}
       </div>
 
-      {/* Filter Popup */}
+      {/* Filter Popup — z-[65000] (não mais z-50, igual ao botão fixo "Nova Venda"/"Enviar
+          Catálogo" mais abaixo neste arquivo): com o mesmo z-index, quem vem depois no DOM
+          ganha o empate e pinta por cima — o botão fixo (mais abaixo no JSX) ficava por cima
+          deste popup em vez de atrás dele. Mesmo z-[65000] já usado nos outros popups deste
+          arquivo (sales.novoPedidoEscolha, catalogSendOpen). */}
       {showFilters && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setShowFilters(false)}>
+        <div className="fixed inset-0 z-[65000] flex items-center justify-center px-4" onClick={() => setShowFilters(false)}>
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
           <div
             className={`relative w-full max-w-sm max-h-[85vh] rounded-[2.5rem] shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}
@@ -2912,23 +3031,10 @@ export default function SalesView({
         )}
       </div>
 
-      {/* Card cheio (não mais um círculo flutuante no canto) — o círculo antigo em
-          bottom-24 right-6 ficava bem em cima do ícone "Mais" da navegação, que também
-          mora na ponta direita da barra. Centralizado e com o texto explícito, some
-          qualquer ambiguidade e não sobrepõe nenhum ícone da nav. bottom-36 (não mais
-          bottom-24) pra ficar ACIMA do card de navegação, não em cima dele — a barra
-          cresceu (grade 2 linhas + cards maiores de Home/Mais) desde que bottom-24 foi
-          calibrado. */}
-      <button
-        type="button"
-        title="Nova venda"
-        onClick={() => setAddChoiceOpen(true)}
-        data-guide-anchor="sales.novoPedido"
-        className="fixed bottom-40 left-24 right-24 z-50 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-zinc-800 text-white shadow-2xl active:scale-[0.98] transition-all border-2 border-white dark:border-slate-800"
-      >
-         <Plus size={18} strokeWidth={3} />
-         <span className="text-xs font-black uppercase tracking-widest">Nova Venda</span>
-      </button>
+      {/* Botão fixo flutuante removido daqui (pedido do usuário: aparecia por cima de
+          painéis internos como Cruzamento de Estoque, onde não devia) — "Nova Venda" agora
+          é um botão normal na grade Gerenciamento/Disponível/Pedidos, ver mais acima
+          (data-guide-anchor="sales.novoPedido" mudou de dono, mesmo anchor). */}
 
       {/* Popup — escolha ao tocar no "+": Cadastrar do zero × Colar texto digitado */}
       {addChoiceOpen && (
@@ -2967,37 +3073,122 @@ export default function SalesView({
                   <p className="text-[9px] font-bold text-slate-400 mt-0.5">Preencher o pedido do zero</p>
                 </div>
               </button>
-              <button
-                type="button"
-                onClick={() => { setAddChoiceOpen(false); setPasteOrderAutoOcr(false); setPasteOrderOpen(true); }}
-                data-guide-anchor="sales.optColarPedido"
-                className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                  <ClipboardPaste size={18} />
-                </div>
-                <div className="min-w-0">
-                  <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Colar Pedido Digitado</p>
-                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cole um texto com os itens e revise antes de criar</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAddChoiceOpen(false); setPasteOrderAutoOcr(true); setPasteOrderOpen(true); }}
-                data-guide-anchor="sales.optColarPrint"
-                className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
-              >
-                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                  <ImageIcon2 size={18} />
-                </div>
-                <div className="min-w-0">
-                  <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Colar Print</p>
-                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cole um print copiado — reconhece o texto e revise antes de criar</p>
-                </div>
-              </button>
+              {/* "Colar Pedido Digitado" e "Colar Print" saíram daqui (pedido do usuário) — a
+                  mesma coisa já existe em Configurações > Extras > Extrator de Texto (OCR):
+                  cola/reconhece o texto lá, edita na caixa de texto (aceita colar texto puro
+                  também, não só imagem) e usa "Exportar para Vendas", que cai exatamente
+                  nesta mesma tela pré-preenchida (ver initialPasteText/pasteOrderOpen abaixo —
+                  esse caminho continua intacto, só sumiu o atalho duplicado aqui no "+"). */}
+              {onGenerateCatalogLink && (
+                <button
+                  type="button"
+                  onClick={() => { setAddChoiceOpen(false); setCatalogSendOpen(true); }}
+                  data-guide-anchor="sales.optEnviarCatalogo"
+                  className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                    <Link2 size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Enviar Catálogo</p>
+                    <p className="text-[9px] font-bold text-slate-400 mt-0.5">Mande o link pro cliente escolher os produtos sozinho</p>
+                  </div>
+                </button>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* Popup — "Enviar Catálogo": escolher o cliente pra quem mandar o Link de Pedido. */}
+      {catalogSendOpen && (
+        <div
+          className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+          onClick={() => { setCatalogSendOpen(false); setCatalogSendSearch(''); }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-xs max-h-[80vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className={`flex items-center justify-between px-6 py-5 border-b shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                  <Link2 size={18} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Enviar Catálogo</h3>
+              </div>
+              <button type="button" onClick={() => { setCatalogSendOpen(false); setCatalogSendSearch(''); }} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+            <div className="px-4 pt-4 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCatalogProductPickerOpen(true)}
+                className={`w-full flex items-center justify-between gap-2 p-3 rounded-xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Tag size={14} className="text-violet-500 shrink-0" />
+                  <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
+                    {catalogSendProductIds.length === 0 ? 'Produtos: Catálogo Completo' : `Produtos: ${catalogSendProductIds.length} selecionados`}
+                    {catalogSendHidePrices ? ' · sem valores' : ''}
+                  </span>
+                </div>
+                <span className="text-[9px] font-black uppercase text-violet-500 shrink-0">Editar</span>
+              </button>
+            </div>
+            <div className="p-4 pb-2 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Buscar cliente..."
+                  value={catalogSendSearch}
+                  onChange={(e) => setCatalogSendSearch(e.target.value)}
+                  className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 p-4 pt-2 overflow-y-auto">
+              {people
+                .filter(p => p.isCustomer && p.name.toLowerCase().includes(catalogSendSearch.toLowerCase()))
+                .map(person => (
+                  <button
+                    key={person.id}
+                    type="button"
+                    onClick={() => handleSendCatalogTo(person)}
+                    disabled={sendingCatalogToId !== null}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-all active:scale-[0.98] disabled:opacity-50 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
+                  >
+                    <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{person.name}</p>
+                    {sendingCatalogToId === person.id && (
+                      <div className="w-4 h-4 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin shrink-0" />
+                    )}
+                  </button>
+                ))}
+              {people.filter(p => p.isCustomer).length === 0 && (
+                <p className="text-[10px] text-slate-400 font-bold text-center py-6 uppercase tracking-widest">Nenhum cliente cadastrado</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {catalogProductPickerOpen && (
+        <CatalogProductPickerModal
+          onClose={() => setCatalogProductPickerOpen(false)}
+          products={products}
+          categories={categories}
+          brands={brands}
+          profiles={catalogProfiles}
+          initialSelectedIds={catalogSendProductIds}
+          initialHidePrices={catalogSendHidePrices}
+          isDarkMode={isDarkMode}
+          onConfirm={(ids, hidePrices) => { setCatalogSendProductIds(ids); setCatalogSendHidePrices(hidePrices); }}
+          onSaveProfile={async (name, ids) => { if (onSaveCatalogProfile) await onSaveCatalogProfile(name, ids); }}
+          onDeleteProfile={async (id) => { if (onDeleteCatalogProfile) await onDeleteCatalogProfile(id); }}
+        />
       )}
 
       <PasteOrderModal

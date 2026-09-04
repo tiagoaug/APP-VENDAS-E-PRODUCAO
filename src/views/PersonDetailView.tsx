@@ -1,7 +1,14 @@
-import { useMemo } from 'react';
-import { Person, Transaction, TransactionType, Sale, Purchase, Category, Account, SaleStatus } from '../types';
-import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, Package, ShoppingCart } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Person, Transaction, TransactionType, Sale, Purchase, Category, Account, SaleStatus, CatalogLink, CatalogRequest, CatalogProfile, Product, Brand } from '../types';
+import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, Package, ShoppingCart, Link2, Copy, RefreshCcw, Inbox, Check, X, Tag } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from '../utils/toast';
+import CatalogProductPickerModal from '../components/CatalogProductPickerModal';
+
+// Domínio do Firebase Hosting do projeto (app-vendas-e-producao) — quem abre este link é
+// sempre o cliente pelo NAVEGADOR dele, nunca o app nativo (que roda em capacitor://localhost),
+// por isso não dá pra montar essa URL a partir de window.location dentro do app.
+const PUBLIC_CATALOG_BASE_URL = 'https://app-vendas-e-producao.web.app';
 
 interface PersonDetailViewProps {
   personId: string;
@@ -13,19 +20,46 @@ interface PersonDetailViewProps {
   accounts: Account[];
   onBack: () => void;
   isDarkMode: boolean;
+  // Link de Pedido (catálogo público) — ver PLANO da feature / functions/src/catalog.
+  catalogLinks?: CatalogLink[];
+  catalogRequests?: CatalogRequest[];
+  catalogProfiles?: CatalogProfile[];
+  products?: Product[];
+  brands?: Brand[];
+  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean) => Promise<string>;
+  onRevokeCatalogLink?: (linkId: string) => Promise<void>;
+  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean) => Promise<void>;
+  onSaveCatalogProfile?: (name: string, productIds: string[]) => Promise<void>;
+  onDeleteCatalogProfile?: (profileId: string) => Promise<void>;
+  onImportCatalogRequest?: (request: CatalogRequest) => void;
+  onDismissCatalogRequest?: (requestId: string) => Promise<void>;
 }
 
-export default function PersonDetailView({ 
-  personId, 
-  people, 
-  transactions, 
-  sales, 
-  purchases, 
-  categories, 
+export default function PersonDetailView({
+  personId,
+  people,
+  transactions,
+  sales,
+  purchases,
+  categories,
   accounts,
-  onBack, 
-  isDarkMode 
+  onBack,
+  isDarkMode,
+  catalogLinks = [],
+  catalogRequests = [],
+  catalogProfiles = [],
+  products = [],
+  brands = [],
+  onGenerateCatalogLink,
+  onRevokeCatalogLink,
+  onSetCatalogLinkProducts,
+  onSaveCatalogProfile,
+  onDeleteCatalogProfile,
+  onImportCatalogRequest,
+  onDismissCatalogRequest,
 }: PersonDetailViewProps) {
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [catalogProductPickerOpen, setCatalogProductPickerOpen] = useState(false);
   const person = useMemo(() => people.find(p => p.id === personId), [people, personId]);
 
   const personTransactions = useMemo(() => 
@@ -55,6 +89,16 @@ export default function PersonDetailView({
 
     return { totalTransactions, pendingToReceive, pendingToPay };
   }, [personTransactions]);
+
+  const activeCatalogLink = useMemo(
+    () => catalogLinks.find(l => l.personId === personId && l.isActive),
+    [catalogLinks, personId]
+  );
+
+  const pendingCatalogRequests = useMemo(
+    () => catalogRequests.filter(r => r.personId === personId && r.status === 'PENDING').sort((a, b) => b.submittedAt - a.submittedAt),
+    [catalogRequests, personId]
+  );
 
   if (!person) return <div className="p-8 text-center font-bold text-slate-500">Pessoa não encontrada</div>;
 
@@ -132,6 +176,146 @@ export default function PersonDetailView({
             )}
           </div>
         </div>
+
+        {person.isCustomer && onGenerateCatalogLink && (
+          <div>
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-3">Link de Pedido</h3>
+            <div className={`p-4 rounded-2xl border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+              {activeCatalogLink ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 flex items-center justify-center shrink-0">
+                      <Link2 size={18} />
+                    </div>
+                    <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                      {PUBLIC_CATALOG_BASE_URL}/pedido/{activeCatalogLink.token}
+                    </p>
+                  </div>
+                  {onSetCatalogLinkProducts && (
+                    <button
+                      type="button"
+                      onClick={() => setCatalogProductPickerOpen(true)}
+                      className={`w-full flex items-center justify-between gap-2 p-2.5 rounded-xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Tag size={14} className="text-indigo-500 shrink-0" />
+                        <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
+                          {!activeCatalogLink.productIds || activeCatalogLink.productIds.length === 0 ? 'Produtos: Catálogo Completo' : `Produtos: ${activeCatalogLink.productIds.length} selecionados`}
+                          {activeCatalogLink.hidePrices ? ' · sem valores' : ''}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-black uppercase text-indigo-500 shrink-0">Editar</span>
+                    </button>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${PUBLIC_CATALOG_BASE_URL}/pedido/${activeCatalogLink.token}`);
+                        toast.show('Link copiado!');
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                    >
+                      <Copy size={14} /> Copiar Link
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!onRevokeCatalogLink) return;
+                        if (!confirm('Gerar um novo link? O link atual deixa de funcionar.')) return;
+                        setIsGeneratingLink(true);
+                        try {
+                          await onRevokeCatalogLink(activeCatalogLink.id);
+                          await onGenerateCatalogLink(personId);
+                        } finally {
+                          setIsGeneratingLink(false);
+                        }
+                      }}
+                      disabled={isGeneratingLink}
+                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      <RefreshCcw size={14} />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsGeneratingLink(true);
+                    try {
+                      await onGenerateCatalogLink(personId);
+                    } finally {
+                      setIsGeneratingLink(false);
+                    }
+                  }}
+                  disabled={isGeneratingLink}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-60"
+                >
+                  <Link2 size={16} /> {isGeneratingLink ? 'Gerando...' : 'Gerar Link de Pedido'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {catalogProductPickerOpen && activeCatalogLink && onSetCatalogLinkProducts && (
+          <CatalogProductPickerModal
+            onClose={() => setCatalogProductPickerOpen(false)}
+            products={products}
+            categories={categories}
+            brands={brands}
+            profiles={catalogProfiles}
+            initialSelectedIds={activeCatalogLink.productIds || []}
+            initialHidePrices={activeCatalogLink.hidePrices || false}
+            isDarkMode={isDarkMode}
+            onConfirm={(productIds, hidePrices) => onSetCatalogLinkProducts(activeCatalogLink.id, productIds, hidePrices)}
+            onSaveProfile={async (name, ids) => { if (onSaveCatalogProfile) await onSaveCatalogProfile(name, ids); }}
+            onDeleteProfile={async (id) => { if (onDeleteCatalogProfile) await onDeleteCatalogProfile(id); }}
+          />
+        )}
+
+        {person.isCustomer && pendingCatalogRequests.length > 0 && (
+          <div>
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-3">Pedidos Recebidos pelo Link</h3>
+            <div className="flex flex-col gap-3">
+              {pendingCatalogRequests.map(req => {
+                const totalQty = req.items.reduce((sum, item) => sum + item.variations.reduce((s, v) => s + v.quantity, 0), 0);
+                return (
+                  <div key={req.id} className={`p-4 rounded-2xl border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 flex items-center justify-center shrink-0">
+                        <Inbox size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                          {req.items.length} produto(s) · {totalQty} {totalQty === 1 ? 'unidade' : 'unidades'}
+                        </p>
+                        {req.customerNote && <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate">"{req.customerNote}"</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onImportCatalogRequest?.(req)}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                      >
+                        <Check size={14} /> Importar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDismissCatalogRequest?.(req.id)}
+                        className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {person.isCustomer && (
           <div>

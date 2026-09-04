@@ -47,7 +47,9 @@ import {
   Building2,
   Info,
   UserCog,
-  Calculator
+  Calculator,
+  Bookmark,
+  Layers
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -113,6 +115,11 @@ import {
   ProductionOrderItem,
   ProductionLot,
   PurchaseRequest,
+  CatalogLink,
+  CatalogRequest,
+  CatalogProfile,
+  Brand,
+  ProductModel,
   ServiceOrder,
   StockLot,
   StockLotRevertPreview,
@@ -150,6 +157,7 @@ const CategoriesView = lazy(() => import("./views/CategoriesView"));
 const CategoryConfigView = lazy(() => import("./views/CategoryConfigView"));
 const GradesView = lazy(() => import("./views/GradesView"));
 const ColorsView = lazy(() => import("./views/ColorsView"));
+const SimpleCatalogListView = lazy(() => import("./views/SimpleCatalogListView"));
 const PaymentMethodsView = lazy(() => import("./views/PaymentMethodsView"));
 const ReportsView = lazy(() => import("./views/ReportsView"));
 const ReportDetailedView = lazy(() => import("./views/ReportDetailedView"));
@@ -182,6 +190,7 @@ const SoleStockView = lazy(() => import("./views/SoleStockView"));
 const PalmilhaStockView = lazy(() => import("./views/PalmilhaStockView"));
 const PCPView = lazy(() => import("./views/PCPView"));
 const PurchaseNeedsView = lazy(() => import("./views/PurchaseNeedsView"));
+const CatalogRequestsView = lazy(() => import("./views/CatalogRequestsView"));
 const GeneralReceiptsView = lazy(() => import("./views/GeneralReceiptsView"));
 const SoleReceiptView = lazy(() => import("./views/SoleReceiptView"));
 
@@ -237,6 +246,8 @@ const MODAL_VIEWS = [
   ViewType.CATEGORIES,
   ViewType.GRIDS,
   ViewType.COLORS,
+  ViewType.BRANDS,
+  ViewType.MODELS,
   ViewType.ACCOUNTS,
   ViewType.PAYMENT_METHODS,
   ViewType.BACKUP,
@@ -759,6 +770,8 @@ export default function App() {
   const [people, setPeople] = useState<Person[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [colors, setColors] = useState<ColorValue[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [productModels, setProductModels] = useState<ProductModel[]>([]);
   // Correspondências "ensinadas" no Colar Pedido Digitado (Vendas) — ver orderTextParser.ts.
   const [orderTextAliases, setOrderTextAliases] = useState<OrderTextAlias[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -777,6 +790,9 @@ export default function App() {
   const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
+  const [catalogLinks, setCatalogLinks] = useState<CatalogLink[]>([]);
+  const [catalogRequests, setCatalogRequests] = useState<CatalogRequest[]>([]);
+  const [catalogProfiles, setCatalogProfiles] = useState<CatalogProfile[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [monthlySnapshots, setMonthlySnapshots] = useState<MonthlySnapshot[]>([]);
   const [cleanupConfig, setCleanupConfig] = useState<CleanupConfig | null>(null);
@@ -1246,6 +1262,14 @@ export default function App() {
       "colors",
       setColors,
     );
+    const unsubBrands = firebaseService.subscribeToCollection<Brand>(
+      "brands",
+      setBrands,
+    );
+    const unsubProductModels = firebaseService.subscribeToCollection<ProductModel>(
+      "productModels",
+      setProductModels,
+    );
     const unsubOrderTextAliases = firebaseService.subscribeToCollection<OrderTextAlias>(
       "orderTextAliases",
       setOrderTextAliases,
@@ -1332,6 +1356,21 @@ export default function App() {
     const unsubPurchaseRequests = firebaseService.subscribeToCollection<PurchaseRequest>(
       "purchaseRequests",
       (data) => setPurchaseRequests([...data].sort((a, b) => b.requestedAt - a.requestedAt))
+    );
+
+    const unsubCatalogLinks = firebaseService.subscribeToCollection<CatalogLink>(
+      "catalogLinks",
+      setCatalogLinks,
+    );
+
+    const unsubCatalogRequests = firebaseService.subscribeToCollection<CatalogRequest>(
+      "catalogRequests",
+      (data) => setCatalogRequests([...data].sort((a, b) => b.submittedAt - a.submittedAt))
+    );
+
+    const unsubCatalogProfiles = firebaseService.subscribeToCollection<CatalogProfile>(
+      "catalogProfiles",
+      (data) => setCatalogProfiles([...data].sort((a, b) => b.createdAt - a.createdAt))
     );
 
     const unsubServiceOrders = firebaseService.subscribeToRecentOrOpen<ServiceOrder>(
@@ -1426,6 +1465,8 @@ export default function App() {
       unsubCollaborators();
       unsubCategories();
       unsubColors();
+      unsubBrands();
+      unsubProductModels();
       unsubOrderTextAliases();
       unsubPaymentMethods();
       unsubFamilyMembers();
@@ -1443,6 +1484,9 @@ export default function App() {
       unsubDeliveryRoutes();
       unsubCarriers();
       unsubPurchaseRequests();
+      unsubCatalogLinks();
+      unsubCatalogRequests();
+      unsubCatalogProfiles();
       unsubServiceOrders();
       unsubDashboardConfig();
       unsubNavConfig();
@@ -1940,6 +1984,76 @@ export default function App() {
       }
     }
     navigateTo(ViewType.LABEL_PRINT_STUDIO);
+  };
+
+  // Gera um Link de Pedido (catálogo público) pra um cliente e devolve o token pronto pra
+  // montar a URL — usado tanto em PersonDetailView ("Gerar Link de Pedido") quanto no atalho
+  // "Enviar Catálogo" de SalesView, que precisa do token na hora pra compartilhar. Token
+  // aleatório gerado no CLIENTE (não precisa de Cloud Function pra isso — quem cria é sempre
+  // o dono autenticado, escrevendo no próprio dado). Ver functions/src/catalog/publicCatalog.ts
+  // pro lado público que consome o token.
+  const handleGenerateCatalogLink = async (personId: string, productIds: string[] = [], hidePrices: boolean = false): Promise<string> => {
+    const bytes = new Uint8Array(24);
+    window.crypto.getRandomValues(bytes);
+    const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    await firebaseService.saveDocument("catalogLinks", {
+      personId,
+      token,
+      isActive: true,
+      createdAt: Date.now(),
+      expiresAt: null,
+      productIds,
+      hidePrices,
+    });
+    return token;
+  };
+
+  const handleRevokeCatalogLink = async (linkId: string) => {
+    await firebaseService.updateDocument("catalogLinks", linkId, { isActive: false });
+  };
+
+  // Atualiza quais produtos um Link de Pedido já existente mostra e se os preços ficam
+  // ocultos, sem trocar o token (o cliente continua com o mesmo link, só muda o que aparece
+  // pra ele da próxima vez que abrir).
+  const handleSetCatalogLinkProducts = async (linkId: string, productIds: string[], hidePrices?: boolean) => {
+    await firebaseService.updateDocument("catalogLinks", linkId, {
+      productIds,
+      ...(hidePrices !== undefined ? { hidePrices } : {}),
+    });
+  };
+
+  // Perfil de Envio de Catálogo — seleção de produtos salva com nome, pra reaplicar em outros
+  // clientes sem escolher de novo (ver CatalogProfile em types.ts).
+  const handleSaveCatalogProfile = async (name: string, productIds: string[]) => {
+    await firebaseService.saveDocument("catalogProfiles", {
+      name,
+      productIds,
+      createdAt: Date.now(),
+    });
+  };
+
+  const handleDeleteCatalogProfile = async (profileId: string) => {
+    await firebaseService.deleteDocument("catalogProfiles", profileId);
+  };
+
+  // "Importar" um pedido do Catálogo Público — mesmo caminho já usado pelo "colar pedido"
+  // (navigateTo com draftBlocks/draftCustomerId pré-preenche SaleFormView sem tocar em nada
+  // lá dentro). sourceCatalogRequestId é lido de volta no onSave de SALE_FORM pra marcar a
+  // solicitação como IMPORTED com o id da Venda gerada (ver comentário lá).
+  const handleImportCatalogRequest = (request: CatalogRequest) => {
+    navigateTo(ViewType.SALE_FORM, {
+      draftBlocks: request.items,
+      draftCustomerId: request.personId,
+      sourceCatalogRequestId: request.id,
+    });
+  };
+
+  const handleDismissCatalogRequest = async (requestId: string) => {
+    await firebaseService.updateDocument("catalogRequests", requestId, { status: 'DISMISSED' });
+  };
+
+  const handleDeleteCatalogRequest = async (requestId: string) => {
+    await firebaseService.deleteDocument("catalogRequests", requestId);
   };
 
   const toggleDarkMode = () => setAppTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -5036,6 +5150,31 @@ export default function App() {
             accounts={accounts}
             onBack={goBack}
             isDarkMode={isDarkMode}
+            catalogLinks={catalogLinks}
+            catalogRequests={catalogRequests}
+            catalogProfiles={catalogProfiles}
+            products={products}
+            brands={brands}
+            onGenerateCatalogLink={handleGenerateCatalogLink}
+            onRevokeCatalogLink={handleRevokeCatalogLink}
+            onSetCatalogLinkProducts={handleSetCatalogLinkProducts}
+            onSaveCatalogProfile={handleSaveCatalogProfile}
+            onDeleteCatalogProfile={handleDeleteCatalogProfile}
+            onImportCatalogRequest={handleImportCatalogRequest}
+            onDismissCatalogRequest={handleDismissCatalogRequest}
+          />
+        );
+      case ViewType.CATALOG_REQUESTS:
+        return (
+          <CatalogRequestsView
+            catalogRequests={catalogRequests}
+            people={people}
+            products={products}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+            onImportCatalogRequest={handleImportCatalogRequest}
+            onDismissCatalogRequest={handleDismissCatalogRequest}
+            onDeleteCatalogRequest={handleDeleteCatalogRequest}
           />
         );
       case ViewType.PERSONAL_FINANCIAL:
@@ -5199,6 +5338,66 @@ export default function App() {
                 await firebaseService.deleteDocument("colors", id);
               } catch (err: any) {
                 toast.show('Erro ao excluir cor: ' + (err.message || err));
+              }
+            }}
+            isDarkMode={isDarkMode}
+          />
+        );
+      case ViewType.BRANDS:
+        return (
+          <SimpleCatalogListView
+            items={brands}
+            itemLabel="Marca"
+            onAdd={async (name) => {
+              try {
+                await firebaseService.saveDocument("brands", { name });
+                toast.show('Marca salva!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar marca: ' + (err.message || err));
+              }
+            }}
+            onEdit={async (id, name) => {
+              try {
+                await firebaseService.updateDocument("brands", id, { name });
+              } catch (err: any) {
+                toast.show('Erro ao atualizar marca: ' + (err.message || err));
+              }
+            }}
+            onDelete={async (id) => {
+              try {
+                await firebaseService.deleteDocument("brands", id);
+              } catch (err: any) {
+                toast.show('Erro ao excluir marca: ' + (err.message || err));
+              }
+            }}
+            isDarkMode={isDarkMode}
+          />
+        );
+      case ViewType.MODELS:
+        return (
+          <SimpleCatalogListView
+            items={productModels}
+            itemLabel="Modelo"
+            onAdd={async (name) => {
+              try {
+                await firebaseService.saveDocument("productModels", { name });
+                toast.show('Modelo salvo!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar modelo: ' + (err.message || err));
+              }
+            }}
+            onEdit={async (id, name) => {
+              try {
+                await firebaseService.updateDocument("productModels", id, { name });
+              } catch (err: any) {
+                toast.show('Erro ao atualizar modelo: ' + (err.message || err));
+              }
+            }}
+            onDelete={async (id) => {
+              try {
+                await firebaseService.deleteDocument("productModels", id);
+              } catch (err: any) {
+                toast.show('Erro ao excluir modelo: ' + (err.message || err));
               }
             }}
             isDarkMode={isDarkMode}
@@ -5410,6 +5609,8 @@ export default function App() {
             suppliers={suppliers}
             categories={categories}
             colors={colors}
+            brands={brands}
+            productModels={productModels}
             productionConfigs={productionConfigs}
             flowTags={flowTags}
             onSaveOnly={async (product) => {
@@ -5790,6 +5991,16 @@ export default function App() {
             orderTextAliases={orderTextAliases}
             paymentMethods={paymentMethods}
             accounts={accounts}
+            categories={categories}
+            brands={brands}
+            catalogLinks={catalogLinks}
+            onGenerateCatalogLink={handleGenerateCatalogLink}
+            onSetCatalogLinkProducts={handleSetCatalogLinkProducts}
+            catalogProfiles={catalogProfiles}
+            onSaveCatalogProfile={handleSaveCatalogProfile}
+            onDeleteCatalogProfile={handleDeleteCatalogProfile}
+            catalogRequests={catalogRequests}
+            onNavigateCatalogRequests={() => navigateTo(ViewType.CATALOG_REQUESTS)}
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
             onOpenPastedOrder={(draft) => navigateTo(ViewType.SALE_FORM, draft)}
             initialPasteText={currentParams?.prefillPasteText}
@@ -6765,6 +6976,18 @@ export default function App() {
               // 4. Auto-create Production Order if it's a new SALE or updated SALE
               if (sale.status === SaleStatus.SALE) {
                 await autoCreateProductionOrder(sale);
+              }
+
+              // 5. Veio de um pedido de Catálogo Público (Link de Pedido do cliente)?
+              // Marca a solicitação como importada, com o id da Venda gerada — mesmo padrão
+              // já usado pra fechar PurchaseRequest ao salvar uma Compra vinculada (ver
+              // currentParams?.requestId acima, no onSave de Compras).
+              if (currentParams?.sourceCatalogRequestId) {
+                await firebaseService.updateDocument("catalogRequests", currentParams.sourceCatalogRequestId, {
+                  status: 'IMPORTED',
+                  importedAt: Date.now(),
+                  importedSaleId: sale.id,
+                });
               }
 
               } catch (err: any) {
@@ -7800,7 +8023,7 @@ export default function App() {
     if ([ViewType.DASHBOARD].includes(currentView)) return "dashboard";
     if ([ViewType.PURCHASES, ViewType.PURCHASE_FORM].includes(currentView))
       return "purchases";
-    if ([ViewType.SALES, ViewType.SALE_FORM].includes(currentView))
+    if ([ViewType.SALES, ViewType.SALE_FORM, ViewType.CATALOG_REQUESTS].includes(currentView))
       return "sales";
     // PCP tem atalho próprio (opt-in em Personalização) — checa antes do balde geral de
     // "production" pra destacar o ícone certo quando os dois estiverem na barra ao mesmo tempo.
@@ -7865,6 +8088,8 @@ export default function App() {
         ViewType.CATEGORIES,
         ViewType.GRIDS,
         ViewType.COLORS,
+        ViewType.BRANDS,
+        ViewType.MODELS,
         ViewType.PAYMENT_METHODS,
         ViewType.BACKUP,
         ViewType.PRODUCT_SHEET,
@@ -7982,6 +8207,10 @@ export default function App() {
         return "Grades";
       case ViewType.COLORS:
         return "Cores";
+      case ViewType.BRANDS:
+        return "Marcas";
+      case ViewType.MODELS:
+        return "Modelos";
       case ViewType.PAYMENT_METHODS:
         return "Meios de Recebimento";
       case ViewType.REPORTS:
@@ -8076,6 +8305,8 @@ export default function App() {
         return "Compras e Despesas";
       case ViewType.PERSON_DETAIL:
         return "Detalhes do Cadastro";
+      case ViewType.CATALOG_REQUESTS:
+        return "Pedidos Recebidos";
       case ViewType.COMPANY_PROFILE:
         return "Personalizar Empresa";
       case ViewType.COLLABORATORS_CONFIG:
@@ -8113,6 +8344,8 @@ export default function App() {
       case ViewType.CATEGORIES: return <Tags size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.GRIDS: return <TableCellsMerge size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.COLORS: return <Palette size={24} className="text-slate-500 dark:text-slate-400" />;
+      case ViewType.BRANDS: return <Bookmark size={24} className="text-slate-500 dark:text-slate-400" />;
+      case ViewType.MODELS: return <Layers size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.ACCOUNTS: return <Wallet size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PAYMENT_METHODS: return <CreditCard size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.REPORTS: return <BarChart3 size={24} className="text-slate-500 dark:text-slate-400" />;

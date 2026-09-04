@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig, SectorNote } from '../types';
+import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig, SectorNote, Brand, ProductModel } from '../types';
 import {
   Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User,
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
   Layers, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake, PenTool
+  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake, PenTool, Bookmark
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
@@ -26,6 +26,8 @@ interface ProductFormViewProps {
   suppliers: Person[];
   categories: Category[];
   colors: ColorValue[];
+  brands?: Brand[];
+  productModels?: ProductModel[];
   productionConfigs: ProductionConfigItem[];
   flowTags: FlowTag[];
   onSave: (product: Product) => void;
@@ -110,7 +112,7 @@ function syncAssemblySectorNotes(
   return cleaned;
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES', guided = false }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, brands = [], productModels = [], productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES', guided = false }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   // Fixa o id do produto no momento em que o formulário é aberto: ao criar um modelo novo
   // (productId nulo), o primeiro salvamento gera um id aleatório e os salvamentos
@@ -162,6 +164,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const profitPerBox = useMemo(() => (parseFloat(salePrice as string) || 0) - (parseFloat(costPrice as string) || 0), [salePrice, costPrice]);
   const profitPerPair = useMemo(() => (parseFloat(unitSalePrice as string) || 0) - (parseFloat(unitCostPrice as string) || 0), [unitSalePrice, unitCostPrice]);
   const [adjustmentDate, setAdjustmentDate] = useState(existingProduct?.priceAdjustmentDate ? new Date(existingProduct.priceAdjustmentDate).toISOString().split('T')[0] : '');
+  // Acordeão recolhido por padrão (seção pouco usada) — já abre sozinho se o produto já tiver
+  // um reajuste agendado, pra não esconder um dado que já existe.
+  const [showAdjustmentSection, setShowAdjustmentSection] = useState(!!existingProduct?.priceAdjustmentDate);
   const [costPriceAdjustmentAmount, setCostPriceAdjustmentAmount] = useState<number | string>(existingProduct?.costPriceAdjustmentAmount ?? 0);
   const [salePriceAdjustmentAmount, setSalePriceAdjustmentAmount] = useState<number | string>(existingProduct?.salePriceAdjustmentAmount ?? 0);
   const [variations, setVariations] = useState<Variation[]>(existingProduct?.variations || []);
@@ -256,6 +261,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   // borrada/escura numa impressora térmica monocromática de baixa resolução). Usada no lugar
   // de `photoUrl` no elemento "Foto" do Editor de Etiquetas quando cadastrada.
   const [labelThumbnailUrl, setLabelThumbnailUrl] = useState<string>(existingProduct?.labelThumbnailUrl || '');
+  // Marca e Modelo — escolhidos de cadastros próprios (ver BrandsView/ModelsView), igual
+  // Categoria, só pra organizar/filtrar o Catálogo Público e a escolha de produtos do envio.
+  const [brandId, setBrandId] = useState<string>(existingProduct?.brandId || '');
+  const [modelId, setModelId] = useState<string>(existingProduct?.modelId || '');
 
   // Cadastro Guiado — só faz sentido criando um modelo do zero (nunca editando um já
   // existente); "Encerrar assistente" na barra só sai do modo guiado, não do formulário.
@@ -429,10 +438,14 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   };
 
   const buildProductData = (): Product | null => {
-    if (!name || !reference) {
-      toast.show('Por favor preencha nome e referência.');
+    if (!reference) {
+      toast.show('Por favor preencha a referência interna.');
       return null;
     }
+    // Nome não é mais digitado à parte — vem do Modelo escolhido (ver ComboBox "Modelo" acima).
+    // Sem modelo selecionado, cai pra referência, pra nunca gravar um produto sem nome nas
+    // listas/relatórios que dependem desse campo.
+    const resolvedName = name.trim() || reference;
     // Custo e Venda são obrigatórios em qualquer modo — sem eles não dá pra calcular
     // lucro nem valor de estoque.
     const cp = parseFloat(costPrice as string) || 0;
@@ -457,7 +470,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     productIdRef.current = id;
     return {
       id,
-      name,
+      name: resolvedName,
       reference,
       supplierId,
       categoryId,
@@ -487,6 +500,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       workDaysPerMonth: modulesConfig.production ? (parseFloat(workDaysPerMonth as string) || 26) : undefined,
       photoUrl: photoUrl || undefined,
       labelThumbnailUrl: labelThumbnailUrl || undefined,
+      brandId: brandId || undefined,
+      modelId: modelId || undefined,
       createdAt: existingProduct?.createdAt || Date.now()
     };
   };
@@ -616,9 +631,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       isComplete: reference.trim() !== '',
     },
     {
-      key: 'nome', label: 'Nome do modelo',
-      description: 'Como esse modelo vai aparecer nas listas, nos pedidos e nos relatórios do sistema.',
-      isComplete: name.trim() !== '',
+      key: 'nome', label: 'Marca e Modelo',
+      description: 'Opcional — escolha a marca e o modelo (cadastros em Ficha do Produto > Marcas/Modelos). O nome que aparece nas listas e relatórios vem do Modelo escolhido; sem modelo, usa a referência.',
+      isComplete: true,
     },
     {
       key: 'preco', label: 'Precificação de compra e venda',
@@ -846,6 +861,63 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             />
                           </label>
                         </div>
+
+                        {/* Álbum de Fotos DESTA COR — só aparece no Catálogo Público (Link de
+                            Pedido de Vendas). Por cor, não por referência: cada cor tem seu
+                            próprio álbum, pra não misturar foto de preto com foto de bege no
+                            mesmo carrossel. */}
+                        {module === 'SALES' && (
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Álbum de Fotos desta Cor (Catálogo Público)</label>
+                          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                            {(v.photoAlbum || []).map((url, idx) => (
+                              <div key={idx} className="relative shrink-0">
+                                <img src={url} alt={`Foto ${idx + 1} de ${v.colorName}`} className="w-16 h-16 rounded-2xl object-cover border border-slate-100 dark:border-slate-800" />
+                                <button
+                                  type="button"
+                                  onClick={() => updateVariation(activeVariationIndex, { photoAlbum: (v.photoAlbum || []).filter((_, i) => i !== idx) })}
+                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md"
+                                  title="Remover"
+                                >
+                                  <X size={10} strokeWidth={3} />
+                                </button>
+                              </div>
+                            ))}
+                            <label className={`relative cursor-pointer shrink-0 w-16 h-16 rounded-2xl border-2 border-dashed flex items-center justify-center transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`} title="Adicionar foto ao álbum desta cor">
+                              <Camera size={20} className="text-slate-300 dark:text-slate-600" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onload = ev => {
+                                    const result = ev.target?.result as string;
+                                    const img = new Image();
+                                    img.onload = () => {
+                                      const maxSide = 600;
+                                      const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
+                                      const canvas = document.createElement('canvas');
+                                      canvas.width = img.width * ratio;
+                                      canvas.height = img.height * ratio;
+                                      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                      updateVariation(activeVariationIndex, { photoAlbum: [...(v.photoAlbum || []), canvas.toDataURL('image/jpeg', 0.82)] });
+                                    };
+                                    img.src = result;
+                                  };
+                                  reader.readAsDataURL(file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                          </div>
+                          <p className={`text-[9px] font-bold leading-relaxed px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                            Opcional — fotos extras desta cor (outros ângulos, detalhes) que o cliente vê ao abrir o Link de Pedido.
+                          </p>
+                        </div>
+                        )}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {/* Cor da Variante */}
@@ -2150,6 +2222,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           </div>
           )}
 
+          {/* Álbum de Fotos (Catálogo Público) saiu daqui — agora é POR COR, editado dentro de
+              cada variação (ver bloco "Foto da Variante" no editor de cor), não mais uma vez só
+              pro produto inteiro (senão misturava fotos de cores diferentes no catálogo). */}
+
           {module === 'SALES' && showSection('tipoVenda') && (
             <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
               <button
@@ -2213,33 +2289,45 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               </div>
             )}
 
-            {module === 'SALES' && (showSection('referencia') || showSection('nome')) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {showSection('referencia') && (
-                <div>
-                  <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: SNK-102"
-                    className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-slate-50 border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
-                    value={reference}
-                    onChange={(e) => setReference(e.target.value)}
-                  />
-                </div>
-                )}
+            {module === 'SALES' && showSection('referencia') && (
+              <div>
+                <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
+                <input
+                  type="text"
+                  placeholder="Ex: SNK-102"
+                  className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-slate-50 border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                />
+              </div>
+            )}
 
-                {showSection('nome') && (
+            {module === 'SALES' && showSection('nome') && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Nome do Modelo</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Tênis Runner Air"
-                    className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-slate-50 border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Marca</label>
+                  <ComboBox
+                    options={[{ id: '', name: 'Nenhuma' }, ...brands.map(b => ({ id: b.id, name: b.name }))]}
+                    value={brandId}
+                    onChange={setBrandId}
+                    placeholder="Buscar marca..."
+                    isDarkMode={isDarkMode}
+                    icon={<Bookmark size={18} />}
                   />
+                  <p className="text-[9px] font-bold text-slate-400 px-1 mt-1">Opcional — cadastre novas marcas em Ficha do Produto {'>'} Marcas.</p>
                 </div>
-                )}
+                <div>
+                  <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Modelo</label>
+                  <ComboBox
+                    options={[{ id: '', name: 'Nenhum' }, ...productModels.map(m => ({ id: m.id, name: m.name }))]}
+                    value={modelId}
+                    onChange={(id) => { setModelId(id); setName(productModels.find(m => m.id === id)?.name || ''); }}
+                    placeholder="Buscar modelo..."
+                    isDarkMode={isDarkMode}
+                    icon={<Layers size={18} />}
+                  />
+                  <p className="text-[9px] font-bold text-slate-400 px-1 mt-1">Opcional — cadastre novos modelos em Ficha do Produto {'>'} Modelos.</p>
+                </div>
               </div>
             )}
 
@@ -2619,16 +2707,26 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 {/* Seção de Agendamento de Reajuste — não faz parte do Cadastro Guiado */}
                 {!isGuided && (
                 <div className="p-5 sm:p-6 rounded-[2rem] border-2 border-dashed border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/10">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdjustmentSection(prev => !prev)}
+                    title={showAdjustmentSection ? "Recolher Agendar Reajuste de Preço" : "Expandir Agendar Reajuste de Preço"}
+                    aria-label={showAdjustmentSection ? "Recolher Agendar Reajuste de Preço" : "Expandir Agendar Reajuste de Preço"}
+                    className={`w-full flex items-center gap-3 ${showAdjustmentSection ? 'mb-6' : ''}`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center shrink-0">
                       <Calendar size={18} />
                     </div>
-                    <div>
+                    <div className="flex-1 text-left min-w-0">
                       <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">Agendar Reajuste de Preço</h4>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Programar alteração automática de valores</p>
                     </div>
-                  </div>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-500 transition-transform ${showAdjustmentSection ? 'rotate-180' : ''}`}>
+                      <ChevronDown size={16} strokeWidth={3} />
+                    </div>
+                  </button>
 
+                  {showAdjustmentSection && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div>
                       <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Data da Aplicação</label>
@@ -2667,6 +2765,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       </div>
                     </div>
                   </div>
+                  )}
                 </div>
                 )}
               </>

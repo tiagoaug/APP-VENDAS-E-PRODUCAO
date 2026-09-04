@@ -22,6 +22,13 @@ export default defineConfig(({mode}) => {
     },
     build: {
       rollupOptions: {
+        // Segunda entrada além da SPA autenticada (index.html/src/main.tsx): a página
+        // pública do Link de Pedido (pedido.html/src/publicCatalog/main.tsx). Ver
+        // firebase.json pro rewrite de Hosting que serve /pedido/** com este bundle.
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          pedido: path.resolve(__dirname, 'pedido.html'),
+        },
         output: {
           // Separa bibliotecas grandes de terceiros em chunks próprios — cacheáveis
           // pelo navegador entre deploys (raramente mudam) e fora do bundle principal.

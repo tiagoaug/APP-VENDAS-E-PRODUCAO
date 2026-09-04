@@ -13,6 +13,7 @@ import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoice
 import { handleBlingWebhook } from "./bling/webhook";
 import { abaterEstoqueBling, AbaterEstoqueItem } from "./bling/picking";
 import { adjustThirdPartyNotes, registerBlingDevolucao, registerNotesOnlyReturn, RegisterDevolucaoInput } from "./bling/notes";
+import { getPublicCatalog, submitCatalogRequest, SubmitCatalogRequestInput, CatalogPublicError } from "./catalog/publicCatalog";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -425,5 +426,39 @@ export const blingRegisterNotesOnlyReturn = onCall({ region: "us-central1" }, as
     return await registerNotesOnlyReturn(db, request.auth.uid, { quantidade, motivo });
   } catch (err: any) {
     throw new HttpsError("internal", err?.message || "Falha ao registrar devolução de nota.");
+  }
+});
+
+// --- Link de Pedido (catálogo público sem login) ---
+// Deliberadamente SEM checagem de request.auth — quem chama é um visitante anônimo pelo link
+// público (ver src/publicCatalog/). Toda a segurança vem da resolução do token + validação
+// dentro de functions/src/catalog/publicCatalog.ts, nunca de regra do Firestore (nenhuma regra
+// pública foi aberta pra essas coleções — só o Admin SDK aqui dentro enxerga o dono/cliente).
+// enforceAppCheck fica false por ora (App Check ainda não configurado no projeto) — ligar
+// depois é só virar esta flag pra true em cada uma, uma vez que o App Check estiver provisionado.
+export const getPublicCatalogRequest = onCall({ region: "us-central1", enforceAppCheck: false }, async (request) => {
+  const token = request.data?.token;
+  if (!token || typeof token !== "string") throw new HttpsError("invalid-argument", "Link inválido.");
+  try {
+    return await getPublicCatalog(db, token);
+  } catch (err: any) {
+    // Só repassa a mensagem quando é um erro DELIBERADO (token inválido/expirado) — qualquer
+    // outra exceção (índice do Firestore ainda construindo, falha de rede, bug interno) fica
+    // só no log do servidor; o visitante público nunca vê detalhe interno nenhum.
+    if (err instanceof CatalogPublicError) throw new HttpsError("not-found", err.message);
+    console.error("[getPublicCatalogRequest] erro inesperado:", err?.message || err);
+    throw new HttpsError("not-found", "Link inválido ou expirado.");
+  }
+});
+
+export const submitCatalogRequestCall = onCall({ region: "us-central1", enforceAppCheck: false, maxInstances: 5 }, async (request) => {
+  const input = request.data as SubmitCatalogRequestInput;
+  if (!input?.token || typeof input.token !== "string") throw new HttpsError("invalid-argument", "Link inválido.");
+  try {
+    return await submitCatalogRequest(db, input);
+  } catch (err: any) {
+    if (err instanceof CatalogPublicError) throw new HttpsError("invalid-argument", err.message);
+    console.error("[submitCatalogRequestCall] erro inesperado:", err?.message || err);
+    throw new HttpsError("internal", "Não foi possível enviar o pedido agora. Tente novamente em instantes.");
   }
 });

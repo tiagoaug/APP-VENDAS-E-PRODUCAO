@@ -95,6 +95,34 @@ service cloud.firestore {
         && data.type is string;
     }
 
+    // Link de Pedido (catálogo público) — só o DONO autenticado cria/gerencia isto; o
+    // visitante anônimo do link nunca toca o Firestore direto (só via Cloud Functions com
+    // Admin SDK, que ignora estas regras — ver functions/src/catalog/publicCatalog.ts).
+    function isValidCatalogLink(data) {
+      return data.keys().hasAll(['personId', 'token', 'isActive', 'createdAt'])
+        && data.personId is string && data.personId.size() <= 128
+        && data.token is string && data.token.size() >= 8 && data.token.size() <= 128
+        && data.isActive is bool
+        && data.createdAt is number;
+    }
+
+    function isValidCatalogRequest(data) {
+      return data.keys().hasAll(['linkId', 'personId', 'status', 'items'])
+        && data.linkId is string && data.linkId.size() <= 128
+        && data.personId is string && data.personId.size() <= 128
+        && data.status in ['PENDING', 'IMPORTED', 'DISMISSED']
+        && data.items is list && data.items.size() <= 30;
+    }
+
+    // Perfil de Envio de Catálogo — seleção de produtos salva com nome (ver CatalogProfile em
+    // src/types.ts); só o dono lê/escreve, nunca tocado pelo Cloud Function público.
+    function isValidCatalogProfile(data) {
+      return data.keys().hasAll(['name', 'productIds', 'createdAt'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.productIds is list && data.productIds.size() <= 500
+        && data.createdAt is number;
+    }
+
     // --- Match Rules ---
 
     match /users/{userId} {
@@ -110,8 +138,31 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // Validação extra (defesa em profundidade) pro Link de Pedido — excluídas da regra
+      // coringa abaixo (mesmo mecanismo do blingIntegration) só pra impor o formato do
+      // documento; o dono continua podendo ler/escrever normalmente, só que validado.
+      match /catalogLinks/{linkId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidCatalogLink(incoming());
+      }
+
+      match /catalogRequests/{requestId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCatalogRequest(incoming());
+        allow update: if isOwner(userId) && incoming().status in ['PENDING', 'IMPORTED', 'DISMISSED'];
+      }
+
+      match /catalogProfiles/{profileId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidCatalogProfile(incoming());
+      }
+
       match /{collection}/{document=**} {
-        allow read, write: if isOwner(userId) && collection != 'blingIntegration';
+        allow read, write: if isOwner(userId)
+          && collection != 'blingIntegration'
+          && collection != 'catalogLinks'
+          && collection != 'catalogRequests'
+          && collection != 'catalogProfiles';
       }
     }
 

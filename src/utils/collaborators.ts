@@ -37,9 +37,11 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: Sector
       { id: 'categorias', label: 'Categorias' },
       { id: 'grades', label: 'Grades de Tamanho' },
       { id: 'cores', label: 'Cores' },
+      { id: 'marcas', label: 'Marcas' },
+      { id: 'modelos', label: 'Modelos' },
       { id: 'ficha_tecnica', label: 'Ficha Técnica' },
     ],
-    views: [ViewType.PRODUCTS, ViewType.PRODUCT_FORM, ViewType.PRODUCT_DETAIL, ViewType.CATEGORIES, ViewType.GRIDS, ViewType.COLORS, ViewType.CATEGORY_CONFIG, ViewType.PRODUCTION_ENGINEERING, ViewType.PRODUCT_SHEET],
+    views: [ViewType.PRODUCTS, ViewType.PRODUCT_FORM, ViewType.PRODUCT_DETAIL, ViewType.CATEGORIES, ViewType.GRIDS, ViewType.COLORS, ViewType.BRANDS, ViewType.MODELS, ViewType.CATEGORY_CONFIG, ViewType.PRODUCTION_ENGINEERING, ViewType.PRODUCT_SHEET],
   },
   {
     id: 'cadastro_insumos', label: 'Cadastro de Insumos', icon: 'Boxes',
@@ -198,6 +200,8 @@ export const VIEW_TASK_MAP: Partial<Record<ViewType, [SectorId, string]>> = {
   [ViewType.CATEGORY_CONFIG]: ['cadastro_produtos', 'categorias'],
   [ViewType.GRIDS]: ['cadastro_produtos', 'grades'],
   [ViewType.COLORS]: ['cadastro_produtos', 'cores'],
+  [ViewType.BRANDS]: ['cadastro_produtos', 'marcas'],
+  [ViewType.MODELS]: ['cadastro_produtos', 'modelos'],
   [ViewType.PRODUCTION_ENGINEERING]: ['cadastro_produtos', 'ficha_tecnica'],
   [ViewType.PRODUCT_SHEET]: ['cadastro_produtos', 'ficha_tecnica'],
 

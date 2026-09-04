@@ -305,6 +305,11 @@ export type Variation = {
   stockPkgId?: string; // Padrão de embalagem legado (substituído por stockPkgAllocations)
   stockPkgAllocations?: StockPkgAllocation[]; // Múltiplos padrões de embalagem por variação
   photoUrl?: string;   // Optional photo URL for this variation (used in labels)
+  // Álbum de fotos extras DESTA COR (base64, mesmo formato de photoUrl) — exibido no Catálogo
+  // Público (Link de Pedido) pra o cliente ver mais ângulos/detalhes desta cor específica antes
+  // de escolher. Por cor, não por referência, pra não misturar fotos de cores diferentes no
+  // mesmo álbum. Opcional; não usado em etiqueta/PCP, só no catálogo.
+  photoAlbum?: string[];
   sectorNotes?: Record<string, SectorNote[]>; // sectorId → list of named notes for that sector
   // Serviços terceirizados que se aplicam ao cabedal inteiro (o conjunto), não a uma peça
   // de corte específica — ex: revisão geral, montagem completa.
@@ -363,6 +368,12 @@ export type Product = {
   // normal sai borrada/escura numa impressora térmica monocromática de baixa resolução. Usada
   // no lugar de `photoUrl` no elemento "Foto" do Editor de Etiquetas quando cadastrada.
   labelThumbnailUrl?: string;
+  // Marca e Modelo — cadastros próprios (ver Brand/ProductModel abaixo, telas em
+  // src/views/BrandsView.tsx e ModelsView.tsx), igual Categoria/Cores: escolhidos de uma lista,
+  // não texto livre. Usados só pra organizar/filtrar o Catálogo Público e a tela de escolher
+  // produtos do envio.
+  brandId?: string;
+  modelId?: string;
   createdAt: number;
   // Usados para diluir itens de categoria Custo Fixo (Ficha Técnica) em custo por par: valor
   // mensal do item ÷ diasTrabalhadosMes ÷ paresDia. Preenchidos uma vez por produto, em vez de
@@ -825,6 +836,20 @@ export enum CategoryType {
   OTHER = 'OTHER',
 }
 
+// Marca do produto — cadastro próprio (ver src/views/BrandsView.tsx), igual Cores/Categorias:
+// escolhida numa lista dentro do Cadastro de Produto (Product.brandId), não texto livre.
+export type Brand = {
+  id: string;
+  name: string;
+};
+
+// Modelo do produto — cadastro próprio separado de Marca (ver src/views/ModelsView.tsx),
+// escolhido numa lista dentro do Cadastro de Produto (Product.modelId).
+export type ProductModel = {
+  id: string;
+  name: string;
+};
+
 export type Category = {
   id: string;
   name: string;
@@ -906,6 +931,8 @@ export enum ViewType {
   CATEGORIES = 'CATEGORIES',
   GRIDS = 'GRIDS',
   COLORS = 'COLORS',
+  BRANDS = 'BRANDS',
+  MODELS = 'MODELS',
   PAYMENT_METHODS = 'PAYMENT_METHODS',
   REPORTS = 'REPORTS',
   BACKUP = 'BACKUP',
@@ -939,6 +966,7 @@ export enum ViewType {
   MANUAL = 'MANUAL',
   OCR_TEXT_EXTRACTOR = 'OCR_TEXT_EXTRACTOR',
   RULE_OF_THREE = 'RULE_OF_THREE',
+  CATALOG_REQUESTS = 'CATALOG_REQUESTS',
   PRINT_CENTER = 'PRINT_CENTER',
   COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
   // Módulo RH — hub que reúne Colaboradores (cadastro/PIN/permissões) e Comissão a Vendedores,
@@ -1675,6 +1703,63 @@ export type PurchaseRequest = {
   colorId?: string;
   notes?: string;
   updatedAt?: number;
+};
+
+// Link de Pedido — catálogo público (sem login) que um Cliente (Person.isCustomer) usa pra
+// escolher produto/quantidade sozinho; ver functions/src/catalog/publicCatalog.ts (as duas
+// Cloud Functions que de fato leem/escrevem em nome de um visitante anônimo — o app nunca
+// abre regra pública no Firestore pra isso) e src/views/PersonDetailView.tsx (geração/gestão).
+export type CatalogLink = {
+  id: string;
+  personId: string;
+  token: string; // aleatório (crypto.getRandomValues), nunca derivado de personId/data
+  isActive: boolean;
+  createdAt: number;
+  expiresAt: number | null;
+  lastViewedAt?: number;
+  lastSubmittedAt?: number;
+  // Quais produtos este link mostra — vazio/ausente = catálogo completo (todos os produtos
+  // ativos). Editável a qualquer momento sem trocar o token (mesmo link continua funcionando
+  // pro cliente, só muda o que aparece).
+  productIds?: string[];
+  // true = catálogo público deste link mostra os produtos sem o preço (ex: pra um representante
+  // ou cliente que só vai escolher modelo/cor/quantidade, sem ver valores).
+  hidePrices?: boolean;
+};
+
+// Perfil de Envio de Catálogo — uma seleção de produtos salva com nome, pra reaproveitar ao
+// enviar catálogo pra vários clientes sem escolher os produtos toda vez (ex: "Catálogo Inverno",
+// "Só Tênis"). Aplicado escrevendo em CatalogLink.productIds; não referencia o link depois de
+// aplicado (é só um atalho de preenchimento, editar o perfil não muda links já enviados).
+export type CatalogProfile = {
+  id: string;
+  name: string;
+  productIds: string[];
+  createdAt: number;
+};
+
+export type CatalogRequestStatus = 'PENDING' | 'IMPORTED' | 'DISMISSED';
+
+export type CatalogRequestItem = {
+  productId: string;
+  saleType: SaleType;
+  // Mesmo formato de DraftSaleBlockInput.variations (ver src/utils/orderTextParser.ts) de
+  // propósito — permite jogar `request.items` direto em
+  // navigateTo(ViewType.SALE_FORM, { draftBlocks: request.items, draftCustomerId }) sem
+  // nenhuma conversão, reaproveitando o mesmo pré-preenchimento do "colar pedido".
+  variations: { variationId: string; size?: string; quantity: number }[];
+};
+
+export type CatalogRequest = {
+  id: string;
+  linkId: string;
+  personId: string;
+  status: CatalogRequestStatus;
+  submittedAt: number;
+  items: CatalogRequestItem[];
+  customerNote?: string;
+  importedAt?: number;
+  importedSaleId?: string;
 };
 
 export type ProductionLot = {
