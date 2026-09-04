@@ -360,7 +360,7 @@ export default function SalesView({
       const url = `${PUBLIC_CATALOG_BASE_URL}/pedido/${token}`;
       await CapacitorShare.share({
         title: 'Catálogo de Pedido',
-        text: `Olá, ${person.name}! Monte seu pedido pelo link: ${url}`,
+        text: `Olá, ${person.name}! Monte seu pedido pelo link: ${url}\n\nObs: esse link é individual, já vinculado ao seu cadastro — não compartilhe com outras pessoas.`,
         dialogTitle: 'Enviar catálogo',
       });
       setCatalogSendOpen(false);

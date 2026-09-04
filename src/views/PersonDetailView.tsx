@@ -191,6 +191,9 @@ export default function PersonDetailView({
                       {PUBLIC_CATALOG_BASE_URL}/pedido/{activeCatalogLink.token}
                     </p>
                   </div>
+                  <p className="text-[9px] font-bold text-amber-500 px-1 leading-relaxed">
+                    Obs: link individual, já vinculado ao cadastro de {person.name} — não compartilhe com outras pessoas.
+                  </p>
                   {onSetCatalogLinkProducts && (
                     <button
                       type="button"

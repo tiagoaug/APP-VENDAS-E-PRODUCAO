@@ -971,6 +971,29 @@ export default function App() {
     return () => unsubModulesConfig();
   }, [user]);
 
+  // Expiração padrão do Link de Pedido (Mais > Configurações) — em dias a partir da geração;
+  // null/0 = nunca expira. Mesmo padrão de doc único do app_modules_config acima. Só afeta
+  // links gerados DAQUI PRA FRENTE (handleGenerateCatalogLink lê isso no momento da criação);
+  // não altera links já existentes.
+  const [catalogLinkExpirationDays, setCatalogLinkExpirationDays] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubCatalogSettings = firebaseService.subscribeToCollection<{ id: string; linkExpirationDays: number | null }>(
+      "catalogSettings",
+      (data) => {
+        const config = data.find(c => c.id === 'main_catalog_settings');
+        setCatalogLinkExpirationDays(config?.linkExpirationDays ?? null);
+      }
+    );
+    return () => unsubCatalogSettings();
+  }, [user]);
+
+  const handleSetCatalogLinkExpirationDays = async (days: number | null) => {
+    setCatalogLinkExpirationDays(days);
+    await firebaseService.saveDocument("catalogSettings", { id: 'main_catalog_settings', linkExpirationDays: days });
+  };
+
   const saveModulesConfig = async (newConfig: AppModulesConfig) => {
     setModulesConfig(newConfig);
     if (user) {
@@ -1996,12 +2019,15 @@ export default function App() {
     const bytes = new Uint8Array(24);
     window.crypto.getRandomValues(bytes);
     const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const expiresAt = catalogLinkExpirationDays
+      ? Date.now() + catalogLinkExpirationDays * 24 * 60 * 60 * 1000
+      : null;
     await firebaseService.saveDocument("catalogLinks", {
       personId,
       token,
       isActive: true,
       createdAt: Date.now(),
-      expiresAt: null,
+      expiresAt,
       productIds,
       hidePrices,
     });
@@ -5079,6 +5105,8 @@ export default function App() {
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
             bottomNavConfig={bottomNavConfig}
             onSaveBottomNavConfig={saveBottomNavConfig}
+            catalogLinkExpirationDays={catalogLinkExpirationDays}
+            onSetCatalogLinkExpirationDays={handleSetCatalogLinkExpirationDays}
           />
         );
       case ViewType.PRODUCTS:

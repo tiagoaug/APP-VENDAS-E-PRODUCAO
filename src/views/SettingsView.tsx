@@ -40,7 +40,8 @@ import {
   MoveHorizontal,
   Scissors,
   Bookmark,
-  Layers
+  Layers,
+  Clock
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
@@ -84,6 +85,10 @@ interface SettingsViewProps {
   // Personalização da barra de navegação inferior (ver App.tsx middleNavItems/BottomNavConfigModal).
   bottomNavConfig: BottomNavConfig;
   onSaveBottomNavConfig: (config: BottomNavConfig) => void;
+  // Expiração padrão do Link de Pedido (Catálogo Público) — em dias a partir da geração;
+  // null = nunca expira. Só afeta links gerados dali pra frente (App.tsx handleGenerateCatalogLink).
+  catalogLinkExpirationDays?: number | null;
+  onSetCatalogLinkExpirationDays?: (days: number | null) => Promise<void>;
 }
 
 export default function SettingsView({
@@ -117,7 +122,10 @@ export default function SettingsView({
   onOpenLabelPrintStudio,
   bottomNavConfig,
   onSaveBottomNavConfig,
+  catalogLinkExpirationDays = null,
+  onSetCatalogLinkExpirationDays,
 }: SettingsViewProps) {
+  const [savingLinkExpiration, setSavingLinkExpiration] = useState(false);
   const [showNavConfig, setShowNavConfig] = useState(false);
   const [showA11y, setShowA11y] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
@@ -546,6 +554,47 @@ export default function SettingsView({
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${extraHeaderTopSpace ? 'left-7' : 'left-1'}`} />
                   </button>
+                </div>
+              )}
+
+              {/* Expiração do Link de Pedido (Catálogo Público) — só afeta links novos, gerados
+                  depois de mudar essa opção; links já enviados continuam como estavam. */}
+              {onSetCatalogLinkExpirationDays && (
+                <div className={`flex flex-col gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                      <Clock size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Expiração do Link de Pedido</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Só vale pra links novos, gerados a partir de agora</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { label: 'Nunca', value: null },
+                      { label: '1 dia', value: 1 },
+                      { label: '3 dias', value: 3 },
+                      { label: '5 dias', value: 5 },
+                      { label: '7 dias', value: 7 },
+                      { label: '15 dias', value: 15 },
+                      { label: '30 dias', value: 30 },
+                      { label: '60 dias', value: 60 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        disabled={savingLinkExpiration}
+                        onClick={async () => {
+                          setSavingLinkExpiration(true);
+                          try { await onSetCatalogLinkExpirationDays(opt.value); } finally { setSavingLinkExpiration(false); }
+                        }}
+                        className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-50 ${catalogLinkExpirationDays === opt.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-100'}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 

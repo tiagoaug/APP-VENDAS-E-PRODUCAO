@@ -259,7 +259,12 @@ export default function PublicCatalogApp() {
           <div key={product.productId} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
             <div className="flex items-center gap-3 p-4">
               {product.photoUrl ? (
-                <img src={product.photoUrl} alt={product.name} className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100" />
+                <img
+                  src={product.photoUrl}
+                  alt={product.name}
+                  onClick={() => setLightboxUrl(product.photoUrl!)}
+                  className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100 cursor-pointer active:scale-95 transition-all"
+                />
               ) : (
                 <div className="w-16 h-16 rounded-xl bg-slate-100 shrink-0" />
               )}
@@ -278,7 +283,14 @@ export default function PublicCatalogApp() {
               {product.variations.map((variation) => (
                 <div key={variation.variationId} className="rounded-xl bg-slate-50 p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    {variation.photoUrl && <img src={variation.photoUrl} alt={variation.colorName} className="w-8 h-8 rounded-lg object-cover" />}
+                    {variation.photoUrl && (
+                      <img
+                        src={variation.photoUrl}
+                        alt={variation.colorName}
+                        onClick={() => setLightboxUrl(variation.photoUrl!)}
+                        className="w-8 h-8 rounded-lg object-cover cursor-pointer active:scale-90 transition-all"
+                      />
+                    )}
                     <p className="text-[11px] font-black uppercase tracking-wide text-slate-600">{variation.colorName}</p>
                   </div>
                   {variation.photoAlbum && variation.photoAlbum.length > 0 && (
@@ -342,6 +354,12 @@ export default function PublicCatalogApp() {
               placeholder="Alguma informação extra sobre o pedido..."
             />
           </div>
+        )}
+
+        {products.length > 0 && (
+          <p className="text-center text-[10px] font-bold text-slate-400 leading-relaxed px-6 pt-2">
+            Este link é individual, já vinculado ao seu cadastro — não compartilhe com outras pessoas.
+          </p>
         )}
       </div>
 
