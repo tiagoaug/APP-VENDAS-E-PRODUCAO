@@ -46,6 +46,11 @@ export const REMINDER_TONE_META: { id: ReminderTonePattern; label: string; descr
 
 const toneChannelId = (toneId: string) => `reminder_tone_${toneId}`;
 const toneSoundFile = (toneId: string) => `reminder_tone_${toneId}.wav`;
+// Canal de ALARME por som — antes o modo Alarme usava sempre ALARM_CHANNEL_ID (sem `sound`
+// nenhum, só o som padrão do Android), ignorando por completo o toque escolhido no perfil.
+// Precisa ser um canal por som (não dá pra reaproveitar ALARM_CHANNEL_ID) pelo mesmo motivo dos
+// canais de toque acima: a partir do Android 8, o som de um canal já criado não muda mais.
+const alarmToneChannelId = (toneId: string) => `reminder_alarm_${toneId}`;
 
 const DEFAULT_TONE: ReminderTonePattern = 'standard';
 
@@ -85,6 +90,24 @@ async function ensureChannels(): Promise<void> {
       });
     } catch (e) {
       console.error(`[notificationService] createChannel (${meta.id}) failed`, e);
+    }
+
+    // Mesmo som, só que em prioridade máxima (igual ALARM_CHANNEL_ID) — usado quando o
+    // perfil está em modo Alarme, pra tocar o som escolhido em vez do padrão do sistema.
+    try {
+      await LocalNotifications.createChannel({
+        id: alarmToneChannelId(meta.id),
+        name: `Lembrete Alarme — ${meta.label}`,
+        description: meta.description,
+        importance: 5,
+        visibility: 1,
+        sound: toneSoundFile(meta.id),
+        vibration: true,
+        lights: true,
+        lightColor: '#4f46e5',
+      });
+    } catch (e) {
+      console.error(`[notificationService] createChannel (alarm ${meta.id}) failed`, e);
     }
   }
   channelsReady = true;
@@ -167,7 +190,7 @@ export const notificationService = {
             id: numericId,
             title,
             body,
-            channelId: useAlarm ? ALARM_CHANNEL_ID : toneChannelId(soundPattern || DEFAULT_TONE),
+            channelId: useAlarm ? alarmToneChannelId(soundPattern || DEFAULT_TONE) : toneChannelId(soundPattern || DEFAULT_TONE),
             ...(useAlarm ? { actionTypeId: ALARM_ACTION_TYPE_ID } : {}),
             schedule: { at: new Date(at), allowWhileIdle: true },
           },
@@ -224,7 +247,7 @@ export const notificationService = {
             id: PREVIEW_ID,
             title: 'Prévia do lembrete',
             body: alarmMode ? 'Assim soa no modo alarme' : `Assim soa: ${REMINDER_TONE_META.find(m => m.id === soundPattern)?.label || soundPattern}`,
-            channelId: alarmMode ? ALARM_CHANNEL_ID : toneChannelId(soundPattern),
+            channelId: alarmMode ? alarmToneChannelId(soundPattern || DEFAULT_TONE) : toneChannelId(soundPattern),
             ...(alarmMode ? { actionTypeId: ALARM_ACTION_TYPE_ID } : {}),
             schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
           },

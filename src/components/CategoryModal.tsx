@@ -12,9 +12,12 @@ interface CategoryModalProps {
   categories: Category[];
   defaultType?: CategoryType;
   modulesConfig: AppModulesConfig;
+  // Só precisa quando este modal abre POR CIMA de outro já aberto (ex.: atalho "Cadastre uma
+  // categoria aqui" dentro do TransactionModal) — sem isso ficaria atrás do modal de origem.
+  zIndex?: number;
 }
 
-export default function CategoryModal({ isOpen, onClose, onSave, category, categories, defaultType, modulesConfig }: CategoryModalProps) {
+export default function CategoryModal({ isOpen, onClose, onSave, category, categories, defaultType, modulesConfig, zIndex = 50 }: CategoryModalProps) {
   const [name, setName] = useState(category?.name || '');
   const [type, setType] = useState<CategoryType>(category?.type || defaultType || CategoryType.PRODUCT);
   const [modules, setModules] = useState<CategoryModuleValue[]>(() => {
@@ -102,7 +105,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
   const parentOptions = categories.filter(c => !c.parentId && c.id !== category?.id);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4" style={{ zIndex }}>
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-black text-slate-800 dark:text-white">
           {category ? 'Editar Categoria' : 'Nova Categoria'}

@@ -37,6 +37,7 @@ export const JOURNEYS: Journey[] = [
     steps: [
       { type: 'highlight_tap', anchorKey: 'nav.vendas', text: 'Toque aqui para abrir Vendas.' },
       { type: 'highlight_tap', screen: ViewType.SALES, anchorKey: 'sales.novoPedido', text: 'Toque aqui para criar um novo pedido.' },
+      { type: 'highlight_tap', screen: ViewType.SALES, anchorKey: 'sales.optCadastrarPedido', text: 'Toque em "Cadastrar Pedido" pra preencher a venda do zero (a outra opção, "Enviar Catálogo", manda um link pro cliente escolher sozinho).' },
       { type: 'message', text: 'Escolha o cliente, adicione os produtos (modelo, cor e tamanho ou grade) e defina a forma de pagamento.' },
       { type: 'highlight_tap', screen: ViewType.SALE_FORM, anchorKey: 'saleForm.finalizar', text: 'Quando terminar, toque aqui para finalizar. O estoque baixa automaticamente e a receita entra no financeiro.' },
     ],

@@ -141,20 +141,6 @@ export const HELP_TOPICS: HelpTopic[] = [
     relatedViews: [ViewType.STOCK, ViewType.PRODUCTS],
   },
   {
-    view: ViewType.PRINT_CENTER,
-    title: 'Central de Impressão',
-    summary: 'Gera e imprime PDFs/etiquetas de Ordens de Serviço, Mapas de Produção, Pedidos de Venda/Compra, fichas de Produto e etiquetas — com layout personalizável.',
-    sections: [
-      { heading: 'Como usar', body: 'Escolha uma das abas no topo (Ordens de Serviço, Mapa de Produção, Vendas, Compras, Produtos ou Etiquetas), marque os itens que quer imprimir na lista e toque em gerar/compartilhar — o arquivo final pode ser salvo, impresso ou enviado por WhatsApp.' },
-      { heading: 'Tamanho de papel', body: 'Além de folha A4/A5/A6, existem tamanhos de impressora térmica de etiqueta (ex.: 75×24mm, 80×40mm) — escolha o que combina com sua impressora antes de gerar.' },
-      { heading: 'Personalizar o layout', body: 'O ícone de engrenagem/ajustes abre o editor de layout daquela aba: dá pra mover, redimensionar, mudar cor e fonte de cada bloco (cabeçalho, QR Code, observações etc.) e a mudança fica salva pras próximas impressões.' },
-      { heading: 'Etiquetas é diferente', body: 'A aba "Etiquetas" tem seu próprio editor visual (ver Editor de Etiquetas) — é mais flexível que as outras abas, pensada pra quem imprime numa impressora térmica de etiqueta dedicada (ex.: Ablemark).' },
-      { heading: 'Só aparece com Produção', body: 'As abas "Ordens de Serviço", "Mapa de Produção" e "Etiquetas" só existem pra quem tem o módulo de Produção ligado.' },
-    ],
-    keywords: ['imprimir', 'impressao', 'pdf', 'etiqueta', 'central de impressao', 'termica', 'layout'],
-    relatedViews: [ViewType.LABEL_EDITOR, ViewType.LABEL_PRINT_STUDIO],
-  },
-  {
     view: ViewType.PURCHASES,
     title: 'Compras',
     summary: 'Registre entradas de mercadoria/insumos: reposição de estoque, compras gerais, solados e palmilhas.',
@@ -865,7 +851,6 @@ export const HELP_TOPICS: HelpTopic[] = [
       { heading: 'Não afeta nada além da aparência', body: 'É só identidade visual — não muda cálculo, permissão ou qualquer regra de negócio.' },
     ],
     keywords: ['empresa', 'logo', 'personalizar', 'cabecalho', 'rodape', 'cnpj'],
-    relatedViews: [ViewType.PRINT_CENTER],
   },
   {
     view: ViewType.MODULES_CONFIG,
@@ -954,7 +939,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       { heading: 'Conexão da impressora', body: 'O cartão de conexão mostra se a impressora térmica (Ablemark) está pareada e pronta antes de tentar imprimir.' },
     ],
     keywords: ['etiqueta', 'pdf', 'jpg', 'importar', 'impressora termica', 'ablemark'],
-    relatedViews: [ViewType.LABEL_EDITOR, ViewType.PRINT_CENTER],
+    relatedViews: [ViewType.LABEL_EDITOR],
   },
   {
     view: ViewType.LABEL_EDITOR,
@@ -968,7 +953,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       { heading: 'Imprimir/Exportar', body: 'Imprime direto na impressora térmica pareada, ou exporta como imagem/PDF pra guardar/compartilhar.' },
     ],
     keywords: ['editor de etiqueta', 'etiqueta', 'qr code', 'campo vinculado', 'modelo', 'imprimir'],
-    relatedViews: [ViewType.LABEL_PRINT_STUDIO, ViewType.PRINT_CENTER],
+    relatedViews: [ViewType.LABEL_PRINT_STUDIO],
   },
   {
     view: ViewType.RULE_OF_THREE,

@@ -190,6 +190,11 @@ export default function CatalogRequestsView({
                           );
                         })}
                       </div>
+                      {item.note && (
+                        <p className={`text-[10px] italic mt-2 pt-2 border-t ${isDarkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>
+                          "{item.note}"
+                        </p>
+                      )}
                     </div>
                   );
                 })}

@@ -223,48 +223,46 @@ export default function ReminderPickerModal({
                   </div>
                   <p className="text-[9px] font-bold text-slate-400 px-1 leading-relaxed">
                     {alarmMode && combineMode
-                      ? "Toca o alarme insistente E deixa uma notificação de texto separada na bandeja, mesmo depois de dispensar o alarme."
+                      ? "Toca o alarme insistente, no padrão escolhido abaixo, E deixa uma notificação de texto separada na bandeja, mesmo depois de dispensar o alarme."
                       : alarmMode
-                      ? "Toca insistente e precisa ser dispensado no próprio aviso — pra não deixar passar."
+                      ? "Toca insistente, no padrão escolhido abaixo, e precisa ser dispensado no próprio aviso — pra não deixar passar."
                       : "Aviso único, no padrão de toque escolhido abaixo."}
                   </p>
                 </div>
 
-                {(!alarmMode || combineMode) && (
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[9px] uppercase font-black text-slate-400 px-1 tracking-widest">Padrão de toque e vibração</label>
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {REMINDER_TONE_META.map((meta) => (
-                        <div
-                          key={meta.id}
-                          className={`flex items-center gap-2.5 p-2.5 rounded-2xl border transition-all ${
-                            soundPattern === meta.id
-                              ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700"
-                              : isDarkMode
-                              ? "bg-slate-800/50 border-slate-800"
-                              : "bg-slate-50 border-slate-100"
-                          }`}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[9px] uppercase font-black text-slate-400 px-1 tracking-widest">Padrão de toque e vibração</label>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {REMINDER_TONE_META.map((meta) => (
+                      <div
+                        key={meta.id}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-2xl border transition-all ${
+                          soundPattern === meta.id
+                            ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700"
+                            : isDarkMode
+                            ? "bg-slate-800/50 border-slate-800"
+                            : "bg-slate-50 border-slate-100"
+                        }`}
+                      >
+                        <button type="button" onClick={() => onSoundPatternChange(meta.id)} data-guide-anchor="lembrete.somSelecionar" className="flex-1 flex flex-col items-start text-left">
+                          <span className={`text-[11px] font-black ${soundPattern === meta.id ? "text-indigo-600 dark:text-indigo-400" : isDarkMode ? "text-white" : "text-slate-700"}`}>{meta.label}</span>
+                          <span className="text-[9px] font-bold text-slate-400">{meta.description}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => playTonePreview(meta.id)}
+                          data-guide-anchor="lembrete.somOuvir"
+                          title="Ouvir"
+                          aria-label={`Ouvir toque ${meta.label}`}
+                          className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 ${isDarkMode ? "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-900/60" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"}`}
                         >
-                          <button type="button" onClick={() => onSoundPatternChange(meta.id)} data-guide-anchor="lembrete.somSelecionar" className="flex-1 flex flex-col items-start text-left">
-                            <span className={`text-[11px] font-black ${soundPattern === meta.id ? "text-indigo-600 dark:text-indigo-400" : isDarkMode ? "text-white" : "text-slate-700"}`}>{meta.label}</span>
-                            <span className="text-[9px] font-bold text-slate-400">{meta.description}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => playTonePreview(meta.id)}
-                            data-guide-anchor="lembrete.somOuvir"
-                            title="Ouvir"
-                            aria-label={`Ouvir toque ${meta.label}`}
-                            className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 ${isDarkMode ? "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-900/60" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"}`}
-                          >
-                            <Play size={14} fill="currentColor" />
-                          </button>
-                          {soundPattern === meta.id && <Check size={16} className="text-indigo-500 shrink-0" />}
-                        </div>
-                      ))}
-                    </div>
+                          <Play size={14} fill="currentColor" />
+                        </button>
+                        {soundPattern === meta.id && <Check size={16} className="text-indigo-500 shrink-0" />}
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
 
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between px-1">

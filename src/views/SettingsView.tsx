@@ -185,6 +185,15 @@ export default function SettingsView({
   const [pinKeypadOpen, setPinKeypadOpen] = useState(false);
   const [expandedCollabPhoto, setExpandedCollabPhoto] = useState<{ url: string; name: string } | null>(null);
 
+  // Bling e RH exigem o Módulo de Vendas ligado (ver ModuleConfigView.tsx — não dá mais pra
+  // ativar nenhum dos dois sem Vendas) — checado de novo aqui pra contas antigas que já tinham
+  // Bling/RH ligados de um jeito inconsistente antes dessa regra existir.
+  const isModuleActive = (module: keyof AppModulesConfig | 'any') => {
+    if (module === 'any') return true;
+    if ((module === 'bling' || module === 'rh') && !modulesConfig.sales) return false;
+    return !!modulesConfig[module];
+  };
+
   const isItemAllowed = (itemId: ViewType | string) => {
     if (itemId === 'SOLE_MATRIX_DIRECT') return isSectorAllowed(activeCollaborator, 'cadastro_insumos');
     if (itemId in PRODUCTION_CONFIG_SCREENS) return isSectorAllowed(activeCollaborator, 'producao_pcp');
@@ -228,7 +237,7 @@ export default function SettingsView({
         { id: ViewType.BRANDS, label: "Marcas", icon: <Bookmark size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/30", module: 'sales' },
         { id: ViewType.MODELS, label: "Nome de Modelos", icon: <Layers size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/30", module: 'sales' },
         { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
-      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+      ].filter(item => isModuleActive(item.module as keyof AppModulesConfig | 'any') && isItemAllowed(item.id))
     },
     {
       // Ferramentas por módulo (integrações e extras opcionais) — separadas dos Cadastros
@@ -239,7 +248,7 @@ export default function SettingsView({
         { id: ViewType.DELIVERY_MENU, label: "Módulo Entregas", icon: <Truck size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'entregas' },
         { id: ViewType.BLING_CONNECTION, label: "Conexão Bling", icon: <Building2 size={22} />, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20", module: 'bling' },
         { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'ai' },
-      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+      ].filter(item => isModuleActive(item.module as keyof AppModulesConfig | 'any') && isItemAllowed(item.id))
     },
     {
       title: "Módulo de Produção",
@@ -255,7 +264,7 @@ export default function SettingsView({
         { id: 'PROD_INFESTO', label: "Camadas de Dobra Para Corte", icon: <Box size={22} />, color: "text-sky-600 dark:text-sky-400", bg: "bg-sky-50 dark:bg-sky-900/20", module: 'production' },
         { id: 'PROD_PECAS', label: "Peças", icon: <Layers size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'production' },
         { id: 'PROD_EMBALAGENS', label: "Padrão Embalagens", icon: <PackageOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'production' },
-      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+      ].filter(item => isModuleActive(item.module as keyof AppModulesConfig | 'any') && isItemAllowed(item.id))
     },
     {
       title: "Financeiro & Contas",
@@ -264,17 +273,17 @@ export default function SettingsView({
         { id: ViewType.PERSONAL_FINANCIAL, label: "Financeiro Pessoal", icon: <Wallet size={22} />, color: "text-pink-500 dark:text-pink-400", bg: "bg-pink-50 dark:bg-pink-900/30", module: 'personal' },
         { id: ViewType.ACCOUNTS, label: "Contas de Movimentação", icon: <Landmark size={22} />, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/30", module: 'any' },
         { id: ViewType.PAYMENT_METHODS, label: "Meios de Recebimento", icon: <CreditCard size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
-      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+      ].filter(item => isModuleActive(item.module as keyof AppModulesConfig | 'any') && isItemAllowed(item.id))
     },
     {
       title: "Sistema & Backup",
       items: [
         { id: ViewType.RH_MENU, label: "RH", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'rh' },
-        { id: ViewType.COMPANY_PROFILE, label: "Personalizar Empresa", icon: <Building2 size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'any' },
+        { id: ViewType.COMPANY_PROFILE, label: "Personalizar Empresa", icon: <Building2 size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'sales' },
         { id: 'ONBOARDING_WIZARD', label: "Assistente de Configuração", icon: <Rocket size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'any' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
         { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
-      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+      ].filter(item => isModuleActive(item.module as keyof AppModulesConfig | 'any') && isItemAllowed(item.id))
     },
     {
       title: "Extras",
@@ -286,7 +295,7 @@ export default function SettingsView({
         // é Acesso Total) — diferente dos outros itens de Extras, que são abertos a qualquer
         // colaborador. Ver SECTORS['rh'] em utils/collaborators.ts.
         { id: ViewType.LABOR_TERMINATION_SIMULATOR, label: "Simulador de Rescisão", icon: <Scissors size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'rh' },
-      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+      ].filter(item => isModuleActive(item.module as keyof AppModulesConfig | 'any') && isItemAllowed(item.id))
     }
   ];
 
@@ -297,6 +306,12 @@ export default function SettingsView({
       <div className="flex flex-col gap-6">
         {menuGroups.map((group, idx) => (
           <div key={idx} className="flex flex-col gap-3">
+            {/* Sem isso, um grupo cujos itens são TODOS de um módulo desligado (ex.: "Módulo de
+                Produção" com produção desativada, "Ferramentas de Módulos" sem Entregas/Bling/IA
+                ligados) aparecia como uma caixa branca vazia com só o título em cima — nenhum
+                item real pra mostrar, mas a seção inteira continuava lá. */}
+            {group.items.length > 0 && (
+            <>
             <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">{group.title}</h3>
             <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
               {group.items.map((item, itemIdx) => (
@@ -334,8 +349,10 @@ export default function SettingsView({
                 </button>
               ))}
             </div>
+            </>
+            )}
 
-            {group.title === 'Módulo de Produção' && (
+            {group.title === 'Módulo de Produção' && modulesConfig.production && (
               <div className={`rounded-3xl border shadow-sm p-5 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3 min-w-0">
@@ -346,6 +363,9 @@ export default function SettingsView({
                       <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Só Dias Úteis na Média</p>
                       <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">
                         Divide os pares produzidos só pelos dias de seg. a sex. do período, excluindo sábado e domingo — em vez de todos os dias corridos
+                      </p>
+                      <p className="text-[9px] font-bold text-teal-500 mt-1 leading-relaxed">
+                        Usado na barra de estatísticas do PCP Monitor e no card "Análise de Produção" do Painel, pra calcular a média de pares produzidos por dia.
                       </p>
                     </div>
                   </div>

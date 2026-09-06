@@ -822,6 +822,11 @@ export type Transaction = {
   totalInstallments?: number;
   dueDate?: number;
   paymentHistory?: PaymentHistory[];
+  reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string | null; // Título curto do lembrete
+  reminderAlarmMode?: boolean | null;
+  reminderCombineMode?: boolean | null;
+  reminderSoundPattern?: ReminderTonePattern | null;
 };
 
 export enum CategoryType {
@@ -918,6 +923,8 @@ export type Account = {
 export enum ViewType {
   DASHBOARD = 'DASHBOARD',
   ONBOARDING_WELCOME = 'ONBOARDING_WELCOME',
+  ONBOARDING_ROADMAP = 'ONBOARDING_ROADMAP',
+  ONBOARDING_COMPLETE = 'ONBOARDING_COMPLETE',
   PRODUCTS = 'PRODUCTS',
   PURCHASES = 'PURCHASES',
   SALES = 'SALES',
@@ -967,7 +974,6 @@ export enum ViewType {
   OCR_TEXT_EXTRACTOR = 'OCR_TEXT_EXTRACTOR',
   RULE_OF_THREE = 'RULE_OF_THREE',
   CATALOG_REQUESTS = 'CATALOG_REQUESTS',
-  PRINT_CENTER = 'PRINT_CENTER',
   COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
   // Módulo RH — hub que reúne Colaboradores (cadastro/PIN/permissões) e Comissão a Vendedores,
   // que antes viviam espalhados em Configurações e Financeiro (ver RhView.tsx).
@@ -1760,6 +1766,9 @@ export type CatalogRequestItem = {
   // navigateTo(ViewType.SALE_FORM, { draftBlocks: request.items, draftCustomerId }) sem
   // nenhuma conversão, reaproveitando o mesmo pré-preenchimento do "colar pedido".
   variations: { variationId: string; size?: string; quantity: number }[];
+  // Observação digitada pelo cliente ESPECÍFICA deste produto (ex.: "pedido no saquinho, com
+  // embalagem desmontada") — diferente de CatalogRequest.customerNote, que é do pedido inteiro.
+  note?: string;
 };
 
 export type CatalogRequest = {

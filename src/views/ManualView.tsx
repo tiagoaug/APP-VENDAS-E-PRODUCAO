@@ -2,9 +2,10 @@ import { useState, useMemo } from 'react';
 import {
   ArrowLeft, BookOpen, Search, ChevronDown, ChevronUp,
   ShoppingBag, ShoppingCart, DollarSign, Factory,
-  Package, Users, Settings, Layers, FileText,
+  Package, Users, Settings, Layers, FileText, Wallet,
   CheckCircle2, AlertCircle, Info, Lightbulb, Star
 } from 'lucide-react';
+import { AppModulesConfig } from '../types';
 
 interface ManualSection {
   id: string;
@@ -12,6 +13,9 @@ interface ManualSection {
   color: string;
   title: string;
   subtitle: string;
+  // Seção só aparece se o módulo exigido estiver ativo — sem isso (ou 'any') aparece sempre.
+  // Ex.: quem só usa o Módulo Pessoal não precisa ver nada de Vendas/Produção no manual.
+  module?: keyof AppModulesConfig | 'any';
   topics: ManualTopic[];
 }
 
@@ -29,10 +33,11 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-amber-500',
     title: 'Visão Geral do Sistema',
     subtitle: 'O que é e como o sistema está organizado',
+    module: 'any',
     topics: [
       {
         title: 'O que é este sistema?',
-        info: 'Sistema integrado de gestão para fábricas de calçados. Cobre vendas, compras, financeiro, estoque e produção em um único lugar, acessível pelo celular ou tablet.'
+        info: 'Sistema integrado de gestão para fábricas de calçados. Cobre vendas, compras, financeiro, estoque e produção em um único lugar, acessível pelo celular ou tablet. Também funciona sozinho, sem nenhum módulo de negócio ativo, só para organizar as finanças pessoais.'
       },
       {
         title: 'Módulos disponíveis',
@@ -43,6 +48,7 @@ const MANUAL_CONTENT: ManualSection[] = [
           'PRODUÇÃO (PCP) — Lotes de produção, apontamento por setor e pedidos de produção.',
           'ESTOQUE DE SOLADOS — Entradas, estoque por modelo/cor/tamanho e pesagem.',
           'CADASTROS — Produtos, clientes, fornecedores, grades, cores e categorias.',
+          'FINANCEIRO PESSOAL — Contas, cartões, gastos e receitas pessoais, separados do dinheiro da empresa. Funciona mesmo sem nenhum outro módulo ativo.',
           'CONFIGURAÇÕES — Ativar/desativar módulos, backup e preferências.'
         ]
       },
@@ -63,6 +69,7 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-violet-600',
     title: 'Módulo de Vendas',
     subtitle: 'Pedidos, orçamentos e pedidos de produção',
+    module: 'sales',
     topics: [
       {
         title: 'Como criar um novo pedido de venda',
@@ -134,6 +141,7 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-cyan-600',
     title: 'Módulo de Compras',
     subtitle: 'Entradas de matéria-prima e insumos',
+    module: 'sales',
     topics: [
       {
         title: 'Como registrar uma compra',
@@ -163,6 +171,7 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-amber-500',
     title: 'Módulo Financeiro',
     subtitle: 'Contas, recebimentos, pagamentos e saldo',
+    module: 'sales',
     topics: [
       {
         title: 'Como registrar um lançamento manual',
@@ -200,6 +209,7 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-indigo-600',
     title: 'PCP — Produção',
     subtitle: 'Planejamento, lotes, apontamento e pedidos de produção',
+    module: 'production',
     topics: [
       {
         title: 'O que é o PCP?',
@@ -278,6 +288,7 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-emerald-600',
     title: 'Estoque de Solados',
     subtitle: 'Entradas, estoque, pesagem e etiquetas',
+    module: 'production',
     topics: [
       {
         title: 'Como registrar uma entrada de solados',
@@ -333,6 +344,7 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-slate-600',
     title: 'Cadastro de Produtos',
     subtitle: 'Modelos, variações, grades e ficha técnica',
+    module: 'sales',
     topics: [
       {
         title: 'Como cadastrar um novo produto',
@@ -380,6 +392,7 @@ const MANUAL_CONTENT: ManualSection[] = [
     color: 'bg-rose-500',
     title: 'Clientes e Fornecedores',
     subtitle: 'Cadastro de pessoas e empresas',
+    module: 'sales',
     topics: [
       {
         title: 'Como cadastrar um cliente ou fornecedor',
@@ -411,11 +424,67 @@ const MANUAL_CONTENT: ManualSection[] = [
     ]
   },
   {
+    id: 'personal',
+    icon: <Wallet size={20} />,
+    color: 'bg-pink-500',
+    title: 'Módulo Pessoal',
+    subtitle: 'Financeiro pessoal, família, fornecedores e orçamentos',
+    module: 'personal',
+    topics: [
+      {
+        title: 'O que é o Financeiro Pessoal?',
+        info: 'Controla suas finanças pessoais separadas do dinheiro da empresa — contas, gastos e receitas da família. Funciona mesmo sem nenhum outro módulo ativo, para quem só quer organizar a vida financeira pessoal.'
+      },
+      {
+        title: 'Como registrar uma entrada ou saída pessoal',
+        steps: [
+          'Acesse PESSOAL no menu inferior.',
+          'Toque em "+" para lançar uma Receita ou Despesa.',
+          'Selecione a categoria (só aparecem categorias marcadas como pessoais).',
+          'Não achou a categoria? Toque em "Cadastre uma aqui", logo abaixo do campo, e ela já salva como categoria pessoal.',
+          'Informe valor, data, conta e status (Concluído ou Pendente) e confirme.'
+        ]
+      },
+      {
+        title: 'Despesas recorrentes/parceladas',
+        tag: 'novo',
+        steps: [
+          'Ao lançar uma Despesa, ative "Despesa recorrente/parcelada" e informe quantas parcelas.',
+          'O sistema gera uma parcela por mês a partir da data informada, todas ligadas entre si.',
+          'Você pode configurar um lembrete que avisa antes de cada vencimento.',
+          'A seção "Despesas Recorrentes" mostra o progresso (ex.: 3/12 pagas) e a próxima parcela em aberto.',
+          'Toque em "Quitar" na próxima parcela pendente para marcá-la como paga com um toque.'
+        ]
+      },
+      {
+        title: 'Orçamentos por categoria',
+        tag: 'novo',
+        steps: [
+          'Acesse PESSOAL → Configurações → card "Orçamentos" → "Novo".',
+          'Escolha a categoria e defina o valor-teto do mês.',
+          'Defina em quantos % do teto você quer receber o aviso (ex.: 80%).',
+          'O progresso aparece com um gráfico circular: verde (tranquilo), amarelo (perto do limite) e vermelho (estourado), junto com o valor já gasto.',
+          'Um aviso de texto aparece automaticamente quando o gasto se aproxima ou passa do teto.'
+        ]
+      },
+      {
+        title: 'Família e Fornecedores pessoais',
+        steps: [
+          'Acesse PESSOAL → Configurações.',
+          'No card "Família", cadastre quem divide as contas com você — cada gasto pode ser vinculado a uma pessoa.',
+          'No card "Fornecedores", cadastre contatos pessoais recorrentes (academia, streaming, escola etc.).',
+          'Cada card tem seu próprio botão "Novo" (cadastrar) e "Ver" (ver os já cadastrados, com busca por nome).'
+        ]
+      }
+    ]
+  },
+  {
     id: 'settings',
     icon: <Settings size={20} />,
     color: 'bg-slate-500',
     title: 'Configurações do Sistema',
     subtitle: 'Módulos, setores, backup e preferências',
+    module: 'any',
     topics: [
       {
         title: 'Como ativar ou desativar módulos',
@@ -457,12 +526,20 @@ const MANUAL_CONTENT: ManualSection[] = [
 interface ManualViewProps {
   onBack: () => void;
   isDarkMode: boolean;
+  modulesConfig: AppModulesConfig;
 }
 
-export default function ManualView({ onBack, isDarkMode }: ManualViewProps) {
+export default function ManualView({ onBack, isDarkMode, modulesConfig }: ManualViewProps) {
   const [search, setSearch] = useState('');
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['overview']));
   const [openTopics, setOpenTopics] = useState<Set<string>>(new Set());
+
+  const visibleContent = useMemo(() =>
+    MANUAL_CONTENT.filter(section =>
+      !section.module || section.module === 'any' || modulesConfig[section.module]
+    ),
+    [modulesConfig]
+  );
 
   const toggleSection = (id: string) => {
     setOpenSections(prev => {
@@ -481,9 +558,9 @@ export default function ManualView({ onBack, isDarkMode }: ManualViewProps) {
   };
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return MANUAL_CONTENT;
+    if (!search.trim()) return visibleContent;
     const q = search.toLowerCase();
-    return MANUAL_CONTENT
+    return visibleContent
       .map(section => ({
         ...section,
         topics: section.topics.filter(t =>
@@ -493,7 +570,7 @@ export default function ManualView({ onBack, isDarkMode }: ManualViewProps) {
         )
       }))
       .filter(s => s.topics.length > 0 || s.title.toLowerCase().includes(q));
-  }, [search]);
+  }, [search, visibleContent]);
 
   const tagStyle = (tag: ManualTopic['tag']) => {
     if (tag === 'novo') return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400';

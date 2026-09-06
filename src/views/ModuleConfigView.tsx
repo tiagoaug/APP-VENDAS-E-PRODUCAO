@@ -56,6 +56,20 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setIsConfirmOpen(true);
         return;
       }
+      if (module === 'bling' && !config.sales) {
+        setConfirmTitle("Requisito Necessário");
+        setConfirmMessage("O Módulo Bling requer que o Módulo de Vendas esteja ativo — a vinculação de produtos e os pedidos vêm do seu catálogo de Vendas.");
+        setPendingModule(null);
+        setIsConfirmOpen(true);
+        return;
+      }
+      if (module === 'rh' && !config.sales) {
+        setConfirmTitle("Requisito Necessário");
+        setConfirmMessage("O Módulo RH requer que o Módulo de Vendas esteja ativo — ele é pensado pra colaboradores de uma operação comercial, não pra uso pessoal.");
+        setPendingModule(null);
+        setIsConfirmOpen(true);
+        return;
+      }
       // Activation is usually safe
       const newConfig = { ...config };
       newConfig[module] = true;
@@ -63,8 +77,8 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     } else {
       // Deactivation requires warning
       setPendingModule(module);
-      if (module === 'sales' && (config.production || config.entregas)) {
-        const dependents = [config.production && 'Produção', config.entregas && 'Entregas'].filter(Boolean).join(' e ');
+      if (module === 'sales' && (config.production || config.entregas || config.bling || config.rh)) {
+        const dependents = [config.production && 'Produção', config.entregas && 'Entregas', config.bling && 'Bling', config.rh && 'RH'].filter(Boolean).join(', ');
         setConfirmTitle("Desativar Vendas");
         setConfirmMessage(`Ao desativar o Módulo de Vendas, o Módulo de ${dependents} também será desativado automaticamente. Deseja continuar?`);
       } else {
@@ -87,6 +101,8 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       newConfig.sales = false;
       newConfig.production = false;
       newConfig.entregas = false;
+      newConfig.bling = false;
+      newConfig.rh = false;
     } else {
       newConfig[pendingModule] = false;
     }
@@ -100,11 +116,11 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     {
       id: 'personal',
       name: 'Módulo Pessoal',
-      description: 'Finanças pessoais, família e contatos privados.',
+      description: 'Pra controlar SUAS finanças fora do negócio — contas, cartões, gastos e receitas da família, separados do dinheiro da empresa. Funciona mesmo sem nenhum outro módulo ativo, pra quem só quer organizar a vida financeira pessoal.',
       icon: <Users size={28} />,
       active: config.personal,
       color: 'bg-amber-500',
-      features: ['Financeiro Pessoal', 'Membros da Família', 'Categorias Pessoais']
+      features: ['Financeiro Pessoal', 'Membros da Família', 'Categorias Pessoais', 'Orçamentos']
     },
     {
       id: 'sales',
@@ -150,6 +166,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       description: 'Integração com o ERP Bling — vinculação de produtos e emissão de notas fiscais.',
       icon: <Building2 size={28} />,
       active: config.bling,
+      disabled: !config.sales,
       color: 'bg-green-700',
       features: ['Vinculação de Produtos', 'Pedidos de Marketplaces', 'Emissão de NF-e']
     },
@@ -159,6 +176,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       description: 'Cadastro de colaboradores, permissões de acesso e folha de pagamento.',
       icon: <UserCog size={28} />,
       active: config.rh,
+      disabled: !config.sales,
       color: 'bg-fuchsia-600',
       features: ['Colaboradores', 'Permissões por Setor', 'Folha de Pagamento']
     }
@@ -245,7 +263,11 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Atalhos Rápidos</h3>
         <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-[2.5rem] border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
           {shortcuts.map((shortcut, idx) => {
-            const isVisible = shortcut.module === 'any' || config[shortcut.module as keyof AppModulesConfig];
+            // Bling/RH exigem Vendas ligado (ver toggleModule acima) — checado de novo aqui
+            // pra contas antigas que ficaram com Bling/RH ligados sem Vendas, de antes dessa
+            // regra existir.
+            const requiresSales = shortcut.module === 'bling' || shortcut.module === 'rh';
+            const isVisible = shortcut.module === 'any' || (config[shortcut.module as keyof AppModulesConfig] && (!requiresSales || config.sales));
             if (!isVisible) return null;
             
             return (

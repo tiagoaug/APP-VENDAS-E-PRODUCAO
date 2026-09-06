@@ -4,7 +4,7 @@ import {
   Layout, Eye, EyeOff, Save, CheckCircle2, ChevronLeft, GripVertical, RefreshCcw,
   Sparkles, Package, Plus, Wallet, TrendingUp, TrendingDown, DollarSign, Grid3X3,
   Users, BarChart3, Landmark, Search, ShoppingCart, AlertCircle, Filter, Calendar,
-  Boxes, Copy, Share2, Hash, User, History, Printer, Factory, Settings, ScanLine,
+  Boxes, Copy, Share2, Hash, User, History, Factory, Settings, ScanLine,
   QrCode, Trash2, ClipboardList, Footprints, Layers, PackageOpen, Clipboard, Clock,
   ChevronRight, ShoppingBag, BookOpen, CreditCard, Database, Bell
 } from 'lucide-react';
@@ -406,20 +406,6 @@ function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
           <div className="flex justify-between items-center text-[7.5px] font-bold">
             <span className="text-emerald-500">+ Venda R$ 450,00</span>
             <span className="text-slate-400 font-normal">10 min</span>
-          </div>
-        </div>
-      );
-
-    case 'print_center':
-      return (
-        <div className={containerClass}>
-          <div className={headerClass}>
-            <span className={titleClass}>Central de Impressões</span>
-            <Printer size={mini ? 12 : 16} className="text-indigo-500" />
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            <div className="bg-rose-50 border border-rose-100 dark:bg-rose-900/10 dark:border-rose-900/20 p-1 rounded-lg text-center text-[7px] font-black text-rose-500">OS</div>
-            <div className="bg-violet-50 border border-violet-100 dark:bg-violet-900/10 dark:border-violet-900/20 p-1 rounded-lg text-center text-[7px] font-black text-violet-500">Mapa Prod</div>
           </div>
         </div>
       );

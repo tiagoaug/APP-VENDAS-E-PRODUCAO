@@ -57,7 +57,7 @@ interface DashboardViewProps {
     checkId: string,
     newStatus: "PENDING" | "CLEARED" | "OVERDUE",
   ) => void;
-  onNavigate: (view: ViewType, id?: string | null, search?: string) => void;
+  onNavigate: (view: ViewType, id?: string | null | Record<string, any>, search?: string) => void;
   onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string, orderId?: string, itemIdx?: string | number, scanNonce?: number, osId?: string, openMode?: 'modal' | 'sector') => void;
   onNavigateGrids: () => void;
   onAddProduct: () => void;
@@ -1221,24 +1221,54 @@ export default function DashboardView({
 
           case "personal_balance":
             return (
-              <div
-                key="personal_balance"
-                onClick={() => onNavigate(ViewType.PERSONAL_FINANCIAL)}
-                data-guide-anchor="dash.personalBalance.card"
-                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(16,185,129,0.1)] flex flex-col gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
-              >
-                <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
-                  <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-sm font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400">Saldo Pessoal</span>
-                  <div className="w-9 h-9 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center text-emerald-500">
-                    <Landmark size={18} strokeWidth={2.5} />
+              <div key="personal_balance" className="flex flex-col gap-3">
+                <div
+                  onClick={() => onNavigate(ViewType.PERSONAL_FINANCIAL)}
+                  data-guide-anchor="dash.personalBalance.card"
+                  title="Ir ao Financeiro Pessoal"
+                  aria-label="Ir ao Financeiro Pessoal"
+                  className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(16,185,129,0.1)] flex flex-col gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+                >
+                  <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
+                    <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-sm font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400">Saldo Pessoal</span>
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                      <Landmark size={14} strokeWidth={2.5} />
+                      <span className="text-[8px] font-black uppercase tracking-widest whitespace-nowrap">Ir ao Financeiro</span>
+                      <ChevronRight size={14} strokeWidth={3} />
+                    </div>
                   </div>
+                  <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-emerald-500"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                    R$ {(stats as any).personalBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </div>
-                <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-emerald-500"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
-                  R$ {(stats as any).personalBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(ViewType.PERSONAL_FINANCIAL, { initialAction: 'NEW_INCOME' })}
+                    data-guide-anchor="dash.personalBalance.addIncome"
+                    title="Adicionar Nova Receita"
+                    aria-label="Adicionar Nova Receita"
+                    className="cursor-pointer py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 bg-emerald-500 text-white active:scale-[0.97] transition-transform"
+                  >
+                    <TrendingUp size={13} strokeWidth={2.5} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Receita</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(ViewType.PERSONAL_FINANCIAL, { initialAction: 'NEW_EXPENSE' })}
+                    data-guide-anchor="dash.personalBalance.addExpense"
+                    title="Adicionar Nova Despesa"
+                    aria-label="Adicionar Nova Despesa"
+                    className="cursor-pointer py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 bg-rose-500 text-white active:scale-[0.97] transition-transform"
+                  >
+                    <TrendingDown size={13} strokeWidth={2.5} />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Despesa</span>
+                  </button>
+                </div>
               </div>
             );
- 
+
 
           case "stock_alerts":
             return (
@@ -2288,46 +2318,8 @@ export default function DashboardView({
               </section>
             );
 
-          case "print_center":
-            return (
-              <div key="print_center" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-5 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Central de Impressões</h3>
-                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">{modulesConfig.production ? 'OS • Lotes • Pedidos • Fichas' : 'Pedidos'}</p>
-                  </div>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                    <Printer size={20} />
-                  </div>
-                </div>
-                <div className={`grid gap-2.5 ${modulesConfig.production ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  {[
-                    { label: 'Ordens de Serviço', icon: <ClipboardList size={20}/>, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 border-rose-100', productionOnly: true },
-                    { label: 'Mapa de Produção', icon: <Factory size={20}/>, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10 border-violet-500/20' : 'bg-violet-50 border-violet-100', productionOnly: true },
-                    { label: 'Pedidos de Venda', icon: <ShoppingBag size={20}/>, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100', productionOnly: false },
-                    { label: 'Fichas de Produto', icon: <BookOpen size={20}/>, color: 'text-amber-500', bg: isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-100', productionOnly: true },
-                  ].filter(item => modulesConfig.production || !item.productionOnly).map(item => (
-                    <button key={item.label} type="button"
-                      onClick={() => onNavigate(ViewType.PRINT_CENTER)}
-                      data-guide-anchor="dash.printCenter.item"
-                      className={`h-24 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 border ${item.bg}`}>
-                      <span className={item.color}>{item.icon}</span>
-                      <span className={`text-[9px] font-black tracking-widest text-center leading-tight ${item.color}`}>{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-                <button type="button"
-                  onClick={() => onNavigate(ViewType.PRINT_CENTER)}
-                  data-guide-anchor="dash.printCenter.vertudo"
-                  className={`w-full py-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                  <span className="text-[10px] font-black tracking-[0.2em]">Abrir Central de Impressões</span>
-                  <ChevronRight size={14} strokeWidth={3}/>
-                </button>
-              </div>
-            );
-
-          // Etiquetas térmicas (Ablemark) — separado da Central de Impressões acima, que é só
-          // documentos (OS/Mapas/Pedidos/Fichas). Antes só existia como ícone no topo do app.
+          // Etiquetas térmicas (Ablemark) — feature separada, ainda ativa (a Central de
+          // Impressões de documentos OS/Mapas/Pedidos/Fichas foi descontinuada).
           case "print_labels":
             return (
               <div key="print_labels" className={`p-6 rounded-[2rem] border shadow-sm flex items-center justify-between gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>

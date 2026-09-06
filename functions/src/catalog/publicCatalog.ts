@@ -195,6 +195,9 @@ export interface SubmitCatalogRequestInput {
     productId: string;
     saleType: SaleTypeServer;
     variations: { variationId: string; size?: string; quantity: number }[];
+    // Observação do cliente ESPECÍFICA deste produto (ex.: "pedido no saquinho") — diferente
+    // de customerNote abaixo, que é do pedido inteiro.
+    note?: string;
   }[];
   customerNote?: string;
   // Obrigatório quando o link resolvido é genérico (sem personId) — nome digitado por quem
@@ -206,6 +209,7 @@ const MAX_ITEMS = 30;
 const MAX_VARIATIONS_PER_ITEM = 20;
 const MAX_QUANTITY = 999;
 const MAX_NOTE_LENGTH = 500;
+const MAX_ITEM_NOTE_LENGTH = 200;
 const MAX_NAME_LENGTH = 80;
 // Link Exclusivo (1 cliente) — poucos envios esperados; qualquer volume maior já é sinal de abuso.
 const MAX_SUBMISSIONS_PER_HOUR = 5;
@@ -280,7 +284,8 @@ export async function submitCatalogRequest(db: firestore.Firestore, input: Submi
         quantity,
       });
     }
-    cleanItems.push({ productId: item.productId, saleType: item.saleType, variations: cleanVariations });
+    const itemNote = typeof item.note === "string" ? item.note.trim().slice(0, MAX_ITEM_NOTE_LENGTH) : undefined;
+    cleanItems.push({ productId: item.productId, saleType: item.saleType, variations: cleanVariations, ...(itemNote ? { note: itemNote } : {}) });
   }
 
   const customerNote = typeof input.customerNote === "string" ? input.customerNote.slice(0, MAX_NOTE_LENGTH) : undefined;
@@ -290,7 +295,10 @@ export async function submitCatalogRequest(db: firestore.Firestore, input: Submi
     linkId: linkRef.id,
     ...(link.personId ? { personId: link.personId } : { customerName }),
     status: "PENDING",
-    submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+    // Number (millis), não FieldValue.serverTimestamp() — o resto do app inteiro usa Date.now()
+    // pra data (CatalogLink.createdAt, etc.); um Timestamp do Firestore aqui quebrava a
+    // ordenação e a formatação de data no cliente (que espera number, não um objeto Timestamp).
+    submittedAt: Date.now(),
     items: cleanItems,
     ...(customerNote ? { customerNote } : {}),
   });

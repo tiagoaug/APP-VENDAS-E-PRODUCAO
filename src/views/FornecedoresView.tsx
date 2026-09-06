@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ServiceOrder, Transaction, Person, Product, GeneralPurchaseItem } from '../types';
-import { ArrowLeft, Factory, ChevronRight, CheckCircle2, Clock, Hammer, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, Factory, ChevronRight, CheckCircle2, Clock, Hammer, CheckSquare, Square, Download, X, FileText, Send } from 'lucide-react';
 import { format } from 'date-fns';
 import { generateId } from '../utils/id';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import Modal from '../components/Modal';
+import { exportCompletedServiceOrders, CompletedOSExportItem } from '../utils/completedServiceOrderExport';
 
 interface FornecedoresViewProps {
   isDarkMode: boolean;
@@ -90,6 +92,14 @@ export default function FornecedoresView({
   // ou fechar o popup (ver openProvider/closeModal).
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Exportar OS deste fornecedor (PDF/JPG) — considera as selecionadas (se houver alguma
+  // marcada) ou, senão, a lista visível na aba/filtro atual, mesmo padrão de precedência já
+  // usado em "Pagar Selecionadas" acima.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'jpg'>('pdf');
+  const [exportGroupBy, setExportGroupBy] = useState<'none' | 'model'>('none');
+  const [exportPreviewUrls, setExportPreviewUrls] = useState<string[]>([]);
+  const [isExportPreviewLoading, setIsExportPreviewLoading] = useState(false);
 
   const openProvider = (key: string) => {
     setExpandedKey(key);
@@ -102,6 +112,8 @@ export default function FornecedoresView({
     setExpandedKey(null);
     setSelectMode(false);
     setSelectedIds(new Set());
+    setExportOpen(false);
+    setExportPreviewUrls([]);
   };
 
   const describeServiceOrderItem = (os: ServiceOrder): string => {
@@ -155,7 +167,8 @@ export default function FornecedoresView({
 
   const selectedGroup = groups.find(g => g.key === expandedKey) || null;
   const tabOrders = selectedGroup ? (tab === 'completed' ? selectedGroup.completedOrders : selectedGroup.pendingOrders) : [];
-  const detailList = paymentFilter === 'all' ? tabOrders : tabOrders.filter(os => isOsPaid(os) === (paymentFilter === 'paid'));
+  const applyPaymentFilter = (list: ServiceOrder[]) => paymentFilter === 'all' ? list : list.filter(os => isOsPaid(os) === (paymentFilter === 'paid'));
+  const detailList = applyPaymentFilter(tabOrders);
   // Total do topo sempre soma exatamente o que a lista filtrada abaixo mostra — nunca mais um
   // total "a pagar" em cima de uma lista cheia de "Pago" (ver paymentFilter acima).
   const filteredTotal = detailList.reduce((s, os) => s + (Number(os.totalValue) || 0), 0);
@@ -164,6 +177,102 @@ export default function FornecedoresView({
     const allOrders = [...selectedGroup.completedOrders, ...selectedGroup.pendingOrders];
     return allOrders.filter(os => selectedIds.has(os.id)).reduce((s, os) => s + (Number(os.totalValue) || 0), 0);
   }, [selectedGroup, selectedIds]);
+
+  // Mesma precedência de "Pagar"/"Pagar Selecionadas": se há algo marcado, exporta só isso;
+  // senão, exporta o que está visível na aba/filtro atual.
+  const exportOrders = useMemo(() => {
+    if (!selectedGroup) return [];
+    if (selectMode && selectedIds.size > 0) {
+      const allOrders = [...selectedGroup.completedOrders, ...selectedGroup.pendingOrders];
+      return allOrders.filter(os => selectedIds.has(os.id));
+    }
+    return detailList;
+  }, [selectedGroup, selectMode, selectedIds, detailList]);
+
+  const buildExportItems = (orders: ServiceOrder[]): CompletedOSExportItem[] => orders.map(os => ({
+    osNumber: os.osNumber,
+    sectorName: os.sectorName,
+    providerName: os.providerName,
+    customerName: '—',
+    productName: `${products.find(p => p.id === os.productId)?.reference ? `${products.find(p => p.id === os.productId)?.reference} ` : ''}${os.productName}`,
+    variationName: os.variationName,
+    quantity: os.quantity,
+    valuePerPair: os.valuePerPair,
+    totalValue: os.totalValue,
+    finishedAt: os.finishedAt || os.createdAt,
+    paymentStatus: isOsPaid(os) ? 'COMPLETED' : 'PENDING',
+  }));
+
+  const handleExportPreview = async () => {
+    if (!selectedGroup) return;
+    setIsExportPreviewLoading(true);
+    try {
+      const result = await exportCompletedServiceOrders(
+        { title: `OS — ${selectedGroup.providerName}`, periodLabel: `${exportOrders.length} ordens de serviço`, groupBy: exportGroupBy, items: buildExportItems(exportOrders) },
+        exportFormat,
+        `OS_${selectedGroup.providerName}_${Date.now()}`,
+        true,
+      );
+      if (Array.isArray(result) && result.length > 0) setExportPreviewUrls(result);
+    } finally {
+      setIsExportPreviewLoading(false);
+    }
+  };
+
+  const handleExportGenerate = async () => {
+    if (!selectedGroup) return;
+    const result = await exportCompletedServiceOrders(
+      { title: `OS — ${selectedGroup.providerName}`, periodLabel: `${exportOrders.length} ordens de serviço`, groupBy: exportGroupBy, items: buildExportItems(exportOrders) },
+      exportFormat,
+      `OS_${selectedGroup.providerName}_${Date.now()}`,
+    );
+    if (result) {
+      setExportOpen(false);
+      setExportPreviewUrls([]);
+    }
+  };
+
+  // Linha de uma OS na lista — extraída porque agora renderiza em dois lugares: a lista de
+  // uma aba só (navegação normal) e as duas seções lado a lado (modo seleção, ver abaixo).
+  const renderOsRow = (os: ServiceOrder) => {
+    const paid = isOsPaid(os);
+    const reference = products.find(p => p.id === os.productId)?.reference;
+    const checked = selectedIds.has(os.id);
+    const Row = selectMode && !paid ? 'button' : 'div';
+    return (
+      <Row
+        key={os.id}
+        type={selectMode && !paid ? 'button' : undefined}
+        onClick={selectMode && !paid ? () => toggleSelected(os.id) : undefined}
+        data-guide-anchor={selectMode && !paid ? 'fornecedores.osItemSelecionar' : undefined}
+        className={`w-full flex items-center gap-2 p-2.5 rounded-xl text-left ${selectMode && !paid ? 'active:scale-[0.98] transition-transform' : ''} ${checked ? (isDarkMode ? 'bg-indigo-950/60 ring-1 ring-indigo-500' : 'bg-indigo-50 ring-1 ring-indigo-300') : (isDarkMode ? 'bg-slate-900' : 'bg-slate-50')}`}
+      >
+        {selectMode && (
+          paid
+            ? <span className="shrink-0 text-slate-300 dark:text-slate-700"><Square size={16} /></span>
+            : <span className="shrink-0 text-indigo-500">{checked ? <CheckSquare size={16} /> : <Square size={16} />}</span>
+        )}
+        <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className={`text-[10px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              {reference ? `${reference} ` : ''}{os.productName}
+            </p>
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+              {os.osNumber} · Cor: {os.variationName || '—'} · {os.finishedAt ? format(os.finishedAt, 'dd/MM/yyyy') : format(os.createdAt, 'dd/MM/yyyy')}
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className={`text-[11px] font-black transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''} ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+              R$ {(Number(os.totalValue) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className={`text-[7px] font-black uppercase tracking-widest ${os.status !== 'COMPLETED' ? (paid ? 'text-emerald-500' : 'text-amber-500') : paid ? 'text-emerald-500' : 'text-rose-500'}`}>
+              {os.status !== 'COMPLETED' ? (paid ? 'Pago adiantado' : 'A concluir') : paid ? 'Pago' : 'Em aberto'}
+            </p>
+          </div>
+        </div>
+      </Row>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6 pb-32">
@@ -224,24 +333,40 @@ export default function FornecedoresView({
         {selectedGroup && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
-              <div className={`flex gap-0.5 p-0.5 rounded-xl w-fit ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
-                <button
-                  type="button"
-                  onClick={() => setTab('completed')}
-                  data-guide-anchor="fornecedores.aba"
-                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${tab === 'completed' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
-                >
-                  OS Concluídas ({selectedGroup.completedOrders.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTab('pending')}
-                  data-guide-anchor="fornecedores.aba"
-                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${tab === 'pending' ? 'bg-amber-500 text-white' : 'text-slate-400'}`}
-                >
-                  OS a Concluir ({selectedGroup.pendingOrders.length})
-                </button>
-              </div>
+              {selectMode ? (
+                <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500">
+                  Concluídas ({selectedGroup.completedOrders.length}) e a Concluir ({selectedGroup.pendingOrders.length}) juntas
+                </p>
+              ) : (
+                <div className={`flex gap-0.5 p-0.5 rounded-xl w-fit ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setTab('completed')}
+                    data-guide-anchor="fornecedores.aba"
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${tab === 'completed' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+                  >
+                    OS Concluídas ({selectedGroup.completedOrders.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTab('pending')}
+                    data-guide-anchor="fornecedores.aba"
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${tab === 'pending' ? 'bg-amber-500 text-white' : 'text-slate-400'}`}
+                  >
+                    OS a Concluir ({selectedGroup.pendingOrders.length})
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setExportOpen(true)}
+                data-guide-anchor="fornecedores.exportar"
+                title="Exportar"
+                aria-label="Exportar"
+                className={`p-2 rounded-xl shrink-0 transition-colors ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-800' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+              >
+                <Download size={14} className="text-emerald-500" />
+              </button>
             </div>
 
             {/* Toggle "Selecionar para pagamento" — liga o modo de marcação manual, que funciona
@@ -311,49 +436,30 @@ export default function FornecedoresView({
               </p>
             )}
 
-            <div className="flex flex-col gap-1.5 max-h-[45vh] overflow-y-auto pr-0.5 custom-scrollbar">
-              {detailList.length === 0 && (
-                <p className="text-[9px] font-bold text-slate-400 text-center py-3">Nenhuma OS aqui.</p>
+            <div className="flex flex-col gap-3 max-h-[45vh] overflow-y-auto pr-0.5 custom-scrollbar">
+              {selectMode ? (
+                // Modo seleção: os dois grupos aparecem juntos, cada um com seu próprio
+                // cabeçalho — dá pra marcar OS Concluída e OS a Concluir na mesma leva sem
+                // precisar trocar de aba (ver comentário no estado `selectMode` acima).
+                ([
+                  { key: 'completed', label: 'OS Concluídas', accent: 'text-emerald-500', list: applyPaymentFilter(selectedGroup.completedOrders) },
+                  { key: 'pending', label: 'OS a Concluir', accent: 'text-amber-500', list: applyPaymentFilter(selectedGroup.pendingOrders) },
+                ] as const).map(section => section.list.length > 0 && (
+                  <div key={section.key} className="flex flex-col gap-1.5">
+                    <p className={`text-[9px] font-black uppercase tracking-widest px-1 ${section.accent}`}>{section.label} ({section.list.length})</p>
+                    {section.list.map(os => renderOsRow(os))}
+                  </div>
+                ))
+              ) : (
+                detailList.map(os => renderOsRow(os))
               )}
-              {detailList.map((os) => {
-                const paid = isOsPaid(os);
-                const reference = products.find(p => p.id === os.productId)?.reference;
-                const checked = selectedIds.has(os.id);
-                const Row = selectMode && !paid ? 'button' : 'div';
-                return (
-                  <Row
-                    key={os.id}
-                    type={selectMode && !paid ? 'button' : undefined}
-                    onClick={selectMode && !paid ? () => toggleSelected(os.id) : undefined}
-                    data-guide-anchor={selectMode && !paid ? 'fornecedores.osItemSelecionar' : undefined}
-                    className={`w-full flex items-center gap-2 p-2.5 rounded-xl text-left ${selectMode && !paid ? 'active:scale-[0.98] transition-transform' : ''} ${checked ? (isDarkMode ? 'bg-indigo-950/60 ring-1 ring-indigo-500' : 'bg-indigo-50 ring-1 ring-indigo-300') : (isDarkMode ? 'bg-slate-900' : 'bg-slate-50')}`}
-                  >
-                    {selectMode && (
-                      paid
-                        ? <span className="shrink-0 text-slate-300 dark:text-slate-700"><Square size={16} /></span>
-                        : <span className="shrink-0 text-indigo-500">{checked ? <CheckSquare size={16} /> : <Square size={16} />}</span>
-                    )}
-                    <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className={`text-[10px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                          {reference ? `${reference} ` : ''}{os.productName}
-                        </p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                          {os.osNumber} · Cor: {os.variationName || '—'} · {os.finishedAt ? format(os.finishedAt, 'dd/MM/yyyy') : format(os.createdAt, 'dd/MM/yyyy')}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className={`text-[11px] font-black transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''} ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                          R$ {(Number(os.totalValue) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className={`text-[7px] font-black uppercase tracking-widest ${os.status !== 'COMPLETED' ? (paid ? 'text-emerald-500' : 'text-amber-500') : paid ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {os.status !== 'COMPLETED' ? (paid ? 'Pago adiantado' : 'A concluir') : paid ? 'Pago' : 'Em aberto'}
-                        </p>
-                      </div>
-                    </div>
-                  </Row>
-                );
-              })}
+              {selectMode
+                ? applyPaymentFilter(selectedGroup.completedOrders).length === 0 && applyPaymentFilter(selectedGroup.pendingOrders).length === 0 && (
+                  <p className="text-[9px] font-bold text-slate-400 text-center py-3">Nenhuma OS aqui.</p>
+                )
+                : detailList.length === 0 && (
+                  <p className="text-[9px] font-bold text-slate-400 text-center py-3">Nenhuma OS aqui.</p>
+                )}
             </div>
 
             {onPayProviderServiceOrders && !selectMode && (
@@ -382,6 +488,104 @@ export default function FornecedoresView({
           </div>
         )}
       </Modal>
+
+      {exportOpen && selectedGroup && createPortal(
+        <div className="fixed inset-0 z-[96600] flex items-center justify-center p-4" onClick={() => { setExportOpen(false); setExportPreviewUrls([]); }}>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+          <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-[2rem] shadow-2xl border p-5 flex flex-col gap-4 custom-scrollbar ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                  {exportFormat === 'pdf' ? <FileText size={20} strokeWidth={2.5} /> : <Send size={20} strokeWidth={2.5} className="rotate-45" />}
+                </div>
+                <div>
+                  <span className="text-[12px] font-black uppercase tracking-widest block leading-none">Exportar OS</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1 block">{selectedGroup.providerName}</span>
+                </div>
+              </div>
+              <button type="button" title="Fechar" onClick={() => { setExportOpen(false); setExportPreviewUrls([]); }}
+                data-guide-anchor="fornecedores.exportarFechar"
+                className={`p-1.5 rounded-lg shrink-0 ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+              {selectMode && selectedIds.size > 0
+                ? `Considera as ${exportOrders.length} OS selecionadas.`
+                : `Considera as ${exportOrders.length} OS visíveis na aba/filtro atual.`}
+            </p>
+
+            {exportPreviewUrls.length > 0 && (
+              <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-3 bg-white dark:bg-slate-800">
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Pré-visualização</span>
+                  <button type="button" onClick={() => setExportPreviewUrls([])} className="text-[9px] font-black uppercase tracking-widest text-white bg-rose-500 hover:bg-rose-600 active:scale-95 transition-all px-3 py-1.5 rounded-full shadow-sm">Fechar Preview</button>
+                </div>
+                <div className="w-full bg-slate-100 dark:bg-slate-900 rounded-xl overflow-hidden shadow-inner max-h-[50vh] overflow-y-auto">
+                  {exportFormat === 'pdf' ? (
+                    <iframe title="Pré-visualização do PDF" src={exportPreviewUrls[0] + '#toolbar=0'} className="w-full h-[420px]" />
+                  ) : (
+                    <img src={exportPreviewUrls[0]} alt="Pré-visualização do JPG" className="w-full h-auto" />
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Formato</p>
+              <div className="flex gap-1.5">
+                {(['pdf', 'jpg'] as const).map(fmt => (
+                  <button type="button" key={fmt} onClick={() => { setExportFormat(fmt); setExportPreviewUrls([]); }}
+                    data-guide-anchor="fornecedores.exportarFormato"
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportFormat === fmt ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                    {fmt.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Modo</p>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => { setExportGroupBy('none'); setExportPreviewUrls([]); }}
+                  data-guide-anchor="fornecedores.exportarModo"
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportGroupBy === 'none' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                  Lista
+                </button>
+                <button type="button" onClick={() => { setExportGroupBy('model'); setExportPreviewUrls([]); }}
+                  data-guide-anchor="fornecedores.exportarModo"
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportGroupBy === 'model' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                  Por Modelo
+                </button>
+              </div>
+              {exportGroupBy === 'model' && (
+                <p className="text-[9px] font-bold text-slate-400 mt-1.5 leading-relaxed">Agrupa por modelo/cor, somando quantidade e valor de cada um.</p>
+              )}
+            </div>
+
+            <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+              <div className={`flex items-center gap-2 px-3 py-3 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                <Send size={13} className="text-cyan-500" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">Opções de Compartilhamento</span>
+              </div>
+              <div className={`p-3 flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                <button type="button" onClick={handleExportPreview} disabled={exportOrders.length === 0 || isExportPreviewLoading}
+                  data-guide-anchor="fornecedores.exportarVisualizar"
+                  className="w-full py-3 text-white rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
+                  {isExportPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
+                </button>
+                <button type="button" onClick={handleExportGenerate} disabled={exportOrders.length === 0}
+                  data-guide-anchor="fornecedores.exportarGerar"
+                  className={`w-full py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${exportFormat === 'pdf' ? 'bg-rose-500 shadow-rose-500/20' : 'bg-emerald-600 shadow-emerald-500/20'} text-white`}>
+                  <Download size={14} /> Gerar {exportFormat.toUpperCase()} ({exportOrders.length} OS)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

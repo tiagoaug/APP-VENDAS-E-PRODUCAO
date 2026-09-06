@@ -53,6 +53,9 @@ export default function PublicCatalogApp() {
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [customerNote, setCustomerNote] = useState('');
+  // Observação POR PRODUTO (ex.: "pedido no saquinho, embalagem desmontada") — diferente da
+  // observação geral do pedido acima; ambas viajam junto no envio (ver handleSubmit).
+  const [productNotes, setProductNotes] = useState<Record<string, string>>({});
   // true = Link de Grupo — sem cliente vinculado, precisa perguntar o nome antes de enviar.
   const [isGeneric, setIsGeneric] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -184,7 +187,7 @@ export default function PublicCatalogApp() {
   }
 
   const handleSubmit = async () => {
-    const itemsByProductType = new Map<string, { productId: string; saleType: 'RETAIL' | 'WHOLESALE'; variations: { variationId: string; size?: string; quantity: number }[] }>();
+    const itemsByProductType = new Map<string, { productId: string; saleType: 'RETAIL' | 'WHOLESALE'; variations: { variationId: string; size?: string; quantity: number }[]; note?: string }>();
 
     for (const product of products) {
       for (const variation of product.variations) {
@@ -194,7 +197,8 @@ export default function PublicCatalogApp() {
           if (!qty) continue;
           const mapKey = `${product.productId}::${variation.saleType}`;
           if (!itemsByProductType.has(mapKey)) {
-            itemsByProductType.set(mapKey, { productId: product.productId, saleType: variation.saleType, variations: [] });
+            const note = productNotes[product.productId]?.trim();
+            itemsByProductType.set(mapKey, { productId: product.productId, saleType: variation.saleType, variations: [], ...(note ? { note } : {}) });
           }
           itemsByProductType.get(mapKey)!.variations.push({
             variationId: variation.variationId,
@@ -281,6 +285,8 @@ export default function PublicCatalogApp() {
         }
       }
     }
+    const summaryHasAnyPrice = summaryLines.some((l) => l.unitPrice !== undefined);
+    const summaryTotal = summaryLines.reduce((sum, l) => sum + (l.unitPrice !== undefined ? l.unitPrice * l.qty : 0), 0);
 
     return (
       <div className="min-h-screen flex flex-col items-center bg-slate-50 p-6 text-center gap-3">
@@ -314,10 +320,19 @@ export default function PublicCatalogApp() {
                 </div>
               </div>
             ))}
+            {summaryHasAnyPrice && (
+              <div className="flex items-center justify-between gap-2 pt-2 mt-1 border-t border-slate-100">
+                <span className="text-xs font-black uppercase tracking-widest text-slate-500">Total</span>
+                <span className="text-sm font-black text-emerald-600">{formatPrice(summaryTotal)}</span>
+              </div>
+            )}
           </div>
         )}
 
-        <p className="text-[11px] text-slate-400 font-medium max-w-xs mt-4">
+        <p className="text-[11px] font-black text-rose-500 max-w-xs mt-4">
+          Dica: tire um print desta tela pra ter o pedido salvo, caso precise conferir depois.
+        </p>
+        <p className="text-[11px] text-slate-400 font-medium max-w-xs mt-2">
           Caso precise refazer o pedido, comunique o vendedor e peça para desconsiderar esse pedido — depois é só fazer outro pelo mesmo link.
         </p>
         <p className="text-[11px] text-slate-400 font-medium max-w-xs mt-2">
@@ -524,6 +539,16 @@ export default function PublicCatalogApp() {
                 </div>
               ))}
             </div>
+            <div className="px-4 pb-4">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Observação deste produto (opcional)</label>
+              <textarea
+                value={productNotes[product.productId] || ''}
+                onChange={(e) => setProductNotes((prev) => ({ ...prev, [product.productId]: e.target.value.slice(0, 200) }))}
+                rows={2}
+                className="w-full mt-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs outline-none"
+                placeholder="Ex: pedido no saquinho, com embalagem desmontada"
+              />
+            </div>
           </div>
         ))}
 
@@ -537,6 +562,9 @@ export default function PublicCatalogApp() {
               className="w-full mt-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm outline-none"
               placeholder="Como podemos te chamar?"
             />
+            {!customerName.trim() && (
+              <p className="text-[10px] font-bold text-rose-500 mt-1.5">É necessário informar seu nome para enviar o pedido.</p>
+            )}
           </div>
         )}
 

@@ -52,7 +52,11 @@ import {
   Layers,
   Inbox,
   Link2,
-  Handshake
+  Handshake,
+  RotateCcw,
+  PlayCircle,
+  X,
+  Rocket
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -146,6 +150,8 @@ import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 import DashboardView from "./views/DashboardView";
 import LoginView from "./views/LoginView";
 const OnboardingWelcomeView = lazy(() => import("./views/OnboardingWelcomeView"));
+const OnboardingRoadmapView = lazy(() => import("./views/OnboardingRoadmapView"));
+const OnboardingCompleteView = lazy(() => import("./views/OnboardingCompleteView"));
 const ProductsView = lazy(() => import("./views/ProductsView"));
 const ProductFormView = lazy(() => import("./views/ProductFormView"));
 const PurchasesView = lazy(() => import("./views/PurchasesView"));
@@ -165,7 +171,6 @@ const PaymentMethodsView = lazy(() => import("./views/PaymentMethodsView"));
 const ReportsView = lazy(() => import("./views/ReportsView"));
 const ReportDetailedView = lazy(() => import("./views/ReportDetailedView"));
 const DataCleanupView = lazy(() => import("./views/DataCleanupView"));
-const PrintCenterView = lazy(() => import("./views/PrintCenterView"));
 const LabelPrintStudioView = lazy(() => import("./views/LabelPrintStudioView"));
 const LabelEditorView = lazy(() => import("./views/LabelEditorView"));
 const BackupView = lazy(() => import("./views/BackupView"));
@@ -241,6 +246,8 @@ import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, N
 import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession, isViewTaskAllowed, isSectorAllowed } from './utils/collaborators';
 import { LaborSimParams, DEFAULT_LABOR_SIM_PARAMS } from './utils/laborTermination';
 import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
+import { initPushNotifications } from './services/pushNotificationService';
+import { toMillis } from './utils/firestoreTimestamp';
 
 const MODAL_VIEWS = [
   ViewType.PRODUCTS,
@@ -264,7 +271,6 @@ const MODAL_VIEWS = [
   ViewType.PRODUCT_DETAIL,
   ViewType.REPORT_DETAILED,
   ViewType.MODULES_CONFIG,
-  ViewType.PRINT_CENTER,
 ];
 
 const MODULE_VIEWS: Record<string, ViewType[]> = {
@@ -278,7 +284,6 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.REPORTS,
     ViewType.STOCK,
     ViewType.STOCK_GLANCE,
-    ViewType.PRINT_CENTER,
   ],
   production: [
     ViewType.PRODUCTION_MENU,
@@ -502,6 +507,9 @@ export default function App() {
   // onboardingSteps[i].guideSteps / GuidedTourOverlay. Reseta pra 0 sempre que a etapa muda.
   const [onboardingGuideStepIndex, setOnboardingGuideStepIndex] = useState(0);
   const onboardingAutoTriggeredRef = useRef(false);
+  // Popup mostrado ao tocar em "Assistente de Configuração" (Mais Opções) — pergunta se quer
+  // continuar de onde parou ou refazer tudo do zero, mesmo que já tenha configurado antes.
+  const [showOnboardingWizardChoice, setShowOnboardingWizardChoice] = useState(false);
 
   // Cadastro Guiado de Modelo — wizard separado do Assistente de Configuração Inicial acima
   // (ciclo de vida diferente: este roda toda vez que a pessoa escolhe "Cadastro Guiado" em
@@ -828,19 +836,18 @@ export default function App() {
       { id: 'provider_service_orders', label: 'Ordens de Serviço a Fornecedores', visible: true, order: 11.7, module: 'sales' },
       { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 13, module: 'sales' },
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
-      { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'any' },
-      { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
+      { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'sales' },
+      { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'sales' },
       { id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' },
       { id: 'produced_pairs', label: 'Análise de Produção', visible: true, order: 16.7, module: 'production' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
       { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
       { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
-      { id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' },
       { id: 'print_labels', label: 'Impressão de Etiquetas', visible: true, order: 19.5, module: 'production' },
       { id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' },
       { id: 'pcp_purchase_needs', label: 'Necessidades de Compras (PCP)', visible: true, order: 21, module: 'production' },
-      { id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: 23, module: 'any' },
+      { id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: 23, module: 'sales' },
     ]
   };
 
@@ -864,6 +871,12 @@ export default function App() {
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
+    // Migration: remove print_center card — feature descontinuada
+    if (config.cards && config.cards.find((c: any) => c.id === 'print_center')) {
+      config.cards = config.cards.filter((c: any) => c.id !== 'print_center');
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
     // Migration: ensure quick_reports is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'quick_reports')) {
       config.cards.push({ id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: config.cards.length });
@@ -882,11 +895,6 @@ export default function App() {
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
-    // Migration: ensure print_center is present
-    if (config.cards && !config.cards.find((c: any) => c.id === 'print_center')) {
-      config.cards.push({ id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' });
-      localStorage.setItem('dashboard_config', JSON.stringify(config));
-    }
     // Migration: ensure print_labels is present (antes era um ícone fixo no topo do app)
     if (config.cards && !config.cards.find((c: any) => c.id === 'print_labels')) {
       config.cards.push({ id: 'print_labels', label: 'Impressão de Etiquetas', visible: true, order: 19.5, module: 'production' });
@@ -910,8 +918,20 @@ export default function App() {
     }
     // Migration: ensure qr_scanner card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'qr_scanner')) {
-      config.cards.push({ id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: config.cards.length, module: 'any' });
+      config.cards.push({ id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: config.cards.length, module: 'sales' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+    // Migration: reminders/activity/qr_scanner passam a exigir módulo Vendas — não têm nada
+    // a ver com o módulo Pessoal sozinho (dívidas de fornecedor, feed de vendas, scanner de
+    // produto).
+    if (config.cards) {
+      ['reminders', 'activity', 'qr_scanner'].forEach(id => {
+        const card = config.cards.find((c: any) => c.id === id);
+        if (card && card.module !== 'sales') {
+          card.module = 'sales';
+          localStorage.setItem('dashboard_config', JSON.stringify(config));
+        }
+      });
     }
 
     // Migration: ensure production_stock_control is present
@@ -1400,7 +1420,12 @@ export default function App() {
 
     const unsubCatalogRequests = firebaseService.subscribeToCollection<CatalogRequest>(
       "catalogRequests",
-      (data) => setCatalogRequests([...data].sort((a, b) => b.submittedAt - a.submittedAt))
+      // Normaliza submittedAt aqui, uma vez só — registros antigos gravaram um Firestore
+      // Timestamp em vez de number (ver src/utils/firestoreTimestamp.ts); sem isso a ordenação
+      // e a formatação de data quebravam silenciosamente pra esses pedidos.
+      (data) => setCatalogRequests([...data]
+        .map(r => ({ ...r, submittedAt: toMillis(r.submittedAt) }))
+        .sort((a, b) => b.submittedAt - a.submittedAt))
     );
 
     const unsubCatalogProfiles = firebaseService.subscribeToCollection<CatalogProfile>(
@@ -1434,14 +1459,19 @@ export default function App() {
           const reconciledCards = defaultCards.map(defCard => {
             const existing = currentCardMap.get(defCard.id);
             if (existing && typeof existing === 'object') {
-              return { ...defCard, ...existing };
+              // `module` é regra de código (não dá pra configurar isso pela UI) — sempre usa o
+              // valor atual do default, nunca o que ficou salvo de uma versão anterior. Sem
+              // isso, mudar o módulo exigido de um card já existente não tinha efeito nenhum
+              // pra quem já tinha sincronizado o card antes com o módulo antigo.
+              return { ...defCard, ...existing, module: defCard.module };
             }
             return defCard;
           });
 
           // Incluir cards que estão no Firestore mas não estão no default (suporte a IDs antigos ou customizados)
+          // — exceto 'print_center', removido de propósito (feature descontinuada).
           const defaultIds = new Set(defaultCards.map(c => c.id));
-          const extraCards = currentCards.filter(c => !defaultIds.has(c.id));
+          const extraCards = currentCards.filter(c => !defaultIds.has(c.id) && c.id !== 'print_center');
           
           const combinedCards = [...reconciledCards, ...extraCards];
 
@@ -1672,9 +1702,10 @@ export default function App() {
   // botão de abrir o cadastro e o botão de salvar — ver render do overlay logo abaixo do
   // StepWizardBar. `productionSubScreen` força ProductionConfigView a abrir direto na aba certa
   // (mesmo mecanismo que os atalhos do menu já usam, App.tsx:1298/1544 — nada novo lá).
-  const onboardingSteps: { view: ViewType; label: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; productionSubScreen?: ProductionScreenType }[] = [
+  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; productionSubScreen?: ProductionScreenType }[] = [
     {
       view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0,
+      why: 'Agrupa seus produtos (ex.: "Tênis", "Sandálias") pra facilitar filtros e relatórios depois. Dica: abra "Modelos Disponíveis" pra escolher uma categoria pronta com um toque, sem precisar digitar.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'cat.novo', text: 'Toque aqui para cadastrar uma categoria nova.' },
         { type: 'highlight_tap', anchorKey: 'cat.salvar', text: 'Digite o nome e toque aqui para salvar.' },
@@ -1682,6 +1713,7 @@ export default function App() {
     },
     {
       view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0,
+      why: 'A paleta de cores fica pronta pra usar em qualquer produto, sem digitar o nome toda vez.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'color.novo', text: 'Toque aqui para cadastrar uma cor nova.' },
         { type: 'highlight_tap', anchorKey: 'color.salvar', text: 'Digite o nome e toque aqui para salvar.' },
@@ -1690,6 +1722,7 @@ export default function App() {
     ...(onboardingStatus?.businessType !== 'REVENDA'
       ? [{
           view: ViewType.GRIDS, label: 'Cadastre uma Grade/Unidade', isComplete: grids.length > 0,
+          why: 'Define os tamanhos que um produto vem (ex.: 34 ao 39) — usada na hora de cadastrar cada modelo.',
           guideSteps: [
             { type: 'highlight_tap' as const, anchorKey: 'grade.novo', text: 'Toque aqui para criar uma grade nova.' },
             { type: 'message' as const, text: 'Dê um nome e adicione pelo menos um tamanho.' },
@@ -1700,6 +1733,7 @@ export default function App() {
     ...(onboardingStatus?.businessType !== 'REVENDA'
       ? [{
           view: ViewType.PRODUCTION_CONFIG, label: 'Cadastre um Padrão de Embalagem', isComplete: productionConfigs.some(c => c.type === 'PACKAGING'),
+          why: 'Define quantos pares cabem em cada caixa — usado pra calcular a separação de estoque certinho.',
           productionSubScreen: 'EMBALAGENS' as ProductionScreenType,
           guideSteps: [
             { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar um padrão de embalagem.' },
@@ -1711,6 +1745,7 @@ export default function App() {
     ...(onboardingStatus?.businessType !== 'REVENDA'
       ? [{
           view: ViewType.PRODUCTION_CONFIG, label: 'Cadastre uma Unidade de Medida', isComplete: productionConfigs.some(c => c.type === 'UNIT'),
+          why: 'Usada pra medir materiais na Ficha Técnica dos produtos (ex.: kg, metro, unidade).',
           productionSubScreen: 'UNIDADES' as ProductionScreenType,
           guideSteps: [
             { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar uma unidade de medida (ex.: kg, metro, unidade).' },
@@ -1720,6 +1755,7 @@ export default function App() {
       : []),
     {
       view: ViewType.PEOPLE, params: { initialFilter: 'CUSTOMER' as const }, label: 'Cadastre um Cliente', isComplete: people.some(p => p.isCustomer),
+      why: 'Precisa de pelo menos um cliente cadastrado pra conseguir registrar sua primeira venda.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um cliente novo.' },
         { type: 'message', text: "Marque a opção \"Cliente\" e preencha nome e telefone." },
@@ -1728,6 +1764,7 @@ export default function App() {
     },
     {
       view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Cadastre um Fornecedor', isComplete: people.some(p => p.isSupplier),
+      why: 'De quem você compra materiais ou produtos prontos — usado nas Compras e Ordens de Serviço.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um fornecedor novo.' },
         { type: 'message', text: "Marque a opção \"Fornecedor\" e preencha nome e telefone." },
@@ -1736,6 +1773,7 @@ export default function App() {
     },
     {
       view: ViewType.ACCOUNTS, label: 'Cadastre uma Conta de Movimentação', isComplete: accounts.length > 0,
+      why: 'Toda venda, compra ou pagamento precisa de uma conta (ex.: "Caixa", "Banco") pra entrar no financeiro.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'account.novo', text: 'Toque aqui para cadastrar uma conta nova.' },
         { type: 'highlight_tap', anchorKey: 'account.salvar', text: 'Digite o nome e toque aqui para salvar.' },
@@ -1743,6 +1781,7 @@ export default function App() {
     },
     {
       view: ViewType.PAYMENT_METHODS, label: 'Cadastre um Meio de Recebimento', isComplete: paymentMethods.length > 0,
+      why: 'Como o cliente paga (Pix, Dinheiro, Cartão...) — escolhido na hora de fechar cada venda.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'paymethod.novo', text: 'Toque aqui para cadastrar um meio de recebimento novo.' },
         { type: 'highlight_tap', anchorKey: 'paymethod.salvar', text: 'Digite o nome e toque aqui para salvar.' },
@@ -1750,9 +1789,13 @@ export default function App() {
     },
     // ProductFormView já tem seu próprio modo guiado campo-a-campo (isGuided/GUIDED_SECTIONS) —
     // só precisa ser ativado por este parâmetro, sem GuidedTourOverlay nenhum aqui.
-    { view: ViewType.PRODUCT_FORM, params: { guided: true }, label: 'Crie seu primeiro Produto', isComplete: products.length > 0 },
+    {
+      view: ViewType.PRODUCT_FORM, params: { guided: true }, label: 'Crie seu primeiro Produto', isComplete: products.length > 0,
+      why: 'O cadastro guiado te leva campo a campo — referência, nome, cor, tamanhos e preço.',
+    },
     {
       view: ViewType.SALE_FORM, label: 'Cadastre uma Venda', isComplete: sales.length > 0,
+      why: 'A prova de que está tudo funcionando: escolher cliente, produto e forma de pagamento, do jeito que você vai fazer todo dia.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'saleForm.cliente', text: 'Selecione o cliente. Não tem nenhum ainda? Toque em "Cadastrar agora" logo abaixo do campo.' },
         { type: 'message', text: 'Adicione os produtos tocando em "+ Modelo" e defina a forma de pagamento.' },
@@ -1769,11 +1812,13 @@ export default function App() {
     navigateTo(step.view, step.params ?? null);
   };
 
+  // Escolher a área de atuação não entra direto no primeiro passo — antes mostra o "roteiro"
+  // (OnboardingRoadmapView) com todos os passos que vêm pela frente, pra quem tá começando não
+  // ser pego de surpresa passo a passo sem saber quantos faltam.
   const handleOnboardingSelectBusinessType = async (type: BusinessType) => {
     await saveModulesConfig({ ...modulesConfig, production: type !== 'REVENDA' });
     await saveOnboardingStatus({ businessType: type });
-    setOnboardingActive(true);
-    goToOnboardingStep(0);
+    navigateTo(ViewType.ONBOARDING_ROADMAP);
   };
 
   const handleOnboardingWelcomeSkip = async () => {
@@ -1781,12 +1826,20 @@ export default function App() {
     navigateTo(ViewType.DASHBOARD);
   };
 
+  // "Vamos Começar!" no roteiro — só agora de fato liga o assistente e navega pro primeiro passo.
+  const handleOnboardingStartFromRoadmap = () => {
+    setOnboardingActive(true);
+    goToOnboardingStep(0);
+  };
+
   const handleOnboardingAdvance = () => {
     const next = onboardingStepIndex + 1;
     if (next >= onboardingSteps.length) {
       setOnboardingActive(false);
       saveOnboardingStatus({ completedAt: Date.now() });
-      navigateTo(ViewType.DASHBOARD);
+      // Tela de conclusão em vez de cair direto no Painel sem aviso — fecha o fluxo
+      // reconhecendo o que foi feito (ver OnboardingCompleteView).
+      navigateTo(ViewType.ONBOARDING_COMPLETE);
       return;
     }
     goToOnboardingStep(next);
@@ -1799,10 +1852,29 @@ export default function App() {
     }
   };
 
+  // Tocar em "Assistente de Configuração" (Mais Opções) nunca mais entra direto — sempre
+  // pergunta primeiro se é pra continuar de onde parou ou refazer tudo do zero (ver popup
+  // renderizado mais abaixo), mesmo que a configuração já esteja completa.
   const handleOpenOnboardingWizard = () => {
+    setShowOnboardingWizardChoice(true);
+  };
+
+  const handleResumeOnboardingWizard = () => {
+    setShowOnboardingWizardChoice(false);
     const firstIncomplete = onboardingSteps.findIndex(s => !s.isComplete);
     setOnboardingActive(true);
     goToOnboardingStep(firstIncomplete === -1 ? 0 : firstIncomplete);
+  };
+
+  // "Refazer do zero, como se fosse o primeiro contato" — NÃO apaga nenhum dado já cadastrado
+  // (categorias, cores, clientes, etc. continuam existindo e aparecem como já concluídos no
+  // roteiro); só reseta o progresso do PRÓPRIO assistente, voltando pra tela de Boas-Vindas
+  // (escolha de área de atuação) como se a conta nunca tivesse passado por ele.
+  const handleRestartOnboardingWizard = async () => {
+    setShowOnboardingWizardChoice(false);
+    setOnboardingActive(false);
+    await saveOnboardingStatus({ businessType: undefined, completedAt: undefined, skippedAt: undefined });
+    navigateTo(ViewType.ONBOARDING_WELCOME);
   };
 
   // ── Cadastro Guiado de Modelo ────────────────────────────────────────────
@@ -1958,6 +2030,15 @@ export default function App() {
     // vez que a tela era acessada por um item de nav que passa por aqui (ex.: "Vendas" normal).
     setCurrentParams(null);
   };
+
+  // Push (FCM) do "Novo pedido pelo catálogo!" — registra o token deste aparelho uma vez
+  // autenticado (ver src/services/pushNotificationService.ts e a Cloud Function
+  // notifyNewCatalogRequest, que dispara o envio de verdade quando um CatalogRequest é criado).
+  // Toque na notificação leva direto pra "Pedidos Recebidos".
+  useEffect(() => {
+    if (!user) return;
+    initPushNotifications(() => resetTo(ViewType.CATALOG_REQUESTS));
+  }, [user]);
 
   // Tour guiado (spotlight) — ver GuidedTourOverlay.tsx / src/data/journeys.ts.
   const handleStartJourney = (journeyId: string) => {
@@ -5043,6 +5124,24 @@ export default function App() {
             onSkip={handleOnboardingWelcomeSkip}
           />
         );
+      case ViewType.ONBOARDING_ROADMAP:
+        return (
+          <OnboardingRoadmapView
+            isDarkMode={isDarkMode}
+            steps={onboardingSteps.map(s => ({ label: s.label, why: s.why, isComplete: s.isComplete }))}
+            onStart={handleOnboardingStartFromRoadmap}
+            onSkip={handleOnboardingWelcomeSkip}
+          />
+        );
+      case ViewType.ONBOARDING_COMPLETE:
+        return (
+          <OnboardingCompleteView
+            isDarkMode={isDarkMode}
+            completedCount={onboardingSteps.filter(s => s.isComplete).length}
+            totalCount={onboardingSteps.length}
+            onFinish={() => navigateTo(ViewType.DASHBOARD)}
+          />
+        );
       case ViewType.DASHBOARD:
         return (
           <DashboardView
@@ -5319,6 +5418,7 @@ export default function App() {
             }}
             onBack={goBack}
             isDarkMode={isDarkMode}
+            initialAction={currentParams?.initialAction}
           />
         );
       case ViewType.CATEGORIES:
@@ -5516,7 +5616,6 @@ export default function App() {
             onSelectReport={(reportId) => {
               navigateTo(ViewType.REPORT_DETAILED, reportId);
             }}
-            onOpenPrintCenter={() => navigateTo(ViewType.PRINT_CENTER)}
           />
         );
       case ViewType.REPORT_DETAILED:
@@ -5544,40 +5643,6 @@ export default function App() {
             monthlySnapshots={monthlySnapshots}
             people={people}
             products={products}
-          />
-        );
-      case ViewType.PRINT_CENTER:
-        return (
-          <PrintCenterView
-            isDarkMode={isDarkMode}
-            products={products}
-            sales={sales}
-            purchases={purchases}
-            productionLots={productionLots}
-            serviceOrders={serviceOrders}
-            people={people}
-            sectors={sectors}
-            modulesConfig={modulesConfig}
-            onDeleteItems={async (section, ids) => {
-              try {
-                let collection = '';
-                if (section === 'os') collection = 'serviceOrders';
-                else if (section === 'lots') collection = 'productionLots';
-                else if (section === 'sales') collection = 'sales';
-                else if (section === 'purchases') collection = 'purchases';
-                else if (section === 'products') collection = 'products';
-                
-                if (collection) {
-                  for (const id of ids) {
-                    await firebaseService.deleteDocument(collection, id);
-                  }
-                  toast.show(`${ids.length} item(ns) apagado(s) com sucesso!`);
-                }
-              } catch (err: any) {
-                console.error("Erro ao apagar itens", err);
-                toast.show("Erro ao apagar itens: " + (err.message || err));
-              }
-            }}
           />
         );
       case ViewType.LABEL_PRINT_STUDIO: {
@@ -8041,6 +8106,7 @@ export default function App() {
           <ManualView
             onBack={goBack}
             isDarkMode={isDarkMode}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.OCR_TEXT_EXTRACTOR:
@@ -8170,11 +8236,11 @@ export default function App() {
       { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={20} />, view: ViewType.PURCHASES, anchorKey: 'nav.compras', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PURCHASES) },
       { id: 'sales', label: 'Vendas', icon: <ShoppingBag size={20} />, view: ViewType.SALES, anchorKey: 'nav.vendas', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
       { id: 'production', label: 'Prod.', icon: <Factory size={20} />, view: ViewType.PRODUCTION_MENU, anchorKey: 'nav.producao', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) },
-      { id: 'bling', label: 'Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, allowed: modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) },
+      { id: 'bling', label: 'Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, allowed: modulesConfig.sales && modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) },
       { id: 'entregas', label: 'Entregas', icon: <Truck size={20} />, view: ViewType.DELIVERY_MENU, allowed: modulesConfig.sales && modulesConfig.entregas && isViewAllowed(activeCollaborator, ViewType.DELIVERY_MENU) },
       { id: 'financial', label: 'Finan.', icon: <DollarSign size={20} />, view: ViewType.FINANCIAL, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.FINANCIAL) && isViewTaskAllowed(activeCollaborator, ViewType.FINANCIAL) },
       { id: 'personal', label: 'Pessoal', icon: <UserIcon size={20} />, view: ViewType.PERSONAL_FINANCIAL, allowed: modulesConfig.personal && isViewAllowed(activeCollaborator, ViewType.PERSONAL_FINANCIAL) },
-      { id: 'rh', label: 'RH', icon: <UserCog size={20} />, view: ViewType.RH_MENU, allowed: modulesConfig.rh && isViewAllowed(activeCollaborator, ViewType.RH_MENU) },
+      { id: 'rh', label: 'RH', icon: <UserCog size={20} />, view: ViewType.RH_MENU, allowed: modulesConfig.sales && modulesConfig.rh && isViewAllowed(activeCollaborator, ViewType.RH_MENU) },
       { id: 'pcp', label: 'PCP', icon: <GanttChartSquare size={20} />, view: ViewType.PRODUCTION_PCP, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_PCP) },
       { id: 'stock', label: 'Estoque', icon: <Boxes size={20} />, view: ViewType.STOCK, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.STOCK) },
       { id: 'people', label: 'Pessoas', icon: <Users size={20} />, view: ViewType.PEOPLE, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PEOPLE) },
@@ -8182,7 +8248,10 @@ export default function App() {
       { id: 'soleStock', label: 'Solados', icon: <Footprints size={20} />, view: ViewType.PRODUCTION_SOLE_STOCK, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_SOLE_STOCK) },
       { id: 'engineering', label: 'Engenh.', icon: <Database size={20} />, view: ViewType.PRODUCTION_ENGINEERING, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_ENGINEERING) },
       { id: 'purchaseNeeds', label: 'Necess.', icon: <AlertTriangle size={20} />, view: ViewType.PRODUCTION_PURCHASE_NEEDS, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_PURCHASE_NEEDS) },
-      { id: 'ruleOfThree', label: 'R. de 3', icon: <Calculator size={20} />, view: ViewType.RULE_OF_THREE, allowed: true },
+      // Antes era `allowed: true` sem checagem nenhuma — aparecia até pra quem só tem o Módulo
+      // Pessoal ativo, sem nenhum módulo de negócio (a calculadora é uma ferramenta de
+      // precificação/proporção, não faz sentido fora de Vendas/Produção).
+      { id: 'ruleOfThree', label: 'R. de 3', icon: <Calculator size={20} />, view: ViewType.RULE_OF_THREE, allowed: (modulesConfig.sales || modulesConfig.production) && isViewAllowed(activeCollaborator, ViewType.RULE_OF_THREE) },
       // Clique tem tratamento especial (ver onClick abaixo) — precisa passar por
       // handleOpenLabelPrintStudio (checagem de Bluetooth da impressora Ablemark), não pode
       // navegar direto igual aos outros itens.
@@ -8258,6 +8327,8 @@ export default function App() {
   const viewTitle = useMemo(() => {
     switch (currentView) {
       case ViewType.ONBOARDING_WELCOME:
+      case ViewType.ONBOARDING_ROADMAP:
+      case ViewType.ONBOARDING_COMPLETE:
         return "Configuração Inicial";
       case ViewType.DASHBOARD:
         return "LIM.O APP";
@@ -8283,8 +8354,6 @@ export default function App() {
         return "Meios de Recebimento";
       case ViewType.REPORTS:
         return "Relatórios";
-      case ViewType.PRINT_CENTER:
-        return "Central de Impressões";
       case ViewType.LABEL_PRINT_STUDIO:
         return "Etiquetas";
       case ViewType.LABEL_EDITOR:
@@ -8395,7 +8464,9 @@ export default function App() {
   const viewIcon = useMemo(() => {
     const viewToUse = MODAL_VIEWS.includes(currentView) ? lastNonModalView : currentView;
     switch(viewToUse) {
-      case ViewType.ONBOARDING_WELCOME: return <Sparkles size={24} className="text-indigo-600 dark:text-indigo-400" />;
+      case ViewType.ONBOARDING_WELCOME:
+      case ViewType.ONBOARDING_ROADMAP:
+      case ViewType.ONBOARDING_COMPLETE: return <Sparkles size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.DASHBOARD: return <LayoutDashboard size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PURCHASES:
       case ViewType.PURCHASE_FORM: return <ShoppingCart size={24} className="text-cyan-500 dark:text-cyan-400" />;
@@ -8419,7 +8490,6 @@ export default function App() {
       case ViewType.ACCOUNTS: return <Wallet size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PAYMENT_METHODS: return <CreditCard size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.REPORTS: return <BarChart3 size={24} className="text-slate-500 dark:text-slate-400" />;
-      case ViewType.PRINT_CENTER: return <Printer size={24} className="text-indigo-500" />;
       case ViewType.LABEL_PRINT_STUDIO: return <Printer size={24} className="text-indigo-500" />;
       case ViewType.LABEL_EDITOR: return <Printer size={24} className="text-indigo-500" />;
       case ViewType.BACKUP: return <Database size={24} className="text-slate-500 dark:text-slate-400" />;
@@ -8462,7 +8532,9 @@ export default function App() {
   const headerTitle = useMemo(() => {
     if (MODAL_VIEWS.includes(currentView)) {
       switch (lastNonModalView) {
-        case ViewType.ONBOARDING_WELCOME: return "Configuração Inicial";
+        case ViewType.ONBOARDING_WELCOME:
+        case ViewType.ONBOARDING_ROADMAP:
+        case ViewType.ONBOARDING_COMPLETE: return "Configuração Inicial";
         case ViewType.DASHBOARD: return "LIM.O APP";
         case ViewType.PURCHASES: return "Despesas Gerais";
         case ViewType.SALES: return "Vendas";
@@ -8677,6 +8749,14 @@ export default function App() {
               onDismiss={handleOnboardingDismiss}
             />
           )}
+          {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
+            <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
+              <Info size={18} className="shrink-0 mt-0.5" />
+              <p className="text-xs font-bold leading-relaxed">
+                {onboardingSteps[onboardingStepIndex].why}
+              </p>
+            </div>
+          )}
           {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView
             && (onboardingSteps[onboardingStepIndex].guideSteps?.length ?? 0) > onboardingGuideStepIndex && (
             <GuidedTourOverlay
@@ -8714,6 +8794,61 @@ export default function App() {
           {renderView(currentView)}
         </Suspense>
       </Modal>
+
+      {/* Popup "Assistente de Configuração" — pergunta continuar vs. refazer do zero, mesmo
+          com a configuração já completa (ver handleOpenOnboardingWizard). */}
+      {showOnboardingWizardChoice && (
+        <div
+          className="fixed inset-0 z-[97000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setShowOnboardingWizardChoice(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-[2rem] shadow-2xl p-6 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-900/30 text-rose-500 flex items-center justify-center shrink-0">
+                  <Rocket size={20} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Assistente de Configuração</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOnboardingWizardChoice(false)}
+                aria-label="Fechar"
+                className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
+              >
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleResumeOnboardingWizard}
+              className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+            >
+              <PlayCircle size={22} className="text-indigo-500 shrink-0" />
+              <div className="min-w-0">
+                <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Continuar de onde parei</p>
+                <p className={`text-[11px] mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Retoma no primeiro passo ainda não concluído.</p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRestartOnboardingWizard}
+              className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+            >
+              <RotateCcw size={22} className="text-amber-500 shrink-0" />
+              <div className="min-w-0">
+                <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Refazer do zero</p>
+                <p className={`text-[11px] mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Passa por tudo de novo, como no primeiro contato. Não apaga nada já cadastrado.</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Aviso de exclusão de compra vinculada ao PCP */}
       <Modal

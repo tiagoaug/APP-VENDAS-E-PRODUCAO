@@ -39,7 +39,7 @@ export const getPublicCatalogRequest = httpsCallable<{ token: string }, {
 
 export const submitCatalogRequestCall = httpsCallable<{
   token: string;
-  items: { productId: string; saleType: 'RETAIL' | 'WHOLESALE'; variations: { variationId: string; size?: string; quantity: number }[] }[];
+  items: { productId: string; saleType: 'RETAIL' | 'WHOLESALE'; variations: { variationId: string; size?: string; quantity: number }[]; note?: string }[];
   customerNote?: string;
   customerName?: string;
 }, { requestId: string }>(functions, 'submitCatalogRequestCall');

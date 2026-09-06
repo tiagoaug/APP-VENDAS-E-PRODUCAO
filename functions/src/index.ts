@@ -14,6 +14,7 @@ import { handleBlingWebhook } from "./bling/webhook";
 import { abaterEstoqueBling, AbaterEstoqueItem } from "./bling/picking";
 import { adjustThirdPartyNotes, registerBlingDevolucao, registerNotesOnlyReturn, RegisterDevolucaoInput } from "./bling/notes";
 import { getPublicCatalog, submitCatalogRequest, SubmitCatalogRequestInput, CatalogPublicError } from "./catalog/publicCatalog";
+export { notifyNewCatalogRequest } from "./catalog/catalogNotify";
 
 admin.initializeApp();
 const db = admin.firestore();

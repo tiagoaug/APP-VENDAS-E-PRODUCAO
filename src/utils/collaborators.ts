@@ -20,7 +20,7 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: Sector
       { id: 'emitir_orcamentos', label: 'Emitir Orçamentos' },
       { id: 'imprimir_etiquetas', label: 'Imprimir Etiquetas' },
     ],
-    views: [ViewType.SALES, ViewType.SALE_FORM, ViewType.PRINT_CENTER, ViewType.STOCK_GLANCE],
+    views: [ViewType.SALES, ViewType.SALE_FORM, ViewType.STOCK_GLANCE],
   },
   {
     id: 'compras', label: 'Compras', icon: 'ShoppingCart',
@@ -191,8 +191,6 @@ export function canViewTask(collab: Collaborator | null, sectorId: SectorId, tas
 // Telas-menu/hub (PRODUCTION_MENU, DELIVERY_MENU etc.) e views compartilhadas entre setores
 // (STOCK_GLANCE) ficam de fora de propósito — continuam só no gate de setor.
 export const VIEW_TASK_MAP: Partial<Record<ViewType, [SectorId, string]>> = {
-  [ViewType.PRINT_CENTER]: ['vendas', 'imprimir_etiquetas'],
-
   [ViewType.PRODUCTS]: ['cadastro_produtos', 'produtos_variacoes'],
   [ViewType.PRODUCT_FORM]: ['cadastro_produtos', 'produtos_variacoes'],
   [ViewType.PRODUCT_DETAIL]: ['cadastro_produtos', 'produtos_variacoes'],
@@ -312,7 +310,6 @@ export const DASHBOARD_CARD_SECTORS: Record<string, SectorId[]> = {
   production_stock_control: ['producao_pcp', 'cadastro_insumos'],
   factory_config: ['producao_pcp'],
   personal_balance: ['pessoal'],
-  print_center: ['vendas'],
   pcp_sector_map: ['producao_pcp'],
   pcp_purchase_needs: ['producao_pcp', 'compras'],
   qr_scanner: ['producao_pcp', 'estoque'],

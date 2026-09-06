@@ -8,16 +8,19 @@ interface PersonalContactModalProps {
   onSave: (contact: Omit<Person, 'id'>) => Promise<void>;
   contact?: Person;
   isDarkMode: boolean;
+  // Só precisa quando este modal abre POR CIMA de outro já aberto (ex.: atalho "Cadastre
+  // aqui" dentro do TransactionModal) — sem isso ficaria atrás do modal de origem.
+  zIndex?: number;
 }
 
-export default function PersonalContactModal({ isOpen, onClose, onSave, contact, isDarkMode }: PersonalContactModalProps) {
+export default function PersonalContactModal({ isOpen, onClose, onSave, contact, isDarkMode, zIndex = 50 }: PersonalContactModalProps) {
   const [name, setName] = useState(contact?.name || '');
   const [phone, setPhone] = useState(contact?.phone || '');
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" style={{ zIndex }} onClick={onClose}>
       <div 
         className={`w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
         onClick={e => e.stopPropagation()}

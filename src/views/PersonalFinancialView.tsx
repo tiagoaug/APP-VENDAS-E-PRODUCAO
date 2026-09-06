@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, CategoryType, FamilyMember, Budget, Person } from '../types';
-import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowRightLeft, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, LayoutGrid, ArrowLeft, Settings, Users, Target, ChevronLeft, ChevronRight, Calculator, Phone, Calendar } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowRightLeft, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, LayoutGrid, ArrowLeft, Settings, Users, Target, ChevronLeft, ChevronRight, Calculator, Phone, Calendar, Eye } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
@@ -42,6 +41,9 @@ interface PersonalFinancialViewProps {
   onAddAccount: (account: Omit<Account, 'id'>) => Promise<void>;
   onBack: () => void;
   isDarkMode: boolean;
+  // Atalhos do card "Saldo Pessoal" no Dashboard geral — já cai direto na ação certa
+  // em vez de abrir só a tela de extrato. Ver DashboardView.tsx.
+  initialAction?: 'NEW_INCOME' | 'NEW_EXPENSE' | 'BUDGETS' | 'INSTALLMENTS' | 'CONFIG';
 }
 
 export default function PersonalFinancialView({ 
@@ -68,10 +70,15 @@ export default function PersonalFinancialView({
   onDeleteBudget,
   onAddAccount,
   onBack,
-  isDarkMode 
+  isDarkMode,
+  initialAction
 }: PersonalFinancialViewProps) {
   const [isConfigMode, setIsConfigMode] = useState(false);
   const [configTab, setConfigTab] = useState<'MEMBERS' | 'CONTACTS' | 'BUDGETS' | 'CATEGORIES'>('MEMBERS');
+  // "Ver Cadastrados" — a lista só aparece depois de pedida explicitamente (por card), com
+  // busca por nome. null = nenhuma lista aberta no momento.
+  const [visibleListTab, setVisibleListTab] = useState<'MEMBERS' | 'CONTACTS' | 'BUDGETS' | null>(null);
+  const [configSearch, setConfigSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'TRANSACTIONS' | 'ANALYSIS'>('TRANSACTIONS');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -79,6 +86,7 @@ export default function PersonalFinancialView({
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [modalInitialType, setModalInitialType] = useState<TransactionType>(TransactionType.INCOME);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | undefined>();
+  const [txInitialRecurring, setTxInitialRecurring] = useState(false);
 
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -188,15 +196,59 @@ export default function PersonalFinancialView({
     });
   }, [budgets, personalTransactions]);
 
-  const handleAddTx = (type: TransactionType) => {
+  // Despesas Recorrentes/Parceladas — agrupa por recurrenceGroupId (cada parcela é seu
+  // próprio Transaction, ver TransactionModal) pra mostrar uma linha por assinatura/
+  // parcelamento, com a próxima parcela em aberto pronta pra quitar com um toque.
+  const recurringGroups = useMemo(() => {
+    const groups = new Map<string, Transaction[]>();
+    personalTransactions.forEach(t => {
+      if (!t.isRecurring || !t.recurrenceGroupId) return;
+      const list = groups.get(t.recurrenceGroupId) || [];
+      list.push(t);
+      groups.set(t.recurrenceGroupId, list);
+    });
+    return Array.from(groups.entries()).map(([groupId, txs]) => {
+      const sorted = [...txs].sort((a, b) => (a.installmentNumber || 0) - (b.installmentNumber || 0));
+      const paidCount = sorted.filter(t => t.status === 'COMPLETED').length;
+      const nextPending = sorted.find(t => t.status !== 'COMPLETED') || null;
+      const first = sorted[0];
+      return {
+        groupId,
+        description: first.description,
+        categoryId: first.categoryId,
+        totalInstallments: first.totalInstallments || sorted.length,
+        paidCount,
+        nextPending,
+        allPaid: !nextPending,
+      };
+    }).sort((a, b) => (a.nextPending?.date || 0) - (b.nextPending?.date || 0));
+  }, [personalTransactions]);
+
+  const handleAddTx = (type: TransactionType, recurring = false) => {
     if (!personalAccount) {
       toast.show('Crie a Conta Pessoal primeiro.');
       return;
     }
     setModalInitialType(type);
     setEditingTransaction(undefined);
+    setTxInitialRecurring(recurring);
     setIsTxModalOpen(true);
   };
+
+  // Atalhos vindos do card "Saldo Pessoal" no Dashboard geral (ver DashboardView.tsx) —
+  // cai direto na ação pedida em vez de só abrir o extrato.
+  useEffect(() => {
+    if (!initialAction) return;
+    if (initialAction === 'NEW_INCOME') handleAddTx(TransactionType.INCOME);
+    else if (initialAction === 'NEW_EXPENSE') handleAddTx(TransactionType.EXPENSE);
+    else if (initialAction === 'INSTALLMENTS') handleAddTx(TransactionType.EXPENSE, true);
+    else if (initialAction === 'BUDGETS') {
+      setIsConfigMode(true);
+      setConfigTab('BUDGETS');
+    }
+    else if (initialAction === 'CONFIG') setIsConfigMode(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAction]);
 
   const handleTransfer = () => {
     if (!personalAccount) {
@@ -287,17 +339,6 @@ export default function PersonalFinancialView({
               >
                 <Calculator size={20} className={isDarkMode ? 'text-emerald-400' : 'text-emerald-600'} />
               </button>
-              <motion.button 
-                onClick={() => setIsConfigMode(true)}
-                data-guide-anchor="pessoal.configAbrir"
-                animate={{ scale: [1, 1.1, 1] }}
-                transition={{ repeat: Infinity, duration: 2 }}
-                className={`p-3 rounded-2xl border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
-                title="Configurações"
-                aria-label="Configurações"
-              >
-                <Settings size={20} className={isDarkMode ? 'text-indigo-400' : 'text-indigo-600'} />
-              </motion.button>
             </div>
           )}
        </div>
@@ -335,13 +376,16 @@ export default function PersonalFinancialView({
           if (editingTransaction) await onEditTransaction(editingTransaction.id, { ...data, isPersonal: true });
           else await onSaveTransaction({ ...data, isPersonal: true });
         }}
-        categories={personalCategories.length > 0 ? personalCategories : categories}
+        categories={personalCategories}
+        onRequestNewCategory={() => { setEditingCategory(null); setIsCatModalOpen(true); }}
+        onRequestNewContact={() => { setEditingPc(undefined); setIsPcModalOpen(true); }}
         accounts={personalAccount ? [personalAccount] : accounts}
         familyMembers={familyMembers}
         people={personalContacts}
         initialType={modalInitialType}
         transaction={editingTransaction}
         initialValue={calcResult || undefined}
+        initialIsRecurring={txInitialRecurring}
         isDarkMode={isDarkMode}
       />
 
@@ -368,6 +412,8 @@ export default function PersonalFinancialView({
         category={editingCategory || undefined}
         categories={categories}
         modulesConfig={{ personal: true, sales: true, production: true, ai: false, entregas: false, bling: false, rh: false }}
+        defaultType={CategoryType.OTHER}
+        zIndex={110}
       />
 
       <FamilyMemberModal 
@@ -389,6 +435,7 @@ export default function PersonalFinancialView({
         }}
         contact={editingPc}
         isDarkMode={isDarkMode}
+        zIndex={110}
       />
 
       <BudgetModal 
@@ -486,6 +533,23 @@ export default function PersonalFinancialView({
                 <p className="text-[10px] font-black uppercase tracking-tight text-amber-800">Crie sua conta pessoal nas configurações de contas do menu lateral.</p>
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => setIsConfigMode(true)}
+            data-guide-anchor="pessoal.configAbrirCard"
+            title="Configurações do Financeiro Pessoal"
+            aria-label="Configurações do Financeiro Pessoal"
+            className={`relative text-left p-4 rounded-[1.75rem] border transition-all ${isDarkMode ? "bg-slate-900 border-slate-800 hover:bg-slate-800" : "bg-white border-slate-100 hover:bg-slate-50"}`}
+          >
+            <div className={`absolute top-3 right-3 p-1.5 rounded-lg ${isDarkMode ? "bg-indigo-500/10 text-indigo-400" : "bg-indigo-50 text-indigo-600"}`}>
+              <Settings size={14} strokeWidth={2.5} />
+            </div>
+            <span className={`text-[10px] font-black uppercase tracking-widest pr-8 ${isDarkMode ? "text-white" : "text-slate-700"}`}>Configurações</span>
+            <p className="text-[9px] font-bold text-slate-400 leading-snug pr-8 normal-case tracking-normal mt-0.5">
+              Onde você configura Família, Fornecedores e Orçamentos do Financeiro Pessoal.
+            </p>
+          </button>
 
           {/* Painel de Despesas Mensais — card grande com setas pra trocar de mês e
               subcards de despesa (estilo Compras): fornecedor, data, valor, recorrência/
@@ -640,6 +704,48 @@ export default function PersonalFinancialView({
             </div>
           </div>
 
+          {/* Despesas Recorrentes — uma linha por assinatura/parcelamento, com a próxima
+              parcela em aberto pronta pra quitar com um toque. */}
+          {recurringGroups.length > 0 && (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <h3 className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Despesas Recorrentes</h3>
+                <span className="text-[8px] font-black text-cyan-500 uppercase">Parcelas</span>
+              </div>
+              <div className="flex flex-col gap-3">
+                {recurringGroups.map(g => {
+                  const category = categories.find(c => c.id === g.categoryId);
+                  return (
+                    <div key={g.groupId} className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <span className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{g.description}</span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{category?.name} • {g.paidCount}/{g.totalInstallments} pagas</span>
+                        {g.nextPending ? (
+                          <span className="text-[9px] font-bold text-amber-500 uppercase tracking-widest">
+                            Próxima: Parcela {g.nextPending.installmentNumber} • {format(g.nextPending.date, 'dd/MM/yyyy')} • R$ {g.nextPending.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">Todas as parcelas quitadas</span>
+                        )}
+                      </div>
+                      {g.nextPending && (
+                        <button
+                          onClick={() => onEditTransaction(g.nextPending!.id, { status: 'COMPLETED' })}
+                          data-guide-anchor="pessoal.quitarParcela"
+                          title="Quitar Parcela"
+                          aria-label="Quitar Parcela"
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                        >
+                          <CheckCircle2 size={13} strokeWidth={3} /> Quitar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Budget Progress Section */}
           {budgets.length > 0 && (
             <div className="flex flex-col gap-4">
@@ -652,29 +758,43 @@ export default function PersonalFinancialView({
                     const category = categories.find(c => c.id === bp.categoryId);
                     const isAlert = bp.percentage >= bp.alertPercentage;
                     const isExceeded = bp.percentage >= 100;
+                    const ringColor = isExceeded ? '#f43f5e' : isAlert ? '#f59e0b' : '#10b981';
+                    const radius = 22;
+                    const circumference = 2 * Math.PI * radius;
+                    const dashOffset = circumference * (1 - Math.min(bp.percentage, 100) / 100);
                     return (
                       <div key={bp.id} className={`p-4 rounded-3xl border flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${isExceeded ? 'bg-rose-500' : isAlert ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                            <span className={`text-[10px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{category?.name}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="relative w-14 h-14 shrink-0">
+                            <svg viewBox="0 0 56 56" className="w-14 h-14 -rotate-90">
+                              <circle cx="28" cy="28" r={radius} fill="none" strokeWidth="6" className={isDarkMode ? 'stroke-slate-800' : 'stroke-slate-100'} />
+                              <circle
+                                cx="28" cy="28" r={radius} fill="none" strokeWidth="6" strokeLinecap="round"
+                                stroke={ringColor}
+                                strokeDasharray={circumference}
+                                strokeDashoffset={dashOffset}
+                                style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                              />
+                            </svg>
+                            <span className={`absolute inset-0 flex items-center justify-center text-[10px] font-black ${isExceeded ? 'text-rose-500' : isAlert ? 'text-amber-500' : (isDarkMode ? 'text-white' : 'text-slate-800')}`}>
+                              {Math.round(bp.percentage)}%
+                            </span>
                           </div>
-                          <span className={`text-[9px] font-black ${isExceeded ? 'text-rose-500' : 'text-slate-400'}`}>
-                            {Math.round(bp.percentage)}%
-                          </span>
-                        </div>
-                        
-                        <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full transition-all duration-500 ${isExceeded ? 'bg-rose-500' : isAlert ? 'bg-amber-500' : 'bg-indigo-600'}`}
-                            style={{ width: `${Math.min(bp.percentage, 100)}%` }}
-                          />
+                          <div className="flex-1 min-w-0 flex flex-col gap-1">
+                            <span className={`text-[10px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{category?.name}</span>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Gasto: R$ {bp.consumed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Teto: R$ {bp.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          </div>
                         </div>
 
-                        <div className="flex justify-between items-center opacity-60">
-                           <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Gasto: R$ {bp.consumed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                           <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Teto: R$ {bp.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        </div>
+                        {(isAlert || isExceeded) && (
+                          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isExceeded ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                            <AlertCircle size={13} strokeWidth={2.5} />
+                            <span className="text-[9px] font-black uppercase tracking-tight">
+                              {isExceeded ? 'Orçamento estourado!' : `Atenção: ${Math.round(bp.percentage)}% do teto já consumido`}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -766,48 +886,83 @@ export default function PersonalFinancialView({
         <div className="flex flex-col gap-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             {[
-              { id: 'MEMBERS', label: 'Família', icon: Users, color: 'bg-indigo-500' },
-              { id: 'CONTACTS', label: 'Fornecedores', icon: Phone, color: 'bg-emerald-500' },
-              { id: 'BUDGETS', label: 'Orçamentos', icon: Target, color: 'bg-amber-500' }
+              { id: 'MEMBERS', label: 'Família', icon: Users, color: 'bg-indigo-500', description: 'Cadastre quem divide as contas com você e vincule cada gasto ou receita a uma pessoa da família.', newLabel: 'Novo Membro' },
+              { id: 'CONTACTS', label: 'Fornecedores', icon: Phone, color: 'bg-emerald-500', description: 'Contatos pessoais recorrentes — academia, streaming, escola, prestadores de serviço da casa.', newLabel: 'Novo Fornecedor' },
+              { id: 'BUDGETS', label: 'Orçamentos', icon: Target, color: 'bg-amber-500', description: 'Defina um teto de gasto por categoria e acompanhe quanto já foi consumido, com avisos ao se aproximar do limite.', newLabel: 'Novo Orçamento' }
             ].map((tab) => (
-              <button
+              <div
                 key={tab.id}
-                onClick={() => setConfigTab(tab.id as any)}
-                data-guide-anchor="pessoal.configAba"
-                title={`Gerenciar ${tab.label}`}
-                aria-label={`Ver configurações de ${tab.label}`}
-                className={`py-5 rounded-[2rem] flex flex-col items-center justify-center gap-3 border transition-all ${
-                  configTab === tab.id 
-                    ? `${isDarkMode ? 'bg-slate-800 border-indigo-500/50 shadow-indigo-500/10' : 'bg-white border-indigo-500/20 shadow-indigo-500/10'} shadow-xl scale-[1.02]` 
-                    : `${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-transparent'} hover:bg-slate-100 dark:hover:bg-slate-800`
+                className={`relative p-4 rounded-[1.75rem] flex flex-col gap-2 border transition-all ${
+                  visibleListTab === tab.id
+                    ? `${isDarkMode ? 'bg-slate-800 border-indigo-500/50 shadow-indigo-500/10' : 'bg-white border-indigo-500/20 shadow-indigo-500/10'} shadow-xl`
+                    : `${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-transparent'}`
                 }`}
               >
-                <div className={`${tab.color} text-white p-3.5 rounded-2xl shadow-lg`}>
-                    <tab.icon size={20} />
+                <div className={`absolute top-3 right-3 ${tab.color} text-white p-1.5 rounded-lg shadow-md`}>
+                    <tab.icon size={13} />
                 </div>
-                <span className={`text-[9px] font-black uppercase tracking-widest ${configTab === tab.id ? 'text-slate-800 dark:text-white' : 'text-slate-400'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-widest pr-8 ${visibleListTab === tab.id ? 'text-slate-800 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}>
                     {tab.label}
                 </span>
-              </button>
+                <p className="text-[9px] font-bold text-slate-400 leading-snug pr-8 normal-case tracking-normal">
+                  {tab.description}
+                </p>
+                <div className="flex gap-1.5 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfigTab(tab.id as any);
+                      if (tab.id === 'MEMBERS') { setEditingFm(undefined); setIsFmModalOpen(true); }
+                      else if (tab.id === 'CONTACTS') { setEditingPc(undefined); setIsPcModalOpen(true); }
+                      else { setEditingBudget(undefined); setIsBudgetModalOpen(true); }
+                    }}
+                    data-guide-anchor="pessoal.configNovo"
+                    title={tab.newLabel}
+                    aria-label={tab.newLabel}
+                    className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-indigo-600 text-white text-[8px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                  >
+                    <Plus size={11} strokeWidth={3.5} /> Novo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfigTab(tab.id as any);
+                      setConfigSearch('');
+                      setVisibleListTab(prev => prev === tab.id ? null : tab.id as any);
+                    }}
+                    data-guide-anchor="pessoal.configVer"
+                    title={`Ver cadastrados em ${tab.label}`}
+                    aria-label={`Ver cadastrados em ${tab.label}`}
+                    className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+                      visibleListTab === tab.id
+                        ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-400'
+                        : `${isDarkMode ? 'border-slate-700 text-slate-300' : 'border-slate-200 text-slate-600'}`
+                    }`}
+                  >
+                    <Eye size={11} strokeWidth={3} /> Ver
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
 
-          <button
-            data-guide-anchor="pessoal.configNovo"
-            onClick={() => {
-              if (configTab === 'MEMBERS') { setEditingFm(undefined); setIsFmModalOpen(true); }
-              else if (configTab === 'CONTACTS') { setEditingPc(undefined); setIsPcModalOpen(true); }
-              else { setEditingBudget(undefined); setIsBudgetModalOpen(true); }
-            }}
-            title={configTab === 'MEMBERS' ? 'Cadastrar Membro' : configTab === 'CONTACTS' ? 'Novo Fornecedor' : 'Novo Orçamento'}
-            aria-label={configTab === 'MEMBERS' ? 'Adicionar novo membro da família' : configTab === 'CONTACTS' ? 'Adicionar novo fornecedor' : 'Adicionar novo orçamento'}
-            className="bg-indigo-600 text-white w-full py-4 rounded-3xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
-          >
-            <Plus size={18} strokeWidth={4} /> {configTab === 'MEMBERS' ? 'Cadastrar Membro' : configTab === 'CONTACTS' ? 'Novo Fornecedor' : 'Novo Orçamento'}
-          </button>
+          {visibleListTab && (
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="Buscar por nome..."
+                className={`w-full py-3 pl-11 pr-4 rounded-2xl border text-[11px] font-bold tracking-tight focus:outline-none focus:ring-4 focus:ring-indigo-500/5 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-800 placeholder:text-slate-300'}`}
+                value={configSearch}
+                title="Buscar cadastrados por nome"
+                aria-label="Buscar cadastrados por nome"
+                onChange={(e) => setConfigSearch(e.target.value)}
+              />
+            </div>
+          )}
 
           <div className="space-y-3">
-             {configTab === 'MEMBERS' && familyMembers.map(m => (
+             {visibleListTab === 'MEMBERS' && familyMembers.filter(m => m.name.toLowerCase().includes(configSearch.toLowerCase())).map(m => (
                <div key={m.id} className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                  <div className="flex items-center gap-3">
                    <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400"><User size={20} /></div>
@@ -836,7 +991,7 @@ export default function PersonalFinancialView({
                </div>
              ))}
 
-             {configTab === 'CONTACTS' && personalContacts.map(c => (
+             {visibleListTab === 'CONTACTS' && personalContacts.filter(c => c.name.toLowerCase().includes(configSearch.toLowerCase())).map(c => (
                <div key={c.id} className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                  <div className="flex items-center gap-3">
                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 flex items-center justify-center text-emerald-600 dark:text-indigo-400"><Phone size={20} /></div>
@@ -868,34 +1023,69 @@ export default function PersonalFinancialView({
                </div>
              ))}
 
-             {configTab === 'BUDGETS' && budgets.map(b => {
-               const cat = categories.find(c => c.id === b.categoryId);
+             {visibleListTab === 'BUDGETS' && budgetProgress.filter(bp => (categories.find(c => c.id === bp.categoryId)?.name || '').toLowerCase().includes(configSearch.toLowerCase())).map(bp => {
+               const cat = categories.find(c => c.id === bp.categoryId);
+               const isAlert = bp.percentage >= bp.alertPercentage;
+               const isExceeded = bp.percentage >= 100;
+               const ringColor = isExceeded ? '#f43f5e' : isAlert ? '#f59e0b' : '#10b981';
+               const radius = 20;
+               const circumference = 2 * Math.PI * radius;
+               const dashOffset = circumference * (1 - Math.min(bp.percentage, 100) / 100);
                return (
-                 <div key={b.id} className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                   <div className="flex flex-col gap-1">
-                     <h4 className={`text-xs font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{cat?.name}</h4>
-                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Teto: R$ {b.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • {b.memberIds.length === 0 ? 'Todos' : `${b.memberIds.length} Membros`}</p>
+                 <div key={bp.id} className={`p-4 rounded-2xl border flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                   <div className="flex items-center justify-between gap-3">
+                     <div className="flex items-center gap-3 min-w-0">
+                       <div className="relative w-12 h-12 shrink-0">
+                         <svg viewBox="0 0 48 48" className="w-12 h-12 -rotate-90">
+                           <circle cx="24" cy="24" r={radius} fill="none" strokeWidth="5" className={isDarkMode ? 'stroke-slate-800' : 'stroke-slate-100'} />
+                           <circle
+                             cx="24" cy="24" r={radius} fill="none" strokeWidth="5" strokeLinecap="round"
+                             stroke={ringColor}
+                             strokeDasharray={circumference}
+                             strokeDashoffset={dashOffset}
+                             style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+                           />
+                         </svg>
+                         <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-black ${isExceeded ? 'text-rose-500' : isAlert ? 'text-amber-500' : (isDarkMode ? 'text-white' : 'text-slate-800')}`}>
+                           {Math.round(bp.percentage)}%
+                         </span>
+                       </div>
+                       <div className="flex flex-col gap-1 min-w-0">
+                         <h4 className={`text-xs font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{cat?.name}</h4>
+                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Gasto: R$ {bp.consumed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Teto: R$ {bp.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • {bp.memberIds.length === 0 ? 'Todos' : `${bp.memberIds.length} Membros`}</p>
+                       </div>
+                     </div>
+                     <div className="flex gap-1 shrink-0">
+                        <button
+                          onClick={() => { setEditingBudget(bp); setIsBudgetModalOpen(true); }}
+                          data-guide-anchor="pessoal.orcamentoEditar"
+                          className="p-2 text-slate-300 hover:text-indigo-400"
+                          title="Editar Orçamento"
+                          aria-label="Editar Orçamento"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        <button
+                          onClick={() => { setIdToDelete(bp.id); setDeleteType('BUDGET'); setIsConfirmOpen(true); }}
+                          data-guide-anchor="pessoal.orcamentoExcluir"
+                          className="p-2 text-slate-300 hover:text-rose-500"
+                          title="Excluir Orçamento"
+                          aria-label="Excluir Orçamento"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                     </div>
                    </div>
-                   <div className="flex gap-1">
-                      <button 
-                        onClick={() => { setEditingBudget(b); setIsBudgetModalOpen(true); }}
-                        data-guide-anchor="pessoal.orcamentoEditar"
-                        className="p-2 text-slate-300 hover:text-indigo-400"
-                        title="Editar Orçamento"
-                        aria-label="Editar Orçamento"
-                      >
-                        <Edit size={18} />
-                      </button>
-                      <button 
-                        onClick={() => { setIdToDelete(b.id); setDeleteType('BUDGET'); setIsConfirmOpen(true); }}
-                        data-guide-anchor="pessoal.orcamentoExcluir"
-                        className="p-2 text-slate-300 hover:text-rose-500"
-                        title="Excluir Orçamento"
-                        aria-label="Excluir Orçamento"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                   </div>
+
+                   {(isAlert || isExceeded) && (
+                     <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isExceeded ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                       <AlertCircle size={13} strokeWidth={2.5} />
+                       <span className="text-[9px] font-black uppercase tracking-tight">
+                         {isExceeded ? 'Orçamento estourado!' : `Atenção: ${Math.round(bp.percentage)}% do teto já consumido`}
+                       </span>
+                     </div>
+                   )}
                  </div>
                );
              })}

@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { Transaction, TransactionType, TransactionItem, Category, CategoryType, Account, Person, FamilyMember } from '../types';
+import { Transaction, TransactionType, TransactionItem, Category, CategoryType, Account, Person, FamilyMember, ReminderTonePattern } from '../types';
 import { X, Calendar, DollarSign, Tag, Wallet, User, CheckCircle2, Clock, Users, Calculator as CalculatorIcon, Plus, ChevronDown, Trash2, Hash, ClipboardList, Repeat } from 'lucide-react';
 import { format, addMonths } from 'date-fns';
 import CalculatorPopover from './CalculatorPopover';
 import DatePicker from './DatePicker';
 import ComboBox from './ComboBox';
+import ReminderPickerModal from './ReminderPickerModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import { notificationService } from '../services/notificationService';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -20,20 +22,33 @@ interface TransactionModalProps {
   transaction?: Transaction;
   initialValue?: number;
   isDarkMode?: boolean;
+  // "Não encontrou a categoria desejada? Cadastre uma aqui" — mostrado só quando informado (só
+  // faz sentido no Financeiro Pessoal hoje, ver PersonalFinancialView.tsx). Quem chama decide o
+  // que abrir (normalmente o próprio CategoryModal, já configurado pra salvar isPersonal:true).
+  onRequestNewCategory?: () => void;
+  // "Não encontrou o cliente/fornecedor? Cadastre aqui" — mesmo padrão do atalho de
+  // categoria acima, também só no Financeiro Pessoal (ver PersonalFinancialView.tsx).
+  onRequestNewContact?: () => void;
+  // Abre já com "Despesa recorrente/parcelada" ligado — usado pelo atalho "Compras Parceladas"
+  // do Dashboard de Contas Pessoais, que quer cair direto na tela de parcelamento.
+  initialIsRecurring?: boolean;
 }
 
-export default function TransactionModal({ 
-  isOpen, 
-  onClose, 
-  onSave, 
-  categories, 
-  accounts, 
+export default function TransactionModal({
+  isOpen,
+  onClose,
+  onSave,
+  categories,
+  accounts,
   people,
   familyMembers = [],
   initialType = TransactionType.INCOME,
   transaction,
   initialValue,
-  isDarkMode = false
+  isDarkMode = false,
+  onRequestNewCategory,
+  onRequestNewContact,
+  initialIsRecurring = false
 }: TransactionModalProps) {
   const [type, setType] = useState<TransactionType>(initialType);
   const [amount, setAmount] = useState<number | string>(0);
@@ -50,6 +65,11 @@ export default function TransactionModal({
   const [referenceNumber, setReferenceNumber] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [totalInstallments, setTotalInstallments] = useState(2);
+  const [reminderTitle, setReminderTitle] = useState('');
+  const [reminderAt, setReminderAt] = useState<number | null>(null);
+  const [reminderAlarmMode, setReminderAlarmMode] = useState<boolean>(true);
+  const [reminderCombineMode, setReminderCombineMode] = useState<boolean>(false);
+  const [reminderSoundPattern, setReminderSoundPattern] = useState<ReminderTonePattern>('standard');
   const calculatorRef = useRef<HTMLDivElement>(null);
   const prevTransactionIdRef = useRef<string | undefined>(undefined);
   const isInitialized = useRef(false);
@@ -82,11 +102,21 @@ export default function TransactionModal({
       setReferenceNumber(transaction.referenceNumber || '');
       setIsRecurring(false);
       setTotalInstallments(2);
+      setReminderTitle('');
+      setReminderAt(null);
+      setReminderAlarmMode(true);
+      setReminderCombineMode(false);
+      setReminderSoundPattern('standard');
     } else {
       setIsManual(true);
       setReferenceNumber('');
-      setIsRecurring(false);
+      setIsRecurring(initialIsRecurring);
       setTotalInstallments(2);
+      setReminderTitle('');
+      setReminderAt(null);
+      setReminderAlarmMode(true);
+      setReminderCombineMode(false);
+      setReminderSoundPattern('standard');
       setType(initialType);
       setAmount(initialValue !== undefined ? initialValue : 0);
       setDescription('');
@@ -102,7 +132,7 @@ export default function TransactionModal({
       );
       setCategoryId(filteredCats[0]?.id || '');
     }
-  }, [transaction, initialType, isOpen, categories, accounts, initialValue]);
+  }, [transaction, initialType, isOpen, categories, accounts, initialValue, initialIsRecurring]);
 
   // Update category when type changes if not editing
   useEffect(() => {
@@ -179,7 +209,29 @@ export default function TransactionModal({
     if (!transaction && isRecurring && totalInstallments >= 2) {
       const groupId = generateId();
       for (let i = 0; i < totalInstallments; i++) {
-        await onSave(buildTx(addMonths(baseDate, i).getTime(), i + 1, groupId));
+        const occDate = addMonths(baseDate, i).getTime();
+        const occReminderAt = reminderAt ? addMonths(reminderAt, i).getTime() : null;
+        const occId = generateId();
+        const occurrence: Omit<Transaction, 'id'> & { id?: string } = {
+          ...buildTx(occDate, i + 1, groupId),
+          reminderAt: occReminderAt,
+          reminderTitle: reminderTitle || null,
+          reminderAlarmMode,
+          reminderCombineMode,
+          reminderSoundPattern,
+        };
+        if (occReminderAt) {
+          notificationService.scheduleReminder({
+            id: `transaction-${occId}`,
+            title: reminderTitle || description || 'Lançamento',
+            body: `${description || 'Lançamento'} · Parcela ${i + 1}/${totalInstallments}`,
+            at: occReminderAt,
+            alarmMode: reminderAlarmMode,
+            combineMode: reminderCombineMode,
+            soundPattern: reminderSoundPattern,
+          });
+        }
+        await onSave(occurrence);
       }
       onClose();
       return;
@@ -198,9 +250,13 @@ export default function TransactionModal({
     }
   };
 
-  const filteredCategories = categories.filter(c => 
-    (type === TransactionType.INCOME ? c.type === CategoryType.REVENUE : c.type === CategoryType.EXPENSE) &&
-    !c.isPersonal
+  // Sem filtro por isPersonal aqui de propósito — quem chama este modal já manda em
+  // `categories` só o conjunto certo pro contexto (App.tsx/FinancialView.tsx passam só
+  // categorias de negócio; PersonalFinancialView.tsx passa só categorias pessoais). Filtrar
+  // de novo aqui duplicava a regra e, pro lado Pessoal, jogava fora tudo (toda categoria
+  // pessoal tem isPersonal=true), obrigando a cair num fallback errado pra categoria de negócio.
+  const filteredCategories = categories.filter(c =>
+    type === TransactionType.INCOME ? c.type === CategoryType.REVENUE : c.type === CategoryType.EXPENSE
   );
   return (
     <>
@@ -331,6 +387,20 @@ export default function TransactionModal({
                 isDarkMode={isDarkMode}
               />
             </div>
+            {onRequestNewContact && (
+              <button
+                type="button"
+                onClick={onRequestNewContact}
+                className={`flex items-center gap-1.5 self-start px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.97] ${
+                  isDarkMode
+                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20'
+                    : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100'
+                }`}
+              >
+                <Plus size={11} strokeWidth={3} />
+                Não encontrou? Cadastre aqui
+              </button>
+            )}
           </div>
 
           {/* Detalhamento Card */}
@@ -509,6 +579,20 @@ export default function TransactionModal({
               </select>
               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" />
             </div>
+            {onRequestNewCategory && (
+              <button
+                type="button"
+                onClick={onRequestNewCategory}
+                className={`flex items-center gap-1.5 self-start px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.97] ${
+                  isDarkMode
+                    ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20'
+                    : 'bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100'
+                }`}
+              >
+                <Plus size={11} strokeWidth={3} />
+                Não encontrou? Cadastre uma aqui
+              </button>
+            )}
           </div>
 
           {/* Conta Card */}
@@ -638,6 +722,22 @@ export default function TransactionModal({
                       <p className="text-[9px] font-bold text-slate-400 mt-2 ml-1">
                         Gera {totalInstallments} lançamentos, um por mês a partir da data informada.
                       </p>
+                      <div className="relative mt-2">
+                        <ReminderPickerModal
+                          isDarkMode={isDarkMode}
+                          label="Lembrete antes de cada vencimento"
+                          title={reminderTitle}
+                          onTitleChange={setReminderTitle}
+                          at={reminderAt}
+                          onAtChange={setReminderAt}
+                          alarmMode={reminderAlarmMode}
+                          onAlarmModeChange={setReminderAlarmMode}
+                          combineMode={reminderCombineMode}
+                          onCombineModeChange={setReminderCombineMode}
+                          soundPattern={reminderSoundPattern}
+                          onSoundPatternChange={setReminderSoundPattern}
+                        />
+                      </div>
                     </div>
                   )}
                 </>

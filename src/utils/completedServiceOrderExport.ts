@@ -26,7 +26,7 @@ export interface CompletedOSExportItem {
 export interface CompletedOSExportData {
   title: string;
   periodLabel: string;
-  groupBy: 'none' | 'day' | 'week' | 'month' | 'custom';
+  groupBy: 'none' | 'day' | 'week' | 'month' | 'custom' | 'model';
   items: CompletedOSExportItem[];
   /** Usado quando groupBy === 'custom' — define o intervalo único que forma o grupo */
   customRange?: { start: number; end: number };
@@ -96,6 +96,30 @@ function groupByPeriod(items: CompletedOSExportItem[], groupBy: 'day' | 'week' |
     else g.totalPending += item.totalValue;
   });
   return Array.from(groups.values()).sort((a, b) => b.sortKey - a.sortKey);
+}
+
+// Agrupa por modelo (produto + cor) em vez de por período — mesma forma PeriodGroup de
+// propósito, pra reaproveitar 100% do desenho já pronto do PDF/JPG (o cartão de grupo não
+// sabe nem precisa saber se o rótulo é uma data ou um modelo). `sortKey` usa o total em valor,
+// maior primeiro, pra destacar os modelos que mais pesam no pagamento.
+function groupByModel(items: CompletedOSExportItem[]): PeriodGroup[] {
+  const groups = new Map<string, PeriodGroup>();
+  items.forEach(item => {
+    const label = item.variationName ? `${item.productName} • ${item.variationName}` : item.productName;
+    let g = groups.get(label);
+    if (!g) {
+      g = { label, sortKey: 0, count: 0, totalPairs: 0, totalValue: 0, totalPaid: 0, totalPending: 0 };
+      groups.set(label, g);
+    }
+    g.count += 1;
+    g.totalPairs += item.quantity;
+    g.totalValue += item.totalValue;
+    if (item.paymentStatus === 'COMPLETED') g.totalPaid += item.totalValue;
+    else g.totalPending += item.totalValue;
+  });
+  const result = Array.from(groups.values());
+  result.forEach(g => { g.sortKey = g.totalValue; });
+  return result.sort((a, b) => b.sortKey - a.sortKey);
 }
 
 const itemLine = (item: CompletedOSExportItem): string => {
@@ -209,7 +233,7 @@ async function generatePDF(data: CompletedOSExportData, filename: string, previe
       y += cardH + 5;
     });
   } else {
-    const groups = groupByPeriod(items, groupBy, customRange);
+    const groups = groupBy === 'model' ? groupByModel(items) : groupByPeriod(items, groupBy, customRange);
     groups.forEach((g) => {
       const cardH = 26;
       if (y + cardH > pageH - BOTTOM_MARGIN) { doc.addPage(); y = 20; }
@@ -304,7 +328,7 @@ async function generateJPG(data: CompletedOSExportData, filename: string, previe
       return { os, lines, cardH };
     })
     : [];
-  const groups = groupBy !== 'none' ? groupByPeriod(items, groupBy, customRange) : [];
+  const groups = groupBy === 'model' ? groupByModel(items) : groupBy !== 'none' ? groupByPeriod(items, groupBy, customRange) : [];
 
   const bodyH = groupBy === 'none'
     ? orderData.reduce((a, o) => a + o.cardH + 8, 0)

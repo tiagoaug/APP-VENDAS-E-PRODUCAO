@@ -78,7 +78,7 @@ export default function CompletedServiceOrdersModal({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'jpg'>('pdf');
-  const [exportMode, setExportMode] = useState<'none' | 'day' | 'week' | 'month' | 'custom'>('none');
+  const [exportMode, setExportMode] = useState<'none' | 'day' | 'week' | 'month' | 'custom' | 'model'>('none');
   const [customRangeFrom, setCustomRangeFrom] = useState('');
   const [customRangeTo, setCustomRangeTo] = useState('');
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
@@ -632,15 +632,23 @@ export default function CompletedServiceOrdersModal({
                   className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportMode === 'none' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                   Lista
                 </button>
-                <button type="button" onClick={() => { setExportMode(m => m === 'none' ? 'month' : m); setPreviewUrls([]); }}
+                <button type="button" onClick={() => { setExportMode(m => (m === 'none' || m === 'model') ? 'month' : m); setPreviewUrls([]); }}
                   data-guide-anchor="completedOS.modoToggle"
-                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportMode !== 'none' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                  Agrupado por Período
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportMode !== 'none' && exportMode !== 'model' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                  Por Período
+                </button>
+                <button type="button" onClick={() => { setExportMode('model'); setPreviewUrls([]); }}
+                  data-guide-anchor="completedOS.modoToggle"
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportMode === 'model' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                  Por Modelo
                 </button>
               </div>
+              {exportMode === 'model' && (
+                <p className="text-[9px] font-bold text-slate-400 mt-1.5 leading-relaxed">Agrupa por modelo/cor, somando quantidade e valor de cada um — bom pra conferir o que está sendo pago por produto.</p>
+              )}
             </div>
 
-            {exportMode !== 'none' && (
+            {exportMode !== 'none' && exportMode !== 'model' && (
               <div>
                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Agrupar por</p>
                 <div className="flex gap-1.5">

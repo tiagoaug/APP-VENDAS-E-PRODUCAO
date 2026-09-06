@@ -46,7 +46,6 @@ interface NavRowProps {
   index: number;
   total: number;
   isHidden: boolean;
-  moduleOff: boolean;
   isDarkMode: boolean;
   onMove: (index: number, direction: -1 | 1) => void;
   onToggleHidden: (id: BottomNavItemId) => void;
@@ -56,7 +55,7 @@ interface NavRowProps {
 // chamar o hook direto dentro do .map do pai), mesmo padrão já usado em DashboardConfigView e
 // DeliveryRouteBuilderView/DeliveryRouteDetailView (Reorder.Item + alça própria via onPointerDown,
 // já testado em touch Android — nada de drag nativo HTML5, que não funciona em toque).
-function NavRow({ item, index, total, isHidden, moduleOff, isDarkMode, onMove, onToggleHidden }: NavRowProps) {
+function NavRow({ item, index, total, isHidden, isDarkMode, onMove, onToggleHidden }: NavRowProps) {
   const controls = useDragControls();
 
   return (
@@ -79,9 +78,6 @@ function NavRow({ item, index, total, isHidden, moduleOff, isDarkMode, onMove, o
       </div>
       <div className="min-w-0 flex-1">
         <p className={`text-xs font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
-        {moduleOff && (
-          <p className="text-[8px] font-bold text-amber-500 uppercase tracking-widest mt-0.5">Requer módulo {item.requiredModuleLabel} ativo</p>
-        )}
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <button
@@ -135,6 +131,23 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
 
   const items = orderedIds.map(id => CANDIDATES.find(c => c.id === id)!);
 
+  // Itens cujo módulo requerido está desativado nem aparecem aqui pra reordenar/esconder —
+  // não tem o que configurar pra algo que não pode ser usado. As posições deles em
+  // config.order ficam intactas (mergeOrder), só a ordem dos visíveis muda.
+  // Bling e RH também dependem de Vendas estar ativo (mesma regra do ModuleConfigView) — não
+  // fazem sentido soltos junto do módulo Pessoal, por exemplo.
+  const visibleItems = items.filter(item =>
+    modulesConfig[item.requiredModule] &&
+    ((item.requiredModule !== 'bling' && item.requiredModule !== 'rh') || modulesConfig.sales)
+  );
+  const visibleIds = visibleItems.map(i => i.id);
+
+  const mergeOrder = (newVisibleOrder: BottomNavItemId[]): BottomNavItemId[] => {
+    const visibleSet = new Set(visibleIds);
+    let vIdx = 0;
+    return orderedIds.map(id => visibleSet.has(id) ? newVisibleOrder[vIdx++] : id);
+  };
+
   const toggleHidden = (id: BottomNavItemId) => {
     const isHidden = config.hidden.includes(id);
     onSave({
@@ -145,10 +158,10 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
 
   const move = (index: number, direction: -1 | 1) => {
     const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= orderedIds.length) return;
-    const newOrder = [...orderedIds];
-    [newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[index]];
-    onSave({ ...config, order: newOrder });
+    if (targetIndex < 0 || targetIndex >= visibleIds.length) return;
+    const newVisibleOrder = [...visibleIds];
+    [newVisibleOrder[index], newVisibleOrder[targetIndex]] = [newVisibleOrder[targetIndex], newVisibleOrder[index]];
+    onSave({ ...config, order: mergeOrder(newVisibleOrder) });
   };
 
   return (
@@ -185,18 +198,17 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
 
         <Reorder.Group
           axis="y"
-          values={items}
-          onReorder={(newOrder) => onSave({ ...config, order: newOrder.map(i => i.id) })}
+          values={visibleItems}
+          onReorder={(newOrder) => onSave({ ...config, order: mergeOrder(newOrder.map(i => i.id)) })}
           className="flex-1 overflow-y-auto px-6 pb-6 space-y-2 custom-scrollbar"
         >
-          {items.map((item, index) => (
+          {visibleItems.map((item, index) => (
             <NavRow
               key={item.id}
               item={item}
               index={index}
-              total={items.length}
+              total={visibleItems.length}
               isHidden={config.hidden.includes(item.id)}
-              moduleOff={!modulesConfig[item.requiredModule]}
               isDarkMode={isDarkMode}
               onMove={move}
               onToggleHidden={toggleHidden}
