@@ -38,16 +38,45 @@ function formatPrice(value: number) {
   return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatCountdown(remainingMs: number) {
+  const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+}
+
 export default function PublicCatalogApp() {
-  const [status, setStatus] = useState<'loading' | 'error' | 'browsing' | 'submitting' | 'success'>('loading');
+  const [status, setStatus] = useState<'loading' | 'error' | 'browsing' | 'submitting' | 'success' | 'expired'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [customerNote, setCustomerNote] = useState('');
+  // true = Link de Grupo — sem cliente vinculado, precisa perguntar o nome antes de enviar.
+  const [isGeneric, setIsGeneric] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  // Contador regressivo do topo — null = link sem expiração (não mostra nada). A validação de
+  // verdade continua sempre no servidor (resolveCatalogLink); isso é só UX pra travar a página
+  // sozinha quando o tempo acaba, em vez do cliente só descobrir no erro do envio.
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  // Link configurado pra mostrar quanto tem em estoque, só como referência (o cliente escolhe
+  // livremente a quantidade, sempre a partir de zero — nunca pré-marcado como se fosse levar
+  // tudo). Ver CatalogLink.useStockQuantities.
+  const [showStockQuantities, setShowStockQuantities] = useState(false);
+  const [showOrderSummary, setShowOrderSummary] = useState(false);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [brandFilter, setBrandFilter] = useState<string>('ALL');
+  // Categorias/Marcas começam fechadas — em tela pequena esses chips tomavam metade da tela
+  // logo de cara; só abre quando alguém realmente quer filtrar.
+  const [categoriesSectionOpen, setCategoriesSectionOpen] = useState(false);
+  // Botão "Atualizar Catálogo" — a página só busca preço/estoque uma vez, no carregamento (ver
+  // loadCatalog abaixo); se ficar aberta um tempo, precisa recarregar manualmente pra ver mudança
+  // feita pelo vendedor nesse meio tempo (nunca fica ouvindo mudança em tempo real).
+  const [refreshing, setRefreshing] = useState(false);
   const token = useMemo(readTokenFromUrl, []);
 
   const categoryOptions = useMemo(() => {
@@ -70,22 +99,56 @@ export default function PublicCatalogApp() {
     });
   }, [products, search, categoryFilter, brandFilter]);
 
+  const loadCatalog = (isRefresh: boolean) => {
+    if (isRefresh) setRefreshing(true);
+    else setStatus('loading');
+    getPublicCatalogRequest({ token })
+      .then((res) => {
+        setProducts(res.data.products || []);
+        // Mostra quanto tem em estoque, só como referência — o cliente sempre começa do zero
+        // e escolhe livremente a quantidade (o clamp em setQty já limita ao disponível).
+        setShowStockQuantities(!!res.data.useStockQuantities);
+        setIsGeneric(!!res.data.isGeneric);
+        setExpiresAt(res.data.expiresAt ?? null);
+        setErrorMessage('');
+        // Se o link já venceu bem no instante do carregamento (raro, mas possível), trava direto
+        // em vez de abrir o catálogo por uma fração de segundo antes do efeito de contagem agir.
+        setStatus(res.data.expiresAt && res.data.expiresAt <= Date.now() ? 'expired' : 'browsing');
+      })
+      .catch(() => {
+        if (isRefresh) {
+          setErrorMessage('Não foi possível atualizar agora. Tente de novo em instantes.');
+        } else {
+          setStatus('error');
+          setErrorMessage('Este link é inválido ou já expirou. Peça um novo link.');
+        }
+      })
+      .finally(() => setRefreshing(false));
+  };
+
   useEffect(() => {
     if (!token) {
       setStatus('error');
       setErrorMessage('Link inválido — verifique se copiou o endereço completo.');
       return;
     }
-    getPublicCatalogRequest({ token })
-      .then((res) => {
-        setProducts(res.data.products || []);
-        setStatus('browsing');
-      })
-      .catch(() => {
-        setStatus('error');
-        setErrorMessage('Este link é inválido ou já expirou. Peça um novo link.');
-      });
+    loadCatalog(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Contador regressivo + trava automática — só liga o intervalo quando o link tem expiração e
+  // a página está em uso (não faz sentido continuar contando na tela de sucesso, por exemplo).
+  useEffect(() => {
+    if (!expiresAt || (status !== 'browsing' && status !== 'submitting')) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt, status]);
+
+  useEffect(() => {
+    if (expiresAt && now >= expiresAt && (status === 'browsing' || status === 'submitting')) {
+      setStatus('expired');
+    }
+  }, [now, expiresAt, status]);
 
   const setQty = (productId: string, variationId: string, size: string | undefined, available: number, value: number) => {
     const clamped = Math.max(0, Math.min(available, Math.floor(value) || 0));
@@ -144,10 +207,19 @@ export default function PublicCatalogApp() {
 
     const items = Array.from(itemsByProductType.values());
     if (items.length === 0) return;
+    if (isGeneric && !customerName.trim()) {
+      setErrorMessage('Informe seu nome antes de enviar o pedido.');
+      return;
+    }
 
     setStatus('submitting');
     try {
-      await submitCatalogRequestCall({ token, items, customerNote: customerNote.trim() || undefined });
+      await submitCatalogRequestCall({
+        token,
+        items,
+        customerNote: customerNote.trim() || undefined,
+        ...(isGeneric ? { customerName: customerName.trim() } : {}),
+      });
       setStatus('success');
     } catch {
       setStatus('browsing');
@@ -177,12 +249,80 @@ export default function PublicCatalogApp() {
     );
   }
 
-  if (status === 'success') {
+  if (status === 'expired') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center gap-3">
-        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl">✓</div>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50 p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-3xl">⏱</div>
+        <h1 className="text-lg font-black text-slate-900">Catálogo expirado</h1>
+        <p className="text-sm text-slate-500 font-medium max-w-xs">
+          Este link não vale mais. Entre em contato com quem te enviou e peça um novo link.
+        </p>
+      </div>
+    );
+  }
+
+  if (status === 'success') {
+    // `cart`/`products` continuam com o que foi enviado (não são limpos após o envio) — dá
+    // pra remontar o resumo do pedido aqui sem guardar nada a mais.
+    const summaryLines: { key: string; label: string; sizeLabel: string; qty: number; unitPrice?: number }[] = [];
+    for (const product of products) {
+      for (const variation of product.variations) {
+        for (const s of variation.sizes) {
+          const key = cartKey(product.productId, variation.variationId, s.size);
+          const qty = cart[key];
+          if (!qty) continue;
+          summaryLines.push({
+            key,
+            label: `${product.reference} ${product.name} · ${variation.colorName}`,
+            sizeLabel: s.size ? `Tam. ${s.size}` : 'Caixa',
+            qty,
+            unitPrice: s.size ? product.pricePerPair : product.pricePerBox,
+          });
+        }
+      }
+    }
+
+    return (
+      <div className="min-h-screen flex flex-col items-center bg-slate-50 p-6 text-center gap-3">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl mt-16">✓</div>
         <h1 className="text-lg font-black text-slate-900">Pedido enviado!</h1>
         <p className="text-sm text-slate-500 font-medium max-w-xs">Recebemos sua escolha e vamos confirmar com você em breve.</p>
+
+        {summaryLines.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowOrderSummary((v) => !v)}
+            className="text-xs font-black uppercase tracking-widest text-indigo-600 mt-2"
+          >
+            {showOrderSummary ? 'Esconder pedido' : 'Ver pedido enviado'}
+          </button>
+        )}
+
+        {showOrderSummary && (
+          <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mt-2 text-left flex flex-col gap-2">
+            {summaryLines.map((line) => (
+              <div key={line.key} className="flex items-center justify-between gap-2 text-xs">
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-800 truncate">{line.label}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{line.sizeLabel}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-black text-slate-900">{line.qty}x</p>
+                  {line.unitPrice !== undefined && (
+                    <p className="text-[10px] font-bold text-emerald-600">{formatPrice(line.unitPrice * line.qty)}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-[11px] text-slate-400 font-medium max-w-xs mt-4">
+          Caso precise refazer o pedido, comunique o vendedor e peça para desconsiderar esse pedido — depois é só fazer outro pelo mesmo link.
+        </p>
+        <p className="text-[11px] text-slate-400 font-medium max-w-xs mt-2">
+          O pedido demora cerca de 1 a 2 minutos para ser processado para o vendedor.
+        </p>
       </div>
     );
   }
@@ -192,10 +332,27 @@ export default function PublicCatalogApp() {
     // em vez de depender do <body> rolar sozinho (que não estava funcionando em algumas
     // combinações de navegador/CSS herdado do bundle principal do app).
     <div className="h-screen overflow-y-auto bg-slate-50 pb-32">
-      <header className="bg-white border-b border-slate-100 px-4 py-5 sticky top-0 z-10 flex flex-col gap-3">
-        <div>
+      <header className="bg-white border-b border-slate-100 px-4 py-3 sticky top-0 z-10 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
           <h1 className="text-base font-black uppercase tracking-tight text-slate-900">Catálogo</h1>
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Escolha os produtos e quantidades</p>
+          {expiresAt && (
+            <span className="shrink-0 text-[10px] font-black text-slate-500 tabular-nums">
+              Expira em {formatCountdown(expiresAt - now)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-2 bg-amber-50 rounded-xl pl-3 pr-1.5 py-1.5">
+          <p className="min-w-0 flex-1 text-[9px] font-bold text-amber-600 whitespace-nowrap overflow-hidden text-ellipsis">
+            Recarregue antes de pedir p/ ver o estoque atual.
+          </p>
+          <button
+            type="button"
+            onClick={() => loadCatalog(true)}
+            disabled={refreshing}
+            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white text-amber-700 text-[9px] font-black uppercase tracking-wide active:scale-95 transition-all disabled:opacity-50"
+          >
+            <span className={refreshing ? 'inline-block animate-spin' : ''}>↻</span> Atualizar
+          </button>
         </div>
         {products.length > 0 && (
           <>
@@ -206,7 +363,20 @@ export default function PublicCatalogApp() {
               placeholder="Buscar por nome ou referência..."
               className="w-full px-3 py-2.5 rounded-xl bg-slate-100 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-400"
             />
-            {categoryOptions.length > 0 && (
+            {(categoryOptions.length > 0 || brandOptions.length > 0) && (
+              <button
+                type="button"
+                onClick={() => setCategoriesSectionOpen(v => !v)}
+                className="flex items-center justify-between gap-2 px-1"
+              >
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Categorias e Marcas
+                  {(categoryFilter !== 'ALL' || brandFilter !== 'ALL') && <span className="text-indigo-500"> · filtro ativo</span>}
+                </span>
+                <span className={`text-slate-400 transition-transform ${categoriesSectionOpen ? 'rotate-180' : ''}`}>⌄</span>
+              </button>
+            )}
+            {categoriesSectionOpen && categoryOptions.length > 0 && (
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
                 <button
                   type="button"
@@ -223,7 +393,7 @@ export default function PublicCatalogApp() {
                 ))}
               </div>
             )}
-            {brandOptions.length > 0 && (
+            {categoriesSectionOpen && brandOptions.length > 0 && (
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
                 <button
                   type="button"
@@ -262,6 +432,8 @@ export default function PublicCatalogApp() {
                 <img
                   src={product.photoUrl}
                   alt={product.name}
+                  loading="lazy"
+                  decoding="async"
                   onClick={() => setLightboxUrl(product.photoUrl!)}
                   className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100 cursor-pointer active:scale-95 transition-all"
                 />
@@ -287,6 +459,8 @@ export default function PublicCatalogApp() {
                       <img
                         src={variation.photoUrl}
                         alt={variation.colorName}
+                        loading="lazy"
+                        decoding="async"
                         onClick={() => setLightboxUrl(variation.photoUrl!)}
                         className="w-8 h-8 rounded-lg object-cover cursor-pointer active:scale-90 transition-all"
                       />
@@ -300,37 +474,47 @@ export default function PublicCatalogApp() {
                           key={idx}
                           src={url}
                           alt={`${variation.colorName} — foto ${idx + 1}`}
+                          loading="lazy"
+                          decoding="async"
                           onClick={() => setLightboxUrl(url)}
                           className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 cursor-pointer active:scale-95 transition-all"
                         />
                       ))}
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-2">
                     {variation.sizes.map((s) => {
                       const key = cartKey(product.productId, variation.variationId, s.size);
                       const qty = cart[key] || 0;
                       return (
-                        <div key={key} className="flex items-center justify-between gap-1.5 bg-white rounded-lg border border-slate-200 px-2 py-1.5">
-                          <span className="text-[11px] font-bold text-slate-500 shrink-0">{s.size || 'Cx'}</span>
-                          <div className="flex items-center gap-1.5">
+                        <div
+                          key={key}
+                          className="flex items-center justify-between gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2"
+                        >
+                          <div className="flex flex-col shrink-0 leading-tight">
+                            <span className="text-xs font-bold text-slate-500">{s.size || 'Cx'}</span>
+                            {showStockQuantities && (
+                              <span className="text-[9px] font-bold text-blue-600">{s.available} em estoque</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty - 1)}
-                              className="w-6 h-6 rounded-md bg-slate-100 text-slate-600 font-black text-sm active:scale-90 shrink-0"
+                              className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 font-black text-base active:scale-90 shrink-0"
                             >-</button>
                             <input
                               type="number"
                               inputMode="numeric"
                               value={qty || ''}
                               onChange={(e) => setQty(product.productId, variation.variationId, s.size, s.available, Number(e.target.value))}
-                              className="w-8 text-center text-sm font-black outline-none"
+                              className="w-12 text-center text-base font-black outline-none"
                               placeholder="0"
                             />
                             <button
                               type="button"
                               onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty + 1)}
-                              className="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 font-black text-sm active:scale-90 shrink-0"
+                              className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 font-black text-base active:scale-90 shrink-0"
                             >+</button>
                           </div>
                         </div>
@@ -342,6 +526,19 @@ export default function PublicCatalogApp() {
             </div>
           </div>
         ))}
+
+        {products.length > 0 && isGeneric && (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Seu nome</label>
+            <input
+              type="text"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value.slice(0, 80))}
+              className="w-full mt-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm outline-none"
+              placeholder="Como podemos te chamar?"
+            />
+          </div>
+        )}
 
         {products.length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
@@ -358,7 +555,9 @@ export default function PublicCatalogApp() {
 
         {products.length > 0 && (
           <p className="text-center text-[10px] font-bold text-slate-400 leading-relaxed px-6 pt-2">
-            Este link é individual, já vinculado ao seu cadastro — não compartilhe com outras pessoas.
+            {isGeneric
+              ? 'Este é um catálogo de grupo — cada pessoa faz o próprio pedido informando o nome.'
+              : 'Este link é individual, já vinculado ao seu cadastro — não compartilhe com outras pessoas.'}
           </p>
         )}
       </div>
@@ -374,7 +573,7 @@ export default function PublicCatalogApp() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={status === 'submitting'}
+            disabled={status === 'submitting' || (isGeneric && !customerName.trim())}
             className="w-full py-4 rounded-2xl bg-slate-900 text-white font-black uppercase tracking-widest text-sm shadow-2xl active:scale-[0.98] transition-all disabled:opacity-60"
           >
             {status === 'submitting' ? 'Enviando...' : `Enviar Pedido (${totalItems})`}

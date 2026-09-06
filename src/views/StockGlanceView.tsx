@@ -321,6 +321,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
         <button
           type="button"
           onClick={onBack}
+          data-guide-anchor="stock.disponivelVoltar"
           className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 shadow-sm'}`}
           title="Voltar"
           aria-label="Voltar"
@@ -415,6 +416,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                   onClick={() => setNotesProductId(card.product.id)}
                   title="Adicionar observação por cor"
                   aria-label="Adicionar observação por cor"
+                  data-guide-anchor="stock.disponivelObservacaoAbrir"
                   className={`shrink-0 p-1.5 rounded-lg transition-all ${card.rows.some(r => r.note) ? (isDarkMode ? 'text-amber-400 bg-amber-500/10' : 'text-amber-500 bg-amber-50') : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'}`}
                 >
                   <MessageSquarePlus size={16} />
@@ -444,6 +446,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                         onClick={() => setViewNoteRow({ productId: card.product.id, variationId: row.variationId, colorName: row.colorName, note: row.note! })}
                         title={row.note}
                         aria-label={`Observação de ${row.colorName}: ${row.note}`}
+                        data-guide-anchor="stock.disponivelObservacaoVer"
                         className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-full animate-pulse-amber-ring ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-600'}`}
                       >
                         <MessageSquare size={14} className={isDarkMode ? 'fill-amber-500/20' : 'fill-amber-200'} />
@@ -523,6 +526,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                 onClick={() => setShowFilterModal(false)}
                 title="Fechar"
                 aria-label="Fechar"
+                data-guide-anchor="stock.disponivelFiltroFechar"
                 className={`w-8 h-8 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
               >
                 <X size={16} />
@@ -554,6 +558,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                     <button
                       type="button"
                       onClick={() => setColorFilter(null)}
+                      data-guide-anchor="stock.disponivelFiltroCor"
                       className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${!colorFilter ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
                     >
                       Todas as cores
@@ -563,6 +568,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                         key={color}
                         type="button"
                         onClick={() => setColorFilter(prev => prev === color ? null : color)}
+                        data-guide-anchor="stock.disponivelFiltroCor"
                         className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${colorFilter === color ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
                       >
                         {color}
@@ -584,6 +590,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                   onClick={() => setShowPkgBadge(v => { const next = !v; persistShowPkgBadge(next); return next; })}
                   title={showPkgBadge ? 'Ocultar badge' : 'Mostrar badge'}
                   aria-label={showPkgBadge ? 'Ocultar badge de pares por caixa' : 'Mostrar badge de pares por caixa'}
+                  data-guide-anchor="stock.disponivelBadgeToggle"
                   className={`relative w-12 h-7 rounded-full shrink-0 transition-all ${showPkgBadge ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
                 >
                   <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${showPkgBadge ? 'left-6' : 'left-1'}`} />
@@ -604,6 +611,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                     onClick={() => setShowThumbnails(v => { const next = !v; persistShowThumbnails(next); return next; })}
                     title={showThumbnails ? 'Ocultar miniaturas' : 'Mostrar miniaturas'}
                     aria-label={showThumbnails ? 'Ocultar miniaturas' : 'Mostrar miniaturas'}
+                    data-guide-anchor="stock.disponivelMiniaturasToggle"
                     className={`relative w-12 h-7 rounded-full shrink-0 transition-all ${showThumbnails ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
                   >
                     <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${showThumbnails ? 'left-6' : 'left-1'}`} />
@@ -616,6 +624,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               <button
                 type="button"
                 onClick={() => { setSearch(''); setColorFilter(null); }}
+                data-guide-anchor="stock.disponivelFiltroLimpar"
                 className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 Limpar
@@ -623,6 +632,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               <button
                 type="button"
                 onClick={() => setShowFilterModal(false)}
+                data-guide-anchor="stock.disponivelFiltroAplicar"
                 className="flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white"
               >
                 Aplicar
@@ -654,6 +664,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                 onClick={handleCloseNotesModal}
                 title="Fechar"
                 aria-label="Fechar"
+                data-guide-anchor="stock.disponivelObservacaoFechar"
                 className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
               >
                 <X size={16} />
@@ -682,6 +693,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                           key={i}
                           type="button"
                           onClick={() => insertMessageIntoRow(row.variationId, msg)}
+                          data-guide-anchor="stock.disponivelObservacaoMensagemRapida"
                           title={msg}
                           className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest truncate max-w-[140px] transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600' : 'bg-slate-100 text-slate-600 border border-slate-200 hover:border-slate-300'}`}
                         >
@@ -695,6 +707,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                             setGradeOpenRowId(isGradeOpen ? null : row.variationId);
                             setGradeQty({});
                           }}
+                          data-guide-anchor="stock.disponivelObservacaoGradeAbrir"
                           className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${isGradeOpen ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}
                         >
                           <Grid3X3 size={14} /> Grade
@@ -705,6 +718,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                         onClick={() => setIsManagingMessages(true)}
                         title="Configurar mensagens rápidas"
                         aria-label="Configurar mensagens rápidas"
+                        data-guide-anchor="stock.disponivelObservacaoMensagensConfigAbrir"
                         className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
                       >
                         <Settings2 size={14} />
@@ -740,6 +754,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                             <button
                               type="button"
                               onClick={() => insertGradeIntoRow(row.variationId)}
+                              data-guide-anchor="stock.disponivelObservacaoGradeInserir"
                               className="py-2 rounded-xl text-[9px] font-black uppercase tracking-widest bg-indigo-600 text-white active:scale-95 transition-all"
                             >
                               Inserir na Observação
@@ -757,6 +772,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               <button
                 type="button"
                 onClick={handleCloseNotesModal}
+                data-guide-anchor="stock.disponivelObservacaoConcluir"
                 className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white"
               >
                 Concluído
@@ -783,6 +799,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                 onClick={() => setIsManagingMessages(false)}
                 title="Fechar"
                 aria-label="Fechar"
+                data-guide-anchor="stock.disponivelMensagensConfigFechar"
                 className={`w-7 h-7 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
               >
                 <X size={14} />
@@ -795,6 +812,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                   <button
                     type="button"
                     onClick={() => removeQuickMessage(i)}
+                    data-guide-anchor="stock.disponivelMensagemRemover"
                     title="Remover"
                     aria-label={`Remover mensagem ${msg}`}
                     className="text-rose-500 shrink-0"
@@ -821,6 +839,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               <button
                 type="button"
                 onClick={addQuickMessage}
+                data-guide-anchor="stock.disponivelMensagemAdicionar"
                 className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shrink-0"
               >
                 Adicionar
@@ -855,6 +874,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                 onClick={() => setViewNoteRow(null)}
                 title="Fechar"
                 aria-label="Fechar"
+                data-guide-anchor="stock.disponivelObservacaoVerFechar"
                 className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
               >
                 <X size={16} />
@@ -869,6 +889,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               <button
                 type="button"
                 onClick={handleDeleteViewedNote}
+                data-guide-anchor="stock.disponivelObservacaoExcluir"
                 className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/25' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
               >
                 <Trash2 size={14} /> Excluir
@@ -876,6 +897,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               <button
                 type="button"
                 onClick={handleResolveViewedNote}
+                data-guide-anchor="stock.disponivelObservacaoResolver"
                 className="flex-[1.3] flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 active:scale-95 transition-all hover:bg-emerald-700"
               >
                 <CheckCircle2 size={14} /> Concluído

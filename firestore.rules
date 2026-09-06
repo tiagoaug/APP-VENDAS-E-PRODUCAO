@@ -99,19 +99,29 @@ service cloud.firestore {
     // visitante anônimo do link nunca toca o Firestore direto (só via Cloud Functions com
     // Admin SDK, que ignora estas regras — ver functions/src/catalog/publicCatalog.ts).
     function isValidCatalogLink(data) {
-      return data.keys().hasAll(['personId', 'token', 'isActive', 'createdAt'])
-        && data.personId is string && data.personId.size() <= 128
+      return data.keys().hasAll(['token', 'isActive', 'createdAt'])
         && data.token is string && data.token.size() >= 8 && data.token.size() <= 128
         && data.isActive is bool
-        && data.createdAt is number;
+        && data.createdAt is number
+        // Link Exclusivo tem personId; Link de Grupo (isGeneric == true) não tem cliente
+        // vinculado — ver src/types.ts CatalogLink e functions/src/catalog/publicCatalog.ts.
+        && (
+          (data.keys().hasAll(['personId']) && data.personId is string && data.personId.size() <= 128)
+          || data.get('isGeneric', false) == true
+        );
     }
 
     function isValidCatalogRequest(data) {
-      return data.keys().hasAll(['linkId', 'personId', 'status', 'items'])
+      return data.keys().hasAll(['linkId', 'status', 'items'])
         && data.linkId is string && data.linkId.size() <= 128
-        && data.personId is string && data.personId.size() <= 128
         && data.status in ['PENDING', 'IMPORTED', 'DISMISSED']
-        && data.items is list && data.items.size() <= 30;
+        && data.items is list && data.items.size() <= 30
+        // Pedido de Link Exclusivo tem personId; pedido de Link de Grupo tem customerName
+        // (nome digitado pelo cliente) em vez disso — ver CatalogRequest em src/types.ts.
+        && (
+          (data.keys().hasAll(['personId']) && data.personId is string && data.personId.size() <= 128)
+          || (data.keys().hasAll(['customerName']) && data.customerName is string && data.customerName.size() <= 80)
+        );
     }
 
     // Perfil de Envio de Catálogo — seleção de produtos salva com nome (ver CatalogProfile em

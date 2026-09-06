@@ -259,6 +259,7 @@ export default function PersonalFinancialView({
           <div className="flex items-center gap-4">
             <button 
               onClick={isConfigMode ? () => setIsConfigMode(false) : onBack}
+              data-guide-anchor="pessoal.voltar"
               className={`p-3 rounded-2xl border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
               title="Voltar"
               aria-label="Voltar"
@@ -279,6 +280,7 @@ export default function PersonalFinancialView({
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setIsCalcModalOpen(true)}
+                data-guide-anchor="pessoal.calculadoraAbrir"
                 className={`p-3 rounded-2xl border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
                 title="Abrir Calculadora"
                 aria-label="Abrir Calculadora"
@@ -287,6 +289,7 @@ export default function PersonalFinancialView({
               </button>
               <motion.button 
                 onClick={() => setIsConfigMode(true)}
+                data-guide-anchor="pessoal.configAbrir"
                 animate={{ scale: [1, 1.1, 1] }}
                 transition={{ repeat: Infinity, duration: 2 }}
                 className={`p-3 rounded-2xl border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
@@ -437,7 +440,8 @@ export default function PersonalFinancialView({
             
             <div className="absolute top-6 right-8 z-20">
                 <button 
-                  onClick={handleTransfer} 
+                  onClick={handleTransfer}
+                  data-guide-anchor="pessoal.transferir"
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
                     isDarkMode
                       ? 'bg-slate-800/80 text-indigo-400 border border-slate-700 hover:bg-slate-700'
@@ -490,6 +494,7 @@ export default function PersonalFinancialView({
             <div className="flex items-center justify-between mb-5">
               <button
                 onClick={() => setSelectedMonth(m => subMonths(m, 1))}
+                data-guide-anchor="pessoal.mesAnterior"
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-indigo-400' : 'bg-slate-50 text-slate-400 hover:text-indigo-500'}`}
                 title="Mês anterior"
                 aria-label="Mês anterior"
@@ -504,6 +509,7 @@ export default function PersonalFinancialView({
               </div>
               <button
                 onClick={() => setSelectedMonth(m => addMonths(m, 1))}
+                data-guide-anchor="pessoal.mesProximo"
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-indigo-400' : 'bg-slate-50 text-slate-400 hover:text-indigo-500'}`}
                 title="Próximo mês"
                 aria-label="Próximo mês"
@@ -581,6 +587,7 @@ export default function PersonalFinancialView({
                       <div className={`flex items-center gap-1.5 p-1.5 rounded-full border shadow-sm backdrop-blur-md ${isDarkMode ? 'bg-slate-900/80 border-slate-700' : 'bg-white/80 border-slate-100'}`}>
                         <button
                           onClick={() => exportPersonalExpense({ transaction: t, contactName, memberName: member?.name }, 'pdf')}
+                          data-guide-anchor="pessoal.exportarPdf"
                           className="w-9 h-9 flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 text-rose-500 rounded-full font-black text-[9px]"
                           title="Exportar PDF"
                           aria-label="Exportar PDF"
@@ -589,6 +596,7 @@ export default function PersonalFinancialView({
                         </button>
                         <button
                           onClick={() => exportPersonalExpense({ transaction: t, contactName, memberName: member?.name }, 'jpg')}
+                          data-guide-anchor="pessoal.exportarJpg"
                           className="w-9 h-9 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full font-black text-[9px]"
                           title="Exportar JPG"
                           aria-label="Exportar JPG"
@@ -598,6 +606,7 @@ export default function PersonalFinancialView({
                         {!isPaid && (
                           <button
                             onClick={() => { setPaymentTx(t); setPaymentModalMode('PAYMENT'); }}
+                            data-guide-anchor="pessoal.registrarPagamento"
                             className="w-9 h-9 flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 rounded-full"
                             title="Registrar Pagamento"
                             aria-label="Registrar Pagamento"
@@ -607,6 +616,7 @@ export default function PersonalFinancialView({
                         )}
                         <button
                           onClick={() => { setEditingTransaction(t); setIsTxModalOpen(true); }}
+                          data-guide-anchor="pessoal.editarDespesa"
                           className={`w-9 h-9 flex items-center justify-center rounded-full text-blue-500 ${isDarkMode ? 'bg-slate-700' : 'bg-white'}`}
                           title="Editar Despesa"
                           aria-label="Editar Despesa"
@@ -615,6 +625,7 @@ export default function PersonalFinancialView({
                         </button>
                         <button
                           onClick={() => { setIdToDelete(t.id); setDeleteType('TX'); setIsConfirmOpen(true); }}
+                          data-guide-anchor="pessoal.excluirDespesa"
                           className={`w-9 h-9 flex items-center justify-center rounded-full text-rose-500 ${isDarkMode ? 'bg-slate-700' : 'bg-white'}`}
                           title="Excluir Despesa"
                           aria-label="Excluir Despesa"
@@ -687,7 +698,8 @@ export default function PersonalFinancialView({
                 />
               </div>
               <button 
-                onClick={() => handleAddTx(TransactionType.EXPENSE)} 
+                onClick={() => handleAddTx(TransactionType.EXPENSE)}
+                data-guide-anchor="pessoal.adicionarGasto"
                 className="bg-indigo-600 text-white px-6 rounded-2xl flex items-center shadow-lg active:scale-95 transition-all"
                 title="Adicionar Gasto"
                 aria-label="Adicionar Gasto"
@@ -724,7 +736,8 @@ export default function PersonalFinancialView({
                       </p>
                       <div className="flex gap-1 mt-1 justify-end">
                         <button 
-                          onClick={() => { setEditingTransaction(t); setIsTxModalOpen(true); }} 
+                          onClick={() => { setEditingTransaction(t); setIsTxModalOpen(true); }}
+                          data-guide-anchor="pessoal.editarTransacao"
                           className="p-1 text-slate-300 hover:text-indigo-400"
                           title="Editar Transação"
                           aria-label="Editar Transação"
@@ -732,7 +745,8 @@ export default function PersonalFinancialView({
                           <Edit size={14} />
                         </button>
                         <button 
-                          onClick={() => { setIdToDelete(t.id); setDeleteType('TX'); setIsConfirmOpen(true); }} 
+                          onClick={() => { setIdToDelete(t.id); setDeleteType('TX'); setIsConfirmOpen(true); }}
+                          data-guide-anchor="pessoal.excluirTransacao"
                           className="p-1 text-slate-300 hover:text-rose-500"
                           title="Excluir Transação"
                           aria-label="Excluir Transação"
@@ -759,6 +773,7 @@ export default function PersonalFinancialView({
               <button
                 key={tab.id}
                 onClick={() => setConfigTab(tab.id as any)}
+                data-guide-anchor="pessoal.configAba"
                 title={`Gerenciar ${tab.label}`}
                 aria-label={`Ver configurações de ${tab.label}`}
                 className={`py-5 rounded-[2rem] flex flex-col items-center justify-center gap-3 border transition-all ${
@@ -777,7 +792,8 @@ export default function PersonalFinancialView({
             ))}
           </div>
 
-          <button 
+          <button
+            data-guide-anchor="pessoal.configNovo"
             onClick={() => {
               if (configTab === 'MEMBERS') { setEditingFm(undefined); setIsFmModalOpen(true); }
               else if (configTab === 'CONTACTS') { setEditingPc(undefined); setIsPcModalOpen(true); }
@@ -799,7 +815,8 @@ export default function PersonalFinancialView({
                  </div>
                  <div className="flex gap-1">
                    <button 
-                     onClick={() => { setEditingFm(m); setIsFmModalOpen(true); }} 
+                     onClick={() => { setEditingFm(m); setIsFmModalOpen(true); }}
+                     data-guide-anchor="pessoal.membroEditar"
                      className="p-2 text-slate-300 hover:text-indigo-400"
                      title="Editar Membro"
                      aria-label="Editar Membro"
@@ -807,7 +824,8 @@ export default function PersonalFinancialView({
                      <Edit size={18} />
                    </button>
                    <button 
-                     onClick={() => { setIdToDelete(m.id); setDeleteType('FM'); setIsConfirmOpen(true); }} 
+                     onClick={() => { setIdToDelete(m.id); setDeleteType('FM'); setIsConfirmOpen(true); }}
+                     data-guide-anchor="pessoal.membroExcluir"
                      className="p-2 text-slate-300 hover:text-rose-500"
                      title="Excluir Membro"
                      aria-label="Excluir Membro"
@@ -829,7 +847,8 @@ export default function PersonalFinancialView({
                  </div>
                  <div className="flex gap-1">
                    <button 
-                     onClick={() => { setEditingPc(c); setIsPcModalOpen(true); }} 
+                     onClick={() => { setEditingPc(c); setIsPcModalOpen(true); }}
+                     data-guide-anchor="pessoal.fornecedorEditar"
                      className="p-2 text-slate-300 hover:text-emerald-400"
                      title="Editar Fornecedor"
                      aria-label="Editar Fornecedor"
@@ -837,7 +856,8 @@ export default function PersonalFinancialView({
                      <Edit size={18} />
                    </button>
                    <button 
-                     onClick={() => { setIdToDelete(c.id); setDeleteType('PC'); setIsConfirmOpen(true); }} 
+                     onClick={() => { setIdToDelete(c.id); setDeleteType('PC'); setIsConfirmOpen(true); }}
+                     data-guide-anchor="pessoal.fornecedorExcluir"
                      className="p-2 text-slate-300 hover:text-rose-500"
                      title="Excluir Fornecedor"
                      aria-label="Excluir Fornecedor"
@@ -858,7 +878,8 @@ export default function PersonalFinancialView({
                    </div>
                    <div className="flex gap-1">
                       <button 
-                        onClick={() => { setEditingBudget(b); setIsBudgetModalOpen(true); }} 
+                        onClick={() => { setEditingBudget(b); setIsBudgetModalOpen(true); }}
+                        data-guide-anchor="pessoal.orcamentoEditar"
                         className="p-2 text-slate-300 hover:text-indigo-400"
                         title="Editar Orçamento"
                         aria-label="Editar Orçamento"
@@ -866,7 +887,8 @@ export default function PersonalFinancialView({
                         <Edit size={18} />
                       </button>
                       <button 
-                        onClick={() => { setIdToDelete(b.id); setDeleteType('BUDGET'); setIsConfirmOpen(true); }} 
+                        onClick={() => { setIdToDelete(b.id); setDeleteType('BUDGET'); setIsConfirmOpen(true); }}
+                        data-guide-anchor="pessoal.orcamentoExcluir"
                         className="p-2 text-slate-300 hover:text-rose-500"
                         title="Excluir Orçamento"
                         aria-label="Excluir Orçamento"

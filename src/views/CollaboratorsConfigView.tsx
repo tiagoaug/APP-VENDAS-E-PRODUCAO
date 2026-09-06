@@ -38,6 +38,8 @@ import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel, Sale,
 import { SECTORS, isDashboardCardAllowed, getTaskLevel, computeCollaboratorPayroll } from '../utils/collaborators';
 import { NAV_MONO_PALETTE } from '../utils/themes';
 import { generateId } from '../utils/id';
+import { generateUniquePin, PIN_LENGTH } from '../utils/pinKeypad';
+import CustomPinKeypad from '../components/CustomPinKeypad';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { toast } from '../utils/toast';
@@ -94,14 +96,20 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
   const [revealedPinId, setRevealedPinId] = useState<string | null>(null);
+  // Teclado personalizado da senha (ver CustomPinKeypad.tsx) — mesmo teclado que o colaborador
+  // usa pra entrar, garantindo que qualquer senha digitada/gerada aqui seja sempre digitável
+  // depois. "Gerar Senha" sugere uma combinação que nenhum OUTRO colaborador já está usando.
+  const [pinKeypadOpen, setPinKeypadOpen] = useState(false);
+  const [genIncludeLetters, setGenIncludeLetters] = useState(true);
+  const [genIncludeSpecials, setGenIncludeSpecials] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [sectorPopup, setSectorPopup] = useState<SectorId | null>(null);
   const [includePendingCommission, setIncludePendingCommission] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState<{ url: string; name: string } | null>(null);
 
-  const startNew = () => { setDraft(emptyDraft()); setShowPin(false); setFormTab('personal'); };
-  const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); setFormTab('personal'); };
+  const startNew = () => { setDraft(emptyDraft()); setShowPin(false); setPinKeypadOpen(false); setFormTab('personal'); };
+  const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); setPinKeypadOpen(false); setFormTab('personal'); };
 
   const isExistingDraft = !!draft && collaborators.some(c => c.id === draft.id);
   // Colaborador novo exige PIN de 6 dígitos. Editando um já existente, só exige que
@@ -219,6 +227,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           <button
             type="button"
             onClick={() => setDraft({ ...emptyDraft(), name: 'Diretor', isUnrestricted: true, cargo: 'diretor' })}
+            data-guide-anchor="collab.novo"
             className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-95"
           >
             Criar primeiro membro da equipe
@@ -244,6 +253,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                     <button
                       type="button"
                       onClick={() => setExpandedPhoto({ url: collab.photoUrl!, name: collab.name })}
+                      data-guide-anchor="collab.fotoAmpliar"
                       title="Ampliar foto"
                       aria-label={`Ampliar foto de ${collab.name}`}
                       className="w-10 h-10 rounded-2xl shrink-0 overflow-hidden"
@@ -258,10 +268,10 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button type="button" onClick={() => startEdit(collab)} title="Editar" aria-label={`Editar ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+                  <button type="button" onClick={() => startEdit(collab)} title="Editar" aria-label={`Editar ${collab.name}`} data-guide-anchor="collab.editar" className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
                     <Pencil size={15} />
                   </button>
-                  <button type="button" onClick={() => setDeleteTarget(collab.id)} title="Excluir" aria-label={`Excluir ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
+                  <button type="button" onClick={() => setDeleteTarget(collab.id)} title="Excluir" aria-label={`Excluir ${collab.name}`} data-guide-anchor="collab.excluir" className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -321,6 +331,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   <button
                     type="button"
                     onClick={() => onSave({ ...collab, locked: false, failedAttempts: 0 })}
+                    data-guide-anchor="collab.desbloquear"
                     className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest transition-colors"
                   >
                     Desbloquear
@@ -331,6 +342,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               <button
                 type="button"
                 onClick={() => setRevealedPinId(isRevealed ? null : collab.id)}
+                data-guide-anchor="collab.pinRevelar"
                 className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
               >
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">PIN</span>
@@ -393,7 +405,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
               {isExistingDraft ? 'Editar Dados' : 'Novo Colaborador'}
             </h3>
-            <button type="button" onClick={() => setDraft(null)} aria-label="Cancelar" title="Cancelar" className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600">
+            <button type="button" onClick={() => setDraft(null)} aria-label="Cancelar" title="Cancelar" data-guide-anchor="collab.formFechar" className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600">
               <X size={18} />
             </button>
           </div>
@@ -412,6 +424,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   key={tab.id}
                   type="button"
                   onClick={() => setFormTab(tab.id)}
+                  data-guide-anchor="collab.formAba"
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     formTab === tab.id
                       ? 'bg-indigo-600 text-white shadow-md'
@@ -442,6 +455,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 <button
                   type="button"
                   onClick={e => { e.preventDefault(); setDraft({ ...draft, photoUrl: undefined }); }}
+                  data-guide-anchor="collab.fotoRemover"
                   className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
                   title="Remover foto"
                 >
@@ -581,6 +595,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             <button
               type="button"
               onClick={() => setDraft({ ...draft, paymentFrequency: draft.paymentFrequency === 'BIWEEKLY' ? 'MONTHLY' : 'BIWEEKLY' })}
+              data-guide-anchor="collab.pagamentoQuinzenal"
               className="flex items-center justify-between"
             >
               <div className="flex items-center gap-3 text-left">
@@ -605,6 +620,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             <button
               type="button"
               onClick={() => setDraft({ ...draft, isSeller: !draft.isSeller })}
+              data-guide-anchor="collab.vendedorToggle"
               className="flex items-center justify-between"
             >
               <div className="flex items-center gap-3 text-left">
@@ -646,6 +662,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               <button
                 type="button"
                 onClick={() => setDraft({ ...draft, cargo: 'diretor' })}
+                data-guide-anchor="collab.cargoSelecionar"
                 className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'diretor' ? 'bg-violet-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
               >
                 Diretor
@@ -653,6 +670,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               <button
                 type="button"
                 onClick={() => setDraft({ ...draft, cargo: 'gerente' })}
+                data-guide-anchor="collab.cargoSelecionar"
                 className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'gerente' ? 'bg-blue-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
               >
                 Gerente
@@ -660,6 +678,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               <button
                 type="button"
                 onClick={() => setDraft({ ...draft, cargo: 'colaborador' })}
+                data-guide-anchor="collab.cargoSelecionar"
                 className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!draft.cargo || draft.cargo === 'colaborador') ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
               >
                 Colaborador
@@ -711,6 +730,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   <button
                     type="button"
                     onClick={() => setIncludePendingCommission(v => !v)}
+                    data-guide-anchor="collab.comissaoPendenteToggle"
                     className={`self-start text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-all ${includePendingCommission ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'}`}
                   >
                     {includePendingCommission ? 'Com comissão pendente' : 'Só comissão de vendas recebidas pela empresa'}
@@ -748,27 +768,74 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           {formTab === 'access' && (
           <>
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">PIN (6 dígitos)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Senha (6 caracteres)</label>
             <div className="relative">
+              {/* readOnly de propósito — abre o mesmo teclado personalizado que o colaborador
+                  usa pra entrar (CustomPinKeypad), garantindo que a senha digitada aqui sempre
+                  seja digitável depois. */}
               <input
-                type={showPin ? 'text' : 'password'}
-                inputMode="numeric"
-                maxLength={6}
-                value={draft.pin}
-                onChange={e => setDraft({ ...draft, pin: e.target.value.replace(/\D/g, '') })}
-                placeholder="000000"
-                className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors tracking-[0.3em] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                type="text"
+                readOnly
+                value={showPin ? draft.pin : '•'.repeat(draft.pin.length)}
+                placeholder="GERE OU CRIE MANUALMENTE ABAIXO"
+                className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors tracking-[0.3em] cursor-default ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
               />
               <button
                 type="button"
                 onClick={() => setShowPin(v => !v)}
-                title={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
-                aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
+                title={showPin ? 'Ocultar senha' : 'Mostrar senha'}
+                aria-label={showPin ? 'Ocultar senha' : 'Mostrar senha'}
+                data-guide-anchor="collab.pinMostrarToggle"
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-500 transition"
               >
                 {showPin ? <EyeOff size={16} strokeWidth={2.5} /> : <Eye size={16} strokeWidth={2.5} />}
               </button>
             </div>
+
+            {/* Sugestor de senha — só gera combinações do MESMO conjunto que o teclado do
+                colaborador oferece, e nunca repete a senha de outro colaborador já cadastrado. */}
+            <div className="flex items-center gap-3 px-1">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" checked={genIncludeLetters} onChange={e => setGenIncludeLetters(e.target.checked)} className="w-3.5 h-3.5 rounded accent-indigo-600" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Incluir letras</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" checked={genIncludeSpecials} onChange={e => setGenIncludeSpecials(e.target.checked)} className="w-3.5 h-3.5 rounded accent-indigo-600" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Incluir caracteres especiais</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const existingPins = collaborators.filter(c => c.id !== draft.id).map(c => c.pin);
+                const generated = generateUniquePin({ includeLetters: genIncludeLetters, includeSpecials: genIncludeSpecials }, existingPins);
+                setDraft({ ...draft, pin: generated });
+                setShowPin(true);
+                setPinKeypadOpen(false);
+              }}
+              data-guide-anchor="collab.gerarSenha"
+              className={`flex items-center justify-center gap-2 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}
+            >
+              <Sparkles size={13} /> Gerar Senha
+            </button>
+            <button
+              type="button"
+              onClick={() => setPinKeypadOpen(v => !v)}
+              data-guide-anchor="collab.criarSenhaManual"
+              className={`py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${pinKeypadOpen ? 'text-indigo-600' : 'text-slate-400 hover:text-indigo-600'}`}
+            >
+              {pinKeypadOpen ? 'Fechar Teclado' : 'Criar Manualmente'}
+            </button>
+
+            {pinKeypadOpen && (
+              <CustomPinKeypad
+                value={draft.pin}
+                onChange={(v) => setDraft({ ...draft, pin: v })}
+                onSubmit={() => setPinKeypadOpen(false)}
+                maxLength={PIN_LENGTH}
+                isDarkMode={isDarkMode}
+              />
+            )}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -779,6 +846,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   key={c}
                   type="button"
                   onClick={() => setDraft({ ...draft, colorHex: c })}
+                  data-guide-anchor="collab.corSelecionar"
                   title={c}
                   aria-label={`Cor ${c}`}
                   className={`w-8 h-8 rounded-xl border transition-all ${draft.colorHex === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
@@ -791,6 +859,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           <button
             type="button"
             onClick={() => setDraft({ ...draft, isUnrestricted: !draft.isUnrestricted })}
+            data-guide-anchor="collab.acessoTotalToggle"
             className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${draft.isUnrestricted ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
           >
             <div className="flex items-center gap-3 text-left min-w-0">
@@ -808,6 +877,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           <button
             type="button"
             onClick={() => setDraft({ ...draft, canUseAI: !draft.canUseAI })}
+            data-guide-anchor="collab.iaToggle"
             className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${draft.canUseAI ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
           >
             <div className="flex items-center gap-3 text-left min-w-0">
@@ -838,6 +908,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                       key={sector.id}
                       type="button"
                       onClick={() => setSectorPopup(sector.id)}
+                      data-guide-anchor="collab.setorAbrir"
                       className={`flex flex-col text-left p-4 rounded-2xl border-2 transition-all ${active ? (isDarkMode ? 'bg-slate-800 border-indigo-500' : 'bg-white border-indigo-500 shadow-md') : (isDarkMode ? 'bg-slate-950 border-slate-900 opacity-70' : 'bg-slate-50 border-slate-100 opacity-70')}`}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -889,6 +960,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   <button
                     type="button"
                     onClick={() => toggleSector(sector.id)}
+                    data-guide-anchor="collab.setorToggle"
                     className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${active ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
                   >
                     <div className="text-left">
@@ -914,6 +986,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                                   key={lvl}
                                   type="button"
                                   onClick={() => setTaskLevel(sector.id, task.id, lvl)}
+                                  data-guide-anchor="collab.taskLevel"
                                   className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
                                     level === lvl
                                       ? lvl === 'none' ? 'bg-rose-500 text-white' : lvl === 'view' ? 'bg-amber-500 text-white' : 'bg-indigo-600 text-white'
@@ -937,6 +1010,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   <button
                     type="button"
                     onClick={() => setSectorPopup(null)}
+                    data-guide-anchor="collab.setorPopupConcluir"
                     className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
                   >
                     Concluído
@@ -963,6 +1037,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                         key={card.id}
                         type="button"
                         onClick={() => toggleDashboardCard(card)}
+                        data-guide-anchor="collab.dashboardCardToggle"
                         className={`flex items-center justify-between gap-3 p-4 rounded-2xl border-2 transition-all text-left ${visible ? (isDarkMode ? 'bg-slate-800 border-indigo-500' : 'bg-white border-indigo-500 shadow-md') : (isDarkMode ? 'bg-slate-950 border-slate-900 opacity-60' : 'bg-slate-50 border-slate-100 opacity-60')}`}
                       >
                         <span className="flex items-center gap-2 min-w-0">
@@ -1014,6 +1089,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             <button
               type="button"
               onClick={() => setExpandedPhoto(null)}
+              data-guide-anchor="collab.fotoAmpliadaFechar"
               className="absolute -top-3 -right-3 w-9 h-9 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-md hover:bg-slate-100 transition-all"
               aria-label="Fechar" title="Fechar"
             >

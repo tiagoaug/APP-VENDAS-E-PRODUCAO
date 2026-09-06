@@ -1004,6 +1004,7 @@ export enum ViewType {
   DELIVERY_CARRIERS = 'DELIVERY_CARRIERS',
   DELIVERY_NAV_PREFS = 'DELIVERY_NAV_PREFS',
   DELIVERY_PRINT_CONFIG = 'DELIVERY_PRINT_CONFIG',
+  FORNECEDORES = 'FORNECEDORES',
 }
 
 export type DashboardCardConfig = {
@@ -1123,7 +1124,7 @@ export type AppModulesConfig = {
 // os itens do meio entram em `order`/`hidden`. Itens ausentes de `order` caem no fim, na ordem
 // padrão de sempre — assim adicionar um item novo (ex.: um módulo futuro) nunca quebra a config
 // salva de quem já personalizou antes.
-export type BottomNavItemId = 'purchases' | 'sales' | 'production' | 'bling' | 'entregas' | 'financial' | 'personal' | 'rh' | 'pcp' | 'stock' | 'people' | 'reports' | 'soleStock' | 'engineering' | 'purchaseNeeds' | 'ruleOfThree' | 'labelPrintStudio';
+export type BottomNavItemId = 'purchases' | 'sales' | 'production' | 'bling' | 'entregas' | 'financial' | 'personal' | 'rh' | 'pcp' | 'stock' | 'people' | 'reports' | 'soleStock' | 'engineering' | 'purchaseNeeds' | 'ruleOfThree' | 'labelPrintStudio' | 'catalogRequests' | 'sendCatalog' | 'fornecedores';
 export type BottomNavConfig = {
   order: BottomNavItemId[];
   hidden: BottomNavItemId[];
@@ -1711,7 +1712,14 @@ export type PurchaseRequest = {
 // abre regra pública no Firestore pra isso) e src/views/PersonDetailView.tsx (geração/gestão).
 export type CatalogLink = {
   id: string;
-  personId: string;
+  // Ausente/undefined quando `isGeneric` é true — link de grupo não é vinculado a um Cliente
+  // específico, quem faz o pedido digita o próprio nome (ver CatalogRequest.customerName).
+  personId?: string;
+  // true = "Link de Grupo": um único link genérico pra compartilhar em grupo/lista de
+  // transmissão, sem nome de cliente pré-preenchido. false/ausente = link Exclusivo de sempre
+  // (`personId` obrigatório). Ver src/views/SalesView.tsx (popup "Enviar Catálogo" — escolha
+  // GRUPO/EXCLUSIVO) e functions/src/catalog/publicCatalog.ts (rate limit diferente pra cada tipo).
+  isGeneric?: boolean;
   token: string; // aleatório (crypto.getRandomValues), nunca derivado de personId/data
   isActive: boolean;
   createdAt: number;
@@ -1725,6 +1733,10 @@ export type CatalogLink = {
   // true = catálogo público deste link mostra os produtos sem o preço (ex: pra um representante
   // ou cliente que só vai escolher modelo/cor/quantidade, sem ver valores).
   hidePrices?: boolean;
+  // true = cada tamanho/caixa já chega pré-preenchido com a quantidade EM ESTOQUE (em vez de
+  // vazio) — pra "vender o que já tem", o cliente só confirma ou ajusta pra baixo/cima em vez
+  // de montar o pedido do zero.
+  useStockQuantities?: boolean;
 };
 
 // Perfil de Envio de Catálogo — uma seleção de produtos salva com nome, pra reaproveitar ao
@@ -1753,7 +1765,14 @@ export type CatalogRequestItem = {
 export type CatalogRequest = {
   id: string;
   linkId: string;
-  personId: string;
+  // Ausente quando o pedido veio de um Link de Grupo (CatalogLink.isGeneric) — nesse caso quem
+  // fez o pedido digitou o próprio nome, guardado em `customerName` abaixo, e não há Person
+  // vinculada até alguém cadastrar o cliente na hora de importar pra Venda.
+  personId?: string;
+  // Nome digitado pelo cliente no Link de Grupo (obrigatório nesse caso, ver
+  // functions/src/catalog/publicCatalog.ts). Ausente em pedidos de link Exclusivo (usar Person
+  // via personId). Mantido mesmo depois de importado, só pra referência/exibição.
+  customerName?: string;
   status: CatalogRequestStatus;
   submittedAt: number;
   items: CatalogRequestItem[];

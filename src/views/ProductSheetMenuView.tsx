@@ -94,7 +94,7 @@ export default function ProductSheetMenuView({
         },
         {
           id: 'MODELS',
-          label: "Modelos",
+          label: "Nome de Modelos",
           desc: "Gerenciar modelos dos produtos",
           icon: <Layers size={24} />,
           color: "text-teal-600",
@@ -117,7 +117,7 @@ export default function ProductSheetMenuView({
         },
         { 
           id: 'SOLES',
-          label: "Solados",
+          label: "Cadastro de Solados",
           desc: "Solados e mapeamentos",
           icon: <Footprints size={24} />, 
           color: "text-orange-600",

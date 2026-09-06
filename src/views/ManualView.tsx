@@ -516,6 +516,7 @@ export default function ManualView({ onBack, isDarkMode }: ManualViewProps) {
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={onBack}
+          data-guide-anchor="manual.voltar"
           className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
           <ArrowLeft size={20} />
@@ -542,6 +543,7 @@ export default function ManualView({ onBack, isDarkMode }: ManualViewProps) {
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar no manual..."
           aria-label="Buscar no manual"
+          data-guide-anchor="manual.busca"
           className={`w-full pl-10 pr-4 py-3 rounded-2xl border-2 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-900 placeholder:text-slate-400'}`}
         />
       </div>
@@ -559,6 +561,7 @@ export default function ManualView({ onBack, isDarkMode }: ManualViewProps) {
               <button
                 type="button"
                 onClick={() => toggleSection(section.id)}
+                data-guide-anchor="manual.secao"
                 className={`w-full flex items-center gap-4 p-5 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
               >
                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 text-white ${section.color}`}>

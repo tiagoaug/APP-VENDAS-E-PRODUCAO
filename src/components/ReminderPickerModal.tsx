@@ -123,6 +123,7 @@ export default function ReminderPickerModal({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
+        data-guide-anchor="lembrete.abrir"
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
           isDarkMode ? "bg-slate-800 border-slate-700 hover:border-slate-600" : "bg-slate-50 border-slate-100 hover:border-slate-200"
         }`}
@@ -137,6 +138,7 @@ export default function ReminderPickerModal({
           <span
             role="button"
             title="Remover lembrete"
+            data-guide-anchor="lembrete.remover"
             onClick={(e) => {
               e.stopPropagation();
               onAtChange(null);
@@ -161,7 +163,7 @@ export default function ReminderPickerModal({
                   </div>
                   <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Configurar Lembrete</h2>
                 </div>
-                <button type="button" onClick={() => setIsOpen(false)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all" aria-label="Fechar">
+                <button type="button" onClick={() => setIsOpen(false)} data-guide-anchor="lembrete.fechar" className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all" aria-label="Fechar">
                   <X size={22} />
                 </button>
               </div>
@@ -189,6 +191,7 @@ export default function ReminderPickerModal({
                     <button
                       type="button"
                       onClick={() => { onAlarmModeChange(true); onCombineModeChange?.(false); }}
+                      data-guide-anchor="lembrete.modo"
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                         alarmMode && !combineMode ? "bg-rose-500 text-white shadow-sm" : "text-slate-400"
                       }`}
@@ -199,6 +202,7 @@ export default function ReminderPickerModal({
                       <button
                         type="button"
                         onClick={() => { onAlarmModeChange(true); onCombineModeChange(true); }}
+                        data-guide-anchor="lembrete.modo"
                         className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                           alarmMode && combineMode ? "bg-amber-500 text-white shadow-sm" : "text-slate-400"
                         }`}
@@ -209,6 +213,7 @@ export default function ReminderPickerModal({
                     <button
                       type="button"
                       onClick={() => { onAlarmModeChange(false); onCombineModeChange?.(false); }}
+                      data-guide-anchor="lembrete.modo"
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                         !alarmMode ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400"
                       }`}
@@ -240,13 +245,14 @@ export default function ReminderPickerModal({
                               : "bg-slate-50 border-slate-100"
                           }`}
                         >
-                          <button type="button" onClick={() => onSoundPatternChange(meta.id)} className="flex-1 flex flex-col items-start text-left">
+                          <button type="button" onClick={() => onSoundPatternChange(meta.id)} data-guide-anchor="lembrete.somSelecionar" className="flex-1 flex flex-col items-start text-left">
                             <span className={`text-[11px] font-black ${soundPattern === meta.id ? "text-indigo-600 dark:text-indigo-400" : isDarkMode ? "text-white" : "text-slate-700"}`}>{meta.label}</span>
                             <span className="text-[9px] font-bold text-slate-400">{meta.description}</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => playTonePreview(meta.id)}
+                            data-guide-anchor="lembrete.somOuvir"
                             title="Ouvir"
                             aria-label={`Ouvir toque ${meta.label}`}
                             className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 ${isDarkMode ? "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-900/60" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"}`}
@@ -266,6 +272,7 @@ export default function ReminderPickerModal({
                     <button
                       type="button"
                       onClick={() => setShowSaveProfile((v) => !v)}
+                      data-guide-anchor="lembrete.perfilSalvarToggle"
                       className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-indigo-500"
                     >
                       <Plus size={12} /> Salvar atual
@@ -285,6 +292,7 @@ export default function ReminderPickerModal({
                         type="button"
                         onClick={handleSaveProfile}
                         disabled={!newProfileName.trim()}
+                        data-guide-anchor="lembrete.perfilSalvarConfirmar"
                         className="px-3 rounded-xl bg-indigo-600 text-white disabled:opacity-40"
                         aria-label="Confirmar salvar perfil"
                       >
@@ -311,7 +319,7 @@ export default function ReminderPickerModal({
                               : "bg-slate-50 border-slate-100"
                           }`}
                         >
-                          <button type="button" onClick={() => applyProfile(p)} className="flex-1 flex items-center gap-2 text-left">
+                          <button type="button" onClick={() => applyProfile(p)} data-guide-anchor="lembrete.perfilAplicar" className="flex-1 flex items-center gap-2 text-left">
                             <Star size={13} className={active ? "text-indigo-500" : "text-slate-300"} />
                             <div className="flex flex-col">
                               <span className={`text-[11px] font-black ${isDarkMode ? "text-white" : "text-slate-700"}`}>{p.name}</span>
@@ -321,6 +329,7 @@ export default function ReminderPickerModal({
                           <button
                             type="button"
                             onClick={() => deleteReminderProfile(p.id)}
+                            data-guide-anchor="lembrete.perfilExcluir"
                             title="Excluir perfil"
                             aria-label={`Excluir perfil ${p.name}`}
                             className="text-slate-300 hover:text-rose-500 transition-colors shrink-0 p-1"
@@ -338,6 +347,7 @@ export default function ReminderPickerModal({
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
+                  data-guide-anchor="lembrete.fechar"
                   className="w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white flex items-center justify-center gap-1.5"
                 >
                   <Check size={14} /> Concluído

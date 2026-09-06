@@ -13,8 +13,11 @@ interface CatalogProductPickerModalProps {
   initialSelectedIds: string[];
   // true = o catálogo enviado por esse link não mostra preço nenhum dos produtos.
   initialHidePrices?: boolean;
+  // true = cada tamanho/caixa já chega pré-preenchido com a quantidade em estoque, em vez de
+  // vazio — pra "vender o que já tem" (o cliente só confirma/ajusta).
+  initialUseStockQuantities?: boolean;
   isDarkMode: boolean;
-  onConfirm: (productIds: string[], hidePrices: boolean) => void;
+  onConfirm: (productIds: string[], hidePrices: boolean, useStockQuantities: boolean) => void;
   onSaveProfile: (name: string, productIds: string[]) => Promise<void>;
   onDeleteProfile: (profileId: string) => Promise<void>;
 }
@@ -27,6 +30,7 @@ export default function CatalogProductPickerModal({
   profiles,
   initialSelectedIds,
   initialHidePrices = false,
+  initialUseStockQuantities = false,
   isDarkMode,
   onConfirm,
   onSaveProfile,
@@ -35,6 +39,7 @@ export default function CatalogProductPickerModal({
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelectedIds));
   const [allSelectedMode, setAllSelectedMode] = useState(initialSelectedIds.length === 0);
   const [hidePrices, setHidePrices] = useState(initialHidePrices);
+  const [useStockQuantities, setUseStockQuantities] = useState(initialUseStockQuantities);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [profileNameInput, setProfileNameInput] = useState('');
@@ -83,7 +88,7 @@ export default function CatalogProductPickerModal({
   };
 
   const handleConfirm = () => {
-    onConfirm(allSelectedMode ? [] : Array.from(selected), hidePrices);
+    onConfirm(allSelectedMode ? [] : Array.from(selected), hidePrices, useStockQuantities);
     onClose();
   };
 
@@ -114,7 +119,7 @@ export default function CatalogProductPickerModal({
             <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Produtos do Catálogo</h3>
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{selectedCount} de {activeProducts.length} selecionados</p>
           </div>
-          <button type="button" onClick={onClose} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+          <button type="button" onClick={onClose} data-guide-anchor="catalogPicker.fechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
             <X size={16} strokeWidth={2.5} />
           </button>
         </div>
@@ -123,6 +128,7 @@ export default function CatalogProductPickerModal({
           <button
             type="button"
             onClick={() => { setAllSelectedMode(true); setSelected(new Set()); }}
+            data-guide-anchor="catalogPicker.catalogoCompletoToggle"
             className={`flex items-center justify-between gap-2 p-3 rounded-xl text-left transition-all active:scale-[0.98] ${allSelectedMode ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-50 text-slate-600'}`}
           >
             <span className="text-[11px] font-black uppercase tracking-widest">Catálogo Completo (todos os produtos)</span>
@@ -137,11 +143,29 @@ export default function CatalogProductPickerModal({
             <button
               type="button"
               onClick={() => setHidePrices(prev => !prev)}
+              data-guide-anchor="catalogPicker.ocultarPrecosToggle"
               className={`w-12 h-6 rounded-full relative shrink-0 transition-colors ${hidePrices ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
               aria-label={hidePrices ? "Mostrar preços" : "Ocultar preços"}
               title={hidePrices ? "Mostrar preços" : "Ocultar preços"}
             >
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${hidePrices ? 'left-7' : 'left-1'}`} />
+            </button>
+          </div>
+
+          <div className={`flex items-center justify-between gap-3 p-3 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+            <div className="min-w-0">
+              <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Mostrar Quantidade em Estoque</p>
+              <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cliente vê quanto tem disponível, mas escolhe livremente a quantidade (sempre a partir de zero)</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUseStockQuantities(prev => !prev)}
+              data-guide-anchor="catalogPicker.estoqueVisivelToggle"
+              className={`w-12 h-6 rounded-full relative shrink-0 transition-colors ${useStockQuantities ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
+              aria-label={useStockQuantities ? "Esconder quantidade em estoque" : "Mostrar quantidade em estoque"}
+              title={useStockQuantities ? "Esconder quantidade em estoque" : "Mostrar quantidade em estoque"}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${useStockQuantities ? 'left-7' : 'left-1'}`} />
             </button>
           </div>
 
@@ -154,6 +178,7 @@ export default function CatalogProductPickerModal({
                     <button
                       type="button"
                       onClick={() => handleApplyProfile(profile)}
+                      data-guide-anchor="catalogPicker.perfilAplicar"
                       className={`flex items-center gap-1.5 pl-3 pr-2 py-2 rounded-l-xl rounded-r-none text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                       title={`Usar seleção do perfil "${profile.name}"`}
                     >
@@ -162,6 +187,7 @@ export default function CatalogProductPickerModal({
                     <button
                       type="button"
                       disabled={deletingProfileId === profile.id}
+                      data-guide-anchor="catalogPicker.perfilExcluir"
                       onClick={async () => {
                         if (!confirm(`Excluir o perfil "${profile.name}"? Não afeta links já enviados.`)) return;
                         setDeletingProfileId(profile.id);
@@ -196,6 +222,7 @@ export default function CatalogProductPickerModal({
                 <button
                   type="button"
                   onClick={() => setCategoryFilter('ALL')}
+                  data-guide-anchor="catalogPicker.categoriaFiltro"
                   className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${categoryFilter === 'ALL' ? 'bg-slate-900 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
                 >Todas Categorias</button>
                 {categoryOptions.map(c => (
@@ -203,6 +230,7 @@ export default function CatalogProductPickerModal({
                     key={c.id}
                     type="button"
                     onClick={() => setCategoryFilter(c.id)}
+                    data-guide-anchor="catalogPicker.categoriaFiltro"
                     className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${categoryFilter === c.id ? 'bg-slate-900 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
                   >{c.name}</button>
                 ))}
@@ -217,6 +245,7 @@ export default function CatalogProductPickerModal({
               key={product.id}
               type="button"
               onClick={() => toggleProduct(product.id)}
+              data-guide-anchor="catalogPicker.produtoSelecionar"
               className={`flex items-center gap-3 p-2.5 rounded-xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
             >
               {product.photoUrl ? (
@@ -252,6 +281,7 @@ export default function CatalogProductPickerModal({
                 type="button"
                 onClick={handleSaveProfile}
                 disabled={!profileNameInput.trim() || selectedCount === 0 || savingProfile}
+                data-guide-anchor="catalogPicker.perfilSalvar"
                 className={`shrink-0 flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 <Save size={14} /> Salvar
@@ -262,6 +292,7 @@ export default function CatalogProductPickerModal({
             type="button"
             onClick={handleConfirm}
             disabled={selectedCount === 0}
+            data-guide-anchor="catalogPicker.confirmar"
             className="w-full py-3 rounded-2xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50"
           >
             Confirmar ({selectedCount})

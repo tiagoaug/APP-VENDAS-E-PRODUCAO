@@ -91,6 +91,7 @@ export default function DeliveryExportModal({
                   key={t.key}
                   type="button"
                   onClick={() => { setChoice(prev => ({ ...prev, [t.key]: !prev[t.key] })); setPreviewPages(null); }}
+                  data-guide-anchor="deliveryExport.campoToggle"
                   className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${
                     active
                       ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400'
@@ -111,6 +112,7 @@ export default function DeliveryExportModal({
                   key={opt.mode}
                   type="button"
                   onClick={() => { setChoice(prev => ({ ...prev, boxesMode: active ? 'none' : opt.mode })); setPreviewPages(null); }}
+                  data-guide-anchor="deliveryExport.caixasModo"
                   className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${
                     active
                       ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400'
@@ -133,6 +135,7 @@ export default function DeliveryExportModal({
                 key={n}
                 type="button"
                 onClick={() => { setChoice(prev => ({ ...prev, stopsPerPage: n })); setPreviewPages(null); }}
+                data-guide-anchor="deliveryExport.paradasPorPagina"
                 className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 ${
                   choice.stopsPerPage === n
                     ? 'bg-teal-500 text-white'
@@ -168,6 +171,7 @@ export default function DeliveryExportModal({
                 key={opt.id}
                 type="button"
                 onClick={() => { setChoice(prev => ({ ...prev, pageSize: opt.id })); setPreviewPages(null); }}
+                data-guide-anchor="deliveryExport.tamanhoPagina"
                 className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 ${
                   choice.pageSize === opt.id
                     ? 'bg-teal-500 text-white'
@@ -188,6 +192,7 @@ export default function DeliveryExportModal({
                 key={opt.id}
                 type="button"
                 onClick={() => { setChoice(prev => ({ ...prev, format: opt.id })); setPreviewPages(null); }}
+                data-guide-anchor="deliveryExport.formato"
                 className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 ${
                   choice.format === opt.id
                     ? 'bg-teal-500 text-white'
@@ -211,11 +216,11 @@ export default function DeliveryExportModal({
             </div>
             {previewPages.length > 1 && (
               <div className="flex items-center justify-center gap-3">
-                <button type="button" disabled={previewIdx === 0} onClick={() => setPreviewIdx(i => i - 1)} className="p-1.5 rounded-full disabled:opacity-30 bg-slate-100 dark:bg-slate-800">
+                <button type="button" disabled={previewIdx === 0} onClick={() => setPreviewIdx(i => i - 1)} data-guide-anchor="deliveryExport.previewNavegar" className="p-1.5 rounded-full disabled:opacity-30 bg-slate-100 dark:bg-slate-800">
                   <ChevronLeft size={16} />
                 </button>
                 <span className="text-[10px] font-black text-slate-400">{previewIdx + 1} / {previewPages.length}</span>
-                <button type="button" disabled={previewIdx === previewPages.length - 1} onClick={() => setPreviewIdx(i => i + 1)} className="p-1.5 rounded-full disabled:opacity-30 bg-slate-100 dark:bg-slate-800">
+                <button type="button" disabled={previewIdx === previewPages.length - 1} onClick={() => setPreviewIdx(i => i + 1)} data-guide-anchor="deliveryExport.previewNavegar" className="p-1.5 rounded-full disabled:opacity-30 bg-slate-100 dark:bg-slate-800">
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -228,6 +233,7 @@ export default function DeliveryExportModal({
             type="button"
             onClick={handlePreview}
             disabled={isGenerating}
+            data-guide-anchor="deliveryExport.preview"
             className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-black uppercase tracking-widest text-[11px] transition-all active:scale-[0.98] border-2 ${isDarkMode ? 'border-slate-700 text-slate-300' : 'border-slate-200 text-slate-600'} disabled:opacity-60`}
           >
             {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
@@ -237,6 +243,7 @@ export default function DeliveryExportModal({
             type="button"
             onClick={handleShare}
             disabled={isSharing}
+            data-guide-anchor="deliveryExport.compartilhar"
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-black uppercase tracking-widest text-[11px] bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             {isSharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}

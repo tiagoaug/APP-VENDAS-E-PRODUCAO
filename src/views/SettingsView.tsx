@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Users,
   Tags,
@@ -10,9 +10,9 @@ import {
   Moon,
   Sun,
   ChevronRight,
+  ChevronDown,
   Layout,
   Grid3X3,
-  Factory,
   Database,
   Footprints,
   Shield,
@@ -41,13 +41,36 @@ import {
   Scissors,
   Bookmark,
   Layers,
-  Clock
+  Clock,
+  TableCellsMerge,
+  CalendarClock,
+  GanttChartSquare,
+  Box,
+  PackageOpen
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
 import AIAssistantSettings from '../components/AIAssistantSettings';
 import BottomNavConfigModal from '../components/BottomNavConfigModal';
+import CustomPinKeypad from '../components/CustomPinKeypad';
+import { PIN_LENGTH } from '../utils/pinKeypad';
+import { subscribeToProductionScheduleConfig, saveProductionScheduleConfig } from '../services/productionScheduleService';
+
+// Atalhos diretos pra cada sub-tela de "Configuração de Fábrica" (ProductionConfigView) —
+// pulam o menu intermediário e abrem a sub-tela na hora (mesmo mecanismo já usado por
+// SOLE_MATRIX_DIRECT), pra deixar tudo isso dentro do Menu Mais numa tela só.
+const PRODUCTION_CONFIG_SCREENS: Record<string, ProductionScreenType> = {
+  PROD_SECTORS: 'SECTORS',
+  PROD_FLOW_TAGS: 'FLOW_TAGS',
+  PROD_PRAZOS: 'PRAZOS',
+  PROD_INSUMOS: 'INSUMOS',
+  PROD_UNIDADES: 'UNIDADES',
+  PROD_FACAS: 'FACAS',
+  PROD_INFESTO: 'INFESTO',
+  PROD_PECAS: 'PECAS',
+  PROD_EMBALAGENS: 'EMBALAGENS',
+};
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
@@ -85,10 +108,6 @@ interface SettingsViewProps {
   // Personalização da barra de navegação inferior (ver App.tsx middleNavItems/BottomNavConfigModal).
   bottomNavConfig: BottomNavConfig;
   onSaveBottomNavConfig: (config: BottomNavConfig) => void;
-  // Expiração padrão do Link de Pedido (Catálogo Público) — em dias a partir da geração;
-  // null = nunca expira. Só afeta links gerados dali pra frente (App.tsx handleGenerateCatalogLink).
-  catalogLinkExpirationDays?: number | null;
-  onSetCatalogLinkExpirationDays?: (days: number | null) => Promise<void>;
 }
 
 export default function SettingsView({
@@ -122,10 +141,35 @@ export default function SettingsView({
   onOpenLabelPrintStudio,
   bottomNavConfig,
   onSaveBottomNavConfig,
-  catalogLinkExpirationDays = null,
-  onSetCatalogLinkExpirationDays,
 }: SettingsViewProps) {
-  const [savingLinkExpiration, setSavingLinkExpiration] = useState(false);
+  // "Tema", "Fonte", "Tamanho da Fonte" e "Ícones do Menu" começam minimizados — são escolhas
+  // feitas uma vez e raramente revisitadas, então não precisam ocupar espaço aberto toda vez
+  // que alguém entra em Acessibilidade e Personalização.
+  const [themeSectionOpen, setThemeSectionOpen] = useState(false);
+  const [fontSectionOpen, setFontSectionOpen] = useState(false);
+  const [fontScaleSectionOpen, setFontScaleSectionOpen] = useState(false);
+  const [navIconsSectionOpen, setNavIconsSectionOpen] = useState(false);
+  // Só Dias Úteis na Média — antes vivia só em Configuração de Fábrica, trazido pra cá pra
+  // centralizar toda a configuração de Produção no Menu Mais (mesma coleção/serviço, só que
+  // lido/gravado direto daqui em vez de por ProductionConfigView).
+  const [excludeWeekends, setExcludeWeekends] = useState(true);
+  // 'FULL_PERIOD' = dias úteis do período inteiro (comportamento de sempre); 'ELAPSED' = só os
+  // dias úteis já passados até agora — as duas opções são mutuamente exclusivas (ver botões
+  // abaixo, escolher uma desmarca a outra automaticamente).
+  const [averageMode, setAverageMode] = useState<'FULL_PERIOD' | 'ELAPSED'>('FULL_PERIOD');
+  useEffect(() => {
+    const unsub = subscribeToProductionScheduleConfig(cfg => { setExcludeWeekends(cfg.excludeWeekends); setAverageMode(cfg.averageMode); });
+    return () => unsub();
+  }, []);
+  const handleToggleExcludeWeekends = () => {
+    const next = !excludeWeekends;
+    setExcludeWeekends(next);
+    saveProductionScheduleConfig({ excludeWeekends: next, averageMode });
+  };
+  const handleSetAverageMode = (mode: 'FULL_PERIOD' | 'ELAPSED') => {
+    setAverageMode(mode);
+    saveProductionScheduleConfig({ excludeWeekends, averageMode: mode });
+  };
   const [showNavConfig, setShowNavConfig] = useState(false);
   const [showA11y, setShowA11y] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
@@ -135,10 +179,15 @@ export default function SettingsView({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  // Teclado personalizado do PIN (ver CustomPinKeypad.tsx) — só abre ao tocar no campo, em vez
+  // de abrir sozinho junto com o colaborador escolhido (aqui é um popup compacto, diferente da
+  // tela cheia "Quem é Você?", onde abrir direto economiza um toque).
+  const [pinKeypadOpen, setPinKeypadOpen] = useState(false);
   const [expandedCollabPhoto, setExpandedCollabPhoto] = useState<{ url: string; name: string } | null>(null);
 
   const isItemAllowed = (itemId: ViewType | string) => {
     if (itemId === 'SOLE_MATRIX_DIRECT') return isSectorAllowed(activeCollaborator, 'cadastro_insumos');
+    if (itemId in PRODUCTION_CONFIG_SCREENS) return isSectorAllowed(activeCollaborator, 'producao_pcp');
     return isViewAllowed(activeCollaborator, itemId as ViewType) && isViewTaskAllowed(activeCollaborator, itemId as ViewType);
   };
 
@@ -148,6 +197,7 @@ export default function SettingsView({
     setPinInput('');
     setPinError(false);
     setShowPin(false);
+    setPinKeypadOpen(false);
   };
 
   const confirmSwitch = () => {
@@ -163,7 +213,7 @@ export default function SettingsView({
 
   const menuGroups = [
     {
-      title: "Configurações de Negócio",
+      title: "Cadastros",
       items: [
         // Duas entradas em vez de uma só — mesmo padrão de "Parâmetros de Modelagem" em
         // Configurações de Produção. Vão pro catálogo neutro (ProductsView) e direto pro
@@ -176,17 +226,35 @@ export default function SettingsView({
         { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={22} />, color: "text-pink-600 dark:text-pink-400", bg: "bg-pink-50 dark:bg-pink-900/30", module: 'any' },
         { id: ViewType.CATEGORIES, label: "Categorias e Grupos", icon: <Tags size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'any' },
         { id: ViewType.BRANDS, label: "Marcas", icon: <Bookmark size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/30", module: 'sales' },
-        { id: ViewType.MODELS, label: "Modelos", icon: <Layers size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/30", module: 'sales' },
+        { id: ViewType.MODELS, label: "Nome de Modelos", icon: <Layers size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/30", module: 'sales' },
         { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
+      ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
+    },
+    {
+      // Ferramentas por módulo (integrações e extras opcionais) — separadas dos Cadastros
+      // porque não são "dado" a preencher, são funções/integrações que ou estão ligadas
+      // (Entregas, Bling) ou são um assistente à parte (IA), cada uma com sua própria tela.
+      title: "Ferramentas de Módulos",
+      items: [
         { id: ViewType.DELIVERY_MENU, label: "Módulo Entregas", icon: <Truck size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'entregas' },
+        { id: ViewType.BLING_CONNECTION, label: "Conexão Bling", icon: <Building2 size={22} />, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20", module: 'bling' },
+        { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'ai' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
     },
     {
       title: "Módulo de Produção",
       items: [
-        { id: 'SOLE_MATRIX_DIRECT', label: "Solados", icon: <Footprints size={22} />, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/20", module: 'production' },
+        { id: 'PROD_SECTORS', label: "Setores de Produção", icon: <TableCellsMerge size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'production' },
+        { id: 'PROD_FLOW_TAGS', label: "Etapas e Processos", icon: <Tags size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'production' },
+        { id: 'PROD_PRAZOS', label: "Prazos de Entrega", icon: <CalendarClock size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'production' },
         { id: ViewType.GRIDS, label: "Grades de Tamanho", icon: <Grid3X3 size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/30", module: 'production' },
-        { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Fábrica", icon: <Factory size={22} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'production' },
+        { id: 'SOLE_MATRIX_DIRECT', label: "Cadastro de Solados", icon: <Footprints size={22} />, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/20", module: 'production' },
+        { id: 'PROD_INSUMOS', label: "Materiais e Insumos", icon: <Layers size={22} />, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/30", module: 'production' },
+        { id: 'PROD_UNIDADES', label: "Unidades de Medida", icon: <GanttChartSquare size={22} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'production' },
+        { id: 'PROD_FACAS', label: "Facas de Corte", icon: <Scissors size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'production' },
+        { id: 'PROD_INFESTO', label: "Camadas de Dobra Para Corte", icon: <Box size={22} />, color: "text-sky-600 dark:text-sky-400", bg: "bg-sky-50 dark:bg-sky-900/20", module: 'production' },
+        { id: 'PROD_PECAS', label: "Peças", icon: <Layers size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'production' },
+        { id: 'PROD_EMBALAGENS', label: "Padrão Embalagens", icon: <PackageOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'production' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
     },
     {
@@ -204,7 +272,6 @@ export default function SettingsView({
         { id: ViewType.RH_MENU, label: "RH", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'rh' },
         { id: ViewType.COMPANY_PROFILE, label: "Personalizar Empresa", icon: <Building2 size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'any' },
         { id: 'ONBOARDING_WIZARD', label: "Assistente de Configuração", icon: <Rocket size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'any' },
-        { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'ai' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
         { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
@@ -237,9 +304,12 @@ export default function SettingsView({
                   key={item.id}
                   title={item.label}
                   aria-label={`Navegar para ${item.label}`}
+                  data-guide-anchor="settings.menuItem"
                   onClick={() => {
                     if (item.id === 'SOLE_MATRIX_DIRECT') {
                       onNavigateProduction('MATRIZES');
+                    } else if (typeof item.id === 'string' && item.id in PRODUCTION_CONFIG_SCREENS) {
+                      onNavigateProduction(PRODUCTION_CONFIG_SCREENS[item.id]);
                     } else if (item.id === 'AI_SETTINGS') {
                       setShowAISettings(true);
                     } else if (item.id === 'ONBOARDING_WIZARD') {
@@ -264,6 +334,65 @@ export default function SettingsView({
                 </button>
               ))}
             </div>
+
+            {group.title === 'Módulo de Produção' && (
+              <div className={`rounded-3xl border shadow-sm p-5 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-teal-500/15 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                      <CalendarClock size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Só Dias Úteis na Média</p>
+                      <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">
+                        Divide os pares produzidos só pelos dias de seg. a sex. do período, excluindo sábado e domingo — em vez de todos os dias corridos
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleToggleExcludeWeekends}
+                    data-guide-anchor="prodcfg.excludeWeekendsToggle"
+                    aria-label={excludeWeekends ? 'Desativar contagem só de dias úteis' : 'Ativar contagem só de dias úteis'}
+                    className={`w-12 h-7 rounded-full transition-all relative shrink-0 ${excludeWeekends ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
+                  >
+                    <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 ${excludeWeekends ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+                {excludeWeekends && (
+                  <div className="flex flex-col gap-1.5 pl-14">
+                    <button
+                      type="button"
+                      onClick={() => handleSetAverageMode('FULL_PERIOD')}
+                      data-guide-anchor="prodcfg.averageModeFullPeriod"
+                      className={`flex items-start gap-2.5 p-3 rounded-2xl text-left transition-all ${averageMode === 'FULL_PERIOD' ? (isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50') : (isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50')}`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center ${averageMode === 'FULL_PERIOD' ? 'border-indigo-600' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                        {averageMode === 'FULL_PERIOD' && <div className="w-2 h-2 rounded-full bg-indigo-600" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Período Total de Dias Úteis</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">Divide pelos dias úteis do período inteiro, mesmo os que ainda não chegaram</p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetAverageMode('ELAPSED')}
+                      data-guide-anchor="prodcfg.averageModeElapsed"
+                      className={`flex items-start gap-2.5 p-3 rounded-2xl text-left transition-all ${averageMode === 'ELAPSED' ? (isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50') : (isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50')}`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center ${averageMode === 'ELAPSED' ? 'border-indigo-600' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                        {averageMode === 'ELAPSED' && <div className="w-2 h-2 rounded-full bg-indigo-600" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Média até o Momento no Mês</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">Divide só pelos dias úteis já trabalhados até hoje — não dilui pelos dias que ainda faltam</p>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
 
@@ -275,6 +404,7 @@ export default function SettingsView({
               onClick={() => setShowCollabSwitcher(true)}
               title="Quem está usando"
               aria-label="Trocar colaborador ativo"
+              data-guide-anchor="settings.trocarColaborador"
               className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors active:bg-slate-100 dark:active:bg-slate-800"
             >
               <div className="flex items-center gap-4">
@@ -307,6 +437,7 @@ export default function SettingsView({
               onClick={() => setShowA11y(true)}
               title="Acessibilidade e Personalização"
               aria-label="Abrir configurações de acessibilidade e personalização"
+              data-guide-anchor="settings.acessibilidadeAbrir"
               className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
@@ -326,10 +457,11 @@ export default function SettingsView({
               onClick={() => onNavigate(ViewType.MODULES_CONFIG)}
               title="Módulos do Sistema"
               aria-label="Configurar módulos do sistema"
+              data-guide-anchor="settings.modulosAbrir"
               className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400">
                   <Shield size={22} />
                 </div>
                 <div className="text-left">
@@ -345,10 +477,11 @@ export default function SettingsView({
               onClick={() => onNavigate(ViewType.DASHBOARD_CONFIG)}
               title="Organizar Dashboard"
               aria-label="Organizar layout do Dashboard"
+              data-guide-anchor="settings.dashboardConfigAbrir"
               className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400">
                   <Layout size={22} />
                 </div>
                 <div className="text-left">
@@ -364,10 +497,11 @@ export default function SettingsView({
               onClick={() => setShowNavConfig(true)}
               title="Personalizar Navegação"
               aria-label="Escolher e ordenar os ícones da barra de navegação"
+              data-guide-anchor="settings.navConfigAbrir"
               className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400">
                   <MoveHorizontal size={22} />
                 </div>
                 <div className="text-left">
@@ -383,10 +517,11 @@ export default function SettingsView({
               onClick={() => onNavigate(ViewType.DATA_CLEANUP)}
               title="Limpeza e Arquivamento de Dados"
               aria-label="Configurar limpeza e arquivamento de dados antigos"
+              data-guide-anchor="settings.dataCleanupAbrir"
               className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center shrink-0 text-rose-600 dark:text-rose-400">
                   <Database size={22} />
                 </div>
                 <div className="text-left">
@@ -407,6 +542,7 @@ export default function SettingsView({
               onClick={() => setShowLogoutConfirm(true)}
               title="Encerrar Sessão"
               aria-label="Sair da conta atual"
+              data-guide-anchor="settings.sairAbrir"
               className="w-full flex items-center justify-between p-4 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-colors active:bg-rose-100 dark:active:bg-rose-900/20"
             >
               <div className="flex items-center gap-4">
@@ -457,6 +593,7 @@ export default function SettingsView({
               </div>
               <button
                 onClick={() => setShowA11y(false)}
+                data-guide-anchor="settings.acessibilidadeFechar"
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
                 aria-label="Fechar" title="Fechar"
               >
@@ -480,6 +617,7 @@ export default function SettingsView({
                   onClick={toggleDarkMode}
                   title="Alternar modo claro/escuro"
                   aria-label="Alternar modo claro/escuro"
+                  data-guide-anchor="settings.modoEscuro"
                   className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-200'}`}
                 >
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${isDarkMode ? 'left-7' : 'left-1'}`} />
@@ -502,6 +640,7 @@ export default function SettingsView({
                     onClick={() => setShowEngineeringThumbnails(!showEngineeringThumbnails)}
                     title="Mostrar/ocultar miniaturas dos modelos"
                     aria-label="Mostrar ou ocultar miniaturas dos modelos na Engenharia de Produto"
+                    data-guide-anchor="settings.miniaturasEngenharia"
                     className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${showEngineeringThumbnails ? 'left-7' : 'left-1'}`} />
@@ -526,6 +665,7 @@ export default function SettingsView({
                     onClick={() => setHideFinancialValues(!hideFinancialValues)}
                     title="Ativar/desativar Modo Privacidade Financeira"
                     aria-label="Ativar ou desativar o Modo Privacidade Financeira"
+                    data-guide-anchor="settings.privacidadeFinanceira"
                     className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${hideFinancialValues ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${hideFinancialValues ? 'left-7' : 'left-1'}`} />
@@ -550,6 +690,7 @@ export default function SettingsView({
                     onClick={() => setExtraHeaderTopSpace(!extraHeaderTopSpace)}
                     title="Ativar/desativar espaço extra no topo do cabeçalho"
                     aria-label="Ativar ou desativar espaço extra no topo do cabeçalho"
+                    data-guide-anchor="settings.espacoTopoExtra"
                     className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${extraHeaderTopSpace ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${extraHeaderTopSpace ? 'left-7' : 'left-1'}`} />
@@ -557,167 +698,175 @@ export default function SettingsView({
                 </div>
               )}
 
-              {/* Expiração do Link de Pedido (Catálogo Público) — só afeta links novos, gerados
-                  depois de mudar essa opção; links já enviados continuam como estavam. */}
-              {onSetCatalogLinkExpirationDays && (
-                <div className={`flex flex-col gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
-                      <Clock size={18} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Expiração do Link de Pedido</p>
-                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Só vale pra links novos, gerados a partir de agora</p>
-                    </div>
+              {/* Tema — acordeão minimizado por padrão (escolha rara de revisitar). */}
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setThemeSectionOpen(v => !v)}
+                  data-guide-anchor="settings.temaAcordeao"
+                  className="flex items-center justify-between gap-2 px-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <Palette size={14} className="text-slate-400" />
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tema</p>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {[
-                      { label: 'Nunca', value: null },
-                      { label: '1 dia', value: 1 },
-                      { label: '3 dias', value: 3 },
-                      { label: '5 dias', value: 5 },
-                      { label: '7 dias', value: 7 },
-                      { label: '15 dias', value: 15 },
-                      { label: '30 dias', value: 30 },
-                      { label: '60 dias', value: 60 },
-                    ].map((opt) => (
-                      <button
-                        key={opt.label}
-                        type="button"
-                        disabled={savingLinkExpiration}
-                        onClick={async () => {
-                          setSavingLinkExpiration(true);
-                          try { await onSetCatalogLinkExpirationDays(opt.value); } finally { setSavingLinkExpiration(false); }
-                        }}
-                        className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-50 ${catalogLinkExpirationDays === opt.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-100'}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Tema */}
-              <div className="flex flex-col gap-2.5">
-                <div className="flex items-center gap-2 px-1">
-                  <Palette size={14} className="text-slate-400" />
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tema</p>
-                </div>
-                <div className="grid grid-cols-4 gap-2.5">
-                  {(Object.keys(THEME_VISUALS) as ThemeId[]).map(id => {
-                    const t = THEME_VISUALS[id];
-                    const active = appTheme === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setAppTheme(id)}
-                        className="flex flex-col items-center gap-1.5"
-                        aria-label={`Tema ${t.label}`}
-                        title={t.label}
-                      >
-                        <div
-                          className={`w-9 h-9 rounded-lg border-2 transition-all flex items-center justify-center ${active ? 'border-violet-500 scale-110 shadow-lg' : 'border-transparent'}`}
-                          style={{ background: t.swatch }}
-                        >
-                          {active && <Check size={14} className="text-white drop-shadow" strokeWidth={3} />}
-                        </div>
-                        <span className={`text-[8px] font-black uppercase tracking-wide ${active ? 'text-violet-500' : 'text-slate-400'}`}>{t.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Fonte */}
-              <div className="flex flex-col gap-2.5">
-                <div className="flex items-center gap-2 px-1">
-                  <Type size={14} className="text-slate-400" />
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Fonte</p>
-                </div>
-                <div className={`flex flex-col gap-1.5 max-h-48 overflow-y-auto rounded-2xl p-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                  {FONT_OPTIONS.map(opt => {
-                    const active = fontFamily === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setFontFamily(opt.value)}
-                        className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${active ? 'bg-violet-500 text-white' : isDarkMode ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-white text-slate-600'}`}
-                        style={{ fontFamily: opt.value }}
-                      >
-                        <span className="text-sm truncate">{opt.label}</span>
-                        {active && <Check size={14} className="shrink-0" strokeWidth={3} />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Tamanho da Fonte */}
-              <div className="flex flex-col gap-2.5">
-                <div className="flex items-center gap-2 px-1">
-                  <Type size={14} className="text-slate-400" />
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tamanho da Fonte ({fontScale}%)</p>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {FONT_SCALE_OPTIONS.map(pct => {
-                    const active = fontScale === pct;
-                    return (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => setFontScale(pct)}
-                        className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all active:scale-95 ${active ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
-                      >
-                        <span className={`font-black leading-none ${active ? 'text-violet-600 dark:text-violet-400' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`} style={{ fontSize: `${10 + (pct / 100) * 6}px` }}>A</span>
-                        <span className={`text-[9px] font-black ${active ? 'text-violet-500' : 'text-slate-400'}`}>{pct}%</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Ícones do Menu — barra inferior (Home/Compras/Vendas/...) */}
-              <div className="flex flex-col gap-2.5">
-                <div className="flex items-center gap-2 px-1">
-                  <Layout size={14} className="text-slate-400" />
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Ícones do Menu</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNavIconMode('mono')}
-                    className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'mono' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
-                  >
-                    <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'mono' ? 'text-violet-500' : 'text-slate-400'}`}>Monocromático</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNavIconMode('colored')}
-                    className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'colored' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
-                  >
-                    <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'colored' ? 'text-violet-500' : 'text-slate-400'}`}>Colorido</span>
-                  </button>
-                </div>
-                {navIconMode === 'mono' && (
-                  <div className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Cor do ícone ativo</p>
-                    <div className="flex flex-wrap gap-2">
-                      {NAV_MONO_PALETTE.map(c => (
+                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${themeSectionOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {themeSectionOpen && (
+                  <div className="grid grid-cols-4 gap-2.5">
+                    {(Object.keys(THEME_VISUALS) as ThemeId[]).map(id => {
+                      const t = THEME_VISUALS[id];
+                      const active = appTheme === id;
+                      return (
                         <button
-                          key={c}
+                          key={id}
                           type="button"
-                          onClick={() => setNavMonoColor(c)}
-                          title={c}
-                          aria-label={`Cor ${c}`}
-                          className={`w-7 h-7 rounded-lg border transition-all ${navMonoColor === c ? 'border-violet-500 scale-110 ring-2 ring-violet-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                    </div>
+                          onClick={() => setAppTheme(id)}
+                          data-guide-anchor="settings.tema"
+                          className="flex flex-col items-center gap-1.5"
+                          aria-label={`Tema ${t.label}`}
+                          title={t.label}
+                        >
+                          <div
+                            className={`w-9 h-9 rounded-lg border-2 transition-all flex items-center justify-center ${active ? 'border-violet-500 scale-110 shadow-lg' : 'border-transparent'}`}
+                            style={{ background: t.swatch }}
+                          >
+                            {active && <Check size={14} className="text-white drop-shadow" strokeWidth={3} />}
+                          </div>
+                          <span className={`text-[8px] font-black uppercase tracking-wide ${active ? 'text-violet-500' : 'text-slate-400'}`}>{t.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
+                )}
+              </div>
+
+              {/* Fonte — acordeão minimizado por padrão (escolha rara de revisitar). */}
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setFontSectionOpen(v => !v)}
+                  data-guide-anchor="settings.fonteAcordeao"
+                  className="flex items-center justify-between gap-2 px-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <Type size={14} className="text-slate-400" />
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Fonte</p>
+                  </div>
+                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontSectionOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {fontSectionOpen && (
+                  <div className={`flex flex-col gap-1.5 max-h-48 overflow-y-auto rounded-2xl p-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                    {FONT_OPTIONS.map(opt => {
+                      const active = fontFamily === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setFontFamily(opt.value)}
+                          data-guide-anchor="settings.fonteFamilia"
+                          className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${active ? 'bg-violet-500 text-white' : isDarkMode ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-white text-slate-600'}`}
+                          style={{ fontFamily: opt.value }}
+                        >
+                          <span className="text-sm truncate">{opt.label}</span>
+                          {active && <Check size={14} className="shrink-0" strokeWidth={3} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Tamanho da Fonte — acordeão minimizado por padrão. */}
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setFontScaleSectionOpen(v => !v)}
+                  data-guide-anchor="settings.fonteTamanhoAcordeao"
+                  className="flex items-center justify-between gap-2 px-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <Type size={14} className="text-slate-400" />
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tamanho da Fonte ({fontScale}%)</p>
+                  </div>
+                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontScaleSectionOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {fontScaleSectionOpen && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {FONT_SCALE_OPTIONS.map(pct => {
+                      const active = fontScale === pct;
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setFontScale(pct)}
+                          data-guide-anchor="settings.fonteTamanho"
+                          className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all active:scale-95 ${active ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+                        >
+                          <span className={`font-black leading-none ${active ? 'text-violet-600 dark:text-violet-400' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`} style={{ fontSize: `${10 + (pct / 100) * 6}px` }}>A</span>
+                          <span className={`text-[9px] font-black ${active ? 'text-violet-500' : 'text-slate-400'}`}>{pct}%</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Ícones do Menu — barra inferior (Home/Compras/Vendas/...) — acordeão minimizado
+                  por padrão. */}
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setNavIconsSectionOpen(v => !v)}
+                  data-guide-anchor="settings.iconesMenuAcordeao"
+                  className="flex items-center justify-between gap-2 px-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <Layout size={14} className="text-slate-400" />
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Ícones do Menu</p>
+                  </div>
+                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${navIconsSectionOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {navIconsSectionOpen && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNavIconMode('mono')}
+                        data-guide-anchor="settings.navIconMode"
+                        className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'mono' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+                      >
+                        <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'mono' ? 'text-violet-500' : 'text-slate-400'}`}>Monocromático</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNavIconMode('colored')}
+                        data-guide-anchor="settings.navIconMode"
+                        className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'colored' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+                      >
+                        <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'colored' ? 'text-violet-500' : 'text-slate-400'}`}>Colorido</span>
+                      </button>
+                    </div>
+                    {navIconMode === 'mono' && (
+                      <div className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Cor do ícone ativo</p>
+                        <div className="flex flex-wrap gap-2">
+                          {NAV_MONO_PALETTE.map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setNavMonoColor(c)}
+                              title={c}
+                              aria-label={`Cor ${c}`}
+                              data-guide-anchor="settings.navMonoCor"
+                              className={`w-7 h-7 rounded-lg border transition-all ${navMonoColor === c ? 'border-violet-500 scale-110 ring-2 ring-violet-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -726,6 +875,7 @@ export default function SettingsView({
               <button
                 type="button"
                 onClick={() => setShowA11y(false)}
+                data-guide-anchor="settings.acessibilidadeFechar"
                 className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
               >
                 Concluído
@@ -756,6 +906,7 @@ export default function SettingsView({
               </div>
               <button
                 onClick={closeCollabSwitcher}
+                data-guide-anchor="settings.trocarColaboradorFechar"
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
                 aria-label="Fechar" title="Fechar"
               >
@@ -784,6 +935,7 @@ export default function SettingsView({
                           onClick={() => setExpandedCollabPhoto({ url: collab.photoUrl!, name: collab.name })}
                           title="Ampliar foto"
                           aria-label={`Ampliar foto de ${collab.name}`}
+                          data-guide-anchor="settings.trocarColaboradorFoto"
                           className="w-9 h-9 rounded-xl overflow-hidden shrink-0"
                         >
                           <img src={collab.photoUrl} alt={collab.name} className="w-full h-full object-cover" />
@@ -795,7 +947,8 @@ export default function SettingsView({
                       )}
                       <button
                         type="button"
-                        onClick={() => { setSwitchTargetId(isTarget ? null : collab.id); setPinInput(''); setPinError(false); }}
+                        onClick={() => { setSwitchTargetId(isTarget ? null : collab.id); setPinInput(''); setPinError(false); setPinKeypadOpen(false); }}
+                        data-guide-anchor="settings.trocarColaboradorSelecionar"
                         className="flex-1 flex items-center gap-3 text-left"
                       >
                         <div className="text-left flex-1">
@@ -818,35 +971,46 @@ export default function SettingsView({
                     {isTarget && !collab.locked && (
                       <div className="flex flex-col gap-2 px-1 animate-in fade-in slide-in-from-top-1 duration-150">
                         <div className="relative">
+                          {/* readOnly de propósito — abre o teclado personalizado abaixo ao
+                              tocar, em vez do teclado nativo do celular. */}
                           <input
-                            type={showPin ? 'text' : 'password'}
-                            inputMode="numeric"
-                            maxLength={6}
-                            autoFocus
-                            value={pinInput}
-                            onChange={e => { setPinInput(e.target.value.replace(/\D/g, '')); setPinError(false); }}
-                            onKeyDown={e => { if (e.key === 'Enter') confirmSwitch(); }}
-                            placeholder="Digite o PIN"
-                            className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none tracking-[0.3em] text-center transition-colors ${pinError ? 'border-rose-500' : 'focus:border-indigo-500'} ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                            type="text"
+                            readOnly
+                            value={showPin ? pinInput : '•'.repeat(pinInput.length)}
+                            onClick={() => setPinKeypadOpen(true)}
+                            placeholder="Toque para digitar o PIN"
+                            className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none tracking-[0.3em] text-center cursor-pointer transition-colors ${pinError ? 'border-rose-500' : 'focus:border-indigo-500'} ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-white border-slate-200 text-slate-900'}`}
                           />
                           <button
                             type="button"
                             onClick={() => setShowPin(v => !v)}
                             title={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
                             aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
+                            data-guide-anchor="settings.trocarColaboradorPinToggle"
                             className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-500 transition"
                           >
                             {showPin ? <EyeOff size={16} strokeWidth={2.5} /> : <Eye size={16} strokeWidth={2.5} />}
                           </button>
                         </div>
                         {pinError && <p className="text-[10px] font-bold text-rose-500 text-center">PIN incorreto</p>}
-                        <button
-                          type="button"
-                          onClick={confirmSwitch}
-                          className="w-full py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
-                        >
-                          Confirmar
-                        </button>
+                        {pinKeypadOpen ? (
+                          <CustomPinKeypad
+                            value={pinInput}
+                            onChange={(v) => { setPinInput(v); setPinError(false); }}
+                            onSubmit={confirmSwitch}
+                            maxLength={PIN_LENGTH}
+                            isDarkMode={isDarkMode}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={confirmSwitch}
+                            data-guide-anchor="settings.trocarColaboradorConfirmar"
+                            className="w-full py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+                          >
+                            Confirmar
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -869,6 +1033,7 @@ export default function SettingsView({
             <button
               type="button"
               onClick={() => setExpandedCollabPhoto(null)}
+              data-guide-anchor="settings.fotoAmpliadaFechar"
               className="absolute -top-3 -right-3 w-9 h-9 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-md hover:bg-slate-100 transition-all"
               aria-label="Fechar" title="Fechar"
             >
@@ -900,6 +1065,7 @@ export default function SettingsView({
               <button
                 onClick={() => setShowLogoutConfirm(false)}
                 title="Cancelar Sair"
+                data-guide-anchor="settings.sairCancelar"
                 className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${
                   isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                 }`}
@@ -909,6 +1075,7 @@ export default function SettingsView({
               <button
                 onClick={() => { setShowLogoutConfirm(false); onLogout(); }}
                 title="Confirmar Sair"
+                data-guide-anchor="settings.sairConfirmar"
                 className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95"
               >
                 Sair

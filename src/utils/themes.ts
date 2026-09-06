@@ -82,6 +82,9 @@ export const NAV_TAB_COLORS: Record<string, string> = {
   purchaseNeeds: '#d97706', // Necessidades — âmbar
   ruleOfThree: '#0d9488', // Regra de Três — teal
   labelPrintStudio: '#4f46e5', // Ajustes de PDF/JPG — indigo
+  catalogRequests: '#7c3aed', // Pedidos de Catálogo — violeta
+  sendCatalog: '#9333ea',     // Enviar Catálogo — roxo
+  fornecedores: '#9a3412',    // Fornecedores — laranja escuro
 };
 
 // 25 cores para o modo "Monocromático" — do escuro ao claro, cobrindo várias

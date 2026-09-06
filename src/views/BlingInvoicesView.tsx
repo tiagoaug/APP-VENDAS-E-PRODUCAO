@@ -124,6 +124,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
             <button
               key={f}
               onClick={() => setDateFilter(f)}
+              data-guide-anchor="blingInvoices.filtroData"
               className={`flex-1 h-9 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-colors ${
                 dateFilter === f
                   ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
@@ -157,6 +158,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
           <button
             onClick={handlePrint}
             disabled={checkedCount === 0}
+            data-guide-anchor="blingInvoices.imprimir"
             className="flex-1 h-11 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
           >
             <Printer size={14} /> Imprimir ({checkedCount})
@@ -164,6 +166,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
           <button
             onClick={handleSharePdf}
             disabled={checkedCount === 0 || sharing}
+            data-guide-anchor="blingInvoices.compartilharPdf"
             className="flex-1 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
           >
             {sharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
@@ -176,6 +179,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
         <button
           onClick={toggleAll}
           disabled={selectable.length === 0}
+          data-guide-anchor="blingInvoices.selecionarTodos"
           className={`flex-1 h-11 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
         >
           {allChecked ? <CheckSquare size={15} /> : <Square size={15} />}
@@ -213,7 +217,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
               }`}
             >
               <div className="flex items-center gap-3">
-                <button onClick={() => toggleOne(order)} disabled={!isSelectable} className="shrink-0 disabled:opacity-20">
+                <button onClick={() => toggleOne(order)} disabled={!isSelectable} data-guide-anchor="blingInvoices.pedidoSelecionar" className="shrink-0 disabled:opacity-20">
                   {isChecked ? <CheckSquare size={20} className="text-emerald-500" /> : <Square size={20} className="text-slate-300" />}
                 </button>
                 <div className="min-w-0 flex-1">
@@ -251,6 +255,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
                 {order.etiquetaTransporte && (
                   <button
                     onClick={() => printShippingLabels([{ pedidoNumero: order.numero, notaNumero: order.notaNumero, etiqueta: order.etiquetaTransporte! }])}
+                    data-guide-anchor="blingInvoices.imprimirEtiqueta"
                     className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
                   >
                     <Printer size={12} /> Etiqueta
@@ -260,6 +265,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
                   <button
                     onClick={() => handleRefresh(order)}
                     disabled={isRefreshing}
+                    data-guide-anchor="blingInvoices.atualizar"
                     className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
                   >
                     {isRefreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}

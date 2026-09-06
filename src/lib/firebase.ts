@@ -7,10 +7,14 @@ import {
   GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut,
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Só fotos de produto ficam aqui (ver src/utils/uploadProductPhoto.ts) — tudo mais no app
+// continua no Firestore.
+export const storage = getStorage(app);
 // `getAuth()` puro trava indefinidamente dentro do WKWebView do iOS (não acontece no Android,
 // que usa Chromium) — problema conhecido do SDK JS do Firebase Auth quando a inicialização do
 // IndexedDB não sai limpa nesse WebView. `initializeAuth` com uma cadeia explícita de fallback

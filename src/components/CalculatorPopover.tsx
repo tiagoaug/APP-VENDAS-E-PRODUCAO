@@ -90,33 +90,33 @@ export default function CalculatorPopover({ onApply, onClose }: CalculatorPopove
         </div>
 
         <div className="p-4 grid grid-cols-4 gap-2">
-          <button onClick={handleClear} className="col-span-2 p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-rose-500 font-black uppercase text-[9px] tracking-widest hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">Limpar</button>
-          <button onClick={handleBackspace} className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><Delete size={16} /></button>
-          <button onClick={() => handleOperator('/')} className={`p-3 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '/' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><Divide size={18} /></button>
+          <button onClick={handleClear} data-guide-anchor="calculadora.limpar" className="col-span-2 p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-rose-500 font-black uppercase text-[9px] tracking-widest hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">Limpar</button>
+          <button onClick={handleBackspace} data-guide-anchor="calculadora.apagar" className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><Delete size={16} /></button>
+          <button onClick={() => handleOperator('/')} data-guide-anchor="calculadora.operador" className={`p-3 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '/' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><Divide size={18} /></button>
 
           {[7, 8, 9].map(n => (
-            <button key={n} onClick={() => handleNumber(String(n))} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">{n}</button>
+            <button key={n} onClick={() => handleNumber(String(n))} data-guide-anchor="calculadora.numero" className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">{n}</button>
           ))}
-          <button onClick={() => handleOperator('*')} className={`p-4 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '*' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><X size={18} /></button>
+          <button onClick={() => handleOperator('*')} data-guide-anchor="calculadora.operador" className={`p-4 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '*' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><X size={18} /></button>
 
           {[4, 5, 6].map(n => (
-            <button key={n} onClick={() => handleNumber(String(n))} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">{n}</button>
+            <button key={n} onClick={() => handleNumber(String(n))} data-guide-anchor="calculadora.numero" className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">{n}</button>
           ))}
-          <button onClick={() => handleOperator('-')} className={`p-4 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '-' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><Minus size={18} /></button>
+          <button onClick={() => handleOperator('-')} data-guide-anchor="calculadora.operador" className={`p-4 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '-' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><Minus size={18} /></button>
 
           {[1, 2, 3].map(n => (
-            <button key={n} onClick={() => handleNumber(String(n))} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">{n}</button>
+            <button key={n} onClick={() => handleNumber(String(n))} data-guide-anchor="calculadora.numero" className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">{n}</button>
           ))}
-          <button onClick={() => handleOperator('+')} className={`p-4 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '+' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><Plus size={18} /></button>
+          <button onClick={() => handleOperator('+')} data-guide-anchor="calculadora.operador" className={`p-4 rounded-2xl font-black flex items-center justify-center transition-all ${operator === '+' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'}`}><Plus size={18} /></button>
 
-          <button onClick={() => handleNumber('0')} className="col-span-2 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">0</button>
-          <button onClick={() => handleNumber('.')} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 transition-all active:scale-95">,</button>
-          <button onClick={handleEquals} className="p-4 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"><Equal size={18} strokeWidth={4} /></button>
+          <button onClick={() => handleNumber('0')} data-guide-anchor="calculadora.numero" className="col-span-2 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95">0</button>
+          <button onClick={() => handleNumber('.')} data-guide-anchor="calculadora.numero" className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-black text-lg hover:bg-slate-100 transition-all active:scale-95">,</button>
+          <button onClick={handleEquals} data-guide-anchor="calculadora.igual" className="p-4 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"><Equal size={18} strokeWidth={4} /></button>
         </div>
 
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex gap-2 shrink-0">
-          <button onClick={onClose} className="flex-1 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">Voltar</button>
-          <button onClick={handleApply} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">Aplicar Valor</button>
+          <button onClick={onClose} data-guide-anchor="calculadora.voltar" className="flex-1 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">Voltar</button>
+          <button onClick={handleApply} data-guide-anchor="calculadora.aplicar" className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">Aplicar Valor</button>
         </div>
       </div>
     </div>

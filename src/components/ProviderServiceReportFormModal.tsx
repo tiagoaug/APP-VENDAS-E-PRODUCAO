@@ -156,6 +156,7 @@ export default function ProviderServiceReportFormModal({ isOpen, onClose, isDark
                 type="button"
                 onClick={onClose}
                 aria-label="Fechar"
+                data-guide-anchor="providerReport.fechar"
                 className={`p-2 rounded-xl transition-colors ${isDarkMode ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
               >
                 <X size={16} />
@@ -193,11 +194,11 @@ export default function ProviderServiceReportFormModal({ isOpen, onClose, isDark
                   <DatePicker value={toDate} onChange={setToDate} className={`flex-1 ${inputClass}`} />
                 </div>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  <button type="button" onClick={handleThisWeek} className={periodButtonClass}>Esta semana</button>
-                  <button type="button" onClick={handleThisMonth} className={periodButtonClass}>Este mês</button>
-                  <button type="button" onClick={handleThisQuinzena} className={periodButtonClass}>Esta quinzena</button>
-                  <button type="button" onClick={handleLastMonth} className={periodButtonClass}>Mês passado</button>
-                  <button type="button" onClick={handleClearPeriod} className={periodButtonClass}>Todo o período</button>
+                  <button type="button" onClick={handleThisWeek} data-guide-anchor="providerReport.periodoAtalho" className={periodButtonClass}>Esta semana</button>
+                  <button type="button" onClick={handleThisMonth} data-guide-anchor="providerReport.periodoAtalho" className={periodButtonClass}>Este mês</button>
+                  <button type="button" onClick={handleThisQuinzena} data-guide-anchor="providerReport.periodoAtalho" className={periodButtonClass}>Esta quinzena</button>
+                  <button type="button" onClick={handleLastMonth} data-guide-anchor="providerReport.periodoAtalho" className={periodButtonClass}>Mês passado</button>
+                  <button type="button" onClick={handleClearPeriod} data-guide-anchor="providerReport.periodoAtalho" className={periodButtonClass}>Todo o período</button>
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
@@ -228,6 +229,7 @@ export default function ProviderServiceReportFormModal({ isOpen, onClose, isDark
                 type="button"
                 onClick={handleSubmit}
                 disabled={!providerId}
+                data-guide-anchor="providerReport.gerar"
                 className="w-full flex items-center justify-center gap-2 px-4 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors active:scale-95 disabled:opacity-40"
               >
                 <Send size={14} />

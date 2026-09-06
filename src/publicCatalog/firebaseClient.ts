@@ -12,7 +12,9 @@ const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app, 'us-central1');
 
 export const getPublicCatalogRequest = httpsCallable<{ token: string }, {
-  personId: string;
+  personId?: string;
+  isGeneric: boolean;
+  expiresAt: number | null;
   products: {
     productId: string;
     reference: string;
@@ -32,10 +34,12 @@ export const getPublicCatalogRequest = httpsCallable<{ token: string }, {
       sizes: { size?: string; available: number }[];
     }[];
   }[];
+  useStockQuantities: boolean;
 }>(functions, 'getPublicCatalogRequest');
 
 export const submitCatalogRequestCall = httpsCallable<{
   token: string;
   items: { productId: string; saleType: 'RETAIL' | 'WHOLESALE'; variations: { variationId: string; size?: string; quantity: number }[] }[];
   customerNote?: string;
+  customerName?: string;
 }, { requestId: string }>(functions, 'submitCatalogRequestCall');

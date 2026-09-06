@@ -50,6 +50,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
       <button
         type="button"
         onClick={() => setIsOpen(true)}
+        data-guide-anchor="dateTimePicker.abrir"
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border transition-all ${isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-100 text-slate-700"}`}
       >
         <Calendar size={12} className="text-sky-500 shrink-0" />
@@ -60,6 +61,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
           <span
             role="button"
             title="Remover lembrete"
+            data-guide-anchor="dateTimePicker.remover"
             onClick={(e) => {
               e.stopPropagation();
               onChange(null);
@@ -81,6 +83,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
                   type="button"
                   title="Mês anterior"
                   onClick={() => setViewMonth((m) => { if (m === 0) { setViewYear((y) => y - 1); return 11; } return m - 1; })}
+                  data-guide-anchor="dateTimePicker.mesAnterior"
                   className={`p-1.5 rounded-lg ${isDarkMode ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-400"}`}
                 >
                   <ChevronLeft size={14} />
@@ -90,6 +93,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
                   type="button"
                   title="Próximo mês"
                   onClick={() => setViewMonth((m) => { if (m === 11) { setViewYear((y) => y + 1); return 0; } return m + 1; })}
+                  data-guide-anchor="dateTimePicker.mesProximo"
                   className={`p-1.5 rounded-lg ${isDarkMode ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-400"}`}
                 >
                   <ChevronRight size={14} />
@@ -98,6 +102,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
                   type="button"
                   title="Fechar"
                   onClick={() => setIsOpen(false)}
+                  data-guide-anchor="dateTimePicker.fechar"
                   className={`p-1.5 rounded-lg ml-1 ${isDarkMode ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-100 text-slate-400"}`}
                 >
                   <X size={14} />
@@ -106,6 +111,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
               <button
                 type="button"
                 onClick={goToToday}
+                data-guide-anchor="dateTimePicker.hoje"
                 className={`w-full mb-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? "bg-indigo-950/40 text-indigo-300 border border-indigo-900/50" : "bg-indigo-50 text-indigo-600 border border-indigo-100"}`}
               >
                 Hoje
@@ -124,6 +130,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
                       type="button"
                       disabled={!day}
                       onClick={() => day && commit(day, time)}
+                      data-guide-anchor="dateTimePicker.diaSelecionar"
                       className={`aspect-square rounded-full text-[11px] font-bold flex items-center justify-center transition-all ${
                         !day ? "invisible" : isSelected ? "bg-indigo-600 text-white" : isDarkMode ? "text-slate-300 hover:bg-slate-700" : "text-slate-600 hover:bg-slate-100"
                       }`}
@@ -148,6 +155,7 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
+                data-guide-anchor="dateTimePicker.confirmar"
                 className="w-full mt-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
               >
                 Confirmar

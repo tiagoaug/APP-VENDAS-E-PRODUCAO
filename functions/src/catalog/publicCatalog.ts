@@ -13,7 +13,9 @@ const LINK_NOT_FOUND_MESSAGE = "Link inválido ou expirado.";
 export class CatalogPublicError extends Error {}
 
 interface CatalogLinkDoc {
-  personId: string;
+  personId?: string;
+  // true = Link de Grupo — sem Cliente vinculado, quem faz o pedido digita o próprio nome.
+  isGeneric?: boolean;
   token: string;
   isActive: boolean;
   createdAt: number;
@@ -22,6 +24,7 @@ interface CatalogLinkDoc {
   lastSubmittedAt?: number;
   productIds?: string[];
   hidePrices?: boolean;
+  useStockQuantities?: boolean;
 }
 
 /** Resolve um token público pro dono (uid) + o próprio doc do link, via Admin SDK — ignora
@@ -75,8 +78,18 @@ export interface PublicCatalogProduct {
 }
 
 export interface GetPublicCatalogResult {
-  personId: string;
+  personId?: string;
+  // true = Link de Grupo — a página deve pedir o nome de quem está fazendo o pedido antes de
+  // enviar (ver CatalogLink.isGeneric / SubmitCatalogRequestInput.customerName).
+  isGeneric: boolean;
+  // null = nunca expira. A página usa isso só pra mostrar um contador regressivo e travar a UI
+  // localmente quando chegar a zero — a validação de verdade continua sendo sempre no servidor,
+  // em resolveCatalogLink, tanto aqui quanto em submitCatalogRequest.
+  expiresAt: number | null;
   products: PublicCatalogProduct[];
+  // true = a página deve abrir cada tamanho/caixa já com a quantidade disponível marcada (ver
+  // CatalogLink.useStockQuantities) — em vez de o cliente montar o pedido do zero.
+  useStockQuantities: boolean;
 }
 
 /** Catálogo público e curado pra um token de Link de Pedido — só campos seguros de mostrar a
@@ -167,7 +180,13 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
   // Melhor esforço — nunca falha a resposta principal por causa disso.
   linkRef.set({ lastViewedAt: Date.now() }, { merge: true }).catch(() => {});
 
-  return { personId: resolved.link.personId, products };
+  return {
+    personId: resolved.link.personId,
+    isGeneric: !!link.isGeneric,
+    expiresAt: link.expiresAt ?? null,
+    products,
+    useStockQuantities: !!link.useStockQuantities,
+  };
 }
 
 export interface SubmitCatalogRequestInput {
@@ -178,13 +197,21 @@ export interface SubmitCatalogRequestInput {
     variations: { variationId: string; size?: string; quantity: number }[];
   }[];
   customerNote?: string;
+  // Obrigatório quando o link resolvido é genérico (sem personId) — nome digitado por quem
+  // está fazendo o pedido, pra identificar o pedido depois em "Pedidos Recebidos".
+  customerName?: string;
 }
 
 const MAX_ITEMS = 30;
 const MAX_VARIATIONS_PER_ITEM = 20;
 const MAX_QUANTITY = 999;
 const MAX_NOTE_LENGTH = 500;
+const MAX_NAME_LENGTH = 80;
+// Link Exclusivo (1 cliente) — poucos envios esperados; qualquer volume maior já é sinal de abuso.
 const MAX_SUBMISSIONS_PER_HOUR = 5;
+// Link de Grupo (isGeneric) — um único link é compartilhado com um grupo inteiro, então é normal
+// várias pessoas diferentes enviarem pedido pelo mesmo link na mesma hora.
+const MAX_SUBMISSIONS_PER_HOUR_GENERIC = 60;
 
 /** Recebe a escolha do cliente e grava como PENDING pro dono revisar — nunca confia em preço,
  * ownerId ou personId vindos do cliente (tudo é re-resolvido a partir do token), e revalida
@@ -194,10 +221,20 @@ export async function submitCatalogRequest(db: firestore.Firestore, input: Submi
   if (!resolved) throw new CatalogPublicError(LINK_NOT_FOUND_MESSAGE);
   const { ownerId, linkRef, link } = resolved;
 
-  // Limite simples de envios por link, sem infra nova (contador no próprio doc do link).
+  // Limite simples de envios por link, sem infra nova (contador no próprio doc do link). Link
+  // de Grupo tem um teto bem mais alto de propósito — é esperado que várias pessoas diferentes
+  // enviem pedido pelo mesmo link na mesma hora (ver MAX_SUBMISSIONS_PER_HOUR_GENERIC).
   const now = Date.now();
-  if (link.lastSubmittedAt && now - link.lastSubmittedAt < (60 * 60 * 1000) / MAX_SUBMISSIONS_PER_HOUR) {
+  const maxPerHour = link.isGeneric ? MAX_SUBMISSIONS_PER_HOUR_GENERIC : MAX_SUBMISSIONS_PER_HOUR;
+  if (link.lastSubmittedAt && now - link.lastSubmittedAt < (60 * 60 * 1000) / maxPerHour) {
     throw new CatalogPublicError("Aguarde um pouco antes de enviar outro pedido por este link.");
+  }
+
+  // Link de Grupo não tem Cliente vinculado — quem faz o pedido precisa se identificar.
+  let customerName: string | undefined;
+  if (!link.personId) {
+    customerName = typeof input.customerName === "string" ? input.customerName.trim().slice(0, MAX_NAME_LENGTH) : "";
+    if (!customerName) throw new CatalogPublicError("Informe seu nome pra continuar.");
   }
 
   const items = Array.isArray(input.items) ? input.items : [];
@@ -251,7 +288,7 @@ export async function submitCatalogRequest(db: firestore.Firestore, input: Submi
   const requestRef = db.collection("users").doc(ownerId).collection("catalogRequests").doc();
   await requestRef.set({
     linkId: linkRef.id,
-    personId: link.personId,
+    ...(link.personId ? { personId: link.personId } : { customerName }),
     status: "PENDING",
     submittedAt: admin.firestore.FieldValue.serverTimestamp(),
     items: cleanItems,

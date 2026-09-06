@@ -263,6 +263,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
               <button
                 type="button"
                 onClick={onClose}
+                data-guide-anchor="aiSettings.fechar"
                 className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
                 aria-label="Fechar"
               >
@@ -275,6 +276,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
               <button
                 type="button"
                 onClick={() => setTab("general")}
+                data-guide-anchor="aiSettings.aba"
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
                   tab === "general"
                     ? "bg-indigo-600 text-white"
@@ -288,6 +290,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
               <button
                 type="button"
                 onClick={() => setTab("prompts")}
+                data-guide-anchor="aiSettings.aba"
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
                   tab === "prompts"
                     ? "bg-indigo-600 text-white"
@@ -301,6 +304,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
               <button
                 type="button"
                 onClick={() => setTab("usage")}
+                data-guide-anchor="aiSettings.aba"
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
                   tab === "usage"
                     ? "bg-indigo-600 text-white"
@@ -330,6 +334,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                     <button
                       type="button"
                       onClick={handleToggleAI}
+                      data-guide-anchor="aiSettings.ativarToggle"
                       role="switch"
                       aria-checked={aiEnabled}
                       title={aiEnabled ? "Desativar assistente" : "Ativar assistente"}
@@ -350,6 +355,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                             key={p}
                             type="button"
                             onClick={() => handleSelectProvider(p)}
+                            data-guide-anchor="aiSettings.providerSelecionar"
                             className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-2xl border-2 transition-all ${
                               active
                                 ? "bg-indigo-600 border-indigo-500 text-white shadow-md"
@@ -395,6 +401,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                         <button
                           type="button"
                           onClick={handleUnloadLocalModel}
+                          data-guide-anchor="aiSettings.modeloLocalRemover"
                           className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-red-500 transition-all shrink-0"
                           aria-label="Remover modelo"
                           title="Remover modelo"
@@ -412,6 +419,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                       type="button"
                       onClick={handlePickLocalModel}
                       disabled={isLocalModelLoading}
+                      data-guide-anchor="aiSettings.modeloLocalBaixar"
                       className="py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
                     >
                       {isLocalModelLoading ? (
@@ -467,6 +475,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                           <button
                             type="button"
                             onClick={() => setShowKey(!showKey)}
+                            data-guide-anchor="aiSettings.chaveMostrarToggle"
                             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                             aria-label={showKey ? "Ocultar chave" : "Mostrar chave"}
                           >
@@ -494,6 +503,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                           type="button"
                           onClick={() => handleSaveProviderKey(p)}
                           disabled={!keyInput.trim()}
+                          data-guide-anchor="aiSettings.chaveSalvar"
                           className="py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
                         >
                           {providerSaved === p ? (<><Check size={14} /> Salvo</>) : "Salvar chave"}
@@ -523,6 +533,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                       <button
                         type="button"
                         onClick={() => setForm({ id: p.id, label: p.label, prompt: p.prompt, icon: p.icon, autoSend: p.autoSend })}
+                        data-guide-anchor="aiSettings.promptEditar"
                         className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-500 transition-all shrink-0"
                         aria-label="Editar"
                       >
@@ -531,6 +542,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                       <button
                         type="button"
                         onClick={() => handleDeletePrompt(p.id)}
+                        data-guide-anchor="aiSettings.promptExcluir"
                         className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-red-500 transition-all shrink-0"
                         aria-label="Excluir"
                       >
@@ -561,6 +573,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                             key={key}
                             type="button"
                             onClick={() => setForm({ ...form, icon: key })}
+                            data-guide-anchor="aiSettings.promptIconeSelecionar"
                             className={`p-2 rounded-lg transition-all ${
                               form.icon === key
                                 ? "bg-indigo-600 text-white"
@@ -586,6 +599,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                         <button
                           type="button"
                           onClick={() => setForm(null)}
+                          data-guide-anchor="aiSettings.promptFormCancelar"
                           className={`flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? "bg-slate-700 text-slate-300" : "bg-slate-200 text-slate-500"}`}
                         >
                           Cancelar
@@ -593,6 +607,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                         <button
                           type="button"
                           onClick={handleSavePrompt}
+                          data-guide-anchor="aiSettings.promptFormSalvar"
                           className="flex-1 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white flex items-center justify-center gap-1.5"
                         >
                           <Check size={14} /> Salvar
@@ -603,6 +618,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                     <button
                       type="button"
                       onClick={() => setForm({ ...EMPTY_FORM })}
+                      data-guide-anchor="aiSettings.promptNovo"
                       className={`flex items-center justify-center gap-2 p-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${
                         isDarkMode ? "bg-slate-800 text-indigo-400 hover:bg-slate-700" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
                       }`}
@@ -641,6 +657,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                     <button
                       type="button"
                       onClick={handleSaveLimits}
+                      data-guide-anchor="aiSettings.limitesSalvar"
                       className="py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white"
                     >
                       Salvar limites
@@ -691,6 +708,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                     type="button"
                     onClick={() => setDeleteConfirmId(null)}
                     title="Cancelar"
+                    data-guide-anchor="aiSettings.excluirCancelar"
                     className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${
                       isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
                     }`}
@@ -701,6 +719,7 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
                     type="button"
                     onClick={confirmDeletePrompt}
                     title="Confirmar exclusão"
+                    data-guide-anchor="aiSettings.excluirConfirmar"
                     className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95 flex items-center justify-center gap-1.5"
                   >
                     <Trash2 size={14} /> Excluir

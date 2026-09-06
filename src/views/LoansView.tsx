@@ -109,6 +109,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
         <button
           type="button"
           onClick={() => setExpandedId(v => v === loan.id ? null : loan.id)}
+          data-guide-anchor="loans.card"
           className="w-full flex items-center justify-between gap-3 p-5 text-left"
         >
           <div className="flex items-center gap-3 min-w-0">
@@ -175,6 +176,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
                   placeholder="Valor pago pelo colaborador"
                   value={paymentDrafts[loan.id] ?? ''}
                   onChange={e => setPaymentDrafts(prev => ({ ...prev, [loan.id]: e.target.value }))}
+                  data-guide-anchor="loans.pagamentoManual"
                   className={`flex-1 ${inputClass(isDarkMode)}`}
                 />
                 <button
@@ -189,6 +191,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
                 <button
                   type="button"
                   onClick={() => registerManualPayment(loan)}
+                  data-guide-anchor="loans.registrarPagamento"
                   className="px-4 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest shrink-0"
                 >
                   <Check size={14} />
@@ -199,6 +202,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
             <button
               type="button"
               onClick={() => setDeleteTarget(loan.id)}
+              data-guide-anchor="loans.excluir"
               className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
             >
               <Trash2 size={12} /> Excluir Empréstimo
@@ -213,7 +217,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
     return (
       <div className="flex flex-col gap-6 pb-32 max-w-2xl mx-auto">
         <header className="flex items-center gap-3">
-          <button type="button" onClick={() => setDraft(null)} className={`p-2 rounded-2xl ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white border border-slate-100 text-slate-500'}`}>
+          <button type="button" onClick={() => setDraft(null)} data-guide-anchor="loans.fecharFormulario" className={`p-2 rounded-2xl ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white border border-slate-100 text-slate-500'}`}>
             <X size={18} />
           </button>
           <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Novo Empréstimo</h2>
@@ -228,6 +232,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
                 const c = collaborators.find(cc => cc.id === e.target.value);
                 setDraft({ ...draft, collaboratorId: e.target.value, collaboratorName: c?.name || '' });
               }}
+              data-guide-anchor="loans.colaborador"
               className={inputClass(isDarkMode)}
             >
               <option value="">Selecione...</option>
@@ -243,6 +248,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
                 value={draft.totalValue || ''}
                 onChange={e => setDraft({ ...draft, totalValue: Math.max(0, Number(e.target.value) || 0) })}
                 placeholder="0,00"
+                data-guide-anchor="loans.valorTotal"
                 className={`flex-1 ${inputClass(isDarkMode)}`}
               />
               <button
@@ -265,6 +271,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
                 value={draft.monthlyDeduction || ''}
                 onChange={e => setDraft({ ...draft, monthlyDeduction: Math.max(0, Number(e.target.value) || 0) })}
                 placeholder="0,00 — deixe em branco pra só receber pagamentos manuais"
+                data-guide-anchor="loans.descontoMensal"
                 className={`flex-1 ${inputClass(isDarkMode)}`}
               />
               <button
@@ -295,6 +302,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
           type="button"
           onClick={handleSave}
           disabled={!draft.collaboratorId || draft.totalValue <= 0 || isSaving}
+          data-guide-anchor="loans.salvar"
           className="py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-black uppercase tracking-widest transition-all active:scale-95"
         >
           {isSaving ? 'Salvando...' : 'Salvar Empréstimo'}
@@ -326,6 +334,7 @@ export default function LoansView({ isDarkMode, collaborators, loans, onSave, on
         <button
           type="button"
           onClick={() => setDraft(emptyDraft())}
+          data-guide-anchor="loans.novo"
           className="p-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white transition-all active:scale-95"
           aria-label="Novo Empréstimo"
         >

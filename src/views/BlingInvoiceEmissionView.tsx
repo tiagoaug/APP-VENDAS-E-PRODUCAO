@@ -141,6 +141,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
           <button
             onClick={handleSync}
             disabled={syncing}
+            data-guide-anchor="blingInvoice.sincronizarPedidos"
             className={`flex-1 h-11 rounded-2xl bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 ${syncing ? 'animate-pulse' : ''}`}
           >
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Sincronizando...' : 'Sincronizar Pedidos'}
@@ -148,6 +149,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
           <button
             onClick={handleEmitBatch}
             disabled={selectedCount === 0 || emittingBatch}
+            data-guide-anchor="blingInvoice.emitirLote"
             className="flex-1 h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
           >
             {emittingBatch ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
@@ -167,6 +169,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
+              data-guide-anchor="blingInvoice.aba"
               className={`h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5 transition-colors ${
                 activeTab === tab.key
                   ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
@@ -211,7 +214,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{order.cliente}</p>
                   </div>
                 </div>
-                <button onClick={() => toggleExpand(order.id)} className="p-1.5 text-slate-400 shrink-0">
+                <button onClick={() => toggleExpand(order.id)} data-guide-anchor="blingInvoice.pedidoExpandir" className="p-1.5 text-slate-400 shrink-0">
                   {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 </button>
               </div>
@@ -219,6 +222,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
               {!mapped && (
                 <button
                   onClick={() => onNavigate(ViewType.BLING_PRODUCT_MAPPING)}
+                  data-guide-anchor="blingInvoice.vincularProdutos"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-black uppercase tracking-widest w-fit"
                 >
                   <AlertTriangle size={12} /> Itens sem vínculo — <TagsIcon size={12} /> Vincular Produtos <ChevronRight size={12} />
@@ -259,6 +263,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                 <button
                   onClick={() => handleEmitOne(order)}
                   disabled={!mapped || isEmittingThis}
+                  data-guide-anchor="blingInvoice.emitirUm"
                   className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-30 text-[10px] font-black uppercase tracking-widest"
                 >
                   {isEmittingThis ? <Loader2 size={13} className="animate-spin" /> : <FileCheck2 size={13} />}
@@ -326,6 +331,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                           etiqueta: order.etiquetaTransporte!,
                         })
                       }
+                      data-guide-anchor="blingInvoice.imprimirEtiqueta"
                       className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
                     >
                       <FileDown size={12} /> Etiqueta de Transporte
@@ -367,6 +373,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                   <button
                     onClick={() => handleEmitOne(order)}
                     disabled={isRetrying}
+                    data-guide-anchor="blingInvoice.emitirUm"
                     className="self-start flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-30 text-[10px] font-black uppercase tracking-widest"
                   >
                     {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
@@ -420,6 +427,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                           etiqueta: order.etiquetaTransporte!,
                         })
                       }
+                      data-guide-anchor="blingInvoice.imprimirEtiqueta"
                       className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
                     >
                       <FileDown size={12} /> Etiqueta de Transporte

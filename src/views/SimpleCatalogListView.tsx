@@ -68,12 +68,14 @@ export default function SimpleCatalogListView<T extends NamedItem>({
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
           placeholder={`Nova ${itemLabel.toLowerCase()}...`}
+          data-guide-anchor="simpleCatalog.novoNome"
           className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
         />
         <button
           type="button"
           onClick={handleAdd}
           disabled={!newName.trim() || saving}
+          data-guide-anchor="simpleCatalog.adicionar"
           className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all"
         >
           <Plus size={14} /> Adicionar
@@ -112,6 +114,7 @@ export default function SimpleCatalogListView<T extends NamedItem>({
                     onClick={() => startEdit(item)}
                     title={`Editar ${itemLabel}`}
                     aria-label={`Editar ${itemLabel}`}
+                    data-guide-anchor="simpleCatalog.editar"
                     className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
                   >
                     <Edit2 size={16} />
@@ -126,6 +129,7 @@ export default function SimpleCatalogListView<T extends NamedItem>({
                     }}
                     title={`Excluir ${itemLabel}`}
                     aria-label={`Excluir ${itemLabel}`}
+                    data-guide-anchor="simpleCatalog.excluir"
                     className={`p-2 rounded-xl transition-colors disabled:opacity-50 ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
                   >
                     <Trash2 size={16} />

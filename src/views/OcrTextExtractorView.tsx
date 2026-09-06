@@ -3,16 +3,13 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Clipboard } from '@capacitor/clipboard';
 import { Share } from '@capacitor/share';
-import { ArrowLeft, ScanText, Camera as CameraIcon, Image as ImageIcon, ClipboardPaste, Copy, Share2, Trash2, Loader2, Check, Paintbrush, Eraser, X, ScanSearch, ShoppingBag, Minimize2, Maximize2, Lock, Unlock } from 'lucide-react';
+import { ArrowLeft, ScanText, Camera as CameraIcon, Image as ImageIcon, ClipboardPaste, Copy, Share2, Trash2, Loader2, Check, Paintbrush, Eraser, X, ScanSearch, Minimize2, Maximize2, Lock, Unlock } from 'lucide-react';
 import { textRecognitionService } from '../services/textRecognitionService';
 import { toast } from '../utils/toast';
 
 interface OcrTextExtractorViewProps {
   onBack: () => void;
   isDarkMode: boolean;
-  // Manda o texto atual pra Vendas, abrindo "Colar Pedido Digitado" já preenchido pra revisar
-  // antes de criar o pedido (ver App.tsx: navigateTo(ViewType.SALES, { prefillPasteText })).
-  onExportToSales: (text: string) => void;
 }
 
 interface RegionOverlay {
@@ -42,7 +39,7 @@ const LOUPE_ZOOM = 2.5;
 // máscara", então o recorte enviado é montado na hora: fundo branco + a imagem original
 // revelada só onde foi pintado (destination-in com a máscara), de qualquer formato, não só
 // retângulo.
-export default function OcrTextExtractorView({ onBack, isDarkMode, onExportToSales }: OcrTextExtractorViewProps) {
+export default function OcrTextExtractorView({ onBack, isDarkMode }: OcrTextExtractorViewProps) {
   const [text, setText] = useState('');
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [sourcePath, setSourcePath] = useState<string | null>(null);
@@ -589,15 +586,6 @@ export default function OcrTextExtractorView({ onBack, isDarkMode, onExportToSal
                 <Trash2 size={16} />
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => onExportToSales(text)}
-              data-guide-anchor="ocrTool.exportarVendas"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white active:scale-95 transition-all"
-            >
-              <ShoppingBag size={14} /> Exportar para Vendas
-            </button>
           </div>
         ) : (
           !imageSrc && !loading && (

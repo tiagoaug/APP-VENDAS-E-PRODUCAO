@@ -218,6 +218,7 @@ export default function BackupView({
           <button
             onClick={handleCleanDuplicates}
             disabled={totalDuplicates === 0 || isCleaning}
+            data-guide-anchor="backup.limparDuplicidades"
             title="Limpar Duplicidades"
             className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
               totalDuplicates > 0
@@ -253,6 +254,7 @@ export default function BackupView({
             type="button"
             onClick={handleFixPkgAllocations}
             disabled={fixingAlloc}
+            data-guide-anchor="backup.corrigirEmbalagens"
             title="Corrigir alocações de embalagem inconsistentes"
             className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-orange-500 text-white shadow-lg shadow-orange-500/20 disabled:opacity-60`}
           >
@@ -317,6 +319,7 @@ export default function BackupView({
                   key={opt.id}
                   type="button"
                   onClick={() => toggleCategory(opt.id)}
+                  data-guide-anchor="backup.categoriaToggle"
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all active:scale-[0.98] ${isSelected ? keepCls : deleteCls}`}
                 >
                   <div className="flex items-center gap-3 text-left">
@@ -352,6 +355,7 @@ export default function BackupView({
             type="button"
             disabled={deleteCount === 0 || isSelectiveDeleting}
             onClick={() => setShowSelectiveConfirm(true)}
+            data-guide-anchor="backup.excluirSeletivoAbrir"
             className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
               deleteCount > 0
                 ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-500/20'
@@ -373,6 +377,7 @@ export default function BackupView({
           <button
             onClick={() => setShowFormatConfirm(true)}
             disabled={isResetting}
+            data-guide-anchor="backup.formatarAbrir"
             title="Formatar Sistema"
             className={`bg-rose-600 text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 ${isDarkMode ? 'shadow-none' : 'shadow-rose-100'}`}
           >
@@ -421,6 +426,7 @@ export default function BackupView({
                 <button
                   onClick={() => setShowSelectiveConfirm(false)}
                   disabled={isSelectiveDeleting}
+                  data-guide-anchor="backup.excluirSeletivoCancelar"
                   className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   Cancelar
@@ -428,6 +434,7 @@ export default function BackupView({
                 <button
                   onClick={handleSelectiveDeleteConfirm}
                   disabled={isSelectiveDeleting}
+                  data-guide-anchor="backup.excluirSeletivoConfirmar"
                   className="flex-1 py-3 bg-amber-500 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-1.5"
                 >
                   {isSelectiveDeleting ? <RefreshCw size={14} className="animate-spin" /> : <Eraser size={14} />}
@@ -461,6 +468,7 @@ export default function BackupView({
                 <button
                   onClick={() => setShowFormatConfirm(false)}
                   disabled={isResetting}
+                  data-guide-anchor="backup.formatarCancelar"
                   className="flex-1 py-4 px-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   Cancelar
@@ -468,6 +476,7 @@ export default function BackupView({
                 <button
                   onClick={handleFormatSystem}
                   disabled={isResetting}
+                  data-guide-anchor="backup.formatarConfirmar"
                   className="flex-1 py-4 px-4 bg-rose-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   {isResetting ? 'Apagando...' : 'Formatar Agora'}

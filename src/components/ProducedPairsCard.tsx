@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { ProductionLot } from '../types';
 import { ChevronDown, Calendar, Factory, TrendingUp, TrendingDown } from 'lucide-react';
 import { format } from 'date-fns';
@@ -8,11 +8,12 @@ import { OverviewComparisonMode } from '../services/businessOverviewService';
 import { subscribeToProductionScheduleConfig } from '../services/productionScheduleService';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 
-// Card "Pares Produzidos" — pares finalizados (ProductionLot.finishedAt) num período
+// Card "Análise de Produção" — pares finalizados (ProductionLot.finishedAt) num período
 // escolhido, com a média por dia (total ÷ dias do período) e comparação opcional com outro
-// período. Mesmo padrão de período/comparação do "Visualização do Meu Negócio"
-// (BusinessOverviewCard.tsx), mas isolado num card próprio por ser uma métrica de produção,
-// não financeira. Estado local (não persiste) — cada instância no Dashboard é independente.
+// período, além da média histórica (todo o período já produzido) por mês e por ano. Mesmo
+// padrão de período/comparação do "Visualização do Meu Negócio" (BusinessOverviewCard.tsx),
+// mas isolado num card próprio por ser uma métrica de produção, não financeira. Estado local
+// (não persiste) — cada instância no Dashboard é independente.
 interface ProducedPairsCardProps {
   isDarkMode: boolean;
   productionLots: ProductionLot[];
@@ -22,13 +23,16 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
   const hidePrivacy = usePrivacyMode();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Considerar só dias úteis (seg-sex) na Média por Dia — configurável em Configuração de
-  // Fábrica; espelha o mesmo toggle usado pela barra de estatísticas do PCP Monitor.
+  // Considerar só dias úteis (seg-sex) na Média por Dia, e se conta o período inteiro ou só os
+  // dias já passados — configurável em Configuração de Fábrica; espelha o mesmo toggle usado
+  // pela barra de estatísticas do PCP Monitor.
   const [excludeWeekends, setExcludeWeekends] = useState(true);
+  const [averageMode, setAverageMode] = useState<'FULL_PERIOD' | 'ELAPSED'>('FULL_PERIOD');
   useEffect(() => {
-    const unsub = subscribeToProductionScheduleConfig(cfg => setExcludeWeekends(cfg.excludeWeekends));
+    const unsub = subscribeToProductionScheduleConfig(cfg => { setExcludeWeekends(cfg.excludeWeekends); setAverageMode(cfg.averageMode); });
     return () => unsub();
   }, []);
+  const elapsedOnly = excludeWeekends && averageMode === 'ELAPSED';
 
   const [periodType, setPeriodType] = useState<OverviewPeriodType>('MONTH');
   const [periodDate, setPeriodDate] = useState(() => format(new Date(), 'yyyy-MM'));
@@ -50,7 +54,7 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
   };
 
   const { start, end } = getPeriodRange(periodType, periodDate);
-  const produced = computeProducedPairs(productionLots, start, end, excludeWeekends);
+  const produced = computeProducedPairs(productionLots, start, end, excludeWeekends, elapsedOnly);
 
   let comparison: { total: number; delta: number; label: string } | null = null;
   if (comparisonMode !== 'NONE') {
@@ -66,12 +70,25 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
       compEnd = r.end;
       label = format(new Date(compPeriodDate + '-01T12:00:00'), 'MMM/yy', { locale: ptBR });
     }
-    const compProduced = computeProducedPairs(productionLots, compStart, compEnd, excludeWeekends);
+    const compProduced = computeProducedPairs(productionLots, compStart, compEnd, excludeWeekends, elapsedOnly);
     const delta = compProduced.total === 0
       ? (produced.total > 0 ? 100 : 0)
       : ((produced.total - compProduced.total) / compProduced.total) * 100;
     comparison = { total: compProduced.total, delta, label };
   }
+
+  // Média histórica (todo o histórico de produção, não só o período escolhido acima) — desde o
+  // primeiro Mapa finalizado até hoje, pra dar uma noção de ritmo médio "de sempre" por mês e
+  // por ano, complementando a média por dia do período selecionado.
+  const allTimeAverages = useMemo(() => {
+    const finished = productionLots.filter(l => l.finishedAt);
+    if (finished.length === 0) return { avgPerMonth: 0, avgPerYear: 0 };
+    const total = finished.reduce((acc, l) => acc + (l.quantity || 0), 0);
+    const earliest = Math.min(...finished.map(l => l.finishedAt!));
+    const monthsSpan = Math.max(1, (Date.now() - earliest) / (1000 * 60 * 60 * 24 * 30.44));
+    const avgPerMonth = total / monthsSpan;
+    return { avgPerMonth, avgPerYear: avgPerMonth * 12 };
+  }, [productionLots]);
 
   return (
     <div className={`rounded-[2.5rem] border shadow-sm p-6 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
@@ -87,7 +104,7 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
             <Factory size={20} />
           </div>
           <div className="text-left min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pares Produzidos</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Análise de Produção</p>
             <p className={`text-2xl font-black tracking-tighter mt-0.5 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
               {produced.total} <span className="text-xs font-bold text-slate-400 uppercase">pares</span>
             </p>
@@ -129,19 +146,35 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
             />
           </div>
 
-          <div className="flex gap-3">
-            <div className="flex-1 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
               <p className="text-[8px] font-black text-slate-400 tracking-widest uppercase">Total no período</p>
               <p className={`text-2xl font-black mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 {produced.total} <span className="text-xs text-slate-400 font-bold">pares</span>
               </p>
             </div>
-            <div className="flex-1 p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
               <p className="text-[8px] font-black text-slate-400 tracking-widest uppercase">{excludeWeekends ? 'Média por dia útil' : 'Média por dia'}</p>
               <p className={`text-2xl font-black mt-1 text-teal-600 dark:text-teal-400 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 {produced.dailyAverage.toFixed(1).replace('.', ',')} <span className="text-xs text-slate-400 font-bold">pares/dia</span>
               </p>
-              <p className="text-[8px] font-bold text-slate-400 mt-1">{produced.workDays} {excludeWeekends ? 'dias úteis' : 'dias'} no período</p>
+              <p className="text-[8px] font-bold text-slate-400 mt-1">
+                {produced.workDays} {excludeWeekends ? 'dias úteis' : 'dias'} {elapsedOnly ? 'até agora' : 'no período'}
+              </p>
+            </div>
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
+              <p className="text-[8px] font-black text-slate-400 tracking-widest uppercase">Média por Mês</p>
+              <p className={`text-2xl font-black mt-1 text-teal-600 dark:text-teal-400 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                {allTimeAverages.avgPerMonth.toFixed(1).replace('.', ',')} <span className="text-xs text-slate-400 font-bold">pares/mês</span>
+              </p>
+              <p className="text-[8px] font-bold text-slate-400 mt-1">Histórico completo</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
+              <p className="text-[8px] font-black text-slate-400 tracking-widest uppercase">Média por Ano</p>
+              <p className={`text-2xl font-black mt-1 text-teal-600 dark:text-teal-400 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                {allTimeAverages.avgPerYear.toFixed(0)} <span className="text-xs text-slate-400 font-bold">pares/ano</span>
+              </p>
+              <p className="text-[8px] font-bold text-slate-400 mt-1">Histórico completo</p>
             </div>
           </div>
 

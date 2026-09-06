@@ -87,7 +87,7 @@ interface DisplayRow {
 
 function ToggleRow({ icon, label, sublabel, value, onChange }: { icon: React.ReactNode; label: string; sublabel: string; value: boolean; onChange: () => void }) {
   return (
-    <button onClick={onChange} className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
+    <button onClick={onChange} data-guide-anchor="blingPicking.toggleRow" className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
         {icon}
       </div>
@@ -615,7 +615,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           <ToggleRow icon={<Hash size={18} />} label="Mostrar número do pedido" sublabel={mostrarPedido ? 'Com os pedidos vinculados' : 'Sem os pedidos'} value={mostrarPedido} onChange={() => setMostrarPedido((v) => !v)} />
           <ToggleRow icon={<Tag size={18} />} label="Mostrar nome do modelo" sublabel={mostrarModelo ? 'Com o nome do produto' : 'Só a referência'} value={mostrarModelo} onChange={() => setMostrarModelo((v) => !v)} />
 
-          <button onClick={() => setPaperOpen((v) => !v)} className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
+          <button onClick={() => setPaperOpen((v) => !v)} data-guide-anchor="blingPicking.papelAbrir" className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
             <PagePreview pageSize={pageSize} orientation={orientation} isDarkMode={isDarkMode} />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-black tracking-tight">Tamanho do papel</p>
@@ -629,6 +629,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
                 <button
                   key={ps}
                   onClick={() => { setPageSize(ps); setPaperOpen(false); }}
+                  data-guide-anchor="blingPicking.papelSelecionar"
                   className={`flex items-center justify-between px-4 py-2.5 rounded-xl text-left ${pageSize === ps ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                 >
                   <span className="text-xs font-black">{PAGE_SIZE_LABEL[ps]}</span>
@@ -638,7 +639,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
             </div>
           )}
 
-          <button onClick={() => setOrientationOpen((v) => !v)} className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
+          <button onClick={() => setOrientationOpen((v) => !v)} data-guide-anchor="blingPicking.orientacaoAbrir" className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
               <FileStack size={18} className={orientation === 'landscape' ? 'rotate-90' : ''} />
             </div>
@@ -654,6 +655,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
                 <button
                   key={o}
                   onClick={() => { setOrientation(o); setOrientationOpen(false); }}
+                  data-guide-anchor="blingPicking.orientacaoSelecionar"
                   className={`flex flex-col items-center gap-2 p-3 rounded-xl ${orientation === o ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
                 >
                   <PagePreview pageSize={pageSize} orientation={o} isDarkMode={isDarkMode} />
@@ -665,7 +667,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
             </div>
           )}
 
-          <button onClick={handleSaveProfile} className="mx-1 mt-1 flex items-center justify-center gap-2 h-10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+          <button onClick={handleSaveProfile} data-guide-anchor="blingPicking.perfilSalvar" className="mx-1 mt-1 flex items-center justify-center gap-2 h-10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
             <Save size={13} /> Salvar como perfil padrão
           </button>
 
@@ -675,6 +677,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
             <button
               onClick={handleOpenPrintStudio}
               disabled={busy || displayRows.length === 0}
+              data-guide-anchor="blingPicking.abrirAjustesPdf"
               className="mx-1 mb-2 h-14 rounded-2xl bg-gradient-to-b from-indigo-500 to-indigo-700 disabled:opacity-40 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30"
             >
               <Crop size={16} /> Exportar para Edição
@@ -682,16 +685,17 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           )}
 
           <div className="grid grid-cols-2 gap-2 px-1">
-            <button onClick={handleShareJpg} disabled={busy || displayRows.length === 0} className="h-12 rounded-2xl bg-indigo-600 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5">
+            <button onClick={handleShareJpg} disabled={busy || displayRows.length === 0} data-guide-anchor="blingPicking.compartilharJpg" className="h-12 rounded-2xl bg-indigo-600 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5">
               <ImageIcon size={14} /> JPG
             </button>
-            <button onClick={handleSharePdf} disabled={busy || displayRows.length === 0} className="h-12 rounded-2xl bg-indigo-600 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5">
+            <button onClick={handleSharePdf} disabled={busy || displayRows.length === 0} data-guide-anchor="blingPicking.compartilharPdf" className="h-12 rounded-2xl bg-indigo-600 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5">
               <FileText size={14} /> PDF
             </button>
           </div>
           <button
             onClick={() => setPrintChoiceOpen(true)}
             disabled={displayRows.length === 0}
+            data-guide-anchor="blingPicking.imprimirAbrir"
             className="mx-1 mt-2 h-12 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
           >
             <Printer size={14} /> Imprimir
@@ -707,9 +711,9 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           >
             <div className="flex items-center justify-between px-1">
               <p className="text-sm font-black uppercase tracking-widest">Imprimir em...</p>
-              <button onClick={() => setPrintChoiceOpen(false)}><X size={18} className="text-slate-400" /></button>
+              <button onClick={() => setPrintChoiceOpen(false)} data-guide-anchor="blingPicking.imprimirFechar"><X size={18} className="text-slate-400" /></button>
             </div>
-            <button onClick={handleNativePrint} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+            <button onClick={handleNativePrint} data-guide-anchor="blingPicking.imprimirNativo" className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
               <div className="flex items-center gap-3">
                 <Printer size={18} className="text-indigo-500" />
                 <div className="text-left">
@@ -720,7 +724,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
               <ChevronRight size={16} className="text-slate-400" />
             </button>
             {isAblemarkPlatform() && (
-              <button onClick={openThermalFlow} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+              <button onClick={openThermalFlow} data-guide-anchor="blingPicking.imprimirTermica" className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 <div className="flex items-center gap-3">
                   <Bluetooth size={18} className="text-indigo-500" />
                   <div className="text-left">
@@ -770,6 +774,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
               <button
                 onClick={handleListDevices}
                 disabled={loadingDevices}
+                data-guide-anchor="blingPicking.termicaListarDispositivos"
                 className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 <RefreshCw size={14} className={loadingDevices ? 'animate-spin' : ''} /> Listar dispositivos pareados
@@ -779,6 +784,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
                   key={d.address}
                   onClick={() => handleConnect(d.address)}
                   disabled={connecting}
+                  data-guide-anchor="blingPicking.termicaConectar"
                   className={`flex items-center gap-2 px-4 py-3 rounded-2xl border-2 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}
                 >
                   <Bluetooth size={14} className="text-indigo-500 shrink-0" />
@@ -795,6 +801,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
                 <button
                   key={d}
                   onClick={() => setDensidade(d)}
+                  data-guide-anchor="blingPicking.termicaDensidade"
                   className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${
                     densidade === d ? 'bg-emerald-600 text-white' : 'text-slate-400'
                   }`}
@@ -809,6 +816,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           <button
             onClick={handlePrintThermalLabels}
             disabled={!thermalConnected || busy}
+            data-guide-anchor="blingPicking.termicaImprimir"
             className="w-full h-12 rounded-2xl bg-emerald-600 disabled:opacity-40 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
           >
             <Printer size={16} /> {busy ? 'Imprimindo...' : `Imprimir ${checkedKeys.size} Etiqueta(s)`}

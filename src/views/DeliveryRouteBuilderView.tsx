@@ -469,7 +469,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
   return (
     <div className="flex flex-col h-full pb-32">
       <div className="flex justify-between items-center px-2 pt-2 pb-4">
-        <button onClick={onBack} title="Voltar" aria-label="Voltar para o menu de Entregas"
+        <button onClick={onBack} title="Voltar" aria-label="Voltar para o menu de Entregas" data-guide-anchor="deliveryRoute.voltar"
           className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500'} shadow-sm`}>
           <ArrowLeft size={20} />
         </button>
@@ -489,7 +489,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
             <p className="flex-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">
               Partindo de: <span className="font-black text-slate-700 dark:text-slate-200">sua localização atual</span>
             </p>
-            <button type="button" onClick={fetchRealOrigin} className="text-[9px] font-black uppercase tracking-widest text-teal-600 hover:text-teal-700 shrink-0">
+            <button type="button" onClick={fetchRealOrigin} data-guide-anchor="deliveryRoute.atualizarLocalizacao" className="text-[9px] font-black uppercase tracking-widest text-teal-600 hover:text-teal-700 shrink-0">
               Atualizar
             </button>
           </>
@@ -499,7 +499,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
             <p className="flex-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">
               {originError || 'Localização não disponível — usando o centro dos pedidos como partida aproximada.'}
             </p>
-            <button type="button" onClick={fetchRealOrigin} className="text-[9px] font-black uppercase tracking-widest text-teal-600 hover:text-teal-700 shrink-0">
+            <button type="button" onClick={fetchRealOrigin} data-guide-anchor="deliveryRoute.atualizarLocalizacao" className="text-[9px] font-black uppercase tracking-widest text-teal-600 hover:text-teal-700 shrink-0">
               Tentar Novamente
             </button>
           </>
@@ -523,6 +523,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
           <button
             type="button"
             onClick={openManualStopModal}
+            data-guide-anchor="deliveryRoute.paradaManualAbrir"
             className="flex items-center justify-center gap-2 px-4 py-3 mt-2 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 border-dashed border-teal-600 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all"
           >
             <Plus size={14} />
@@ -538,7 +539,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                   Selecione os pedidos ({visibleSales.length} disponíveis)
                 </p>
                 {hiddenIds.size > 0 && (
-                  <button type="button" onClick={() => setHiddenIds(new Set())} className="text-[9px] font-black uppercase tracking-widest text-teal-600 hover:text-teal-700 shrink-0">
+                  <button type="button" onClick={() => setHiddenIds(new Set())} data-guide-anchor="deliveryRoute.pedidoMostrarOcultados" className="text-[9px] font-black uppercase tracking-widest text-teal-600 hover:text-teal-700 shrink-0">
                     Mostrar {hiddenIds.size} ocultado{hiddenIds.size > 1 ? 's' : ''}
                   </button>
                 )}
@@ -562,6 +563,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                 <button
                   type="button"
                   onClick={() => toggleSelect(sale.id)}
+                  data-guide-anchor="deliveryRoute.pedidoSelecionar"
                   className="flex-1 min-w-0 flex items-center gap-3 p-4 text-left"
                 >
                   <div
@@ -586,6 +588,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                   title="Retirar das entregas"
                   aria-label="Retirar das entregas"
                   onClick={(e) => { e.stopPropagation(); hideFromList(sale.id); }}
+                  data-guide-anchor="deliveryRoute.pedidoOcultar"
                   className={`p-2 mr-3 rounded-xl shrink-0 transition-all ${isDarkMode ? 'text-slate-600 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-300 hover:text-rose-500 hover:bg-rose-50'}`}
                 >
                   <X size={16} />
@@ -616,6 +619,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                 title="Remover parada"
                 aria-label="Remover parada"
                 onClick={() => removeManualStop(m.id)}
+                data-guide-anchor="deliveryRoute.paradaManualRemover"
                 className={`p-2 mr-3 rounded-xl shrink-0 transition-all ${isDarkMode ? 'text-slate-600 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-300 hover:text-rose-500 hover:bg-rose-50'}`}
               >
                 <X size={16} />
@@ -626,6 +630,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
           <button
             type="button"
             onClick={openManualStopModal}
+            data-guide-anchor="deliveryRoute.paradaManualAbrir"
             className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 border-dashed transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
           >
             <Plus size={14} />
@@ -638,7 +643,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                 <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white">
                   {selected.size + manualStops.length} parada{selected.size + manualStops.length > 1 ? 's' : ''} selecionada{selected.size + manualStops.length > 1 ? 's' : ''}
                 </span>
-                <button type="button" onClick={() => { setSelected(new Set()); setManualStops([]); }} className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <button type="button" onClick={() => { setSelected(new Set()); setManualStops([]); }} data-guide-anchor="deliveryRoute.selecaoLimpar" className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                   Limpar
                 </button>
               </div>
@@ -660,7 +665,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
               {orderedStops.length} parada{orderedStops.length > 1 ? 's' : ''} — arraste pra reordenar
             </p>
-            <button type="button" onClick={() => setOrderedStops(null)} className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <button type="button" onClick={() => setOrderedStops(null)} data-guide-anchor="deliveryRoute.refazerSelecao" className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
               Refazer seleção
             </button>
           </div>
@@ -682,6 +687,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
           <button
             type="button"
             onClick={() => setShowMapPreview(v => !v)}
+            data-guide-anchor="deliveryRoute.mapaPreviewToggle"
             className={`flex items-center justify-center gap-2 px-4 py-3 mt-2 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${
               showMapPreview
                 ? 'bg-teal-600 border-teal-600 text-white'
@@ -720,6 +726,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                   <button
                     type="button"
                     onClick={() => setShowStreetList(v => !v)}
+                    data-guide-anchor="deliveryRoute.ruasListToggle"
                     className="flex items-center justify-between gap-2 px-4 py-3"
                   >
                     <span className="flex items-center gap-2">
@@ -797,6 +804,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
             <button
               type="button"
               onClick={() => setManualStopMode('poi')}
+              data-guide-anchor="deliveryRoute.paradaManualModo"
               className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${manualStopMode === 'poi' ? 'bg-teal-600 text-white' : 'text-slate-500'}`}
             >
               Ponto de Interesse
@@ -804,6 +812,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
             <button
               type="button"
               onClick={() => setManualStopMode('map')}
+              data-guide-anchor="deliveryRoute.paradaManualModo"
               className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${manualStopMode === 'map' ? 'bg-teal-600 text-white' : 'text-slate-500'}`}
             >
               Escolher no Mapa
@@ -826,6 +835,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                           key={cat}
                           type="button"
                           onClick={() => runPoiSearch(cat)}
+                          data-guide-anchor="deliveryRoute.poiCategoria"
                           className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${poiCategory === cat ? (isDarkMode ? 'bg-teal-900/20 border-teal-700' : 'bg-teal-50 border-teal-200') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100')}`}
                         >
                           <Icon size={18} className={poiCategory === cat ? 'text-teal-600' : 'text-slate-400'} />
@@ -854,6 +864,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                             key={poi.id}
                             type="button"
                             onClick={() => { setSelectedPoi(poi); setPoiStopLabel(poi.name); }}
+                            data-guide-anchor="deliveryRoute.poiSelecionar"
                             className={`flex items-center justify-between gap-3 p-3 rounded-2xl border text-left transition-all ${isSelected ? (isDarkMode ? 'bg-teal-900/20 border-teal-700' : 'bg-teal-50 border-teal-200') : (isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200')}`}
                           >
                             <span className="text-xs font-bold truncate">{poi.name}</span>
@@ -877,6 +888,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                         type="button"
                         disabled={!poiStopLabel.trim()}
                         onClick={() => addManualStop(poiStopLabel.trim() || selectedPoi.name, selectedPoi.lat, selectedPoi.lng)}
+                        data-guide-anchor="deliveryRoute.poiAdicionar"
                         className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
                       >
                         <Plus size={14} />
@@ -895,6 +907,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                   type="button"
                   disabled={isLocatingManualStop}
                   onClick={useMyLocationForManualStop}
+                  data-guide-anchor="deliveryRoute.minhaLocalizacao"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-60 shrink-0 transition-all"
                 >
                   {isLocatingManualStop ? <Loader2 size={13} className="animate-spin" /> : <LocateFixed size={13} />}
@@ -920,6 +933,7 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                 type="button"
                 disabled={!mapPickedPoint}
                 onClick={() => mapPickedPoint && addManualStop(mapStopLabel.trim() || 'Parada Manual', mapPickedPoint.lat, mapPickedPoint.lng)}
+                data-guide-anchor="deliveryRoute.mapaAdicionar"
                 className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
               >
                 <Plus size={14} />

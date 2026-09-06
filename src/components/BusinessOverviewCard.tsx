@@ -167,7 +167,7 @@ export default function BusinessOverviewCard({
     try { el.showPicker ? el.showPicker() : el.focus(); } catch { el.focus(); }
   };
 
-  const [isOverviewExpanded, setIsOverviewExpanded] = useState(false);
+  const [isOverviewExpanded, setIsOverviewExpanded] = useState(true);
   const [isResumoExpanded, setIsResumoExpanded] = useState(true);
   const [overviewConfig, setOverviewConfig] = useState<BusinessOverviewConfig>(DEFAULT_BUSINESS_OVERVIEW_CONFIG);
 

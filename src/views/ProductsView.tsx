@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Product, ProductStatus, SaleType, AppModulesConfig } from "../types";
+import { Product, ProductStatus, SaleType, AppModulesConfig, ProductModel } from "../types";
 import {
   Search,
   Plus,
@@ -23,6 +23,7 @@ interface ProductsViewProps {
   isDarkMode: boolean;
   modulesConfig: AppModulesConfig;
   showThumbnails?: boolean;
+  productModels?: ProductModel[];
 }
 
 export default function ProductsView({
@@ -35,14 +36,19 @@ export default function ProductsView({
   isDarkMode,
   modulesConfig,
   showThumbnails = true,
+  productModels = [],
 }: ProductsViewProps) {
+  // Nome exibido: resolve pelo Modelo cadastrado (se o produto tiver um vinculado) em vez do
+  // snapshot em Product.name — assim reflete na hora se o nome do Modelo for editado depois,
+  // em vez de ficar desatualizado. Sem modelo vinculado, cai no nome salvo (legado ou referência).
+  const displayName = (product: Product) => productModels.find(m => m.id === product.modelId)?.name || product.name;
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
 
   const filteredProducts = products.filter(
     (p) =>
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      displayName(p).toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.reference.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
@@ -141,6 +147,7 @@ export default function ProductsView({
             <ProductCard
               key={product.id}
               product={product}
+              displayName={displayName(product)}
               onEdit={() => onEdit(product.id)}
               onDelete={() => setItemToDelete(product.id)}
               onToggleStatus={() => onToggleStatus(product.id, product.status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
@@ -166,6 +173,7 @@ export default function ProductsView({
 
 interface ProductCardProps {
   product: Product;
+  displayName: string;
   onEdit: () => void;
   onDelete: () => void;
   onToggleStatus: () => void;
@@ -177,6 +185,7 @@ interface ProductCardProps {
 
 function ProductCard({
   product,
+  displayName,
   onEdit,
   onDelete,
   onToggleStatus,
@@ -198,7 +207,7 @@ function ProductCard({
       >
         <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 flex-shrink-0 overflow-hidden">
           {showThumbnail && product.photoUrl ? (
-            <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
+            <img src={product.photoUrl} alt={displayName} className="w-full h-full object-cover" />
           ) : (
             <Package size={22} className="text-indigo-500" />
           )}
@@ -208,7 +217,7 @@ function ProductCard({
             {product.reference}
           </span>
           <h3 className="font-bold text-base text-slate-800 dark:text-slate-100 uppercase tracking-tight leading-tight truncate">
-            {product.name}
+            {displayName}
           </h3>
         </div>
         {isExpanded ? (

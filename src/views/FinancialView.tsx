@@ -593,6 +593,7 @@ export default function FinancialView({
                        key={pt}
                        type="button"
                        onClick={() => setStatsPeriodType(pt)}
+                       data-guide-anchor="financial.statsPeriodo"
                        className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
                          statsPeriodType === pt ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-700'
                        }`}
@@ -603,6 +604,7 @@ export default function FinancialView({
                 </div>
                 <div
                   onClick={openStatsMonthPicker}
+                  data-guide-anchor="financial.statsMesEscolhido"
                   className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white/60 border-slate-200'}`}
                 >
                   <Calendar size={12} className="text-slate-500 shrink-0" />
@@ -622,6 +624,7 @@ export default function FinancialView({
                 <button
                   type="button"
                   onClick={() => setShowPendingStats(false)}
+                  data-guide-anchor="financial.statsAba"
                   className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
                     !showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-700'
                   }`}
@@ -631,6 +634,7 @@ export default function FinancialView({
                 <button
                   type="button"
                   onClick={() => setShowPendingStats(true)}
+                  data-guide-anchor="financial.statsAba"
                   className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
                     showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-700'
                   }`}
@@ -677,6 +681,7 @@ export default function FinancialView({
              <button
                type="button"
                onClick={() => setManualEntryConfirmType(TransactionType.INCOME)}
+               data-guide-anchor="financial.novaEntrada"
                className={`flex items-center justify-center gap-2 py-4 border-r font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400 border-slate-800' : 'bg-emerald-50 text-emerald-600 border-slate-200'}`}
              >
                <TrendingUp size={16} strokeWidth={3} /> Nova Entrada
@@ -684,6 +689,7 @@ export default function FinancialView({
              <button
                type="button"
                onClick={() => setManualEntryConfirmType(TransactionType.EXPENSE)}
+               data-guide-anchor="financial.novaSaida"
                className={`flex items-center justify-center gap-2 py-4 font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-600'}`}
              >
                <TrendingDown size={16} strokeWidth={3} /> Nova Saída
@@ -726,24 +732,28 @@ export default function FinancialView({
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
             <button 
               onClick={() => setFilterType('ALL')}
+              data-guide-anchor="financial.filtroTipo"
               className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${filterType === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Tudo
             </button>
             <button 
               onClick={() => setFilterType(TransactionType.INCOME)}
+              data-guide-anchor="financial.filtroTipo"
               className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${filterType === TransactionType.INCOME ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Entradas
             </button>
             <button 
               onClick={() => setFilterType(TransactionType.EXPENSE)}
+              data-guide-anchor="financial.filtroTipo"
               className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${filterType === TransactionType.EXPENSE ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Saídas
             </button>
             <button 
               onClick={() => setFilterType('PAYABLE')}
+              data-guide-anchor="financial.filtroTipo"
               className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all flex items-center gap-2 whitespace-nowrap ${filterType === 'PAYABLE' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}
             >
               A Pagar
@@ -853,6 +863,7 @@ export default function FinancialView({
                         <button
                           type="button"
                           onClick={() => toggleExpand(purchase.id)}
+                          data-guide-anchor="financial.compraExpandir"
                           className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-[10px] font-black tracking-[0.2em] uppercase transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-100 text-slate-500'}`}
                         >
                           <span className="flex items-center gap-2">
@@ -901,6 +912,7 @@ export default function FinancialView({
                       <button
                          type="button"
                          onClick={() => handlePartialPayment(purchase, 'PAYMENT')}
+                         data-guide-anchor="financial.compraPagar"
                          className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 text-white text-[11px] font-black tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all"
                       >
                         <DollarSign size={16} strokeWidth={3} />
@@ -911,6 +923,7 @@ export default function FinancialView({
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handlePartialPayment(purchase, 'HISTORY')}
+                          data-guide-anchor="financial.compraHistorico"
                           className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-[10px] font-black tracking-[0.2em] transition-all hover:bg-slate-50 dark:hover:bg-slate-800 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
                         >
                           <History size={14} />
@@ -918,6 +931,7 @@ export default function FinancialView({
                         </button>
                         <button
                           onClick={() => copyHistory(purchase)}
+                          data-guide-anchor="financial.compraCopiarHistorico"
                           className={`px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 text-[10px] font-black tracking-[0.2em] transition-all ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400 hover:bg-emerald-900/30' : 'bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100'}`}
                           title="Copiar Histórico de Pagamentos"
                         >
@@ -947,6 +961,7 @@ export default function FinancialView({
               type="button"
               onClick={handleLoadFullHistory}
               disabled={isLoadingHistory}
+              data-guide-anchor="financial.carregarHistoricoCompleto"
               className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-indigo-950/30 text-indigo-400 border border-indigo-900/50' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
             >
               {isLoadingHistory ? 'Carregando...' : 'Carregar lançamentos mais antigos'}
@@ -1004,6 +1019,7 @@ export default function FinancialView({
             <button
               type="button"
               onClick={() => setIsRecurringExpensesExpanded(v => !v)}
+              data-guide-anchor="financial.recorrentesExpandir"
               className="w-full flex items-center justify-between gap-3 p-6"
             >
               <div className="flex items-center gap-3 text-left min-w-0">
@@ -1026,6 +1042,7 @@ export default function FinancialView({
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1">Quanto devo em...</p>
                   <div
                     onClick={openRecurringMonthPicker}
+                    data-guide-anchor="financial.recorrentesMesEscolhido"
                     className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
                   >
                     <Calendar size={13} className="text-cyan-500 shrink-0" />

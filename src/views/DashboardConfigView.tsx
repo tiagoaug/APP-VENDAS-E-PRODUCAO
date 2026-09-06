@@ -325,7 +325,7 @@ function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
       return (
         <div className={containerClass}>
           <div className={headerClass}>
-            <span className={`${titleClass} bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400`}>Pares Produzidos</span>
+            <span className={`${titleClass} bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400`}>Análise de Produção</span>
             <Factory size={mini ? 12 : 16} className="text-teal-500" />
           </div>
           <div className="grid grid-cols-2 gap-2">

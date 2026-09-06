@@ -32,7 +32,7 @@ function ChoicePopup({ isDarkMode, onChoose }: { isDarkMode: boolean; onChoose: 
       <div className={`w-full max-w-sm rounded-[2rem] p-5 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
         <p className="px-1 text-sm font-black uppercase tracking-widest">O que vai devolver?</p>
 
-        <button onClick={() => onChoose('produto_e_nota')} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+        <button onClick={() => onChoose('produto_e_nota')} data-guide-anchor="blingDevolucao.produtoENota" className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
           <div className="flex items-center gap-3">
             <Boxes size={18} className="text-rose-500 shrink-0" />
             <div className="text-left">
@@ -82,7 +82,7 @@ function NotesOnlyForm({ isDarkMode, onBack }: { isDarkMode: boolean; onBack: ()
 
   return (
     <div className="flex flex-col gap-4">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 w-fit">
+      <button onClick={onBack} data-guide-anchor="blingDevolucao.voltarTipo" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 w-fit">
         <ChevronLeft size={14} /> Alterar Tipo de Devolução
       </button>
 
@@ -228,7 +228,7 @@ export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevol
   if (selectedProduct) {
     return (
       <div className="flex flex-col gap-6 pb-32">
-        <button onClick={resetSelection} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 w-fit">
+        <button onClick={resetSelection} data-guide-anchor="blingDevolucao.voltarTipo" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 w-fit">
           <ChevronLeft size={14} /> Trocar Modelo
         </button>
 
@@ -248,6 +248,7 @@ export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevol
                 <button
                   key={v.id}
                   onClick={() => setSelectedVariation(v)}
+                  data-guide-anchor="blingDevolucao.corSelecionar"
                   className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${isDarkMode ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-900'}`}
                 >
                   {v.photoUrl && <img src={v.photoUrl} className="w-6 h-6 rounded-md object-cover" alt="" />}
@@ -265,6 +266,7 @@ export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevol
                   <button
                     key={s}
                     onClick={() => setSize(s)}
+                    data-guide-anchor="blingDevolucao.tamanhoSelecionar"
                     className={`min-w-[52px] h-11 px-3 rounded-xl text-xs font-black ${
                       size === s ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-900'
                     }`}
@@ -286,6 +288,7 @@ export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevol
             <button
               onClick={handleConfirm}
               disabled={!size || parsedQty === 0 || saving}
+              data-guide-anchor="blingDevolucao.confirmarProduto"
               className="w-full h-12 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : <PackageX size={16} />}
@@ -300,10 +303,10 @@ export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevol
   return (
     <div className="flex flex-col gap-6 pb-32">
       <div className="flex items-center justify-between">
-        <button onClick={backToChoice} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+        <button onClick={backToChoice} data-guide-anchor="blingDevolucao.voltarTipo" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
           <ChevronLeft size={14} /> Alterar Tipo de Devolução
         </button>
-        <button onClick={backToChoice} className="p-1 text-slate-400"><X size={16} /></button>
+        <button onClick={backToChoice} data-guide-anchor="blingDevolucao.fechar" className="p-1 text-slate-400"><X size={16} /></button>
       </div>
 
       <div className="relative">
@@ -325,6 +328,7 @@ export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevol
           <button
             key={p.id}
             onClick={() => setSelectedProduct(p)}
+            data-guide-anchor="blingDevolucao.produtoSelecionar"
             className={`p-4 rounded-[1.75rem] border shadow-sm flex items-center gap-3 text-left ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
           >
             <Thumb src={p.photoUrl} isDarkMode={isDarkMode} />

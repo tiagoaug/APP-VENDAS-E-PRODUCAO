@@ -113,7 +113,7 @@ function EditStopRow({ stop, sale, carrierName, extraCount, isDarkMode, index, o
         </p>
       </div>
       {!isDelivered && (
-        <button type="button" onClick={onRemove} title="Remover parada" className="p-2 rounded-xl shrink-0 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all">
+        <button type="button" onClick={onRemove} title="Remover parada" data-guide-anchor="deliveryDetail.paradaRemover" className="p-2 rounded-xl shrink-0 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all">
           <X size={16} />
         </button>
       )}
@@ -170,6 +170,7 @@ function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, is
           <button
             type="button"
             onClick={onOpenItems}
+            data-guide-anchor="deliveryDetail.paradaItensAbrir"
             className="w-8 h-8 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full active:scale-90 transition-all"
             title="Itens na entrega"
           >
@@ -179,6 +180,7 @@ function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, is
         <button
           type="button"
           onClick={onOpenNote}
+          data-guide-anchor="deliveryDetail.paradaObservacaoAbrir"
           className="relative w-8 h-8 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-500 rounded-full active:scale-90 transition-all"
           title="Observações da parada"
         >
@@ -193,6 +195,7 @@ function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, is
         <button
           type="button"
           onClick={onOpenPhoto}
+          data-guide-anchor="deliveryDetail.paradaFotoAbrir"
           className="w-8 h-8 flex items-center justify-center bg-sky-50 dark:bg-sky-500/10 text-sky-500 rounded-full active:scale-90 transition-all"
           title="Fotos da entrega"
         >
@@ -202,6 +205,7 @@ function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, is
           type="button"
           disabled={isMarking}
           onClick={onToggleDelivered}
+          data-guide-anchor="deliveryDetail.paradaEntregueToggle"
           className={`w-8 h-8 flex items-center justify-center rounded-full active:scale-90 transition-all disabled:opacity-50 ${isDelivered ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600' : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500'}`}
           title={isDelivered ? 'Marcar como não entregue' : 'Marcar como entregue'}
         >
@@ -826,21 +830,21 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
   return (
     <div className="flex flex-col h-full pb-32">
       <div className="flex justify-between items-center px-2 pt-2 pb-4">
-        <button onClick={onBack} title="Voltar" aria-label="Voltar"
+        <button onClick={onBack} title="Voltar" aria-label="Voltar" data-guide-anchor="deliveryDetail.voltar"
           className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500'} shadow-sm`}>
           <ArrowLeft size={20} />
         </button>
         <h1 className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Rota de Entrega</h1>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowExportModal(true)} title="Central de Impressão" aria-label="Central de Impressão"
+          <button onClick={() => setShowExportModal(true)} title="Central de Impressão" aria-label="Central de Impressão" data-guide-anchor="deliveryDetail.impressaoAbrir"
             className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-teal-400' : 'bg-white text-teal-600'} shadow-sm`}>
             <Printer size={18} />
           </button>
-          <button onClick={openEditModal} title="Editar Rota" aria-label="Editar Rota"
+          <button onClick={openEditModal} title="Editar Rota" aria-label="Editar Rota" data-guide-anchor="deliveryDetail.editarRotaAbrir"
             className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-teal-400' : 'bg-white text-teal-600'} shadow-sm`}>
             <Pencil size={18} />
           </button>
-          <button onClick={() => setShowDeleteConfirm(true)} title="Excluir Rota" aria-label="Excluir Rota"
+          <button onClick={() => setShowDeleteConfirm(true)} title="Excluir Rota" aria-label="Excluir Rota" data-guide-anchor="deliveryDetail.excluirRotaAbrir"
             className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-rose-500' : 'bg-white text-rose-500'} shadow-sm`}>
             <Trash2 size={18} />
           </button>
@@ -857,6 +861,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
             type="button"
             disabled={isStarting}
             onClick={async () => { setIsStarting(true); try { await onStartRoute(); } finally { setIsStarting(false); } }}
+            data-guide-anchor="deliveryDetail.iniciarRota"
             className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             {isStarting ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
@@ -888,6 +893,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
             <button
               type="button"
               onClick={() => setShowLiveModal(true)}
+              data-guide-anchor="deliveryDetail.acompanharAoVivo"
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-teal-800 text-teal-400 hover:bg-teal-900/20' : 'border-teal-200 text-teal-700 hover:bg-teal-50'}`}
             >
               <Radio size={14} />
@@ -898,6 +904,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
             type="button"
             disabled={isRecalculating || deliveredCount >= orderedStops.length}
             onClick={handleRecalculate}
+            data-guide-anchor="deliveryDetail.recalcular"
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] disabled:opacity-50 ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
           >
             {isRecalculating ? <Loader2 size={14} className="animate-spin" /> : <Waypoints size={14} />}
@@ -926,6 +933,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
         <button
           type="button"
           onClick={() => setShowProviderPicker(true)}
+          data-guide-anchor="deliveryDetail.navegarAbrir"
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 active:scale-[0.98] transition-all"
         >
           <Navigation size={14} />
@@ -935,6 +943,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
         <button
           type="button"
           onClick={() => setShowExportModal(true)}
+          data-guide-anchor="deliveryDetail.impressaoAbrir"
           className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-teal-800 text-teal-400 hover:bg-teal-900/20' : 'border-teal-200 text-teal-700 hover:bg-teal-50'}`}
         >
           <Printer size={14} />
@@ -965,11 +974,12 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
                 openNavigation(lastProvider as 'waze' | 'apple_maps', [{ lat: nextStopSuggestion.stop.lat, lng: nextStopSuggestion.stop.lng }]);
                 setNextStopSuggestion(null);
               }}
+              data-guide-anchor="deliveryDetail.proximaParadaNavegar"
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white hover:bg-teal-700 active:scale-95 transition-all shrink-0"
             >
               <Navigation size={13} /> Navegar
             </button>
-            <button type="button" onClick={() => setNextStopSuggestion(null)} aria-label="Dispensar" title="Dispensar"
+            <button type="button" onClick={() => setNextStopSuggestion(null)} aria-label="Dispensar" title="Dispensar" data-guide-anchor="deliveryDetail.proximaParadaDispensar"
               className="p-2 rounded-xl shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all">
               <X size={14} />
             </button>
@@ -1091,6 +1101,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
                   <button
                     type="button"
                     onClick={() => handleRemoveQueuedPhoto(i)}
+                    data-guide-anchor="deliveryDetail.fotoRemover"
                     className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-slate-900/70 text-white"
                     title="Remover foto"
                   >
@@ -1105,6 +1116,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
             type="button"
             disabled={isCapturingPhoto}
             onClick={handleCapturePhoto}
+            data-guide-anchor="deliveryDetail.fotoTirar"
             className={`flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 border-dashed transition-all active:scale-[0.98] disabled:opacity-50 ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
           >
             {isCapturingPhoto ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
@@ -1116,6 +1128,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
               type="button"
               disabled={isSharingPhotos}
               onClick={handleShareQueuedPhotos}
+              data-guide-anchor="deliveryDetail.fotoCompartilhar"
               className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
             >
               {isSharingPhotos ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
@@ -1154,6 +1167,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
             type="button"
             disabled={isSavingNote}
             onClick={handleSaveNote}
+            data-guide-anchor="deliveryDetail.observacaoSalvar"
             className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             {isSavingNote ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
@@ -1183,6 +1197,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
               <button
                 key={idx}
                 type="button"
+                data-guide-anchor="deliveryDetail.itemToggle"
                 onClick={() => setCheckedItemIndexes(prev => {
                   const next = new Set(prev);
                   next.has(idx) ? next.delete(idx) : next.add(idx);
@@ -1265,6 +1280,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
                     key={sale.id}
                     type="button"
                     onClick={() => handleAddStopToEdit(sale)}
+                    data-guide-anchor="deliveryDetail.editarAdicionarParada"
                     className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
                   >
                     <div className={`p-1.5 rounded-lg shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
@@ -1286,6 +1302,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
             type="button"
             disabled={isSavingEdit}
             onClick={handleSaveEdit}
+            data-guide-anchor="deliveryDetail.editarSalvar"
             className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             {isSavingEdit ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}

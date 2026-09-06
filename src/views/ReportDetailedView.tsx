@@ -463,6 +463,7 @@ export default function ReportDetailedView({
            onClick={onBack}
            title="Voltar"
            aria-label="Voltar para a tela anterior"
+           data-guide-anchor="reportDetail.voltar"
            className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500'} shadow-sm`}
          >
            <ArrowLeft size={20} />
@@ -472,6 +473,7 @@ export default function ReportDetailedView({
            onClick={exportPDF}
            title="Compartilhar PDF"
            aria-label="Compartilhar relatório em PDF"
+           data-guide-anchor="reportDetail.exportarPdf"
            className="p-2 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-600/30 active:scale-90 transition-transform"
          >
             <Share2 size={18} />
@@ -536,6 +538,7 @@ export default function ReportDetailedView({
                               type="button"
                               key={opt.id}
                               onClick={() => setRelationshipStatusFilter(opt.id)}
+                              data-guide-anchor="reportDetail.statusFiltro"
                               className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                                 relationshipStatusFilter === opt.id
                                   ? opt.id === 'PENDING' ? 'bg-rose-500 text-white shadow-md'
@@ -589,6 +592,7 @@ export default function ReportDetailedView({
                             type="button"
                             onClick={() => setIsConsolidatedModalOpen(true)}
                             disabled={!selectedPersonId || relationshipData.length === 0}
+                            data-guide-anchor="reportDetail.abrirConsolidado"
                             className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
                                 !selectedPersonId || relationshipData.length === 0
                                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
@@ -883,6 +887,7 @@ export default function ReportDetailedView({
                                             <div className="flex items-center justify-center gap-2">
                                                 <button
                                                     onClick={() => copyToClipboard(getSaleMessage(r, messageFormat))}
+                                                    data-guide-anchor="reportDetail.copiarMensagem"
                                                     className={`p-2 rounded-xl border ${isDarkMode ? 'border-slate-700 hover:bg-slate-700 text-slate-400' : 'border-slate-100 hover:bg-slate-50 text-slate-500'} transition-all active:scale-90`}
                                                     title="Copiar"
                                                 >
@@ -891,6 +896,7 @@ export default function ReportDetailedView({
                                                  <button
                                                     onClick={() => sendWhatsApp(customer?.phone, getSaleMessage(r, messageFormat))}
                                                     disabled={!customer?.phone}
+                                                    data-guide-anchor="reportDetail.enviarWhatsapp"
                                                     className={`p-2 rounded-xl border transition-all active:scale-90 ${
                                                       !customer?.phone 
                                                         ? 'border-slate-100 dark:border-slate-800 text-slate-300 dark:text-slate-700 cursor-not-allowed'
@@ -959,7 +965,7 @@ export default function ReportDetailedView({
                         const isExpanded = expandedSnapshotMonth === snap.month;
                         return (
                             <div key={snap.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                                <button type="button" onClick={() => setExpandedSnapshotMonth(isExpanded ? null : snap.month)}
+                                <button type="button" onClick={() => setExpandedSnapshotMonth(isExpanded ? null : snap.month)} data-guide-anchor="reportDetail.snapshotExpandir"
                                     className={`w-full flex items-center justify-between gap-3 p-3 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}>
                                     <span className="text-xs font-black text-slate-700 dark:text-slate-200 shrink-0">{snap.month}</span>
                                     <span className="flex items-center gap-3 text-[10px] font-bold text-slate-500 flex-wrap justify-end">

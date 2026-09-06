@@ -609,6 +609,7 @@ export default function ServiceOrderFormView({
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
+            data-guide-anchor="serviceOrder.voltar"
             className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${
               isDarkMode
                 ? 'border-slate-800 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white'
@@ -648,6 +649,7 @@ export default function ServiceOrderFormView({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mt-4">
             <button
               onClick={() => handleShare('pdf')}
+              data-guide-anchor="serviceOrder.compartilharPdf"
               className="flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-[11px] tracking-wider shadow-lg transition-all active:scale-[0.98]"
             >
               <Share2 size={16} />
@@ -655,6 +657,7 @@ export default function ServiceOrderFormView({
             </button>
             <button
               onClick={() => handleShare('jpg')}
+              data-guide-anchor="serviceOrder.compartilharJpg"
               className="flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-black uppercase text-[11px] tracking-wider shadow-lg transition-all active:scale-[0.98]"
             >
               <Share2 size={16} />
@@ -662,6 +665,7 @@ export default function ServiceOrderFormView({
             </button>
             <button
               onClick={handlePrint}
+              data-guide-anchor="serviceOrder.imprimir"
               className="flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-slate-900 dark:bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-800 dark:hover:bg-slate-700 font-black uppercase text-[11px] tracking-wider transition-all active:scale-[0.98]"
             >
               <Printer size={16} />
@@ -669,6 +673,7 @@ export default function ServiceOrderFormView({
             </button>
             <button
               onClick={onBack}
+              data-guide-anchor="serviceOrder.voltar"
               className="flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800/40 dark:hover:bg-slate-800 dark:text-slate-300 font-black uppercase text-[11px] tracking-wider transition-all active:scale-[0.98]"
             >
               Voltar ao PCP
@@ -712,6 +717,7 @@ export default function ServiceOrderFormView({
                     <button
                       type="button"
                       onClick={() => setOsType('INTERNAL')}
+                      data-guide-anchor="serviceOrder.tipo"
                       className={`h-full rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
                         osType === 'INTERNAL'
                           ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
@@ -725,6 +731,7 @@ export default function ServiceOrderFormView({
                     <button
                       type="button"
                       onClick={() => setOsType('OUTSOURCED')}
+                      data-guide-anchor="serviceOrder.tipo"
                       className={`h-full rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
                         osType === 'OUTSOURCED'
                           ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
@@ -791,6 +798,7 @@ export default function ServiceOrderFormView({
                             <div
                               key={p.id}
                               className={`px-5 py-4 text-[13px] font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50 ${providerId === p.id ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200'}`}
+                              data-guide-anchor="serviceOrder.prestadorSelecionar"
                               onClick={() => {
                                 setProviderId(p.id || '');
                                 setProviderManualName('');
@@ -852,6 +860,7 @@ export default function ServiceOrderFormView({
                   <button
                     type="button"
                     onClick={() => setGenerateTransaction(true)}
+                    data-guide-anchor="serviceOrder.contabilToggle"
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${generateTransaction ? "bg-white dark:bg-slate-700 shadow-lg text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}
                     aria-label="Gerar transação contábil"
                     title="Contábil"
@@ -862,6 +871,7 @@ export default function ServiceOrderFormView({
                   <button
                     type="button"
                     onClick={() => setGenerateTransaction(false)}
+                    data-guide-anchor="serviceOrder.contabilToggle"
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!generateTransaction ? "bg-rose-500 shadow-lg shadow-rose-500/20 text-white" : "text-slate-400 dark:text-slate-500"}`}
                     aria-label="Não gerar transação contábil"
                     title="Não Contábil"
@@ -1016,6 +1026,7 @@ export default function ServiceOrderFormView({
                         <button
                           type="button"
                           onClick={() => removeFromBasket(item.id)}
+                          data-guide-anchor="serviceOrder.itemRemover"
                           className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-rose-500/10 text-rose-500 shrink-0 transition-colors"
                         >
                           <Trash2 size={14} />
@@ -1138,6 +1149,7 @@ export default function ServiceOrderFormView({
                             <button
                               type="button"
                               onClick={() => addToBasket(item)}
+                              data-guide-anchor="serviceOrder.itemAdicionar"
                               className="w-8 h-8 rounded-xl flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white shadow-md active:scale-95 shrink-0 transition-all"
                             >
                               <Plus size={14} strokeWidth={3} />

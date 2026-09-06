@@ -1,7 +1,9 @@
+import { Reorder, useDragControls } from 'motion/react';
 import {
   X, ShoppingCart, ShoppingBag, Factory, Building2, Truck, DollarSign, User as UserIcon, UserCog,
   Eye, EyeOff, ChevronUp, ChevronDown, LayoutDashboard, Settings, GripVertical,
   GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
+  Inbox, Link2, Handshake,
 } from 'lucide-react';
 import { AppModulesConfig, BottomNavConfig, BottomNavItemId } from '../types';
 
@@ -14,7 +16,9 @@ interface BottomNavConfigModalProps {
   isDarkMode: boolean;
 }
 
-const CANDIDATES: { id: BottomNavItemId; label: string; icon: React.ReactNode; requiredModule: keyof AppModulesConfig; requiredModuleLabel: string }[] = [
+type NavCandidate = { id: BottomNavItemId; label: string; icon: React.ReactNode; requiredModule: keyof AppModulesConfig; requiredModuleLabel: string };
+
+const CANDIDATES: NavCandidate[] = [
   { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
   { id: 'sales', label: 'Vendas', icon: <ShoppingBag size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
   { id: 'production', label: 'Prod.', icon: <Factory size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
@@ -32,7 +36,87 @@ const CANDIDATES: { id: BottomNavItemId; label: string; icon: React.ReactNode; r
   { id: 'purchaseNeeds', label: 'Necessidades', icon: <AlertTriangle size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
   { id: 'ruleOfThree', label: 'Regra de Três', icon: <Calculator size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
   { id: 'labelPrintStudio', label: 'Ajustes de PDF e JPG', icon: <Printer size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
+  { id: 'catalogRequests', label: 'Pedidos de Catálogo', icon: <Inbox size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
+  { id: 'sendCatalog', label: 'Enviar Catálogo', icon: <Link2 size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
+  { id: 'fornecedores', label: 'Fornecedores', icon: <Handshake size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
 ];
+
+interface NavRowProps {
+  item: NavCandidate;
+  index: number;
+  total: number;
+  isHidden: boolean;
+  moduleOff: boolean;
+  isDarkMode: boolean;
+  onMove: (index: number, direction: -1 | 1) => void;
+  onToggleHidden: (id: BottomNavItemId) => void;
+}
+
+// Item arrastável — useDragControls precisa viver num componente próprio por linha (não dá pra
+// chamar o hook direto dentro do .map do pai), mesmo padrão já usado em DashboardConfigView e
+// DeliveryRouteBuilderView/DeliveryRouteDetailView (Reorder.Item + alça própria via onPointerDown,
+// já testado em touch Android — nada de drag nativo HTML5, que não funciona em toque).
+function NavRow({ item, index, total, isHidden, moduleOff, isDarkMode, onMove, onToggleHidden }: NavRowProps) {
+  const controls = useDragControls();
+
+  return (
+    <Reorder.Item
+      value={item}
+      dragListener={false}
+      dragControls={controls}
+      className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isHidden ? 'opacity-50' : ''} ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+    >
+      <div
+        onPointerDown={(e) => { e.preventDefault(); controls.start(e); }}
+        className="p-1.5 -ml-1.5 rounded-lg cursor-grab active:cursor-grabbing select-none touch-none shrink-0"
+        title="Arrastar para reordenar"
+        aria-label={`Arrastar ${item.label} para reordenar`}
+      >
+        <GripVertical size={16} className="text-slate-300 dark:text-slate-600" />
+      </div>
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}>
+        {item.icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={`text-xs font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
+        {moduleOff && (
+          <p className="text-[8px] font-bold text-amber-500 uppercase tracking-widest mt-0.5">Requer módulo {item.requiredModuleLabel} ativo</p>
+        )}
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => onMove(index, -1)}
+          disabled={index === 0}
+          title="Mover pra cima"
+          aria-label={`Mover ${item.label} pra cima`}
+          className={`p-1.5 rounded-lg transition-all disabled:opacity-30 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-400 shadow-sm'}`}
+        >
+          <ChevronUp size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onMove(index, 1)}
+          disabled={index === total - 1}
+          title="Mover pra baixo"
+          aria-label={`Mover ${item.label} pra baixo`}
+          className={`p-1.5 rounded-lg transition-all disabled:opacity-30 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-400 shadow-sm'}`}
+        >
+          <ChevronDown size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onToggleHidden(item.id)}
+          title={isHidden ? 'Mostrar na barra' : 'Esconder da barra'}
+          aria-label={isHidden ? `Mostrar ${item.label} na barra` : `Esconder ${item.label} da barra`}
+          className={`p-1.5 rounded-lg transition-all ${isHidden ? (isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-300 shadow-sm') : 'bg-indigo-600 text-white'}`}
+        >
+          {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+    </Reorder.Item>
+  );
+}
 
 // Personalização da barra de navegação — Home e Mais são fixos (não entram aqui, ver
 // App.tsx middleNavItems), o resto o usuário pode esconder e reordenar. Mudanças salvam na hora
@@ -76,7 +160,7 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
         <div className="p-6 pb-4 flex items-center justify-between shrink-0">
           <div>
             <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Escolha e ordene os ícones da barra</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Arraste pela alça ou use as setas pra reordenar</p>
           </div>
           <button
             type="button"
@@ -99,60 +183,26 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-2 custom-scrollbar">
-          {items.map((item, index) => {
-            const isHidden = config.hidden.includes(item.id);
-            const moduleOff = !modulesConfig[item.requiredModule];
-            return (
-              <div
-                key={item.id}
-                className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isHidden ? 'opacity-50' : ''} ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
-              >
-                <GripVertical size={14} className="text-slate-300 dark:text-slate-600 shrink-0" />
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}>
-                  {item.icon}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className={`text-xs font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
-                  {moduleOff && (
-                    <p className="text-[8px] font-bold text-amber-500 uppercase tracking-widest mt-0.5">Requer módulo {item.requiredModuleLabel} ativo</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => move(index, -1)}
-                    disabled={index === 0}
-                    title="Mover pra cima"
-                    aria-label={`Mover ${item.label} pra cima`}
-                    className={`p-1.5 rounded-lg transition-all disabled:opacity-30 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-400 shadow-sm'}`}
-                  >
-                    <ChevronUp size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => move(index, 1)}
-                    disabled={index === items.length - 1}
-                    title="Mover pra baixo"
-                    aria-label={`Mover ${item.label} pra baixo`}
-                    className={`p-1.5 rounded-lg transition-all disabled:opacity-30 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-400 shadow-sm'}`}
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleHidden(item.id)}
-                    title={isHidden ? 'Mostrar na barra' : 'Esconder da barra'}
-                    aria-label={isHidden ? `Mostrar ${item.label} na barra` : `Esconder ${item.label} da barra`}
-                    className={`p-1.5 rounded-lg transition-all ${isHidden ? (isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-300 shadow-sm') : 'bg-indigo-600 text-white'}`}
-                  >
-                    {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <Reorder.Group
+          axis="y"
+          values={items}
+          onReorder={(newOrder) => onSave({ ...config, order: newOrder.map(i => i.id) })}
+          className="flex-1 overflow-y-auto px-6 pb-6 space-y-2 custom-scrollbar"
+        >
+          {items.map((item, index) => (
+            <NavRow
+              key={item.id}
+              item={item}
+              index={index}
+              total={items.length}
+              isHidden={config.hidden.includes(item.id)}
+              moduleOff={!modulesConfig[item.requiredModule]}
+              isDarkMode={isDarkMode}
+              onMove={move}
+              onToggleHidden={toggleHidden}
+            />
+          ))}
+        </Reorder.Group>
 
         <div className="p-6 pt-2 shrink-0">
           <p className="text-[9px] font-bold text-slate-400 text-center italic">

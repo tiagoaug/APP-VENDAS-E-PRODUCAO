@@ -91,15 +91,16 @@ const ConvertToRetailModal: React.FC<{
         <div className="flex flex-col gap-1.5">
           <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Caixas a converter (de {boxQty} disponíveis)</label>
           <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setBoxes(b => Math.max(0, b - 1))} aria-label="Diminuir" className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-black ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>−</button>
+            <button type="button" onClick={() => setBoxes(b => Math.max(0, b - 1))} aria-label="Diminuir" data-guide-anchor="stock.converterQtdAjustar" className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-black ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>−</button>
             <input
               type="number" inputMode="numeric" value={boxes}
               onChange={e => setBoxes(Math.max(0, Number(e.target.value) || 0))}
               onFocus={e => e.target.select()}
               aria-label="Quantidade de caixas"
+              data-guide-anchor="stock.converterQtdAjustar"
               className={`flex-1 text-center text-xl font-black rounded-xl py-2 outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
             />
-            <button type="button" onClick={() => setBoxes(b => Math.min(boxQty, b + 1))} aria-label="Aumentar" className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-black ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>+</button>
+            <button type="button" onClick={() => setBoxes(b => Math.min(boxQty, b + 1))} aria-label="Aumentar" data-guide-anchor="stock.converterQtdAjustar" className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-black ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>+</button>
           </div>
         </div>
 
@@ -108,6 +109,7 @@ const ConvertToRetailModal: React.FC<{
           <select
             value={pkgId} onChange={e => setPkgId(e.target.value)}
             aria-label="Grade da caixa"
+            data-guide-anchor="stock.converterGradeSelecionar"
             className={`w-full px-3 py-2.5 rounded-xl text-sm font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
           >
             <option value="">Selecione…</option>
@@ -143,6 +145,7 @@ const ConvertToRetailModal: React.FC<{
                     onNavigateToPackagingConfig();
                   }
                 }}
+                data-guide-anchor="stock.converterCadastrarGrade"
                 className="self-start text-[10px] font-black uppercase tracking-widest text-indigo-500 underline"
               >
                 Cadastrar grade agora
@@ -155,6 +158,7 @@ const ConvertToRetailModal: React.FC<{
           type="button"
           disabled={safeBoxes <= 0 || !pkg}
           onClick={() => onConfirm(safeBoxes, pkgId)}
+          data-guide-anchor="stock.converterConfirmar"
           className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
         >
           Converter
@@ -492,6 +496,7 @@ export default function StockView({
             <div className="flex gap-2">
               <button
                 onClick={() => { setIsEditing(false); onBackToManagement(); }}
+                data-guide-anchor="stock.cancelarBalanco"
                 className="px-4 py-3 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
                 title="Cancelar Balanço"
                 aria-label="Sair do modo de edição sem salvar"
@@ -501,6 +506,7 @@ export default function StockView({
               <button
                 onClick={handleSaveAll}
                 disabled={isSaving}
+                data-guide-anchor="stock.salvarBalanco"
                 className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 active:scale-95"
                 title="Salvar Balanço"
                 aria-label="Salvar todas as alterações de estoque"
@@ -551,6 +557,7 @@ export default function StockView({
           <button
               type="button"
               onClick={() => setStockTypeFilter('ALL')}
+              data-guide-anchor="stock.filtroTipo"
               className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 stockTypeFilter === 'ALL'
                   ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
@@ -562,6 +569,7 @@ export default function StockView({
             <button
               type="button"
               onClick={() => setStockTypeFilter(SaleType.WHOLESALE)}
+              data-guide-anchor="stock.filtroTipo"
               className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 stockTypeFilter === SaleType.WHOLESALE
                   ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/30'
@@ -573,6 +581,7 @@ export default function StockView({
             <button
               type="button"
               onClick={() => setStockTypeFilter(SaleType.RETAIL)}
+              data-guide-anchor="stock.filtroTipo"
               className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 stockTypeFilter === SaleType.RETAIL
                   ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
@@ -592,6 +601,7 @@ export default function StockView({
             value={searchTerm}
             title="Pesquisar no Estoque"
             aria-label="Campo de pesquisa de produtos no estoque"
+            data-guide-anchor="stock.busca"
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
@@ -696,6 +706,7 @@ export default function StockView({
                 <button
                   type="button"
                   onClick={() => onReconcileSeparationGroup?.(g)}
+                  data-guide-anchor="stock.reconciliarCorrigir"
                   className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
                 >
                   <Wrench size={12} strokeWidth={3} /> Corrigir Agora
@@ -751,6 +762,7 @@ export default function StockView({
                       setFixingOrphanedKey(prev => prev === entry.key ? null : prev);
                     }
                   }}
+                  data-guide-anchor="stock.orfaCorrigir"
                   className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
                 >
                   <Wrench size={12} strokeWidth={3} /> {fixingOrphanedKey === entry.key ? 'Corrigindo...' : 'Corrigir Agora'}
@@ -759,6 +771,7 @@ export default function StockView({
                   type="button"
                   onClick={() => dismissOrphanedLot(entry)}
                   title="Já corrigi isso por fora (recontagem física + Balanço) — não mexe em estoque, só some daqui"
+                  data-guide-anchor="stock.orfaJaResolvi"
                   className={`self-center text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
                 >
                   Já Resolvi Manualmente
@@ -866,6 +879,7 @@ const StockCard: React.FC<{
       <button
         type="button"
         onClick={() => setIsCollapsed(v => !v)}
+        data-guide-anchor="stock.produtoExpandir"
         className="flex items-start justify-between gap-3 text-left"
         aria-label={isCollapsed ? `Expandir ${product.reference}` : `Recolher ${product.reference}`}
       >
@@ -932,6 +946,7 @@ const StockCard: React.FC<{
           <button
             type="button"
             onClick={onPrint}
+            data-guide-anchor="stock.imprimirEtiquetas"
             className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all border border-indigo-100/50 dark:border-indigo-500/20 shadow-sm w-fit"
             title="Imprimir Etiquetas"
           >
@@ -992,6 +1007,7 @@ const StockCard: React.FC<{
                 <button
                   type="button"
                   onClick={() => toggleVar(v.id)}
+                  data-guide-anchor="stock.varExpandir"
                   className="w-full flex items-start justify-between px-4 py-4 active:opacity-70 transition-opacity"
                   aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} variação ${v.colorName}`}
                 >
@@ -1071,6 +1087,7 @@ const StockCard: React.FC<{
                                   <button
                                     type="button"
                                     onClick={() => onUpdateStock(v.id, size, Math.max(0, (qty as number) + 1))}
+                                    data-guide-anchor="stock.tamanhoAjustar"
                                     className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-black hover:bg-indigo-200 transition-all active:scale-95"
                                     aria-label={`Aumentar tamanho ${size}`}
                                   >+</button>
@@ -1082,11 +1099,13 @@ const StockCard: React.FC<{
                                     onFocus={(e) => e.target.select()}
                                     title={`Editar tamanho ${size}`}
                                     aria-label={`Editar tamanho ${size}`}
+                                    data-guide-anchor="stock.tamanhoAjustar"
                                     className="w-10 text-center text-base font-black text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                   />
                                   <button
                                     type="button"
                                     onClick={() => onUpdateStock(v.id, size, Math.max(0, (qty as number) - 1))}
+                                    data-guide-anchor="stock.tamanhoAjustar"
                                     className="w-7 h-7 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-500 flex items-center justify-center text-sm font-black hover:bg-rose-200 transition-all active:scale-95"
                                     aria-label={`Diminuir tamanho ${size}`}
                                   >−</button>
@@ -1117,6 +1136,7 @@ const StockCard: React.FC<{
                               <button
                                 type="button"
                                 onClick={() => onUpdateStock(v.id, 'WHOLESALE', Math.max(0, boxQty - 1))}
+                                data-guide-anchor="stock.estoqueGlobalAjustar"
                                 className="w-9 h-9 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-lg font-black hover:bg-rose-200 transition-all active:scale-95"
                                 aria-label="Diminuir grade"
                               >−</button>
@@ -1128,11 +1148,13 @@ const StockCard: React.FC<{
                                 onFocus={(e) => e.target.select()}
                                 title="Editar quantidade de caixas"
                                 aria-label="Editar quantidade de caixas"
+                                data-guide-anchor="stock.estoqueGlobalAjustar"
                                 className="w-14 text-center text-xl font-black text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                               />
                               <button
                                 type="button"
                                 onClick={() => onUpdateStock(v.id, 'WHOLESALE', boxQty + 1)}
+                                data-guide-anchor="stock.estoqueGlobalAjustar"
                                 className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-lg font-black hover:bg-indigo-200 transition-all active:scale-95"
                                 aria-label="Aumentar grade"
                               >+</button>
@@ -1152,6 +1174,7 @@ const StockCard: React.FC<{
                             <button
                               type="button"
                               onClick={() => onOpenConvertToRetail?.(v.id, v.colorName)}
+                              data-guide-anchor="stock.converterEmPares"
                               className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/35' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
                             >
                               <Boxes size={13} /> Converter em Pares
@@ -1164,6 +1187,7 @@ const StockCard: React.FC<{
                           <button
                             type="button"
                             onClick={() => togglePackaging(v.id)}
+                            data-guide-anchor="stock.embalagensExpandir"
                             className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${isDarkMode ? 'hover:bg-slate-700/40' : 'hover:bg-slate-50'}`}
                             aria-label="Expandir embalagens"
                           >
@@ -1227,6 +1251,7 @@ const StockCard: React.FC<{
                                       }}
                                       title="Padrão de embalagem"
                                       aria-label="Selecionar padrão de embalagem"
+                                      data-guide-anchor="stock.embalagemSelecionar"
                                       className={`w-full min-w-0 text-sm font-bold rounded-xl px-3 py-2.5 outline-none cursor-pointer border ${
                                         pkg
                                           ? isDarkMode ? 'bg-violet-900/30 text-violet-300 border-violet-700/50' : 'bg-violet-50 text-violet-700 border-violet-200'
@@ -1249,6 +1274,7 @@ const StockCard: React.FC<{
                                             updated[idx] = { ...alloc, qty: Math.max(0, alloc.qty - 1) };
                                             onUpdatePkgAllocations(v.id, updated);
                                           }}
+                                          data-guide-anchor="stock.embalagemQtdAjustar"
                                           className="w-8 h-8 shrink-0 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-base font-black hover:bg-rose-200 transition-all active:scale-95"
                                           aria-label="Diminuir quantidade"
                                         >−</button>
@@ -1266,6 +1292,7 @@ const StockCard: React.FC<{
                                           onFocus={(e) => e.target.select()}
                                           title="Editar quantidade"
                                           aria-label="Editar quantidade"
+                                          data-guide-anchor="stock.embalagemQtdAjustar"
                                           className="w-10 text-center text-base font-black text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg shrink-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         />
                                         <button
@@ -1278,6 +1305,7 @@ const StockCard: React.FC<{
                                             }
                                           }}
                                           disabled={totalAllocated >= boxQty}
+                                          data-guide-anchor="stock.embalagemQtdAjustar"
                                           className="w-8 h-8 shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-base font-black hover:bg-indigo-200 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                                           aria-label="Aumentar quantidade"
                                         >+</button>
@@ -1285,6 +1313,7 @@ const StockCard: React.FC<{
                                       <button
                                         type="button"
                                         onClick={() => onUpdatePkgAllocations(v.id, allocations.filter((_, i) => i !== idx))}
+                                        data-guide-anchor="stock.embalagemRemover"
                                         className="w-8 h-8 shrink-0 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center justify-center transition-all active:scale-95"
                                         aria-label="Remover embalagem"
                                       >
@@ -1298,6 +1327,7 @@ const StockCard: React.FC<{
                                         <button
                                           type="button"
                                           onClick={() => toggleComposition(compKey)}
+                                          data-guide-anchor="stock.composicaoVerToggle"
                                           className="flex items-center gap-1.5 text-xs font-black text-slate-500 dark:text-slate-400 hover:text-slate-700 transition-colors w-fit"
                                         >
                                           {isCompExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1371,6 +1401,7 @@ const StockCard: React.FC<{
                                               onClick={() => {
                                                 setAllocPopup({ varId: v.id, allocIdx: idx, pkgId: alloc.pkgId, pkgName: pkg?.name || 'Avulso', qty: alloc.qty, pkgCapacity: resolvePkgCapacity(pkg || avulsoPkg), sizeInput: { ...alloc.customBreakdown! } });
                                               }}
+                                              data-guide-anchor="stock.composicaoEditar"
                                               className="flex items-center gap-1.5 text-xs font-black text-slate-400 hover:text-indigo-500 transition-colors w-fit"
                                             >
                                               <ClipboardList size={12} /> Editar composição
@@ -1389,6 +1420,7 @@ const StockCard: React.FC<{
                                                   sizeInput: refSizes ? Object.fromEntries(refSizes.map(s => [s, 0])) : {},
                                                 });
                                               }}
+                                              data-guide-anchor="stock.composicaoEditar"
                                               className={`flex items-center gap-2 text-xs font-black px-3 py-2 rounded-xl border transition-colors w-fit ${isDarkMode ? 'border-slate-600 text-slate-400 hover:border-indigo-500 hover:text-indigo-400' : 'border-slate-300 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'}`}
                                             >
                                               <ClipboardList size={13} />
@@ -1408,6 +1440,7 @@ const StockCard: React.FC<{
                                   <button
                                     type="button"
                                     onClick={() => onUpdatePkgAllocations(v.id, [...allocations, { pkgId: '', qty: 0 }])}
+                                    data-guide-anchor="stock.embalagemAdicionar"
                                     className="flex items-center gap-2 text-sm font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors w-fit"
                                   >
                                     <Plus size={15} strokeWidth={3} />
@@ -1445,6 +1478,7 @@ const StockCard: React.FC<{
                                           sizeInput: refSizes ? Object.fromEntries(refSizes.map(s => [s, 0])) : {},
                                         });
                                       }}
+                                      data-guide-anchor="stock.gradesAvulsasAbrir"
                                       className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
                                     >
                                       <div className="flex items-center gap-2">
@@ -1504,6 +1538,7 @@ const StockCard: React.FC<{
               <button
                 type="button"
                 onClick={() => setGradePopup(null)}
+                data-guide-anchor="stock.gradePopupFechar"
                 className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all text-lg font-black"
                 aria-label="Fechar"
               >×</button>
@@ -1547,6 +1582,7 @@ const StockCard: React.FC<{
                         <button
                           type="button"
                           onClick={() => setGradePopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: Math.max(0, qty - 1) } } : null)}
+                          data-guide-anchor="stock.gradePopupQtdAjustar"
                           className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-xs font-black hover:bg-rose-200 transition-all"
                         >−</button>
                         <span className="w-6 text-center text-sm font-black text-slate-900 dark:text-white">{qty}</span>
@@ -1560,6 +1596,7 @@ const StockCard: React.FC<{
                             if (cap > 0 && total >= cap) return prev;
                             return { ...prev, sizeInput: { ...prev.sizeInput, [size]: (prev.sizeInput[size] || 0) + 1 } };
                           })}
+                          data-guide-anchor="stock.gradePopupQtdAjustar"
                           className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xs font-black hover:bg-indigo-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >+</button>
                       </div>
@@ -1589,6 +1626,7 @@ const StockCard: React.FC<{
               <button
                 type="button"
                 onClick={() => setGradePopup(null)}
+                data-guide-anchor="stock.gradePopupFechar"
                 className={`flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 Cancelar
@@ -1608,6 +1646,7 @@ const StockCard: React.FC<{
                     onUpdatePkgAllocations(gradePopup.varId, [...existing, newAlloc]);
                     setGradePopup(null);
                   }}
+                  data-guide-anchor="stock.gradePopupRegistrar"
                   className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
                   <ClipboardList size={15} />
@@ -1638,6 +1677,7 @@ const StockCard: React.FC<{
               <button
                 type="button"
                 onClick={() => setAllocPopup(null)}
+                data-guide-anchor="stock.allocPopupFechar"
                 className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all text-lg font-black"
                 aria-label="Fechar"
               >×</button>
@@ -1650,6 +1690,7 @@ const StockCard: React.FC<{
                 value={allocPopup.pkgId}
                 title="Selecionar padrão de embalagem"
                 aria-label="Selecionar padrão de embalagem"
+                data-guide-anchor="stock.allocPopupEmbalagem"
                 onChange={e => {
                   const selectedPkg = packagingItems.find(p => p.id === e.target.value);
                   const newCapacity = resolvePkgCapacity(selectedPkg);
@@ -1714,6 +1755,7 @@ const StockCard: React.FC<{
                               <button
                                 type="button"
                                 onClick={() => setAllocPopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: Math.max(0, qty - 1) } } : null)}
+                                data-guide-anchor="stock.allocPopupQtdAjustar"
                                 className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-xs font-black hover:bg-rose-200 transition-all"
                               >−</button>
                               <span className="w-6 text-center text-sm font-black text-slate-900 dark:text-white">{qty}</span>
@@ -1727,6 +1769,7 @@ const StockCard: React.FC<{
                                   if (cap > 0 && total >= cap) return prev;
                                   return { ...prev, sizeInput: { ...prev.sizeInput, [size]: (prev.sizeInput[size] || 0) + 1 } };
                                 })}
+                                data-guide-anchor="stock.allocPopupQtdAjustar"
                                 className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xs font-black hover:bg-indigo-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                               >+</button>
                             </div>
@@ -1755,6 +1798,7 @@ const StockCard: React.FC<{
               <button
                 type="button"
                 onClick={() => setAllocPopup(null)}
+                data-guide-anchor="stock.allocPopupFechar"
                 className={`flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
                 Cancelar
@@ -1774,6 +1818,7 @@ const StockCard: React.FC<{
                     onUpdatePkgAllocations(allocPopup.varId, updated);
                     setAllocPopup(null);
                   }}
+                  data-guide-anchor="stock.allocPopupSalvar"
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
                   <ClipboardList size={15} />

@@ -381,6 +381,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     <button
                       type="button"
                       onClick={handleClearChat}
+                      data-guide-anchor="aiAssistant.limparAbrir"
                       title="Limpar conversa"
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-rose-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
@@ -390,6 +391,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     <button
                       type="button"
                       onClick={() => setIsSettingsOpen(true)}
+                      data-guide-anchor="aiAssistant.configuracoesAbrir"
                       title="Configurações"
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-amber-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
@@ -399,6 +401,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     <button
                       type="button"
                       onClick={() => setShowQuickPrompts((v) => !v)}
+                      data-guide-anchor="aiAssistant.perguntasRapidasToggle"
                       title="Perguntas rápidas"
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-indigo-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
@@ -410,6 +413,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                       onClick={onClose}
                       aria-label="Fechar"
                       title="Fechar"
+                      data-guide-anchor="aiAssistant.fechar"
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
                       <X size={20} />
@@ -421,6 +425,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                       type="button"
                       onClick={() => setIsSoleNeedsOpen(true)}
                       disabled={isLoading || isLocalActive}
+                      data-guide-anchor="aiAssistant.solaresAbrir"
                       title={isLocalActive ? "Indisponível no modo offline (precisa consultar dados do app)" : "Planejamento de solados"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-violet-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
@@ -431,6 +436,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                       type="button"
                       onClick={() => setIsProviderReportOpen(true)}
                       disabled={isLoading || isLocalActive}
+                      data-guide-anchor="aiAssistant.relatorioFornecedorAbrir"
                       title={isLocalActive ? "Indisponível no modo offline (precisa consultar dados do app)" : "Relatório de serviços terceirizados"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-teal-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
@@ -441,6 +447,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                       type="button"
                       onClick={() => handleCapturePhoto(CameraSource.Camera)}
                       disabled={isLoading || isLocalActive}
+                      data-guide-anchor="aiAssistant.tirarFoto"
                       title={isLocalActive ? "Indisponível no modo offline (modelo local não lê imagens)" : "Tirar foto"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-sky-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
@@ -451,6 +458,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                       type="button"
                       onClick={() => handleCapturePhoto(CameraSource.Photos)}
                       disabled={isLoading || isLocalActive}
+                      data-guide-anchor="aiAssistant.escolherGaleria"
                       title={isLocalActive ? "Indisponível no modo offline (modelo local não lê imagens)" : "Escolher da galeria"}
                       className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-emerald-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
@@ -462,6 +470,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                         type="button"
                         onClick={handleToggleVoice}
                         disabled={isLoading}
+                        data-guide-anchor="aiAssistant.voz"
                         title={isListening ? "Parar gravação" : "Digitar por voz"}
                         className={`flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl transition-all disabled:opacity-40 ${
                           isListening
@@ -549,6 +558,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           onOpenPersonForm(personProposal);
                           onClose();
                         }}
+                        data-guide-anchor="aiAssistant.propostaAbrir"
                         className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors"
                       >
                         <UserPlus size={14} />
@@ -579,6 +589,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           onOpenPurchaseForm(purchaseProposal);
                           onClose();
                         }}
+                        data-guide-anchor="aiAssistant.propostaAbrir"
                         className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors"
                       >
                         <ShoppingCart size={14} />
@@ -621,6 +632,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           onOpenSolePurchaseForm(soleProposal);
                           onClose();
                         }}
+                        data-guide-anchor="aiAssistant.propostaAbrir"
                         className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors"
                       >
                         <ShoppingCart size={14} />
@@ -630,6 +642,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                         <button
                           type="button"
                           onClick={() => handleCopySoleProposal(soleProposal)}
+                          data-guide-anchor="aiAssistant.propostaCopiar"
                           className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                         >
                           <Copy size={14} />
@@ -639,6 +652,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           <button
                             type="button"
                             onClick={() => handleExportSoleProposal(soleProposal, "pdf")}
+                            data-guide-anchor="aiAssistant.propostaExportarPdf"
                             className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                           >
                             <FileText size={14} />
@@ -649,6 +663,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           <button
                             type="button"
                             onClick={() => handleExportSoleProposal(soleProposal, "jpg")}
+                            data-guide-anchor="aiAssistant.propostaExportarJpg"
                             className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                           >
                             <ImageIcon size={14} />
@@ -725,6 +740,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                         <button
                           type="button"
                           onClick={() => handleCopyProviderReport(providerReportProposal)}
+                          data-guide-anchor="aiAssistant.propostaCopiar"
                           className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                         >
                           <Copy size={14} />
@@ -734,6 +750,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           <button
                             type="button"
                             onClick={() => handleExportProviderReport(providerReportProposal, "pdf")}
+                            data-guide-anchor="aiAssistant.propostaExportarPdf"
                             className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                           >
                             <FileText size={14} />
@@ -744,6 +761,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           <button
                             type="button"
                             onClick={() => handleExportProviderReport(providerReportProposal, "jpg")}
+                            data-guide-anchor="aiAssistant.propostaExportarJpg"
                             className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                           >
                             <ImageIcon size={14} />
@@ -781,6 +799,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                   <button
                     type="button"
                     onClick={() => setAttachedImage(null)}
+                    data-guide-anchor="aiAssistant.imagemRemover"
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md"
                     aria-label="Remover imagem"
                   >
@@ -810,6 +829,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                   type="button"
                   onClick={() => handleSend()}
                   disabled={isLoading || (!input.trim() && !attachedImage)}
+                  data-guide-anchor="aiAssistant.enviar"
                   className="p-4 rounded-2xl bg-indigo-600 text-white disabled:opacity-40 active:scale-95 transition-all shrink-0"
                   aria-label="Enviar"
                 >
@@ -865,6 +885,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     type="button"
                     onClick={() => setShowClearConfirm(false)}
                     title="Cancelar"
+                    data-guide-anchor="aiAssistant.limparCancelar"
                     className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${
                       isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"
                     }`}
@@ -875,6 +896,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                     type="button"
                     onClick={confirmClearChat}
                     title="Confirmar limpeza"
+                    data-guide-anchor="aiAssistant.limparConfirmar"
                     className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95 flex items-center justify-center gap-1.5"
                   >
                     <Check size={14} /> Limpar

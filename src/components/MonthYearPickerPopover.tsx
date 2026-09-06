@@ -51,6 +51,7 @@ export default function MonthYearPickerPopover({ value, onChange, onClose }: Mon
             type="button"
             onClick={() => setYear(y => y - 1)}
             aria-label="Ano anterior"
+            data-guide-anchor="monthYearPicker.anoAnterior"
             className="w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-sm border border-slate-100 dark:border-slate-800 transition-colors active:scale-95 outline-none"
           >
             <ChevronLeft size={16} strokeWidth={2.5} />
@@ -64,6 +65,7 @@ export default function MonthYearPickerPopover({ value, onChange, onClose }: Mon
             type="button"
             onClick={() => setYear(y => y + 1)}
             aria-label="Próximo ano"
+            data-guide-anchor="monthYearPicker.anoProximo"
             className="w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-sm border border-slate-100 dark:border-slate-800 transition-colors active:scale-95 outline-none"
           >
             <ChevronRight size={16} strokeWidth={2.5} />
@@ -84,7 +86,7 @@ export default function MonthYearPickerPopover({ value, onChange, onClose }: Mon
               btnClass += "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 ";
             }
             return (
-              <button key={month} type="button" onClick={() => selectMonth(month)} className={btnClass}>
+              <button key={month} type="button" onClick={() => selectMonth(month)} data-guide-anchor="monthYearPicker.mesSelecionar" className={btnClass}>
                 {label}
               </button>
             );
@@ -96,6 +98,7 @@ export default function MonthYearPickerPopover({ value, onChange, onClose }: Mon
           <button
             type="button"
             onClick={selectThisMonth}
+            data-guide-anchor="monthYearPicker.esteMes"
             className="py-2.5 px-4 text-[9px] font-black uppercase tracking-[0.15em] text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-2xl transition-colors outline-none"
           >
             Este Mês
@@ -104,6 +107,7 @@ export default function MonthYearPickerPopover({ value, onChange, onClose }: Mon
           <button
             type="button"
             onClick={onClose}
+            data-guide-anchor="monthYearPicker.fechar"
             className="py-2.5 px-4 text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors outline-none"
           >
             Voltar

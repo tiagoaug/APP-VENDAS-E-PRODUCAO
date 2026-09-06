@@ -173,6 +173,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 key={mode}
                 type="button"
                 onClick={() => setInputMode(mode)}
+                data-guide-anchor="deliveryAddress.modoEntrada"
                 className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${
                   inputMode === mode
                     ? 'bg-violet-600 text-white shadow-sm'
@@ -233,6 +234,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 type="button"
                 onClick={handleSearchPastedAddress}
                 disabled={isSearchingPastedAddress}
+                data-guide-anchor="deliveryAddress.buscarEndereco"
                 className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 {isSearchingPastedAddress ? <Loader2 size={14} className="animate-spin" /> : <ClipboardPaste size={14} />}
@@ -269,6 +271,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 type="button"
                 onClick={handleVerifyPastedLocation}
                 disabled={isVerifyingLocation}
+                data-guide-anchor="deliveryAddress.verificarLocalizacao"
                 className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 {isVerifyingLocation ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
@@ -309,6 +312,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
           <button
             type="button"
             onClick={() => setShowMapModal(true)}
+            data-guide-anchor="deliveryAddress.ampliarMapa"
             className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <Maximize2 size={12} />
@@ -327,6 +331,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
             type="button"
             onClick={handleSearch}
             disabled={isSearching}
+            data-guide-anchor="deliveryAddress.buscar"
             className="flex-1 h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
           >
             {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
@@ -338,6 +343,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
             <button
               type="button"
               onClick={() => onPriorityChange('NORMAL')}
+              data-guide-anchor="deliveryAddress.prioridade"
               className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${(priority || 'NORMAL') === 'NORMAL' ? 'bg-slate-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
             >
               Normal
@@ -345,6 +351,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
             <button
               type="button"
               onClick={() => onPriorityChange('URGENT')}
+              data-guide-anchor="deliveryAddress.prioridade"
               className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${priority === 'URGENT' ? 'bg-rose-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
             >
               Urgente

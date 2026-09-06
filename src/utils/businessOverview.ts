@@ -103,11 +103,17 @@ function countPeriodDays(start: number, end: number, excludeWeekends: boolean): 
 // trabalhados do período (ver `excludeWeekends`, configurável em Configuração de Fábrica →
 // "Considerar só dias úteis") — usado tanto no card "Pares Produzidos" do Dashboard quanto na
 // barra de estatísticas do PCP Monitor.
-export function computeProducedPairs(productionLots: ProductionLot[], start: number, end: number, excludeWeekends: boolean = false): { total: number; dailyAverage: number; workDays: number } {
+// `elapsedOnly` (só relevante com excludeWeekends=true): em vez de dividir pelos dias úteis do
+// PERÍODO INTEIRO (mesmo os que ainda não chegaram, ex. resto do mês atual), divide só pelos
+// dias úteis já passados até agora — dá a média "no ritmo de hoje", sem diluir artificialmente
+// por dias futuros que ainda não tiveram chance de produzir nada. Pra período já encerrado no
+// passado, dá exatamente o mesmo resultado de `elapsedOnly=false` (todos os dias já passaram).
+export function computeProducedPairs(productionLots: ProductionLot[], start: number, end: number, excludeWeekends: boolean = false, elapsedOnly: boolean = false): { total: number; dailyAverage: number; workDays: number } {
   const total = productionLots
     .filter(l => l.finishedAt && l.finishedAt >= start && l.finishedAt <= end)
     .reduce((acc, l) => acc + (l.quantity || 0), 0);
-  const workDays = countPeriodDays(start, end, excludeWeekends);
+  const effectiveEnd = elapsedOnly ? Math.min(end, Date.now()) : end;
+  const workDays = countPeriodDays(start, effectiveEnd, excludeWeekends);
   return { total, dailyAverage: total / workDays, workDays };
 }
 

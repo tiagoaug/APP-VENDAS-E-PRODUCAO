@@ -66,7 +66,7 @@ export default function CatalogRequestsView({
   return (
     <div className="flex flex-col gap-6 pb-32">
       <div className="flex items-center gap-4">
-        <button onClick={onBack} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-400" title="Voltar" aria-label="Voltar">
+        <button onClick={onBack} data-guide-anchor="catalogRequests.voltar" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-400" title="Voltar" aria-label="Voltar">
           <ArrowLeft size={24} />
         </button>
         <div>
@@ -81,6 +81,7 @@ export default function CatalogRequestsView({
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
+            data-guide-anchor="catalogRequests.aba"
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
           >
             {tab.label}
@@ -103,11 +104,22 @@ export default function CatalogRequestsView({
 
         {filtered.map(request => {
           const person = people.find(p => p.id === request.personId);
+          // Pedido de Link de Grupo não tem Person vinculada — mostra o nome que a própria
+          // pessoa digitou (ver CatalogRequest.customerName) e o badge "Grupo" pra distinguir
+          // de um pedido do link Exclusivo de sempre, sem precisar de uma tela separada.
+          const isFromGenericLink = !request.personId;
           return (
             <div key={request.id} className={`p-4 rounded-2xl border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{person?.name || 'Cliente'}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{person?.name || request.customerName || 'Cliente'}</p>
+                    {isFromGenericLink && (
+                      <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400">
+                        Grupo
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 flex items-center gap-1">
                     <Calendar size={10} /> {(() => {
                       try { return format(request.submittedAt, "dd/MM/yyyy 'às' HH:mm"); } catch { return ''; }
@@ -119,6 +131,7 @@ export default function CatalogRequestsView({
                   onClick={() => setPreviewRequest(request)}
                   title="Ver fotos de todos os modelos e cores"
                   aria-label="Ver fotos de todos os modelos e cores"
+                  data-guide-anchor="catalogRequests.verFotos"
                   className={`p-2 rounded-full shrink-0 transition-all ${isDarkMode ? 'bg-slate-800 text-indigo-400 hover:bg-slate-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                 >
                   <Images size={16} strokeWidth={2.5} />
@@ -191,6 +204,7 @@ export default function CatalogRequestsView({
                   <button
                     type="button"
                     onClick={() => onImportCatalogRequest(request)}
+                    data-guide-anchor="catalogRequests.importar"
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
                   >
                     <Check size={14} /> Importar como Venda
@@ -202,6 +216,7 @@ export default function CatalogRequestsView({
                       setDismissingId(request.id);
                       try { await onDismissCatalogRequest(request.id); } finally { setDismissingId(null); }
                     }}
+                    data-guide-anchor="catalogRequests.descartar"
                     className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                   >
                     <X size={14} />
@@ -218,6 +233,7 @@ export default function CatalogRequestsView({
                     setDeletingId(request.id);
                     try { await onDeleteCatalogRequest(request.id); } finally { setDeletingId(null); }
                   }}
+                  data-guide-anchor="catalogRequests.apagar"
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50"
                 >
                   <Trash2 size={14} /> Apagar
@@ -244,7 +260,7 @@ export default function CatalogRequestsView({
                 </div>
                 <div className="min-w-0">
                   <h3 className={`text-sm font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {people.find(p => p.id === previewRequest.personId)?.name || 'Cliente'}
+                    {people.find(p => p.id === previewRequest.personId)?.name || previewRequest.customerName || 'Cliente'}
                   </h3>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Todos os modelos e cores</p>
                 </div>

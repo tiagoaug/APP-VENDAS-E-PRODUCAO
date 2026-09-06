@@ -360,13 +360,16 @@ export default function PCPView({
     } catch { /* ignore */ }
     return defaults;
   });
-  // Considerar só dias úteis (seg-sex) na Média de Pares/Dia — configurável em Configuração
-  // de Fábrica; espelha o mesmo toggle usado pelo card "Pares Produzidos" do Dashboard.
+  // Considerar só dias úteis (seg-sex) na Média de Pares/Dia, e se conta o mês inteiro ou só os
+  // dias já passados — configurável em Configuração de Fábrica; espelha o mesmo toggle usado
+  // pelo card "Pares Produzidos" do Dashboard.
   const [excludeWeekendsInAvg, setExcludeWeekendsInAvg] = useState(true);
+  const [avgModeInAvg, setAvgModeInAvg] = useState<'FULL_PERIOD' | 'ELAPSED'>('FULL_PERIOD');
   useEffect(() => {
-    const unsub = subscribeToProductionScheduleConfig(cfg => setExcludeWeekendsInAvg(cfg.excludeWeekends));
+    const unsub = subscribeToProductionScheduleConfig(cfg => { setExcludeWeekendsInAvg(cfg.excludeWeekends); setAvgModeInAvg(cfg.averageMode); });
     return () => unsub();
   }, []);
+  const elapsedOnlyInAvg = excludeWeekendsInAvg && avgModeInAvg === 'ELAPSED';
   const toggleStatsBarHidden = () => {
     const next = !statsBarHidden;
     setStatsBarHidden(next);
@@ -5670,7 +5673,7 @@ export default function PCPView({
             const now = new Date();
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
             const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
-            const producedThisMonth = computeProducedPairs(lots, monthStart, monthEnd, excludeWeekendsInAvg);
+            const producedThisMonth = computeProducedPairs(lots, monthStart, monthEnd, excludeWeekendsInAvg, elapsedOnlyInAvg);
             const tileDefs: { id: StatsBarTile; label: string; value: number | string; unit: string; color: string }[] = [
               { id: 'total', label: 'Produção Total', value: lots.reduce((acc, l) => acc + l.quantity, 0), unit: 'Pares', color: 'text-violet-600' },
               { id: 'inProgress', label: 'Em Produção', value: activePendingPairs, unit: 'Pares', color: 'text-indigo-600' },
@@ -8744,7 +8747,7 @@ export default function PCPView({
                     <Database size={24} />
                   </div>
                   <div className="text-left">
-                    <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Matrizes</p>
+                    <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Cadastro de Solados</p>
                     <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de matrizes e solados</p>
                   </div>
                 </div>

@@ -49,7 +49,10 @@ import {
   UserCog,
   Calculator,
   Bookmark,
-  Layers
+  Layers,
+  Inbox,
+  Link2,
+  Handshake
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -191,6 +194,7 @@ const PalmilhaStockView = lazy(() => import("./views/PalmilhaStockView"));
 const PCPView = lazy(() => import("./views/PCPView"));
 const PurchaseNeedsView = lazy(() => import("./views/PurchaseNeedsView"));
 const CatalogRequestsView = lazy(() => import("./views/CatalogRequestsView"));
+const FornecedoresView = lazy(() => import("./views/FornecedoresView"));
 const GeneralReceiptsView = lazy(() => import("./views/GeneralReceiptsView"));
 const SoleReceiptView = lazy(() => import("./views/SoleReceiptView"));
 
@@ -284,7 +288,8 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.PRODUCTION_CONFIG,
     ViewType.PRODUCT_SHEET,
     ViewType.PRODUCTION_ENGINEERING,
-    ViewType.PRODUCTION_SERVICE_ORDER_FORM
+    ViewType.PRODUCTION_SERVICE_ORDER_FORM,
+    ViewType.FORNECEDORES,
   ],
   personal: [
     ViewType.PERSONAL_FINANCIAL
@@ -329,6 +334,9 @@ interface TabItemProps {
   // Itens da grade do meio: ocupam 100% da coluna do grid (que usa fr, não px fixo) em vez de
   // w-16 fixo, pra sempre caber certinho não importa quantas colunas cabem na tela.
   fluid?: boolean;
+  // Bolinha vermelha no canto do ícone — usado por "Pedidos" (Catálogo Público) quando há
+  // pedido PENDING pra revisar.
+  badge?: boolean;
 }
 
 function TabItem({
@@ -343,6 +351,7 @@ function TabItem({
   anchorKey,
   big = false,
   fluid = false,
+  badge = false,
 }: TabItemProps) {
   const isColored = iconMode === 'colored';
 
@@ -362,14 +371,17 @@ function TabItem({
       title={label}
       aria-label={`Ir para ${label}`}
       data-guide-anchor={anchorKey}
-      className={`flex flex-col items-center justify-center gap-0.5 transition-all rounded-2xl ${big ? 'w-20 py-2.5 shrink-0 bg-black/[0.035] dark:bg-white/[0.06]' : fluid ? 'w-full py-1.5' : 'w-16 shrink-0 py-1.5'}`}
+      className={`flex flex-col items-center justify-center gap-0.5 transition-all rounded-2xl ${big ? 'w-24 py-3 shrink-0 bg-black/[0.035] dark:bg-white/[0.06]' : fluid ? 'w-full py-1.5' : 'w-16 shrink-0 py-1.5'}`}
     >
-      <div className={`flex items-center justify-center rounded-xl transition-all ${big ? 'w-12 h-9' : 'w-10 h-7'}`} style={pillStyle}>
+      <div className={`relative flex items-center justify-center rounded-xl transition-all ${big ? 'w-14 h-10' : 'w-10 h-7'}`} style={pillStyle}>
         <span className="transition-all" style={iconStyle}>
           {icon}
         </span>
+        {badge && (
+          <span className="absolute top-0.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
+        )}
       </div>
-      <span className={`font-bold tracking-tight transition-all ${big ? 'text-[11px]' : 'text-[10px]'}`} style={iconStyle}>
+      <span className={`font-bold tracking-tight transition-all leading-none truncate max-w-full px-0.5 ${big ? 'text-[10px]' : 'text-[9px]'}`} style={iconStyle}>
         {label}
       </span>
     </button>
@@ -819,7 +831,7 @@ export default function App() {
       { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'any' },
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
       { id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' },
-      { id: 'produced_pairs', label: 'Pares Produzidos', visible: true, order: 16.7, module: 'production' },
+      { id: 'produced_pairs', label: 'Análise de Produção', visible: true, order: 16.7, module: 'production' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
       { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
@@ -916,7 +928,7 @@ export default function App() {
 
     // Migration: ensure produced_pairs card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'produced_pairs')) {
-      config.cards.push({ id: 'produced_pairs', label: 'Pares Produzidos', visible: true, order: 16.7, module: 'production' });
+      config.cards.push({ id: 'produced_pairs', label: 'Análise de Produção', visible: true, order: 16.7, module: 'production' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -1941,6 +1953,10 @@ export default function App() {
   const resetTo = (view: ViewType) => {
     setCurrentView(view);
     setHistory([view]);
+    // Limpa params de uma navegação anterior (ex.: openCatalogSendNonce de "Enviar Catálogo")
+    // — sem isso, um valor antigo ficava "grudado" e reabria popups automaticamente da próxima
+    // vez que a tela era acessada por um item de nav que passa por aqui (ex.: "Vendas" normal).
+    setCurrentParams(null);
   };
 
   // Tour guiado (spotlight) — ver GuidedTourOverlay.tsx / src/data/journeys.ts.
@@ -2015,7 +2031,7 @@ export default function App() {
   // aleatório gerado no CLIENTE (não precisa de Cloud Function pra isso — quem cria é sempre
   // o dono autenticado, escrevendo no próprio dado). Ver functions/src/catalog/publicCatalog.ts
   // pro lado público que consome o token.
-  const handleGenerateCatalogLink = async (personId: string, productIds: string[] = [], hidePrices: boolean = false): Promise<string> => {
+  const handleGenerateCatalogLink = async (personId: string, productIds: string[] = [], hidePrices: boolean = false, useStockQuantities: boolean = false): Promise<string> => {
     const bytes = new Uint8Array(24);
     window.crypto.getRandomValues(bytes);
     const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -2030,6 +2046,30 @@ export default function App() {
       expiresAt,
       productIds,
       hidePrices,
+      useStockQuantities,
+    });
+    return token;
+  };
+
+  // Gera um Link de Grupo (catálogo público genérico) — sem cliente vinculado, pra compartilhar
+  // uma vez só num grupo/lista de transmissão; cada pessoa que abrir digita o próprio nome antes
+  // de enviar o pedido (ver src/publicCatalog/PublicCatalogApp.tsx). Expiração em MINUTOS (não
+  // dias, diferente de catalogLinkExpirationDays) — link de grupo tende a ser usado numa janela
+  // curta (ex.: durante uma promoção/liquidação), então Tiago pediu granularidade mais fina.
+  const handleGenerateGenericCatalogLink = async (productIds: string[] = [], hidePrices: boolean = false, useStockQuantities: boolean = false, expirationMinutes: number | null = null): Promise<string> => {
+    const bytes = new Uint8Array(24);
+    window.crypto.getRandomValues(bytes);
+    const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const expiresAt = expirationMinutes ? Date.now() + expirationMinutes * 60 * 1000 : null;
+    await firebaseService.saveDocument("catalogLinks", {
+      isGeneric: true,
+      token,
+      isActive: true,
+      createdAt: Date.now(),
+      expiresAt,
+      productIds,
+      hidePrices,
+      useStockQuantities,
     });
     return token;
   };
@@ -2041,10 +2081,11 @@ export default function App() {
   // Atualiza quais produtos um Link de Pedido já existente mostra e se os preços ficam
   // ocultos, sem trocar o token (o cliente continua com o mesmo link, só muda o que aparece
   // pra ele da próxima vez que abrir).
-  const handleSetCatalogLinkProducts = async (linkId: string, productIds: string[], hidePrices?: boolean) => {
+  const handleSetCatalogLinkProducts = async (linkId: string, productIds: string[], hidePrices?: boolean, useStockQuantities?: boolean) => {
     await firebaseService.updateDocument("catalogLinks", linkId, {
       productIds,
       ...(hidePrices !== undefined ? { hidePrices } : {}),
+      ...(useStockQuantities !== undefined ? { useStockQuantities } : {}),
     });
   };
 
@@ -2069,7 +2110,10 @@ export default function App() {
   const handleImportCatalogRequest = (request: CatalogRequest) => {
     navigateTo(ViewType.SALE_FORM, {
       draftBlocks: request.items,
-      draftCustomerId: request.personId,
+      // Pedido de Link de Grupo não tem Person vinculada (personId ausente) — nesse caso manda
+      // o nome digitado pelo cliente pra SaleFormView oferecer "Cadastrar Cliente" com esse nome
+      // já preenchido, em vez de pré-selecionar um cliente que não existe.
+      ...(request.personId ? { draftCustomerId: request.personId } : { draftCustomerName: request.customerName }),
       sourceCatalogRequestId: request.id,
     });
   };
@@ -5105,8 +5149,6 @@ export default function App() {
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
             bottomNavConfig={bottomNavConfig}
             onSaveBottomNavConfig={saveBottomNavConfig}
-            catalogLinkExpirationDays={catalogLinkExpirationDays}
-            onSetCatalogLinkExpirationDays={handleSetCatalogLinkExpirationDays}
           />
         );
       case ViewType.PRODUCTS:
@@ -5126,6 +5168,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             modulesConfig={modulesConfig}
             showThumbnails={showEngineeringThumbnails}
+            productModels={productModels}
           />
         );
       case ViewType.PEOPLE:
@@ -5203,6 +5246,18 @@ export default function App() {
             onImportCatalogRequest={handleImportCatalogRequest}
             onDismissCatalogRequest={handleDismissCatalogRequest}
             onDeleteCatalogRequest={handleDeleteCatalogRequest}
+          />
+        );
+      case ViewType.FORNECEDORES:
+        return (
+          <FornecedoresView
+            isDarkMode={isDarkMode}
+            serviceOrders={serviceOrders}
+            transactions={transactions}
+            people={people}
+            products={products}
+            onBack={goBack}
+            onPayProviderServiceOrders={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
           />
         );
       case ViewType.PERSONAL_FINANCIAL:
@@ -6023,7 +6078,10 @@ export default function App() {
             brands={brands}
             catalogLinks={catalogLinks}
             onGenerateCatalogLink={handleGenerateCatalogLink}
+            onGenerateGenericCatalogLink={handleGenerateGenericCatalogLink}
             onSetCatalogLinkProducts={handleSetCatalogLinkProducts}
+            catalogLinkExpirationDays={catalogLinkExpirationDays}
+            onSetCatalogLinkExpirationDays={handleSetCatalogLinkExpirationDays}
             catalogProfiles={catalogProfiles}
             onSaveCatalogProfile={handleSaveCatalogProfile}
             onDeleteCatalogProfile={handleDeleteCatalogProfile}
@@ -6031,7 +6089,7 @@ export default function App() {
             onNavigateCatalogRequests={() => navigateTo(ViewType.CATALOG_REQUESTS)}
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
             onOpenPastedOrder={(draft) => navigateTo(ViewType.SALE_FORM, draft)}
-            initialPasteText={currentParams?.prefillPasteText}
+            openCatalogSendNonce={currentParams?.openCatalogSendNonce}
             onEdit={(sale) => navigateTo(ViewType.SALE_FORM, sale.id)}
             onCancelOnly={handleCancelOnlySale}
             onCancelAndRevert={handleCancelSaleWithRevert}
@@ -7072,7 +7130,7 @@ export default function App() {
                     { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem de Solados', icon: <Scale size={22} />, color: 'text-violet-600' },
                     { id: ViewType.PRODUCTION_SOLE_RECEIPT, label: 'Conferência de Compras (Solas)', icon: <ShoppingCart size={22} />, color: 'text-cyan-600' },
                     { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoques de Solados', icon: <Package size={22} />, color: 'text-emerald-500' },
-                    { id: 'matrizes', label: 'Matrizes', icon: <Database size={22} />, color: 'text-indigo-500' },
+                    { id: 'matrizes', label: 'Cadastro de Solados', icon: <Database size={22} />, color: 'text-indigo-500' },
                   ].filter(item => canShowMenuItem(item.id)).map((item, index, array) => (
                     <button
                       key={item.id}
@@ -7123,37 +7181,9 @@ export default function App() {
                 </div>
               )}
 
-              {/* Novo Grupo de Configurações */}
-              {canShowMenuItem(ViewType.PRODUCTION_CONFIG) && (
-                <div className="flex flex-col gap-3">
-                  <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Configurações</h3>
-                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <button
-                      onClick={() => {
-                        // navigateTo propositalmente NÃO reseta productionSubScreen quando o
-                        // destino é PRODUCTION_CONFIG (pra servir tours/atalhos que abrem direto
-                        // numa sub-aba, ver navigateToProduction) — então esse botão do menu
-                        // principal precisa forçar 'MENU' explicitamente, senão herda a última
-                        // sub-aba visitada (ex.: 'FACAS' de um tour anterior) em vez do menu.
-                        setProductionSubScreen('MENU');
-                        navigateTo(ViewType.PRODUCTION_CONFIG);
-                      }}
-                      className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 flex items-center justify-center shrink-0 text-slate-500">
-                          <Hammer size={22} />
-                        </div>
-                        <div className="text-left">
-                          <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Configurações de Produção</p>
-                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Setores, Materiais, Grades e Matrizes</p>
-                        </div>
-                      </div>
-                      <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* "Configurações de Produção" saiu daqui — tudo que tinha lá (Setores, Materiais,
+                  Grades, Solados etc.) foi centralizado em Mais > Módulo de Produção, pra não
+                  duplicar entrada pra tela nenhuma. */}
             </div>
 
             <motion.div
@@ -8018,7 +8048,6 @@ export default function App() {
           <OcrTextExtractorView
             onBack={goBack}
             isDarkMode={isDarkMode}
-            onExportToSales={(text) => navigateTo(ViewType.SALES, { prefillPasteText: text })}
           />
         );
       case ViewType.RULE_OF_THREE:
@@ -8057,6 +8086,8 @@ export default function App() {
     // "production" pra destacar o ícone certo quando os dois estiverem na barra ao mesmo tempo.
     if ([ViewType.PRODUCTION_PCP].includes(currentView))
       return "pcp";
+    if ([ViewType.FORNECEDORES].includes(currentView))
+      return "fornecedores";
     if (
       [
         ViewType.PRODUCTION_MENU,
@@ -8130,8 +8161,12 @@ export default function App() {
   // Itens do meio da barra de navegação (tudo menos Home/Mais, que ficam fixos nas pontas) —
   // mesmas condições de módulo/permissão de sempre, só que agora computadas numa lista pra dar
   // pra reordenar/esconder em Personalização (ver BottomNavConfigModal) em vez de um JSX fixo.
+  // Bolinha vermelha no ícone "Pedidos de Catálogo" quando há algum pedido do Catálogo Público
+  // ainda PENDING pra revisar — mesmo critério usado no badge de CatalogRequestsView.
+  const hasPendingCatalogRequests = useMemo(() => catalogRequests.some(r => r.status === 'PENDING'), [catalogRequests]);
+
   const middleNavItems = useMemo(() => {
-    const candidates: { id: BottomNavItemId; label: string; icon: ReactNode; view: ViewType; anchorKey?: string; allowed: boolean }[] = [
+    const candidates: { id: BottomNavItemId; label: string; icon: ReactNode; view: ViewType; anchorKey?: string; allowed: boolean; badge?: boolean }[] = [
       { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={20} />, view: ViewType.PURCHASES, anchorKey: 'nav.compras', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PURCHASES) },
       { id: 'sales', label: 'Vendas', icon: <ShoppingBag size={20} />, view: ViewType.SALES, anchorKey: 'nav.vendas', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
       { id: 'production', label: 'Prod.', icon: <Factory size={20} />, view: ViewType.PRODUCTION_MENU, anchorKey: 'nav.producao', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) },
@@ -8152,6 +8187,11 @@ export default function App() {
       // handleOpenLabelPrintStudio (checagem de Bluetooth da impressora Ablemark), não pode
       // navegar direto igual aos outros itens.
       { id: 'labelPrintStudio', label: 'Ajustes PDF', icon: <Printer size={20} />, view: ViewType.LABEL_PRINT_STUDIO, allowed: modulesConfig.production },
+      { id: 'catalogRequests', label: 'Pedidos', icon: <Inbox size={20} />, view: ViewType.CATALOG_REQUESTS, anchorKey: 'nav.pedidosCatalogo', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.CATALOG_REQUESTS), badge: hasPendingCatalogRequests },
+      // Clique tem tratamento especial (ver onClick abaixo) — vai pra Vendas já abrindo o
+      // popup "Enviar Catálogo" direto, sem precisar passar pelo "+" de dentro da tela.
+      { id: 'sendCatalog', label: 'Enviar Catálogo', icon: <Link2 size={20} />, view: ViewType.SALES, anchorKey: 'nav.enviarCatalogo', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
+      { id: 'fornecedores', label: 'Fornec.', icon: <Handshake size={20} />, view: ViewType.FORNECEDORES, anchorKey: 'nav.fornecedores', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.FORNECEDORES) },
     ];
 
     const visible = candidates.filter(c => c.allowed && !bottomNavConfig.hidden.includes(c.id));
@@ -8165,7 +8205,7 @@ export default function App() {
     // padrão de `candidates` pra ficar previsível.
     candidates.forEach(c => { if (byId.has(c.id)) ordered.push(byId.get(c.id)!); });
     return ordered;
-  }, [modulesConfig, activeCollaborator, bottomNavConfig]);
+  }, [modulesConfig, activeCollaborator, bottomNavConfig, hasPendingCatalogRequests]);
 
   // Paginação do meio da nav — a barra em si é 100% fixa (nada desliza/anima de lado), Home e
   // Mais ficam parados nas pontas; o meio mostra os ícones numa grade 3x2 (mínimo 3 colunas —
@@ -8238,7 +8278,7 @@ export default function App() {
       case ViewType.BRANDS:
         return "Marcas";
       case ViewType.MODELS:
-        return "Modelos";
+        return "Nome de Modelos";
       case ViewType.PAYMENT_METHODS:
         return "Meios de Recebimento";
       case ViewType.REPORTS:
@@ -8335,6 +8375,8 @@ export default function App() {
         return "Detalhes do Cadastro";
       case ViewType.CATALOG_REQUESTS:
         return "Pedidos Recebidos";
+      case ViewType.FORNECEDORES:
+        return "Fornecedores";
       case ViewType.COMPANY_PROFILE:
         return "Personalizar Empresa";
       case ViewType.COLLABORATORS_CONFIG:
@@ -8502,6 +8544,7 @@ export default function App() {
           {history.length > 1 && (
             <button
               onClick={goBack}
+              data-guide-anchor="app.headerVoltar"
               className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-400"
               aria-label="Voltar"
             >
@@ -8519,6 +8562,7 @@ export default function App() {
           <motion.button
             type="button"
             onClick={() => setHideFinancialValues(v => !v)}
+            data-guide-anchor="app.privacidadeToggle"
             title={hideFinancialValues ? "Desativar Modo Privacidade" : "Ativar Modo Privacidade"}
             aria-label={hideFinancialValues ? "Desativar Modo Privacidade" : "Ativar Modo Privacidade"}
             whileHover={{ scale: 1.15 }}
@@ -8531,6 +8575,7 @@ export default function App() {
           <motion.button
             type="button"
             onClick={() => setIsHeaderScannerOpen(true)}
+            data-guide-anchor="app.scannerAbrir"
             title="Escanear Código"
             aria-label="Escanear Código"
             whileHover={{ scale: 1.15, rotate: -8 }}
@@ -8547,6 +8592,7 @@ export default function App() {
           <motion.button
             type="button"
             onClick={() => setIsHelpCenterOpen(true)}
+            data-guide-anchor="app.ajudaAbrir"
             title="Central de Ajuda"
             aria-label="Central de Ajuda"
             whileHover={{ scale: 1.15, rotate: -8 }}
@@ -8559,6 +8605,7 @@ export default function App() {
             <motion.button
               type="button"
               onClick={() => setIsAIAssistantOpen(true)}
+              data-guide-anchor="app.iaAbrir"
               title="Abrir Assistente IA"
               aria-label="Abrir Assistente IA"
               whileHover={{ scale: 1.15, rotate: 8 }}
@@ -8572,6 +8619,7 @@ export default function App() {
           )}
           <motion.button
             onClick={toggleDarkMode}
+            data-guide-anchor="app.modoEscuroToggle"
             title={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
             aria-label={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
             whileHover={{ scale: 1.15, rotate: 25 }}
@@ -8724,6 +8772,7 @@ export default function App() {
                 <button
                   type="button"
                   disabled={isDeletingPurchase}
+                  data-guide-anchor="app.compraExcluirConfirmar"
                   onClick={async () => {
                     setIsDeletingPurchase(true);
                     try {
@@ -8741,6 +8790,7 @@ export default function App() {
                   type="button"
                   disabled={isDeletingPurchase}
                   onClick={() => setPurchaseDeleteWarning(null)}
+                  data-guide-anchor="app.compraExcluirCancelar"
                   className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
                 >
                   Agora não
@@ -8756,9 +8806,6 @@ export default function App() {
           visível) cujo conteúdo/ordem vem de middleNavItems, personalizável em Configurações >
           Personalizar Navegação (ver BottomNavConfigModal). */}
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
-        {/* Wrapper sem overflow-hidden — só pra servir de referência de posição pra seta, que
-            precisa ficar ACIMA e FORA do pill (o pill em si mantém overflow-hidden pros
-            traços 3D e cantos arredondados; se a seta estivesse dentro dele, seria cortada). */}
         <div className="relative w-full max-w-md pointer-events-auto">
           <div className={`relative flex items-center w-full px-2 py-1.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
             {/* 3D top highlight streak */}
@@ -8770,13 +8817,14 @@ export default function App() {
               label="Home"
               active={activeTab === "dashboard"}
               onClick={() => resetTo(ViewType.DASHBOARD)}
+              anchorKey="nav.home"
               appTheme={appTheme}
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.dashboard}
               monoColor={navMonoColor}
               big
             />
-            <div ref={attachMiddleNavContainerRef} className="flex-1 min-w-0 overflow-hidden">
+            <div ref={attachMiddleNavContainerRef} className="flex-1 self-stretch min-w-0 overflow-hidden">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
                   key={navPage}
@@ -8788,9 +8836,14 @@ export default function App() {
                   // iguais, então as colunas sempre cabem certinho (ver TabItem `fluid`) sem
                   // estourar o container, e o item N+1 sempre cai exatamente embaixo do item N
                   // na linha de cima. Com dois flex+justify-center cada fila centralizava
-                  // sozinha e desalinhava as colunas entre si.
-                  className="grid gap-x-0"
-                  style={{ gridTemplateColumns: `repeat(${middleNavItemsPerRow}, minmax(0, 1fr))` }}
+                  // sozinha e desalinhava as colunas entre si. Linhas também em fr (não auto) e
+                  // altura 100% — divide o espaço em 2 metades EXATAS, pra bater com a divisória
+                  // (seta/Mais) da cápsula ao lado, que também é 50/50 (self-stretch + flex-1).
+                  className="grid gap-x-0 h-full"
+                  style={{
+                    gridTemplateColumns: `repeat(${middleNavItemsPerRow}, minmax(0, 1fr))`,
+                    gridTemplateRows: `repeat(${Math.ceil(activeNavPageItems.length / middleNavItemsPerRow)}, minmax(0, 1fr))`,
+                  }}
                 >
                   {activeNavPageItems.map((item, idx) => {
                     // Traços finos entre colunas/filas — "grade moderna" separando os ícones do
@@ -8800,7 +8853,7 @@ export default function App() {
                     const row = Math.floor(idx / middleNavItemsPerRow);
                     const gridLineClass = `${col < middleNavItemsPerRow - 1 ? 'border-r' : ''} ${row < totalRows - 1 ? 'border-b' : ''} ${isDarkMode ? 'border-slate-600' : 'border-slate-300'}`;
                     return (
-                      <div key={item.id} className={`flex items-center justify-center ${gridLineClass}`}>
+                      <div key={item.id} className={`flex items-center justify-center h-full ${gridLineClass}`}>
                         <TabItem
                           icon={item.icon}
                           label={item.label}
@@ -8814,12 +8867,18 @@ export default function App() {
                           // "Ajustes PDF" foge da regra: precisa passar pela checagem de
                           // Bluetooth da impressora Ablemark (handleOpenLabelPrintStudio) antes
                           // de navegar, senão abre a tela sem o pareamento verificado.
-                          onClick={() => item.id === 'labelPrintStudio' ? handleOpenLabelPrintStudio() : (MODAL_VIEWS.includes(item.view) ? navigateTo(item.view) : resetTo(item.view))}
+                          onClick={() => {
+                            if (item.id === 'labelPrintStudio') { handleOpenLabelPrintStudio(); return; }
+                            if (item.id === 'sendCatalog') { navigateTo(ViewType.SALES, { openCatalogSendNonce: Date.now() }); return; }
+                            if (MODAL_VIEWS.includes(item.view)) { navigateTo(item.view); return; }
+                            resetTo(item.view);
+                          }}
                           appTheme={appTheme}
                           iconMode={navIconMode}
                           tintColor={NAV_TAB_COLORS[item.id]}
                           monoColor={navMonoColor}
                           anchorKey={item.anchorKey}
+                          badge={(item as any).badge}
                           fluid
                         />
                       </div>
@@ -8828,35 +8887,52 @@ export default function App() {
                 </motion.div>
               </AnimatePresence>
             </div>
-            <TabItem
-              icon={<Settings size={24} />}
-              label="Mais"
-              active={activeTab === "settings"}
-              onClick={() => resetTo(ViewType.SETTINGS)}
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.settings}
-              monoColor={navMonoColor}
-              big
-            />
+            {/* Cápsula "Mais" — dividida na HORIZONTAL (uma faixa em cima da outra, não lado a
+                lado): a seta de paginação do meio (antes flutuava separada ACIMA do pill) fica
+                numa faixa fina no topo, "Mais" ocupa o resto embaixo, mesma largura de sempre.
+                Sem mais de 1 página, a seta some e "Mais" sozinho ocupa a cápsula inteira. */}
+            {(() => {
+              const settingsActive = activeTab === "settings";
+              const isColored = navIconMode === 'colored';
+              const settingsIconStyle: React.CSSProperties = isColored
+                ? { color: NAV_TAB_COLORS.settings, opacity: settingsActive ? 1 : 0.55 }
+                : { color: navMonoColor };
+              const settingsPillStyle: React.CSSProperties | undefined = settingsActive
+                ? { backgroundColor: `${(isColored ? NAV_TAB_COLORS.settings : navMonoColor)}1f` }
+                : undefined;
+              const hasPager = navPages.length > 1;
+              return (
+                <div className="flex flex-col gap-1.5 self-stretch shrink-0 w-24">
+                  {hasPager && (
+                    <button
+                      type="button"
+                      onClick={() => setNavPage(p => (p + 1) % navPages.length)}
+                      data-guide-anchor="nav.paginar"
+                      aria-label="Ver mais ícones"
+                      className="flex-1 min-h-0 w-full flex items-center justify-center rounded-full bg-black/[0.035] dark:bg-white/[0.06] text-indigo-600 dark:text-indigo-400 active:scale-90 active:bg-indigo-50 dark:active:bg-slate-700/50 transition-all"
+                    >
+                      <ChevronDown size={18} strokeWidth={3} className="animate-pulse" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => resetTo(ViewType.SETTINGS)}
+                    title="Mais"
+                    aria-label="Ir para Mais"
+                    data-guide-anchor="nav.mais"
+                    className="flex-1 min-h-0 w-full flex flex-col items-center justify-center gap-0.5 rounded-2xl bg-black/[0.035] dark:bg-white/[0.06] transition-all"
+                  >
+                    <div className="flex items-center justify-center rounded-xl w-14 h-10 mx-auto transition-all" style={settingsPillStyle}>
+                      <span className="transition-all" style={settingsIconStyle}>
+                        <Settings size={24} />
+                      </span>
+                    </div>
+                    <span className="font-bold tracking-tight text-[11px] transition-all" style={settingsIconStyle}>Mais</span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
-          {/* Seta, FORA do card, perto do Mais (mais alcançável com o polegar) — a barra nunca
-              desliza/anima de lado; um toque troca TODOS os ícones do meio de uma vez pela
-              próxima página (ver navPage/navPages acima), voltando pra 1ª depois da última. Só
-              aparece quando há mais de 1 página. */}
-          {navPages.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setNavPage(p => (p + 1) % navPages.length)}
-              aria-label="Ver mais ícones"
-              // right-[28px]: com o pill em px-2 (8px) e o card do Mais em w-20 (80px) encostado
-              // na borda direita, o centro da engrenagem fica a 48px da borda — 28px de offset
-              // pro botão (w-10, raio 20) deixa o CENTRO do botão exatamente sob a engrenagem.
-              className="absolute -top-5 right-[28px] z-10 w-10 h-10 rounded-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-100 dark:border-slate-700 shadow-md shadow-indigo-900/20 flex items-center justify-center animate-pulse hover:animate-none active:scale-90 active:bg-indigo-50 dark:active:bg-slate-700 transition-all"
-            >
-              <ChevronDown size={20} strokeWidth={3} />
-            </button>
-          )}
         </div>
       </nav>
       <ProductCreationChoiceModal

@@ -78,24 +78,27 @@ function ManualMovementModal({ target, isDarkMode, onClose, onConfirm }: { targe
               {target.product.reference} · {target.variation.colorName} · {target.sizeLabel}
             </p>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 shrink-0"><X size={18} /></button>
+          <button onClick={onClose} data-guide-anchor="blingStock.movFechar" className="p-1 text-slate-400 shrink-0"><X size={18} /></button>
         </div>
 
         <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
           <button
             onClick={() => switchMode('entrada')}
+            data-guide-anchor="blingStock.movModo"
             className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${mode === 'entrada' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
           >
             <ArrowUpCircle size={14} /> Entrada
           </button>
           <button
             onClick={() => switchMode('saida')}
+            data-guide-anchor="blingStock.movModo"
             className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${mode === 'saida' ? 'bg-rose-600 text-white' : 'text-slate-400'}`}
           >
             <ArrowDownCircle size={14} /> Saída
           </button>
           <button
             onClick={() => switchMode('ajustar')}
+            data-guide-anchor="blingStock.movModo"
             className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${mode === 'ajustar' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
           >
             <Pencil size={13} /> Ajustar
@@ -124,6 +127,7 @@ function ManualMovementModal({ target, isDarkMode, onClose, onConfirm }: { targe
         <button
           onClick={handleConfirm}
           disabled={!canConfirm || saving}
+          data-guide-anchor="blingStock.movConfirmar"
           className="w-full h-12 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
         >
           {saving ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -255,6 +259,7 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
             <button
               type="button"
               onClick={cancelBalanco}
+              data-guide-anchor="blingStock.balancoCancelar"
               className={`flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 !balancoMode ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-white text-slate-900 shadow-sm') : 'text-slate-400'
               }`}
@@ -264,6 +269,7 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
             <button
               type="button"
               onClick={() => setBalancoMode(true)}
+              data-guide-anchor="blingStock.balancoAtivar"
               className={`flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                 balancoMode ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400'
               }`}
@@ -287,6 +293,7 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
           >
             <button
               onClick={() => toggleProductCollapsed(product.id)}
+            data-guide-anchor="blingStock.produtoExpandir"
               className={`w-full flex items-center justify-between gap-2 text-left ${isCollapsed ? '' : 'mb-3'}`}
             >
               <h3 className={`text-[13px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -354,6 +361,7 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
                             key={size}
                             onClick={() => onReconcileStockBalance && setMovementTarget({ product, variation, sizeKey: size, sizeLabel: size, currentQty: qty })}
                             disabled={!onReconcileStockBalance}
+                            data-guide-anchor="blingStock.tamanhoAjustar"
                             className={`flex flex-col items-center justify-center min-w-[42px] px-2 py-1.5 rounded-lg border ${
                               isPending
                                 ? isDarkMode ? 'bg-sky-900/30 border-sky-600' : 'bg-sky-100 border-sky-400'
@@ -399,6 +407,7 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
                           <button
                             onClick={() => onReconcileStockBalance && setMovementTarget({ product, variation, sizeKey: 'WHOLESALE', sizeLabel: 'Atacado', currentQty: wholesaleQty })}
                             disabled={!onReconcileStockBalance}
+                            data-guide-anchor="blingStock.tamanhoAjustar"
                             className={`flex flex-col items-center justify-center min-w-[52px] px-2 py-1.5 rounded-lg border ${
                               isPending
                                 ? isDarkMode ? 'bg-sky-900/30 border-sky-600' : 'bg-sky-100 border-sky-400'
@@ -432,6 +441,7 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
             type="button"
             onClick={handleSaveBalanco}
             disabled={savingBalanco}
+            data-guide-anchor="blingStock.balancoSalvar"
             className="w-full flex items-center justify-center gap-2 h-11 rounded-2xl bg-amber-500 text-white shadow-2xl shadow-amber-500/30 font-black text-xs uppercase tracking-widest disabled:opacity-60 active:scale-[0.98] transition-all"
           >
             {savingBalanco ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}

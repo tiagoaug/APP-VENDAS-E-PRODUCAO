@@ -213,6 +213,7 @@ export default function TransactionModal({
           </h2>
           <button
             onClick={onClose}
+            data-guide-anchor="transacao.fechar"
             className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl transition-colors text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400"
           >
             <X size={20} strokeWidth={2.5} />
@@ -228,6 +229,7 @@ export default function TransactionModal({
           }`}>
             <button
               onClick={() => setType(TransactionType.INCOME)}
+              data-guide-anchor="transacao.tipo"
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-[1.3rem] text-[11px] font-black uppercase tracking-widest transition-all ${
                 type === TransactionType.INCOME 
                   ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-white shadow-[0_6px_16px_rgba(16,185,129,0.35),inset_0_1px_1px_rgba(255,255,255,0.2)]' 
@@ -241,6 +243,7 @@ export default function TransactionModal({
             </button>
             <button
               onClick={() => setType(TransactionType.EXPENSE)}
+              data-guide-anchor="transacao.tipo"
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-[1.3rem] text-[11px] font-black uppercase tracking-widest transition-all ${
                 type === TransactionType.EXPENSE 
                   ? 'bg-gradient-to-b from-rose-500 to-rose-600 text-white shadow-[0_6px_16px_rgba(244,63,94,0.35),inset_0_1px_1px_rgba(255,255,255,0.2)]' 
@@ -285,6 +288,7 @@ export default function TransactionModal({
                 type="button"
                 aria-label={isManual ? 'Lançamento manual — clique para automático' : 'Lançamento automático — clique para manual'}
                 onClick={() => setIsManual(v => !v)}
+                data-guide-anchor="transacao.manualToggle"
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0 transition-all shadow-sm ${
                   isManual 
                     ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' 
@@ -380,6 +384,7 @@ export default function TransactionModal({
                       <div className="flex flex-col items-center gap-1 pl-2 border-l border-slate-200/60 dark:border-slate-800">
                         <button
                           onClick={() => removeItem(item.id)}
+                          data-guide-anchor="transacao.itemRemover"
                           className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all"
                           title="Remover item"
                         >
@@ -388,6 +393,7 @@ export default function TransactionModal({
                         <button
                           type="button"
                           onClick={() => setActiveCalculatorId(item.id)}
+                          data-guide-anchor="transacao.itemCalculadora"
                           className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-all"
                           title="Calcular valor do item"
                         >
@@ -404,6 +410,7 @@ export default function TransactionModal({
             <button
               type="button"
               onClick={addItem}
+              data-guide-anchor="transacao.itemAdicionar"
               className={`w-full flex items-center justify-center gap-2 p-3 rounded-[1.1rem] border border-dashed transition-all active:scale-[0.98] ${
                 isDarkMode
                   ? 'bg-slate-900/30 border-slate-800/80 text-indigo-400 hover:bg-slate-900/60 hover:text-indigo-300'
@@ -443,6 +450,7 @@ export default function TransactionModal({
                 <button
                   type="button"
                   onClick={() => setActiveCalculatorId('main')}
+                  data-guide-anchor="transacao.calculadoraPrincipal"
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-500 transition-colors"
                 >
                   <CalculatorIcon size={16} />
@@ -549,8 +557,9 @@ export default function TransactionModal({
             <div className={`flex p-1.5 rounded-[1.5rem] border gap-1 shadow-inner ${
               isDarkMode ? 'bg-slate-950/60 border-slate-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.25)]' : 'bg-white border-slate-200/60 shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)]'
             }`}>
-              <button 
+              <button
                 onClick={() => setStatus('COMPLETED')}
+                data-guide-anchor="transacao.status"
                 className={`flex-1 py-3 rounded-[1rem] text-[10px] font-black uppercase tracking-widest transition-all ${
                   status === 'COMPLETED' 
                     ? 'bg-gradient-to-b from-indigo-400 to-indigo-600 text-white shadow-[0_6px_16px_rgba(99,102,241,0.35),inset_0_1px_1px_rgba(255,255,255,0.2)]' 
@@ -561,8 +570,9 @@ export default function TransactionModal({
               >
                 Concluído
               </button>
-              <button 
+              <button
                 onClick={() => setStatus('PENDING')}
+                data-guide-anchor="transacao.status"
                 className={`flex-1 py-3 rounded-[1rem] text-[10px] font-black uppercase tracking-widest transition-all ${
                   status === 'PENDING' 
                     ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-white shadow-[0_6px_16px_rgba(245,158,11,0.35),inset_0_1px_1px_rgba(255,255,255,0.2)]' 
@@ -605,6 +615,7 @@ export default function TransactionModal({
                   <button
                     type="button"
                     onClick={() => setIsRecurring(v => !v)}
+                    data-guide-anchor="transacao.recorrenteToggle"
                     className={`flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}
                   >
                     <span className="text-[11px] font-black uppercase tracking-tight text-left dark:text-white">
@@ -639,6 +650,7 @@ export default function TransactionModal({
           <button
             type="button"
             onClick={handleSave}
+            data-guide-anchor="transacao.confirmar"
             className="w-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800 text-white py-4 rounded-[1.5rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/30 transition-all active:scale-[0.98] outline-none border-none"
           >
             Confirmar Lançamento

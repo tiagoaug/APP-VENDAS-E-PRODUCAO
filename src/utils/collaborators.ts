@@ -38,7 +38,7 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: Sector
       { id: 'grades', label: 'Grades de Tamanho' },
       { id: 'cores', label: 'Cores' },
       { id: 'marcas', label: 'Marcas' },
-      { id: 'modelos', label: 'Modelos' },
+      { id: 'modelos', label: 'Nome de Modelos' },
       { id: 'ficha_tecnica', label: 'Ficha Técnica' },
     ],
     views: [ViewType.PRODUCTS, ViewType.PRODUCT_FORM, ViewType.PRODUCT_DETAIL, ViewType.CATEGORIES, ViewType.GRIDS, ViewType.COLORS, ViewType.BRANDS, ViewType.MODELS, ViewType.CATEGORY_CONFIG, ViewType.PRODUCTION_ENGINEERING, ViewType.PRODUCT_SHEET],
@@ -61,7 +61,7 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: Sector
       { id: 'necessidade_compras', label: 'Necessidade de Compras' },
       { id: 'ordens_servico', label: 'Ordens de Serviço' },
     ],
-    views: [ViewType.PRODUCTION_MENU, ViewType.PRODUCTION_PCP, ViewType.PRODUCTION_STOCK, ViewType.PRODUCTION_PURCHASE_NEEDS, ViewType.PRODUCTION_CONFIG, ViewType.PRODUCTION_SERVICE_ORDER_FORM],
+    views: [ViewType.PRODUCTION_MENU, ViewType.PRODUCTION_PCP, ViewType.PRODUCTION_STOCK, ViewType.PRODUCTION_PURCHASE_NEEDS, ViewType.PRODUCTION_CONFIG, ViewType.PRODUCTION_SERVICE_ORDER_FORM, ViewType.FORNECEDORES],
   },
   {
     id: 'estoque', label: 'Estoque e Expedição', icon: 'PackageOpen',

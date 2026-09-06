@@ -5,7 +5,8 @@ import { Clipboard } from '@capacitor/clipboard';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation, BatchLabelItem, LabelFile, OrderTextAlias, CatalogLink, CatalogRequest, CatalogProfile, Category, Brand } from '../types';
 import LabelProfilePickerModal from '../components/LabelProfilePickerModal';
 import CatalogProductPickerModal from '../components/CatalogProductPickerModal';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer, Link2 } from 'lucide-react';
+import CatalogProfilesModal from '../components/CatalogProfilesModal';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer, Link2, Bookmark } from 'lucide-react';
 
 // Domínio do Firebase Hosting do projeto (app-vendas-e-producao) — quem abre o link do
 // catálogo é sempre o cliente pelo NAVEGADOR dele, nunca o app nativo (capacitor://localhost),
@@ -112,8 +113,18 @@ interface SalesViewProps {
   // handleGenerateCatalogLink de App.tsx usado em PersonDetailView; aqui a diferença é que já
   // sai direto pro compartilhamento nativo em vez de só mostrar/copiar o link.
   catalogLinks?: CatalogLink[];
-  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean) => Promise<string>;
-  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean) => Promise<void>;
+  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean, useStockQuantities?: boolean) => Promise<string>;
+  // "Link de Grupo" — variante genérica do Link de Pedido, sem cliente vinculado, pra
+  // compartilhar uma vez só num grupo/lista de transmissão (ver App.tsx,
+  // handleGenerateGenericCatalogLink). expirationMinutes é a escolha do popup "GRUPO" aqui
+  // embaixo (minutos a horas), diferente de catalogLinkExpirationDays (dias, só do Exclusivo).
+  onGenerateGenericCatalogLink?: (productIds?: string[], hidePrices?: boolean, useStockQuantities?: boolean, expirationMinutes?: number | null) => Promise<string>;
+  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean, useStockQuantities?: boolean) => Promise<void>;
+  // Expiração do link Exclusivo (em dias, fração permitida pra caber duração menor que 1 dia) —
+  // era um ajuste global em Configurações; movido pra cá (dentro do próprio popup de envio) pra
+  // ficar junto do que ela afeta. Ver App.tsx handleGenerateCatalogLink/handleSetCatalogLinkExpirationDays.
+  catalogLinkExpirationDays?: number | null;
+  onSetCatalogLinkExpirationDays?: (days: number | null) => Promise<void>;
   // Perfil de Envio de Catálogo — seleção de produtos salva com nome, reaplicável em outros
   // envios sem escolher de novo (ver CatalogProductPickerModal e CatalogProfile em types.ts).
   catalogProfiles?: CatalogProfile[];
@@ -125,10 +136,10 @@ interface SalesViewProps {
   // qualquer cliente, pra revisar/confirmar (ver CatalogRequestsView).
   catalogRequests?: CatalogRequest[];
   onNavigateCatalogRequests?: () => void;
-  // "Exportar para Vendas" do Extrator de Texto (OCR, tela em Configurações > Extras) — chega
-  // via navigateTo(ViewType.SALES, { prefillPasteText }), abre o PasteOrderModal direto com
-  // esse texto pronto pra revisar (ver App.tsx).
-  initialPasteText?: string;
+  // Atalho "Enviar Catálogo" da barra de navegação — chega via navigateTo(ViewType.SALES,
+  // { openCatalogSendNonce: Date.now() }), abre o popup de escolher cliente direto, sem passar
+  // pelo "+". Nonce (não boolean) pra disparar de novo mesmo clicando 2x seguidas sem sair da tela.
+  openCatalogSendNonce?: number;
   onEdit: (sale: Sale) => void;
   onCancelOnly: (id: string) => void;
   onCancelAndRevert: (id: string) => void;
@@ -209,7 +220,10 @@ export default function SalesView({
   onOpenPastedOrder,
   catalogLinks = [],
   onGenerateCatalogLink,
+  onGenerateGenericCatalogLink,
   onSetCatalogLinkProducts,
+  catalogLinkExpirationDays,
+  onSetCatalogLinkExpirationDays,
   catalogProfiles = [],
   onSaveCatalogProfile,
   onDeleteCatalogProfile,
@@ -217,7 +231,7 @@ export default function SalesView({
   brands = [],
   catalogRequests = [],
   onNavigateCatalogRequests,
-  initialPasteText,
+  openCatalogSendNonce,
   onEdit,
   onCancelOnly,
   onCancelAndRevert,
@@ -337,8 +351,104 @@ export default function SalesView({
   // reaproveitado) dentro de handleSendCatalogTo, pra não precisar de outro popup.
   const [catalogSendProductIds, setCatalogSendProductIds] = useState<string[]>([]);
   const [catalogSendHidePrices, setCatalogSendHidePrices] = useState(false);
+  const [catalogSendUseStockQuantities, setCatalogSendUseStockQuantities] = useState(false);
   const [catalogProductPickerOpen, setCatalogProductPickerOpen] = useState(false);
+  const [catalogProfilesModalOpen, setCatalogProfilesModalOpen] = useState(false);
+  // Atalho pra salvar a seleção atual (feita no CatalogProductPickerModal) como um Perfil de
+  // Envio de Catálogo direto daqui, sem precisar reabrir o "Editar" — mesmo onSaveCatalogProfile
+  // usado lá dentro.
+  const [newCatalogProfileName, setNewCatalogProfileName] = useState('');
+  const [savingCatalogProfile, setSavingCatalogProfile] = useState(false);
   const [pasteOrderOpen, setPasteOrderOpen] = useState(false);
+  // Dentro do popup "Enviar Catálogo": EXCLUSIVO = fluxo de sempre (escolhe 1 cliente, link já
+  // vem com o nome dele). GRUPO = Link de Grupo — um único link genérico, sem nome de cliente,
+  // pra postar numa lista de transmissão/grupo; cada pessoa que abrir digita o próprio nome.
+  const [catalogSendMode, setCatalogSendMode] = useState<'EXCLUSIVO' | 'GRUPO'>('EXCLUSIVO');
+  // Expiração do Link de Grupo em MINUTOS (não dias, diferente do Exclusivo) — Tiago pediu
+  // granularidade fina porque um link de grupo costuma valer só durante uma promoção pontual.
+  const [genericLinkExpirationMinutes, setGenericLinkExpirationMinutes] = useState<number | null>(60);
+  const [generatingGenericLink, setGeneratingGenericLink] = useState(false);
+  // "Personalizado" — número + unidade (min/horas) digitados à mão, pra qualquer duração fora
+  // dos atalhos fixos abaixo. Só abre o mini-formulário; o valor só entra em
+  // genericLinkExpirationMinutes quando o usuário confirma em "Aplicar".
+  const [customGenericExpirationOpen, setCustomGenericExpirationOpen] = useState(false);
+  const [customGenericExpirationValue, setCustomGenericExpirationValue] = useState('');
+  const [customGenericExpirationUnit, setCustomGenericExpirationUnit] = useState<'MINUTOS' | 'HORAS'>('MINUTOS');
+
+  const GENERIC_LINK_EXPIRATION_OPTIONS: { label: string; minutes: number | null }[] = [
+    { label: '30 min', minutes: 30 },
+    { label: '1 hora', minutes: 60 },
+    { label: '2 horas', minutes: 120 },
+    { label: '6 horas', minutes: 360 },
+    { label: '12 horas', minutes: 720 },
+    { label: '24 horas', minutes: 1440 },
+    { label: 'Nunca', minutes: null },
+  ];
+  // Chip "Personalizado" fica marcado quando o valor atual não bate com nenhum atalho fixo —
+  // é como o usuário vê que aplicou uma duração digitada à mão em vez de um dos botões.
+  const isCustomGenericExpirationActive = !GENERIC_LINK_EXPIRATION_OPTIONS.some(opt => opt.minutes === genericLinkExpirationMinutes);
+
+  const handleApplyCustomGenericExpiration = () => {
+    const value = Number(customGenericExpirationValue);
+    if (!Number.isFinite(value) || value <= 0) return;
+    const minutes = Math.round(customGenericExpirationUnit === 'HORAS' ? value * 60 : value);
+    setGenericLinkExpirationMinutes(minutes);
+    setCustomGenericExpirationOpen(false);
+  };
+
+  // Acordeões dos blocos de expiração dentro do popup — ambos minimizados por padrão, já que a
+  // maioria dos envios só reaproveita o padrão de sempre sem precisar mexer nisso toda vez.
+  const [exclusiveExpirationSectionOpen, setExclusiveExpirationSectionOpen] = useState(false);
+  const [genericExpirationSectionOpen, setGenericExpirationSectionOpen] = useState(false);
+  // "Personalizado" do Exclusivo — mesma ideia do Grupo acima, só que o valor gravado
+  // (catalogLinkExpirationDays) é em DIAS; aceita fração pra caber duração menor que 1 dia
+  // (ex.: 45 min = 45/1440 dia).
+  const [savingLinkExpiration, setSavingLinkExpiration] = useState(false);
+  const [customLinkExpirationOpen, setCustomLinkExpirationOpen] = useState(false);
+  const [customLinkExpirationValue, setCustomLinkExpirationValue] = useState('');
+  const [customLinkExpirationUnit, setCustomLinkExpirationUnit] = useState<'MINUTOS' | 'HORAS'>('MINUTOS');
+  const LINK_EXPIRATION_PRESETS = [null, 1, 3, 5, 7, 15, 30, 60];
+  const isCustomLinkExpirationActive = !LINK_EXPIRATION_PRESETS.includes(catalogLinkExpirationDays ?? null);
+  const formatCustomLinkExpiration = (days: number | null | undefined) => {
+    if (!days) return 'Nunca';
+    const totalMinutes = Math.round(days * 1440);
+    if (totalMinutes % 1440 === 0) return `${totalMinutes / 1440}d`;
+    if (totalMinutes % 60 === 0) return `${totalMinutes / 60}h`;
+    return `${totalMinutes}min`;
+  };
+
+  const handleGenerateAndShareGenericLink = async () => {
+    if (!onGenerateGenericCatalogLink || generatingGenericLink) return;
+    setGeneratingGenericLink(true);
+    try {
+      const token = await onGenerateGenericCatalogLink(catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities, genericLinkExpirationMinutes);
+      const url = `${PUBLIC_CATALOG_BASE_URL}/pedido/${token}`;
+      await CapacitorShare.share({
+        title: 'Catálogo Digital',
+        text: `Olá! Esse é nosso catálogo digital, entre e confira. Se for do seu interesse, faça seu pedido: ${url}`,
+        dialogTitle: 'Enviar catálogo',
+      });
+      setCatalogSendOpen(false);
+      setCatalogSendMode('EXCLUSIVO');
+    } catch (err: any) {
+      if (err?.message?.includes('cancel')) return;
+      toast.show('Erro ao gerar link de grupo: ' + (err?.message || err));
+    } finally {
+      setGeneratingGenericLink(false);
+    }
+  };
+
+  const handleSaveCurrentCatalogSelectionAsProfile = async () => {
+    const name = newCatalogProfileName.trim();
+    if (!name || savingCatalogProfile || !onSaveCatalogProfile) return;
+    setSavingCatalogProfile(true);
+    try {
+      await onSaveCatalogProfile(name, catalogSendProductIds);
+      setNewCatalogProfileName('');
+    } finally {
+      setSavingCatalogProfile(false);
+    }
+  };
 
   const handleSendCatalogTo = async (person: Person) => {
     if (!onGenerateCatalogLink || sendingCatalogToId) return;
@@ -353,9 +463,9 @@ export default function SalesView({
         // Sincroniza a seleção de produtos e a opção de ocultar preços escolhida agora no link
         // já existente — mesmo link/URL de sempre pro cliente, só muda o que ele vê da próxima
         // vez que abrir.
-        if (onSetCatalogLinkProducts) await onSetCatalogLinkProducts(existing.id, catalogSendProductIds, catalogSendHidePrices);
+        if (onSetCatalogLinkProducts) await onSetCatalogLinkProducts(existing.id, catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities);
       } else {
-        token = await onGenerateCatalogLink(person.id, catalogSendProductIds, catalogSendHidePrices);
+        token = await onGenerateCatalogLink(person.id, catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities);
       }
       const url = `${PUBLIC_CATALOG_BASE_URL}/pedido/${token}`;
       await CapacitorShare.share({
@@ -376,16 +486,11 @@ export default function SalesView({
   // "Colar Print" (atalho do "+") abre o mesmo PasteOrderModal já disparando a leitura da
   // área de transferência, em vez de esperar o usuário tocar num botão lá dentro.
   const [pasteOrderAutoOcr, setPasteOrderAutoOcr] = useState(false);
-  // "Exportar para Vendas" do Extrator de Texto (OCR) — ver initialPasteText acima.
-  const [pasteOrderInitialText, setPasteOrderInitialText] = useState('');
+  // Atalho "Enviar Catálogo" da barra de navegação — ver openCatalogSendNonce acima.
   useEffect(() => {
-    if (initialPasteText) {
-      setPasteOrderInitialText(initialPasteText);
-      setPasteOrderAutoOcr(false);
-      setPasteOrderOpen(true);
-    }
+    if (openCatalogSendNonce) setCatalogSendOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPasteText]);
+  }, [openCatalogSendNonce]);
   // Etiquetas da Venda — abre o Editor de Etiquetas livre (LabelEditorView), em modo lote
   // (batchItems): uma etiqueta por CAIXA no Atacado (item.quantity caixas => item.quantity
   // etiquetas iguais, grade de UMA caixa cada), uma etiqueta por linha (tamanho) no Varejo.
@@ -3074,11 +3179,9 @@ export default function SalesView({
                 </div>
               </button>
               {/* "Colar Pedido Digitado" e "Colar Print" saíram daqui (pedido do usuário) — a
-                  mesma coisa já existe em Configurações > Extras > Extrator de Texto (OCR):
-                  cola/reconhece o texto lá, edita na caixa de texto (aceita colar texto puro
-                  também, não só imagem) e usa "Exportar para Vendas", que cai exatamente
-                  nesta mesma tela pré-preenchida (ver initialPasteText/pasteOrderOpen abaixo —
-                  esse caminho continua intacto, só sumiu o atalho duplicado aqui no "+"). */}
+                  mesma coisa já existe em Configurações > Extras > Extrator de Texto (OCR),
+                  que agora só cola/reconhece e copia/exporta o texto (o botão "Exportar para
+                  Vendas" saiu de lá, não existe mais essa ponte direta). */}
               {onGenerateCatalogLink && (
                 <button
                   type="button"
@@ -3108,7 +3211,7 @@ export default function SalesView({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-xs max-h-[80vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+            className={`w-full max-w-md max-h-[92vh] h-[92vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
           >
             <div className={`flex items-center justify-between px-6 py-5 border-b shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
               <div className="flex items-center gap-3">
@@ -3121,6 +3224,29 @@ export default function SalesView({
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
+            {onGenerateGenericCatalogLink && (
+              <div className={`flex items-center gap-1 p-1 mx-4 mt-4 rounded-2xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                <button
+                  type="button"
+                  onClick={() => setCatalogSendMode('EXCLUSIVO')}
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${catalogSendMode === 'EXCLUSIVO' ? 'bg-violet-600 text-white shadow-lg' : 'text-slate-400'}`}
+                >
+                  Exclusivo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogSendMode('GRUPO')}
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${catalogSendMode === 'GRUPO' ? 'bg-violet-600 text-white shadow-lg' : 'text-slate-400'}`}
+                >
+                  Grupo
+                </button>
+              </div>
+            )}
+            {catalogSendMode === 'GRUPO' && (
+              <p className="px-6 pt-2 shrink-0 text-[10px] font-bold text-slate-400 leading-relaxed">
+                Um único link genérico, sem nome de cliente — poste em um grupo ou lista de transmissão e cada pessoa faz o próprio pedido informando o nome dela.
+              </p>
+            )}
             <div className="px-4 pt-4 shrink-0">
               <button
                 type="button"
@@ -3132,45 +3258,287 @@ export default function SalesView({
                   <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
                     {catalogSendProductIds.length === 0 ? 'Produtos: Catálogo Completo' : `Produtos: ${catalogSendProductIds.length} selecionados`}
                     {catalogSendHidePrices ? ' · sem valores' : ''}
+                    {catalogSendUseStockQuantities ? ' · qtd. do estoque' : ''}
                   </span>
                 </div>
                 <span className="text-[9px] font-black uppercase text-violet-500 shrink-0">Editar</span>
               </button>
             </div>
-            <div className="p-4 pb-2 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            {catalogSendProductIds.length > 0 && onSaveCatalogProfile && (
+              <div className="px-4 pt-2 shrink-0 flex items-center gap-2">
                 <input
                   type="text"
-                  autoFocus
-                  placeholder="Buscar cliente..."
-                  value={catalogSendSearch}
-                  onChange={(e) => setCatalogSendSearch(e.target.value)}
-                  className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+                  value={newCatalogProfileName}
+                  onChange={(e) => setNewCatalogProfileName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveCurrentCatalogSelectionAsProfile(); }}
+                  placeholder="Salvar esses produtos como perfil..."
+                  className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-[11px] font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
                 />
+                <button
+                  type="button"
+                  onClick={handleSaveCurrentCatalogSelectionAsProfile}
+                  disabled={!newCatalogProfileName.trim() || savingCatalogProfile}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all"
+                >
+                  <Bookmark size={12} /> Salvar
+                </button>
               </div>
-            </div>
-            <div className="flex flex-col gap-1 p-4 pt-2 overflow-y-auto">
-              {people
-                .filter(p => p.isCustomer && p.name.toLowerCase().includes(catalogSendSearch.toLowerCase()))
-                .map(person => (
+            )}
+            {catalogProfiles.length > 0 && (
+              <div className="px-4 pt-2 shrink-0">
+                <div className="flex items-center justify-between px-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Perfis de Catálogo</label>
                   <button
-                    key={person.id}
                     type="button"
-                    onClick={() => handleSendCatalogTo(person)}
-                    disabled={sendingCatalogToId !== null}
-                    className={`flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-all active:scale-[0.98] disabled:opacity-50 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
+                    onClick={() => setCatalogProfilesModalOpen(true)}
+                    className="text-[9px] font-black uppercase tracking-widest text-violet-500"
                   >
-                    <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{person.name}</p>
-                    {sendingCatalogToId === person.id && (
-                      <div className="w-4 h-4 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin shrink-0" />
-                    )}
+                    Ver Todos
                   </button>
-                ))}
-              {people.filter(p => p.isCustomer).length === 0 && (
-                <p className="text-[10px] text-slate-400 font-bold text-center py-6 uppercase tracking-widest">Nenhum cliente cadastrado</p>
-              )}
-            </div>
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1.5 pb-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setCatalogSendProductIds([]); }}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${catalogSendProductIds.length === 0 ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                  >
+                    <Package size={11} /> Catálogo Completo
+                  </button>
+                  {catalogProfiles.map(profile => {
+                    const isActive = catalogSendProductIds.length === profile.productIds.length
+                      && profile.productIds.every(id => catalogSendProductIds.includes(id));
+                    return (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        onClick={() => setCatalogSendProductIds(profile.productIds)}
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${isActive ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                      >
+                        <Bookmark size={11} /> {profile.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {catalogSendMode === 'EXCLUSIVO' ? (
+              <>
+                {onSetCatalogLinkExpirationDays && (
+                  <div className="px-4 pt-4 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setExclusiveExpirationSectionOpen(v => !v)}
+                      className={`w-full flex items-center justify-between gap-2 p-3 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                    >
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
+                        Expiração do Link: {isCustomLinkExpirationActive ? formatCustomLinkExpiration(catalogLinkExpirationDays) : (catalogLinkExpirationDays ? `${catalogLinkExpirationDays} dia${catalogLinkExpirationDays > 1 ? 's' : ''}` : 'Nunca')}
+                      </span>
+                      <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${exclusiveExpirationSectionOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {exclusiveExpirationSectionOpen && (
+                      <div className="flex flex-col gap-2 mt-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { label: 'Nunca', value: null },
+                            { label: '1 dia', value: 1 },
+                            { label: '3 dias', value: 3 },
+                            { label: '5 dias', value: 5 },
+                            { label: '7 dias', value: 7 },
+                            { label: '15 dias', value: 15 },
+                            { label: '30 dias', value: 30 },
+                            { label: '60 dias', value: 60 },
+                          ].map((opt) => (
+                            <button
+                              key={opt.label}
+                              type="button"
+                              disabled={savingLinkExpiration}
+                              onClick={async () => {
+                                setCustomLinkExpirationOpen(false);
+                                setSavingLinkExpiration(true);
+                                try { await onSetCatalogLinkExpirationDays(opt.value); } finally { setSavingLinkExpiration(false); }
+                              }}
+                              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-50 ${!isCustomLinkExpirationActive && catalogLinkExpirationDays === opt.value ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            disabled={savingLinkExpiration}
+                            onClick={() => setCustomLinkExpirationOpen(v => !v)}
+                            className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all disabled:opacity-50 ${isCustomLinkExpirationActive ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                          >
+                            {isCustomLinkExpirationActive ? `Personalizado · ${formatCustomLinkExpiration(catalogLinkExpirationDays)}` : 'Personalizado'}
+                          </button>
+                        </div>
+                        {customLinkExpirationOpen && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              autoFocus
+                              value={customLinkExpirationValue}
+                              onChange={(e) => setCustomLinkExpirationValue(e.target.value)}
+                              placeholder="Ex: 45"
+                              className={`w-24 px-3 py-2 rounded-xl text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'}`}
+                            />
+                            <div className={`flex p-1 rounded-xl gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                              {(['MINUTOS', 'HORAS'] as const).map(unit => (
+                                <button
+                                  key={unit}
+                                  type="button"
+                                  onClick={() => setCustomLinkExpirationUnit(unit)}
+                                  className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${customLinkExpirationUnit === unit ? 'bg-violet-600 text-white' : 'text-slate-400'}`}
+                                >
+                                  {unit === 'MINUTOS' ? 'Min' : 'Horas'}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!customLinkExpirationValue.trim() || savingLinkExpiration}
+                              onClick={async () => {
+                                const value = Number(customLinkExpirationValue);
+                                if (!Number.isFinite(value) || value <= 0) return;
+                                const days = (customLinkExpirationUnit === 'HORAS' ? value * 60 : value) / 1440;
+                                setSavingLinkExpiration(true);
+                                try {
+                                  await onSetCatalogLinkExpirationDays(days);
+                                  setCustomLinkExpirationOpen(false);
+                                } finally {
+                                  setSavingLinkExpiration(false);
+                                }
+                              }}
+                              className="flex-1 py-2 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all"
+                            >
+                              Aplicar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="p-4 pb-2 shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Buscar cliente..."
+                      value={catalogSendSearch}
+                      onChange={(e) => setCatalogSendSearch(e.target.value)}
+                      className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 p-4 pt-2 overflow-y-auto">
+                  {people
+                    .filter(p => p.isCustomer && p.name.toLowerCase().includes(catalogSendSearch.toLowerCase()))
+                    .map(person => (
+                      <button
+                        key={person.id}
+                        type="button"
+                        onClick={() => handleSendCatalogTo(person)}
+                        disabled={sendingCatalogToId !== null}
+                        className={`flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-all active:scale-[0.98] disabled:opacity-50 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}
+                      >
+                        <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{person.name}</p>
+                        {sendingCatalogToId === person.id && (
+                          <div className="w-4 h-4 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  {people.filter(p => p.isCustomer).length === 0 && (
+                    <p className="text-[10px] text-slate-400 font-bold text-center py-6 uppercase tracking-widest">Nenhum cliente cadastrado</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col gap-4 p-4 overflow-y-auto">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setGenericExpirationSectionOpen(v => !v)}
+                    className="w-full flex items-center justify-between gap-2 px-1"
+                  >
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Este link expira em: {isCustomGenericExpirationActive ? formatCustomLinkExpiration((genericLinkExpirationMinutes || 0) / 1440) : (GENERIC_LINK_EXPIRATION_OPTIONS.find(o => o.minutes === genericLinkExpirationMinutes)?.label || 'Nunca')}
+                    </span>
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${genericExpirationSectionOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {genericExpirationSectionOpen && (
+                    <>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {GENERIC_LINK_EXPIRATION_OPTIONS.map(opt => (
+                          <button
+                            key={opt.label}
+                            type="button"
+                            onClick={() => { setGenericLinkExpirationMinutes(opt.minutes); setCustomGenericExpirationOpen(false); }}
+                            className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${!isCustomGenericExpirationActive && genericLinkExpirationMinutes === opt.minutes ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCustomGenericExpirationOpen(v => !v)}
+                          className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${isCustomGenericExpirationActive ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                        >
+                          {isCustomGenericExpirationActive ? `Personalizado · ${genericLinkExpirationMinutes! >= 60 ? `${genericLinkExpirationMinutes! / 60}h` : `${genericLinkExpirationMinutes}min`}` : 'Personalizado'}
+                        </button>
+                      </div>
+                      {customGenericExpirationOpen && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <input
+                            type="number"
+                            min={1}
+                            autoFocus
+                            value={customGenericExpirationValue}
+                            onChange={(e) => setCustomGenericExpirationValue(e.target.value)}
+                            placeholder="Ex: 45"
+                            className={`w-24 px-3 py-2 rounded-xl text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'}`}
+                          />
+                          <div className={`flex p-1 rounded-xl gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                            {(['MINUTOS', 'HORAS'] as const).map(unit => (
+                              <button
+                                key={unit}
+                                type="button"
+                                onClick={() => setCustomGenericExpirationUnit(unit)}
+                                className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${customGenericExpirationUnit === unit ? 'bg-violet-600 text-white' : 'text-slate-400'}`}
+                              >
+                                {unit === 'MINUTOS' ? 'Min' : 'Horas'}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleApplyCustomGenericExpiration}
+                            disabled={!customGenericExpirationValue.trim()}
+                            className="flex-1 py-2 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all"
+                          >
+                            Aplicar
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGenerateAndShareGenericLink}
+                  disabled={generatingGenericLink}
+                  className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors active:scale-95 disabled:opacity-50"
+                >
+                  {generatingGenericLink ? (
+                    <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Share2 size={14} />
+                  )}
+                  Gerar e Compartilhar Link de Grupo
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3184,24 +3552,35 @@ export default function SalesView({
           profiles={catalogProfiles}
           initialSelectedIds={catalogSendProductIds}
           initialHidePrices={catalogSendHidePrices}
+          initialUseStockQuantities={catalogSendUseStockQuantities}
           isDarkMode={isDarkMode}
-          onConfirm={(ids, hidePrices) => { setCatalogSendProductIds(ids); setCatalogSendHidePrices(hidePrices); }}
+          onConfirm={(ids, hidePrices, useStockQuantities) => { setCatalogSendProductIds(ids); setCatalogSendHidePrices(hidePrices); setCatalogSendUseStockQuantities(useStockQuantities); }}
           onSaveProfile={async (name, ids) => { if (onSaveCatalogProfile) await onSaveCatalogProfile(name, ids); }}
           onDeleteProfile={async (id) => { if (onDeleteCatalogProfile) await onDeleteCatalogProfile(id); }}
         />
       )}
 
+      {catalogProfilesModalOpen && (
+        <CatalogProfilesModal
+          onClose={() => setCatalogProfilesModalOpen(false)}
+          profiles={catalogProfiles}
+          products={products}
+          isDarkMode={isDarkMode}
+          onDeleteProfile={async (id) => { if (onDeleteCatalogProfile) await onDeleteCatalogProfile(id); }}
+          onApplyProfile={(profile) => { setCatalogSendProductIds(profile.productIds); setCatalogProfilesModalOpen(false); }}
+        />
+      )}
+
       <PasteOrderModal
         isOpen={pasteOrderOpen}
-        onClose={() => { setPasteOrderOpen(false); setPasteOrderInitialText(''); }}
+        onClose={() => setPasteOrderOpen(false)}
         products={products}
         grids={grids}
         people={people}
         orderTextAliases={orderTextAliases}
         isDarkMode={isDarkMode}
         autoOcr={pasteOrderAutoOcr}
-        initialText={pasteOrderInitialText}
-        onConfirm={(draft) => { setPasteOrderOpen(false); setPasteOrderInitialText(''); onOpenPastedOrder(draft); }}
+        onConfirm={(draft) => { setPasteOrderOpen(false); onOpenPastedOrder(draft); }}
       />
 
       {/* Modals */}

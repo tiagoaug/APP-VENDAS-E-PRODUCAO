@@ -175,6 +175,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
                 <button
                   type="button"
                   onClick={() => setShowSecret(v => !v)}
+                  data-guide-anchor="bling.secretMostrarToggle"
                   title={showSecret ? 'Ocultar' : 'Mostrar'}
                   aria-label={showSecret ? 'Ocultar Client Secret' : 'Mostrar Client Secret'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
@@ -206,7 +207,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
         ) : (
           <div className="flex flex-col gap-3">
             <div className={`rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-              <button onClick={() => setSyncSectionOpen((v) => !v)} className="w-full p-3 flex items-center justify-between gap-2 text-left">
+              <button onClick={() => setSyncSectionOpen((v) => !v)} data-guide-anchor="bling.syncExpandir" className="w-full p-3 flex items-center justify-between gap-2 text-left">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
                   <RefreshCw size={11} /> Sincronização · Pedidos {formatDate(connection?.lastOrderSyncAt)}
                 </p>
@@ -229,6 +230,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
                   <button
                     onClick={handleSyncOrders}
                     disabled={syncingOrders}
+                    data-guide-anchor="bling.sincronizarPedidos"
                     className={`w-full h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all ${syncingOrders ? 'animate-pulse' : ''}`}
                   >
                     <RefreshCw size={16} className={syncingOrders ? 'animate-spin' : ''} />
@@ -238,6 +240,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
                   <button
                     onClick={handleSyncProducts}
                     disabled={syncingProducts}
+                    data-guide-anchor="bling.sincronizarProdutos"
                     className={`w-full h-10 rounded-2xl disabled:opacity-60 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-600'} ${syncingProducts ? 'animate-pulse' : ''}`}
                   >
                     <RefreshCw size={13} className={syncingProducts ? 'animate-spin' : ''} />
@@ -245,7 +248,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
                   </button>
 
                   <div className={`rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                    <button onClick={() => setAutoSyncOpen((v) => !v)} className="w-full p-3 flex items-center justify-between gap-2 text-left">
+                    <button onClick={() => setAutoSyncOpen((v) => !v)} data-guide-anchor="bling.autoSyncExpandir" className="w-full p-3 flex items-center justify-between gap-2 text-left">
                       <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
                         <Timer size={11} /> Sincronização automática · {AUTO_SYNC_OPTIONS.find((o) => o.value === (connection?.autoSyncIntervalMinutes ?? null))?.label || 'Manual'}
                       </p>
@@ -261,6 +264,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
                                 key={String(opt.value)}
                                 onClick={() => handleSetAutoSyncInterval(opt.value)}
                                 disabled={savingInterval}
+                                data-guide-anchor="bling.autoSyncIntervalo"
                                 className={`h-9 rounded-xl text-[10px] font-black uppercase tracking-wide transition-colors disabled:opacity-50 ${
                                   isActive ? 'bg-indigo-600 text-white' : (isDarkMode ? 'text-slate-400' : 'text-slate-500')
                                 }`}
@@ -290,6 +294,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
             <button
               onClick={handleDisconnect}
               disabled={disconnecting}
+              data-guide-anchor="bling.desconectar"
               className="w-full h-10 rounded-2xl text-rose-500 hover:text-rose-600 disabled:opacity-60 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
             >
               <LogOut size={14} />
@@ -313,6 +318,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
+              data-guide-anchor="bling.menuItem"
               className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
             >
               <div className="flex items-center gap-4">

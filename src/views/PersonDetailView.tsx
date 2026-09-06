@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Person, Transaction, TransactionType, Sale, Purchase, Category, Account, SaleStatus, CatalogLink, CatalogRequest, CatalogProfile, Product, Brand } from '../types';
-import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, Package, ShoppingCart, Link2, Copy, RefreshCcw, Inbox, Check, X, Tag } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, Package, ShoppingCart, Link2, Copy, RefreshCcw, Inbox, Check, X, Tag, Bookmark } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from '../utils/toast';
 import CatalogProductPickerModal from '../components/CatalogProductPickerModal';
+import CatalogProfilesModal from '../components/CatalogProfilesModal';
 
 // Domínio do Firebase Hosting do projeto (app-vendas-e-producao) — quem abre este link é
 // sempre o cliente pelo NAVEGADOR dele, nunca o app nativo (que roda em capacitor://localhost),
@@ -26,9 +27,9 @@ interface PersonDetailViewProps {
   catalogProfiles?: CatalogProfile[];
   products?: Product[];
   brands?: Brand[];
-  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean) => Promise<string>;
+  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean, useStockQuantities?: boolean) => Promise<string>;
   onRevokeCatalogLink?: (linkId: string) => Promise<void>;
-  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean) => Promise<void>;
+  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean, useStockQuantities?: boolean) => Promise<void>;
   onSaveCatalogProfile?: (name: string, productIds: string[]) => Promise<void>;
   onDeleteCatalogProfile?: (profileId: string) => Promise<void>;
   onImportCatalogRequest?: (request: CatalogRequest) => void;
@@ -60,6 +61,7 @@ export default function PersonDetailView({
 }: PersonDetailViewProps) {
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [catalogProductPickerOpen, setCatalogProductPickerOpen] = useState(false);
+  const [catalogProfilesModalOpen, setCatalogProfilesModalOpen] = useState(false);
   const person = useMemo(() => people.find(p => p.id === personId), [people, personId]);
 
   const personTransactions = useMemo(() => 
@@ -198,6 +200,7 @@ export default function PersonDetailView({
                     <button
                       type="button"
                       onClick={() => setCatalogProductPickerOpen(true)}
+                      data-guide-anchor="personDetail.catalogoEscolherProdutos"
                       className={`w-full flex items-center justify-between gap-2 p-2.5 rounded-xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -205,10 +208,47 @@ export default function PersonDetailView({
                         <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
                           {!activeCatalogLink.productIds || activeCatalogLink.productIds.length === 0 ? 'Produtos: Catálogo Completo' : `Produtos: ${activeCatalogLink.productIds.length} selecionados`}
                           {activeCatalogLink.hidePrices ? ' · sem valores' : ''}
+                          {activeCatalogLink.useStockQuantities ? ' · qtd. do estoque' : ''}
                         </span>
                       </div>
                       <span className="text-[9px] font-black uppercase text-indigo-500 shrink-0">Editar</span>
                     </button>
+                  )}
+                  {onSetCatalogLinkProducts && catalogProfiles.length > 0 && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setCatalogProfilesModalOpen(true)}
+                        data-guide-anchor="personDetail.catalogoVerTodosPerfis"
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-slate-100 text-indigo-500'}`}
+                      >
+                        <Bookmark size={11} /> Ver Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSetCatalogLinkProducts(activeCatalogLink.id, [])}
+                        data-guide-anchor="personDetail.catalogoCompleto"
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${!activeCatalogLink.productIds || activeCatalogLink.productIds.length === 0 ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                      >
+                        <Package size={11} /> Catálogo Completo
+                      </button>
+                      {catalogProfiles.map(profile => {
+                        const current = activeCatalogLink.productIds || [];
+                        const isActive = current.length === profile.productIds.length
+                          && profile.productIds.every(id => current.includes(id));
+                        return (
+                          <button
+                            key={profile.id}
+                            type="button"
+                            onClick={() => onSetCatalogLinkProducts(activeCatalogLink.id, profile.productIds)}
+                            data-guide-anchor="personDetail.catalogoAplicarPerfil"
+                            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${isActive ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                          >
+                            <Bookmark size={11} /> {profile.name}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                   <div className="flex items-center gap-2">
                     <button
@@ -217,12 +257,14 @@ export default function PersonDetailView({
                         navigator.clipboard.writeText(`${PUBLIC_CATALOG_BASE_URL}/pedido/${activeCatalogLink.token}`);
                         toast.show('Link copiado!');
                       }}
+                      data-guide-anchor="personDetail.linkCopiar"
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
                     >
                       <Copy size={14} /> Copiar Link
                     </button>
                     <button
                       type="button"
+                      data-guide-anchor="personDetail.linkRevogar"
                       onClick={async () => {
                         if (!onRevokeCatalogLink) return;
                         if (!confirm('Gerar um novo link? O link atual deixa de funcionar.')) return;
@@ -244,6 +286,7 @@ export default function PersonDetailView({
               ) : (
                 <button
                   type="button"
+                  data-guide-anchor="personDetail.linkGerar"
                   onClick={async () => {
                     setIsGeneratingLink(true);
                     try {
@@ -271,10 +314,22 @@ export default function PersonDetailView({
             profiles={catalogProfiles}
             initialSelectedIds={activeCatalogLink.productIds || []}
             initialHidePrices={activeCatalogLink.hidePrices || false}
+            initialUseStockQuantities={activeCatalogLink.useStockQuantities || false}
             isDarkMode={isDarkMode}
-            onConfirm={(productIds, hidePrices) => onSetCatalogLinkProducts(activeCatalogLink.id, productIds, hidePrices)}
+            onConfirm={(productIds, hidePrices, useStockQuantities) => onSetCatalogLinkProducts(activeCatalogLink.id, productIds, hidePrices, useStockQuantities)}
             onSaveProfile={async (name, ids) => { if (onSaveCatalogProfile) await onSaveCatalogProfile(name, ids); }}
             onDeleteProfile={async (id) => { if (onDeleteCatalogProfile) await onDeleteCatalogProfile(id); }}
+          />
+        )}
+
+        {catalogProfilesModalOpen && activeCatalogLink && onSetCatalogLinkProducts && (
+          <CatalogProfilesModal
+            onClose={() => setCatalogProfilesModalOpen(false)}
+            profiles={catalogProfiles}
+            products={products}
+            isDarkMode={isDarkMode}
+            onDeleteProfile={async (id) => { if (onDeleteCatalogProfile) await onDeleteCatalogProfile(id); }}
+            onApplyProfile={(profile) => { onSetCatalogLinkProducts(activeCatalogLink.id, profile.productIds); setCatalogProfilesModalOpen(false); }}
           />
         )}
 
@@ -301,6 +356,7 @@ export default function PersonDetailView({
                       <button
                         type="button"
                         onClick={() => onImportCatalogRequest?.(req)}
+                        data-guide-anchor="personDetail.pedidoImportar"
                         className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
                       >
                         <Check size={14} /> Importar
@@ -308,6 +364,7 @@ export default function PersonDetailView({
                       <button
                         type="button"
                         onClick={() => onDismissCatalogRequest?.(req.id)}
+                        data-guide-anchor="personDetail.pedidoDescartar"
                         className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                       >
                         <X size={14} />

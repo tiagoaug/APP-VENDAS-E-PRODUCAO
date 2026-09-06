@@ -134,6 +134,10 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
   const [orderNumber, setOrderNumber] = useState(Math.floor(Math.random() * 10000).toString().padStart(5, '0'));
   const [isAutoOrderNumber, setIsAutoOrderNumber] = useState(true);
   const [customerId, setCustomerId] = useState('');
+  // Nome digitado pelo cliente num pedido de Link de Grupo sem Person vinculada (ver
+  // App.tsx/handleImportCatalogRequest, initialParams.draftCustomerName) — só usado pra oferecer
+  // "Cadastrar Cliente" já com o nome preenchido; nunca vira o Cliente da Venda sozinho.
+  const [draftCustomerName, setDraftCustomerName] = useState<string | null>(null);
   const [sellerId, setSellerId] = useState('');
   // Cadastro rápido de Cliente sem sair da tela de venda — ver onQuickAddPerson.
   const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
@@ -266,6 +270,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
         });
       setBlocks(draftBlocks);
       if (initialParams.draftCustomerId) setCustomerId(initialParams.draftCustomerId);
+      else if (initialParams.draftCustomerName) setDraftCustomerName(initialParams.draftCustomerName);
       const defaultDays = getDefaultDaysForDeadline('NORMAL');
       const calculatedDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       setDeliveryDate(calculatedDate);
@@ -1517,6 +1522,19 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 Nenhum cliente cadastrado ainda? Cadastrar agora
               </button>
             )}
+            {/* Pedido veio de um Link de Grupo — quem fez o pedido não é um cliente cadastrado,
+                só digitou o próprio nome. Oferece cadastrar com esse nome já preenchido, em vez
+                de deixar o Cliente vazio sem explicação. */}
+            {draftCustomerName && !customerId && (
+              <button
+                type="button"
+                onClick={() => setIsQuickPersonModalOpen(true)}
+                data-guide-anchor="saleForm.cadastrarClienteDoPedidoGrupo"
+                className="mt-2 px-3 py-2 w-full text-left rounded-xl bg-violet-50 dark:bg-violet-900/20 text-[10px] font-bold text-violet-600 dark:text-violet-400"
+              >
+                Pedido de <span className="font-black">{draftCustomerName}</span> (não cadastrado) — toque para cadastrar
+              </button>
+            )}
           </div>
 
           <div className="relative">
@@ -2544,11 +2562,12 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
         onSave={async (p) => {
           const created = await onQuickAddPerson(p);
           setCustomerId(created.id);
+          setDraftCustomerName(null);
           setIsQuickPersonModalOpen(false);
         }}
         sellers={people.filter(p => p.isSeller)}
         allPeople={people}
-        initialData={{ isCustomer: true }}
+        initialData={{ isCustomer: true, ...(draftCustomerName ? { name: draftCustomerName } : {}) }}
         isDarkMode={isDarkMode}
       />
 

@@ -87,7 +87,6 @@ import {
 } from 'lucide-react';
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot, FlowTagTemplate, SectorTemplate } from '../types';
 import { subscribeToFlowTagTemplates, saveFlowTagTemplate } from '../services/flowTagTemplatesService';
-import { subscribeToProductionScheduleConfig, saveProductionScheduleConfig } from '../services/productionScheduleService';
 import { subscribeToSectorTemplates, saveSectorTemplate } from '../services/sectorTemplatesService';
 import Modal from '../components/Modal';
 import PersonModal from '../components/PersonModal';
@@ -508,21 +507,6 @@ export default function ProductionConfigView({
 
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
 
-  // Considerar só dias úteis (seg-sex) na Média de Pares/Dia — usado pelo card "Pares
-  // Produzidos" do Dashboard e pela barra de estatísticas do PCP Monitor (ver
-  // productionScheduleService.ts). Documento único no Firestore, mesmo padrão de
-  // businessOverviewConfig.
-  const [excludeWeekends, setExcludeWeekends] = useState(true);
-  useEffect(() => {
-    const unsub = subscribeToProductionScheduleConfig(cfg => setExcludeWeekends(cfg.excludeWeekends));
-    return () => unsub();
-  }, []);
-  const handleToggleExcludeWeekends = () => {
-    const next = !excludeWeekends;
-    setExcludeWeekends(next);
-    saveProductionScheduleConfig({ excludeWeekends: next });
-  };
-
   const handleNavigateShortcut = (screen: ProductionScreenType | ViewType) => {
     if (Object.values(ViewType).includes(screen as ViewType)) {
       onNavigate?.(screen as ViewType);
@@ -780,186 +764,13 @@ export default function ProductionConfigView({
               exit={{ opacity: 0, y: -10 }}
               className="flex flex-col gap-6"
             >
-              <div className="flex flex-col gap-8 pb-10">
-                {/* CARD: GESTÃO DE PROCESSOS */}
-                <div className="flex flex-col gap-3">
-                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Gestão de Processos</h3>
-                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <ConfigMenuItem
-                      icon={<TableCellsMerge size={22} />}
-                      label="Setores de Produção"
-                      desc="Fluxo da fábrica"
-                      onClick={() => setCurrentScreen('SECTORS')}
-                      anchor="prodcfg.menuSetores"
-                      color="text-indigo-600"
-                      bg="bg-indigo-50"
-                      isDarkMode={isDarkMode}
-                    />
-                    <ConfigMenuItem
-                      icon={<Tags size={22} />}
-                      label="Etapas e Processos"
-                      desc="Serviços e Flow Tags"
-                      onClick={() => setCurrentScreen('FLOW_TAGS')}
-                      anchor="prodcfg.menuFlowTags"
-                      color="text-emerald-600"
-                      bg="bg-emerald-50"
-                      isDarkMode={isDarkMode}
-                    />
-                    <ConfigMenuItem
-                      icon={<CalendarClock size={24} />}
-                      label="Prazos de Entrega"
-                      desc="SLA por processo"
-                      color="text-teal-600"
-                      bg="bg-teal-50"
-                      isDarkMode={isDarkMode}
-                      onClick={() => setCurrentScreen('PRAZOS')}
-                      anchor="prodcfg.menuPrazos"
-                      isLast={true}
-                    />
-                  </div>
-                </div>
-
-                {/* CARD: INDICADORES DE PRODUÇÃO */}
-                <div className="flex flex-col gap-3">
-                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Indicadores de Produção</h3>
-                  <div className={`rounded-3xl border shadow-sm p-5 flex items-center justify-between gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-teal-500/15 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
-                        <CalendarClock size={20} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Só Dias Úteis na Média</p>
-                        <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">
-                          Divide os pares produzidos só pelos dias de seg. a sex. do período, excluindo sábado e domingo — em vez de todos os dias corridos
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleToggleExcludeWeekends}
-                      data-guide-anchor="prodcfg.excludeWeekendsToggle"
-                      aria-label={excludeWeekends ? 'Desativar contagem só de dias úteis' : 'Ativar contagem só de dias úteis'}
-                      className={`w-12 h-7 rounded-full transition-all relative shrink-0 ${excludeWeekends ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
-                    >
-                      <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 ${excludeWeekends ? 'left-5' : 'left-0.5'}`} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* CARD: PARÂMETROS DE MODELAGEM (Same as Dashboard) */}
-                <div className="flex flex-col gap-3">
-                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Parâmetros de Modelagem</h3>
-                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <ConfigMenuItem
-                      icon={<Package size={22} />}
-                      label="Produtos Cadastrados"
-                      desc="Catálogo técnico completo"
-                      onClick={() => onNavigate?.(ViewType.PRODUCTS)}
-                      anchor="prodcfg.menuProdutos"
-                      color="text-indigo-600"
-                      bg="bg-indigo-50"
-                      isDarkMode={isDarkMode}
-                    />
-                    <ConfigMenuItem
-                      icon={<Plus size={22} />}
-                      label="Cadastrar Novo Modelo"
-                      desc="Solados, Cores e Materiais"
-                      onClick={() => onAddProduct?.()}
-                      anchor="prodcfg.menuNovoModelo"
-                      color="text-emerald-600"
-                      bg="bg-emerald-50"
-                      isDarkMode={isDarkMode}
-                    />
-                    <ConfigMenuItem
-                      icon={<Grid3X3 size={22} />}
-                      label="Grades de Produção"
-                      desc="Tamanhos e configurações"
-                      onClick={() => onNavigateGrids?.()}
-                      anchor="prodcfg.menuGrades"
-                      color="text-violet-600"
-                      bg="bg-violet-50"
-                      isDarkMode={isDarkMode}
-                    />
-                    <ConfigMenuItem
-                      icon={<Footprints size={24} />}
-                      label="Solados"
-                      desc="Catálogo e moldes"
-                      color="text-orange-600"
-                      bg="bg-orange-50"
-                      isDarkMode={isDarkMode}
-                      onClick={() => setCurrentScreen('MATRIZES')}
-                      anchor="prodcfg.menuSolados"
-                    />
-                    <ConfigMenuItem
-                      icon={<Layers size={24} />}
-                      label="Materiais e Insumos"
-                      desc="Componentes de produção"
-                      color="text-blue-600"
-                      bg="bg-blue-50"
-                      isDarkMode={isDarkMode}
-                      onClick={() => setCurrentScreen('INSUMOS')}
-                      anchor="prodcfg.menuInsumos"
-                      isLast={true}
-                    />
-                  </div>
-                </div>
-
-                {/* CARD: ESTRUTURA E LOGÍSTICA */}
-                <div className="flex flex-col gap-3">
-                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Estrutura e Logística</h3>
-                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <ConfigMenuItem
-                      icon={<GanttChartSquare size={22} />}
-                      label="Unidades de Medida"
-                      desc="KG, MT, UN, PR..."
-                      onClick={() => setCurrentScreen('UNIDADES')}
-                      anchor="prodcfg.menuUnidades"
-                      color="text-slate-600"
-                      isDarkMode={isDarkMode}
-                    />
-                    <ConfigMenuItem
-                      icon={<Scissors size={24} />}
-                      label="Facas de Corte"
-                      desc="Matrizes de corte"
-                      color="text-rose-600"
-                      bg="bg-rose-50"
-                      isDarkMode={isDarkMode}
-                      onClick={() => setCurrentScreen('FACAS')}
-                      anchor="prodcfg.menuFacas"
-                    />
-                    <ConfigMenuItem
-                      icon={<Box size={24} />}
-                      label="Camadas de Dobra Para Corte"
-                      desc="Camadas empilhadas"
-                      color="text-sky-600"
-                      bg="bg-sky-50"
-                      isDarkMode={isDarkMode}
-                      onClick={() => setCurrentScreen('INFESTO')}
-                      anchor="prodcfg.menuInfesto"
-                    />
-                    <ConfigMenuItem
-                      icon={<Layers size={24} />}
-                      label="Peças"
-                      desc="Entradas e peças"
-                      color="text-emerald-600"
-                      bg="bg-emerald-50"
-                      isDarkMode={isDarkMode}
-                      onClick={() => setCurrentScreen('PECAS')}
-                      anchor="prodcfg.menuPecas"
-                    />
-                    <ConfigMenuItem
-                      icon={<PackageOpen size={24} />}
-                      label="Padrão Embalagens"
-                      desc="Caixas e grades"
-                      color="text-amber-600"
-                      bg="bg-amber-50"
-                      isDarkMode={isDarkMode}
-                      onClick={() => setCurrentScreen('EMBALAGENS')}
-                      anchor="prodcfg.menuEmbalagens"
-                      isLast={true}
-                    />
-                  </div>
-                </div>
+              <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
+                <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Essas configurações agora ficam no Menu Mais
+                </p>
+                <p className="text-[10px] text-slate-400 max-w-xs">
+                  Setores, Etapas, Prazos, Solados, Materiais, Unidades, Facas, Peças e Embalagens foram centralizados em Mais {'>'} Módulo de Produção, pra facilitar o acesso.
+                </p>
               </div>
             </motion.div>
           )}
@@ -1368,13 +1179,13 @@ export default function ProductionConfigView({
       <Modal
         isOpen={currentScreen === 'MATRIZES'}
         onClose={() => setCurrentScreen('MENU')}
-        title="Matrizes Sola"
+        title="Cadastro de Solados"
         zIndex={60000}
       >
-        <ErrorBoundary label="Matrizes de Solados">
+        <ErrorBoundary label="Cadastro de Solados">
           <GenericConfigList
-            title="Matrizes Sola"
-            label="MATRIZES SOLA"
+            title="Cadastro de Solados"
+            label="CADASTRO DE SOLADOS"
             items={productionConfigs}
             type="MOLD"
             icon={<Grid3X3 size={22} />}
@@ -1382,7 +1193,7 @@ export default function ProductionConfigView({
             onSave={onSaveConfigItem}
             onDelete={onDeleteConfigItem}
             onBack={() => setCurrentScreen('MENU')}
-            placeholderLabel="Nenhuma matriz cadastrada"
+            placeholderLabel="Nenhuma sola cadastrada"
             people={people}
             colors={colors}
             grids={grids}

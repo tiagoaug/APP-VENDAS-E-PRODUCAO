@@ -58,13 +58,13 @@ function AdjustNotesModal({ current, isDarkMode, onClose }: { current: number; i
       <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
         <div className="flex items-center justify-between">
           <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ajustar Notas de Terceiros</p>
-          <button onClick={onClose} className="p-1 text-slate-400"><X size={18} /></button>
+          <button onClick={onClose} data-guide-anchor="blingHealth.ajusteFechar" className="p-1 text-slate-400"><X size={18} /></button>
         </div>
 
         <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
-          <button onClick={() => setMode('somar')} className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1 ${mode === 'somar' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}><Plus size={13} /> Somar</button>
-          <button onClick={() => setMode('subtrair')} className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1 ${mode === 'subtrair' ? 'bg-rose-600 text-white' : 'text-slate-400'}`}><Minus size={13} /> Subtrair</button>
-          <button onClick={() => setMode('fixar')} className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1 ${mode === 'fixar' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Pencil size={13} /> Fixar</button>
+          <button onClick={() => setMode('somar')} data-guide-anchor="blingHealth.ajusteModo" className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1 ${mode === 'somar' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}><Plus size={13} /> Somar</button>
+          <button onClick={() => setMode('subtrair')} data-guide-anchor="blingHealth.ajusteModo" className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1 ${mode === 'subtrair' ? 'bg-rose-600 text-white' : 'text-slate-400'}`}><Minus size={13} /> Subtrair</button>
+          <button onClick={() => setMode('fixar')} data-guide-anchor="blingHealth.ajusteModo" className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1 ${mode === 'fixar' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Pencil size={13} /> Fixar</button>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -91,6 +91,7 @@ function AdjustNotesModal({ current, isDarkMode, onClose }: { current: number; i
         <button
           onClick={handleConfirm}
           disabled={qty === '' || saving}
+          data-guide-anchor="blingHealth.ajusteConfirmar"
           className="w-full h-12 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
         >
           {saving ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -157,6 +158,7 @@ export default function BlingHealthView({ isDarkMode }: BlingHealthViewProps) {
           <button
             key={p}
             onClick={() => setPeriod(p)}
+            data-guide-anchor="blingHealth.periodo"
             className={`flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${
               period === p ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm') : 'text-slate-400'
             }`}
@@ -207,6 +209,7 @@ export default function BlingHealthView({ isDarkMode }: BlingHealthViewProps) {
           </div>
           <button
             onClick={() => setAdjustOpen(true)}
+            data-guide-anchor="blingHealth.ajusteAbrir"
             className="h-8 px-3 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"
           >
             <Pencil size={12} /> Ajustar
@@ -238,7 +241,7 @@ export default function BlingHealthView({ isDarkMode }: BlingHealthViewProps) {
           </div>
         </div>
 
-        <button onClick={() => setHistoryOpen((v) => !v)} className="flex items-center justify-between px-1">
+        <button onClick={() => setHistoryOpen((v) => !v)} data-guide-anchor="blingHealth.historicoToggle" className="flex items-center justify-between px-1">
           <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><History size={12} /> Histórico de ajustes</span>
           {historyOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
         </button>

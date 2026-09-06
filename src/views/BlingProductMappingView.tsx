@@ -207,6 +207,7 @@ function PendingCard({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSearchOpen(true)}
+            data-guide-anchor="blingMapping.buscarAbrir"
             className={`flex-1 h-10 rounded-xl border-2 border-dashed font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 ${isDarkMode ? 'bg-sky-900/20 border-sky-700/40 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600'}`}
           >
             <Search size={13} /> Buscar produto
@@ -215,6 +216,7 @@ function PendingCard({
             onClick={onIgnore}
             title="Ignorar"
             aria-label="Ignorar produto"
+            data-guide-anchor="blingMapping.ignorar"
             className="h-10 w-10 rounded-xl flex items-center justify-center text-slate-300 hover:text-rose-500 shrink-0"
           >
             <XCircle size={18} />
@@ -253,6 +255,7 @@ function PendingCard({
                 <button
                   key={p.id}
                   onClick={() => { setPickedProductId(p.id); setQuery(`${p.reference} · ${p.name}`); }}
+                  data-guide-anchor="blingMapping.produtoSelecionar"
                   className={`w-full text-left px-3 py-2 flex items-center gap-2.5 text-xs font-bold ${isDarkMode ? 'hover:bg-slate-800 text-white' : 'hover:bg-slate-50 text-slate-900'}`}
                 >
                   <Thumb src={p.photoUrl} size={28} isDarkMode={isDarkMode} />
@@ -311,6 +314,7 @@ function PendingCard({
           <div className="flex items-center gap-2 mt-1">
             <button
               onClick={() => { setSearchOpen(false); setQuery(''); setPickedProductId(''); }}
+              data-guide-anchor="blingMapping.cancelar"
               className="flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400"
             >
               Cancelar
@@ -318,6 +322,7 @@ function PendingCard({
             <button
               onClick={confirmManual}
               disabled={!pickedVariation}
+              data-guide-anchor="blingMapping.confirmarManual"
               className={`flex-1 h-10 rounded-xl bg-indigo-600 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${readyToConfirm ? 'ring-4 ring-amber-300/60 dark:ring-amber-500/40' : ''}`}
             >
               <Link2 size={13} /> Vincular
@@ -366,7 +371,7 @@ function LinkedRow({
           → {mapping.productName} · {mapping.variationName}{mapping.size ? ` · ${mapping.size}` : ' · Atacado'}
         </p>
       </div>
-      <button onClick={onUnlink} className="p-2 text-emerald-400 hover:text-rose-500 shrink-0" title="Desvincular" aria-label="Desvincular">
+      <button onClick={onUnlink} data-guide-anchor="blingMapping.desvincular" className="p-2 text-emerald-400 hover:text-rose-500 shrink-0" title="Desvincular" aria-label="Desvincular">
         <Unlink size={16} />
       </button>
     </div>
@@ -454,6 +459,7 @@ function ParentModelPicker({
       <div className="flex items-center gap-2">
         <button
           onClick={onIgnore}
+          data-guide-anchor="blingMapping.ignorar"
           className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5"
         >
           <XCircle size={14} /> Ignorar
@@ -461,6 +467,7 @@ function ParentModelPicker({
         <button
           onClick={() => pickedProductId && onLinkModel(pickedProductId)}
           disabled={!pickedProductId}
+          data-guide-anchor="blingMapping.vincularModelo"
           className="flex-1 h-10 rounded-xl bg-indigo-600 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5"
         >
           <Link2 size={13} /> Vincular Modelo ao Grupo
@@ -648,12 +655,14 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
         <div className={`flex-1 grid grid-cols-2 gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
           <button
             onClick={() => setTab('pendentes')}
+            data-guide-anchor="blingMapping.aba"
             className={`h-10 rounded-xl text-[11px] font-black uppercase tracking-widest transition-colors ${tab === 'pendentes' ? 'bg-amber-500 text-white shadow' : 'text-slate-400'}`}
           >
             Pendentes ({pendingProducts.length})
           </button>
           <button
             onClick={() => setTab('vinculados')}
+            data-guide-anchor="blingMapping.aba"
             className={`h-10 rounded-xl text-[11px] font-black uppercase tracking-widest transition-colors ${tab === 'vinculados' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400'}`}
           >
             Vinculados ({mappings.length})
@@ -664,6 +673,7 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
           disabled={loading}
           title="Buscar catálogo do Bling"
           aria-label="Buscar catálogo do Bling"
+          data-guide-anchor="blingMapping.buscarCatalogo"
           className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -688,6 +698,7 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
               <div key={group.parentId} className={`rounded-[2rem] border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 <button
                   onClick={() => toggleGroup(group.parentId)}
+                  data-guide-anchor="blingMapping.grupoExpandir"
                   className="w-full p-5 flex items-center gap-3 text-left"
                 >
                   <Thumb src={group.parent?.imagemUrl} size={40} isDarkMode={isDarkMode} />
@@ -817,6 +828,7 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
               <div key={group.parentId} className={`rounded-[2rem] border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 <button
                   onClick={() => toggleLinkedGroup(group.parentId)}
+                  data-guide-anchor="blingMapping.grupoExpandir"
                   className="w-full p-5 flex items-center gap-3 text-left"
                 >
                   <Thumb src={group.headerThumb || group.parentBp?.imagemUrl} size={40} isDarkMode={isDarkMode} />
@@ -888,6 +900,7 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
               <button
                 key={i.id}
                 onClick={() => unignoreBlingProduct(i.id)}
+                data-guide-anchor="blingMapping.designorar"
                 className={`px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-500'}`}
               >
                 {i.blingNome || i.id} <XCircle size={11} />

@@ -17,6 +17,7 @@ import ComboBox from '../components/ComboBox';
 import StepWizardBar from '../components/StepWizardBar';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import { uploadProductPhoto } from '../utils/uploadProductPhoto';
 import DatePicker from '../components/DatePicker';
 
 interface ProductFormViewProps {
@@ -257,6 +258,11 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [workDaysPerMonth, setWorkDaysPerMonth] = useState<number | string>(existingProduct?.workDaysPerMonth || 26);
   const [sectorPrices, setSectorPrices] = useState<Record<string, number>>(existingProduct?.sectorPrices || {});
   const [photoUrl, setPhotoUrl] = useState<string>(existingProduct?.photoUrl || '');
+  // Enquanto a foto sobe pro Storage (ver src/utils/uploadProductPhoto.ts) — antes era
+  // instantâneo (base64 local), agora precisa de um spinner porque depende de rede.
+  const [uploadingProductPhoto, setUploadingProductPhoto] = useState(false);
+  const [uploadingVariationPhoto, setUploadingVariationPhoto] = useState(false);
+  const [uploadingAlbumPhoto, setUploadingAlbumPhoto] = useState(false);
   // Miniatura pra etiqueta térmica — desenho de linhas do modelo, não a foto (foto real sai
   // borrada/escura numa impressora térmica monocromática de baixa resolução). Usada no lugar
   // de `photoUrl` no elemento "Foto" do Editor de Etiquetas quando cadastrada.
@@ -833,30 +839,29 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             <div className="absolute inset-0 rounded-3xl bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <Camera size={18} className="text-white" />
                             </div>
+                            {uploadingVariationPhoto && (
+                              <div className="absolute inset-0 rounded-3xl bg-black/50 flex items-center justify-center">
+                                <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                              </div>
+                            )}
                             <input
                               type="file"
                               accept="image/*"
                               className="hidden"
-                              onChange={e => {
+                              disabled={uploadingVariationPhoto}
+                              onChange={async e => {
                                 const file = e.target.files?.[0];
-                                if (!file) return;
-                                const reader = new FileReader();
-                                reader.onload = ev => {
-                                  const result = ev.target?.result as string;
-                                  const img = new Image();
-                                  img.onload = () => {
-                                    const maxSide = 400;
-                                    const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
-                                    const canvas = document.createElement('canvas');
-                                    canvas.width = img.width * ratio;
-                                    canvas.height = img.height * ratio;
-                                    canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                    updateVariation(activeVariationIndex, { photoUrl: canvas.toDataURL('image/jpeg', 0.82) });
-                                  };
-                                  img.src = result;
-                                };
-                                reader.readAsDataURL(file);
                                 e.target.value = '';
+                                if (!file) return;
+                                setUploadingVariationPhoto(true);
+                                try {
+                                  const url = await uploadProductPhoto(file, 800);
+                                  updateVariation(activeVariationIndex, { photoUrl: url });
+                                } catch (err: any) {
+                                  toast.show('Erro ao enviar foto: ' + (err?.message || err));
+                                } finally {
+                                  setUploadingVariationPhoto(false);
+                                }
                               }}
                             />
                           </label>
@@ -884,31 +889,29 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                               </div>
                             ))}
                             <label className={`relative cursor-pointer shrink-0 w-16 h-16 rounded-2xl border-2 border-dashed flex items-center justify-center transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`} title="Adicionar foto ao álbum desta cor">
-                              <Camera size={20} className="text-slate-300 dark:text-slate-600" />
+                              {uploadingAlbumPhoto ? (
+                                <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin" />
+                              ) : (
+                                <Camera size={20} className="text-slate-300 dark:text-slate-600" />
+                              )}
                               <input
                                 type="file"
                                 accept="image/*"
                                 className="hidden"
-                                onChange={e => {
+                                disabled={uploadingAlbumPhoto}
+                                onChange={async e => {
                                   const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  const reader = new FileReader();
-                                  reader.onload = ev => {
-                                    const result = ev.target?.result as string;
-                                    const img = new Image();
-                                    img.onload = () => {
-                                      const maxSide = 600;
-                                      const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
-                                      const canvas = document.createElement('canvas');
-                                      canvas.width = img.width * ratio;
-                                      canvas.height = img.height * ratio;
-                                      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
-                                      updateVariation(activeVariationIndex, { photoAlbum: [...(v.photoAlbum || []), canvas.toDataURL('image/jpeg', 0.82)] });
-                                    };
-                                    img.src = result;
-                                  };
-                                  reader.readAsDataURL(file);
                                   e.target.value = '';
+                                  if (!file) return;
+                                  setUploadingAlbumPhoto(true);
+                                  try {
+                                    const url = await uploadProductPhoto(file, 1000);
+                                    updateVariation(activeVariationIndex, { photoAlbum: [...(v.photoAlbum || []), url] });
+                                  } catch (err: any) {
+                                    toast.show('Erro ao enviar foto: ' + (err?.message || err));
+                                  } finally {
+                                    setUploadingAlbumPhoto(false);
+                                  }
                                 }}
                               />
                             </label>
@@ -2130,31 +2133,29 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               <div className="absolute inset-0 rounded-3xl bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Camera size={22} className="text-white" />
               </div>
+              {uploadingProductPhoto && (
+                <div className="absolute inset-0 rounded-3xl bg-black/50 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                </div>
+              )}
               <input
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={e => {
+                disabled={uploadingProductPhoto}
+                onChange={async e => {
                   const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = ev => {
-                    const result = ev.target?.result as string;
-                    // Resize to max 400px to keep base64 small
-                    const img = new Image();
-                    img.onload = () => {
-                      const maxSide = 400;
-                      const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
-                      const canvas = document.createElement('canvas');
-                      canvas.width  = img.width  * ratio;
-                      canvas.height = img.height * ratio;
-                      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
-                      setPhotoUrl(canvas.toDataURL('image/jpeg', 0.82));
-                    };
-                    img.src = result;
-                  };
-                  reader.readAsDataURL(file);
                   e.target.value = '';
+                  if (!file) return;
+                  setUploadingProductPhoto(true);
+                  try {
+                    const url = await uploadProductPhoto(file, 800);
+                    setPhotoUrl(url);
+                  } catch (err: any) {
+                    toast.show('Erro ao enviar foto: ' + (err?.message || err));
+                  } finally {
+                    setUploadingProductPhoto(false);
+                  }
                 }}
               />
             </label>
@@ -2693,7 +2694,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   <div>
                     <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria do Produto</label>
                     <ComboBox
-                      options={[{ id: '', name: 'Nenhum' }, ...categories.filter(c => !c.isPersonal).map(c => ({ id: c.id, name: c.name }))]}
+                      options={[{ id: '', name: 'Nenhum' }, ...productCategories.map(c => ({ id: c.id, name: c.name }))]}
                       value={categoryId}
                       onChange={setCategoryId}
                       placeholder="Selecionar categoria..."
