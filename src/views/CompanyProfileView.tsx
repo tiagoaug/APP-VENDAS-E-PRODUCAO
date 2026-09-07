@@ -119,6 +119,7 @@ export default function CompanyProfileView({ profile, onSave, isDarkMode }: Comp
           <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Nome da Empresa</label>
           <input
             type="text"
+            data-guide-anchor="companyProfile.nome"
             value={draft.name || ''}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder="Ex: Nome da sua empresa"
@@ -202,6 +203,7 @@ export default function CompanyProfileView({ profile, onSave, isDarkMode }: Comp
         type="button"
         onClick={handleSave}
         disabled={isSaving}
+        data-guide-anchor="companyProfile.salvar"
         className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
       >
         <Save size={15} /> {isSaving ? 'Salvando...' : 'Salvar'}

@@ -4,6 +4,7 @@ import { startOfMonth, endOfMonth } from 'date-fns';
 import { Collaborator, Person, Sale, CompanyProfile, ViewType, RhGlobalConfig, CollaboratorLoan } from '../types';
 import { computeCollaboratorPayroll } from '../utils/collaborators';
 import CommissionToSellersCard from '../components/CommissionToSellersCard';
+import Modal from '../components/Modal';
 
 // Módulo RH — reúne o que antes vivia espalhado em Configurações (Colaboradores) e Financeiro
 // (Folha de Pagamento), ver ViewType.RH_MENU em types.ts. Colaboradores continua sendo a
@@ -83,7 +84,7 @@ export default function RhView({
   isDarkMode, sales, collaborators, people, companyProfile, onPayCommission, onOpenSale, onNavigate, rhConfig, onSaveRhConfig,
   loans = [], onSaveLoan,
 }: RhViewProps) {
-  const [configExpanded, setConfigExpanded] = useState(false);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
 
   const cardClass = `p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`;
   const inputClass = `w-full px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`;
@@ -134,13 +135,18 @@ export default function RhView({
         <div className="p-2 rounded-2xl bg-fuchsia-50 dark:bg-fuchsia-900/20 text-fuchsia-600 dark:text-fuchsia-400">
           <UserCog size={24} />
         </div>
-        <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">RH</h2>
+        <div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
+            RH <span className="text-xs font-bold normal-case tracking-normal text-slate-400">(Recursos Humanos)</span>
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Equipe, folha de pagamento, comissão de vendedores e empréstimos — regras e cadastros que valem pra todos os colaboradores.</p>
+        </div>
       </header>
 
       <div className={cardClass} data-guide-anchor="rh.configGlobal">
         <button
           type="button"
-          onClick={() => setConfigExpanded(v => !v)}
+          onClick={() => setConfigModalOpen(true)}
           data-guide-anchor="rh.expandirConfigGlobal"
           className="flex items-center justify-between text-left"
         >
@@ -148,70 +154,77 @@ export default function RhView({
             <Settings size={15} className="text-slate-400" />
             <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Configurações Globais</h3>
           </div>
-          <ChevronDown size={18} className={`text-slate-400 transition-transform ${configExpanded ? 'rotate-180' : ''}`} />
+          <ChevronDown size={18} className="text-indigo-500 dark:text-indigo-400 -rotate-90 animate-pulse" />
+        </button>
+        <button type="button" onClick={() => setConfigModalOpen(true)} className="text-left -mt-3">
+          <p className="text-[10px] font-semibold text-slate-400">Toque aqui pra configurar as porcentagens de adiantamento e os dias de pagamento e de adiantamento da empresa.</p>
         </button>
 
-        {configExpanded && (
-          <>
-            <p className="text-[10px] font-semibold text-slate-400 -mt-2">Dias de referência da empresa toda — usados pra calcular a contagem regressiva abaixo. Colaboradores com vencimento próprio (aba Financeira) não são afetados.</p>
+        <Modal
+          isOpen={configModalOpen}
+          onClose={() => setConfigModalOpen(false)}
+          title="Configurações Globais"
+          icon={<Settings size={18} />}
+          maxWidth="max-w-md"
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-[10px] font-semibold text-slate-400">Dias de referência da empresa toda — usados pra calcular a contagem regressiva abaixo. Colaboradores com vencimento próprio (aba Financeira) não são afetados.</p>
 
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <label className={labelClass}>Dia de Pagamento (mensal)</label>
-                <div className={`flex p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
-                  <button
-                    type="button"
-                    onClick={() => onSaveRhConfig({ ...rhConfig, paymentDayMode: 'fixed' })}
-                    data-guide-anchor="rh.modoPagamentoFixo"
-                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(rhConfig.paymentDayMode ?? 'fixed') === 'fixed' ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
-                  >
-                    Dia Fixo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onSaveRhConfig({ ...rhConfig, paymentDayMode: 'business_day_5' })}
-                    data-guide-anchor="rh.modoPagamento5DiaUtil"
-                    className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${rhConfig.paymentDayMode === 'business_day_5' ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
-                  >
-                    5º Dia Útil
-                  </button>
-                </div>
-                {(rhConfig.paymentDayMode ?? 'fixed') === 'fixed' ? (
-                  <input
-                    type="number" inputMode="numeric" min={1} max={31}
-                    value={rhConfig.paymentDay || ''}
-                    onChange={e => onSaveRhConfig({ ...rhConfig, paymentDay: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
-                    data-guide-anchor="rh.diaPagamento"
-                    className={inputClass}
-                  />
-                ) : (
-                  <p className="text-[9px] font-bold text-slate-400 px-1">Paga sempre no 5º dia útil do mês (só considera fins de semana, não feriados).</p>
-                )}
+            <div className="flex flex-col gap-2">
+              <label className={labelClass}>Dia de Pagamento (mensal)</label>
+              <div className={`flex p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <button
+                  type="button"
+                  onClick={() => onSaveRhConfig({ ...rhConfig, paymentDayMode: 'fixed' })}
+                  data-guide-anchor="rh.modoPagamentoFixo"
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(rhConfig.paymentDayMode ?? 'fixed') === 'fixed' ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                >
+                  Dia Fixo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSaveRhConfig({ ...rhConfig, paymentDayMode: 'business_day_5' })}
+                  data-guide-anchor="rh.modoPagamento5DiaUtil"
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${rhConfig.paymentDayMode === 'business_day_5' ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                >
+                  5º Dia Útil
+                </button>
               </div>
-              <div className="flex flex-col gap-2">
-                <label className={labelClass}>Dia de Adiantamento (quinzena)</label>
+              {(rhConfig.paymentDayMode ?? 'fixed') === 'fixed' ? (
                 <input
                   type="number" inputMode="numeric" min={1} max={31}
-                  value={rhConfig.advanceDay || ''}
-                  onChange={e => onSaveRhConfig({ ...rhConfig, advanceDay: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
-                  data-guide-anchor="rh.diaAdiantamento"
+                  value={rhConfig.paymentDay || ''}
+                  onChange={e => onSaveRhConfig({ ...rhConfig, paymentDay: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                  data-guide-anchor="rh.diaPagamento"
                   className={inputClass}
                 />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className={labelClass}>% do Salário no Adiantamento</label>
-                <input
-                  type="number" inputMode="numeric" min={0} max={100}
-                  value={rhConfig.advancePercent || ''}
-                  onChange={e => onSaveRhConfig({ ...rhConfig, advancePercent: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
-                  data-guide-anchor="rh.percentualAdiantamento"
-                  className={inputClass}
-                />
-                <p className="text-[9px] font-bold text-slate-400 px-1">Ex.: 40 = 40% no Adiantamento e 60% no Fechamento, pra quem tem "Recebe Adiantamento Quinzenal?" ligado.</p>
-              </div>
+              ) : (
+                <p className="text-[9px] font-bold text-slate-400 px-1">Paga sempre no 5º dia útil do mês (só considera fins de semana, não feriados).</p>
+              )}
             </div>
-          </>
-        )}
+            <div className="flex flex-col gap-2">
+              <label className={labelClass}>Dia de Adiantamento (quinzena)</label>
+              <input
+                type="number" inputMode="numeric" min={1} max={31}
+                value={rhConfig.advanceDay || ''}
+                onChange={e => onSaveRhConfig({ ...rhConfig, advanceDay: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                data-guide-anchor="rh.diaAdiantamento"
+                className={inputClass}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className={labelClass}>% do Salário no Adiantamento</label>
+              <input
+                type="number" inputMode="numeric" min={0} max={100}
+                value={rhConfig.advancePercent || ''}
+                onChange={e => onSaveRhConfig({ ...rhConfig, advancePercent: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
+                data-guide-anchor="rh.percentualAdiantamento"
+                className={inputClass}
+              />
+              <p className="text-[9px] font-bold text-slate-400 px-1">Ex.: 40 = 40% no Adiantamento e 60% no Fechamento, pra quem tem "Recebe Adiantamento Quinzenal?" ligado.</p>
+            </div>
+          </div>
+        </Modal>
 
         <div className="grid grid-cols-2 gap-3 pt-2">
           <div className={`p-4 rounded-2xl flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`} data-guide-anchor="rh.diasAtePagamento">

@@ -279,7 +279,7 @@ export default function SettingsView({
     {
       title: "Sistema & Backup",
       items: [
-        { id: ViewType.RH_MENU, label: "RH", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'rh' },
+        { id: ViewType.RH_MENU, label: "RH (Recursos Humanos)", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'rh' },
         { id: ViewType.COMPANY_PROFILE, label: "Personalizar Empresa", icon: <Building2 size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'sales' },
         { id: 'ONBOARDING_WIZARD', label: "Assistente de Configuração", icon: <Rocket size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'any' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },

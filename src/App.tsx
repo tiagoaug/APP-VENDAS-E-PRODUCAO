@@ -1771,6 +1771,28 @@ export default function App() {
   // (mesmo mecanismo que os atalhos do menu já usam, App.tsx:1298/1544 — nada novo lá).
   const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; productionSubScreen?: ProductionScreenType }[] = [
     {
+      // Todos os campos do CompanyProfile são opcionais (até o CNPJ/CPF é marcado como tal na
+      // tela) — completo assim que qualquer um deles for preenchido, sem exigir um campo
+      // específico (ex.: só nome + logo já conta, não precisa ter endereço).
+      view: ViewType.COMPANY_PROFILE, label: 'Personalize sua Empresa',
+      isComplete: !!(companyProfile.name || companyProfile.address || companyProfile.phone || companyProfile.logoUrl),
+      why: 'O nome, telefone e endereço aparecem nos PDFs/JPGs que você manda pra clientes e fornecedores — deixa tudo com a cara do seu negócio desde o primeiro documento.',
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'companyProfile.nome', text: 'Toque aqui e digite o nome da sua empresa.' },
+        { type: 'message', text: 'Preencha também telefone e endereço — o CNPJ/CPF é opcional.' },
+        { type: 'highlight_tap', anchorKey: 'companyProfile.salvar', text: 'Toque aqui para salvar.' },
+      ],
+    },
+    {
+      view: ViewType.COLLABORATORS_CONFIG, label: 'Cadastre sua Equipe', isComplete: collaborators.length > 0,
+      why: 'Cadastre quem vai usar o app com você — diretores, vendedores, produção — e defina o que cada um pode acessar. Cada colaborador entra com o próprio PIN, sem precisar da sua senha principal.',
+      guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'collab.novo', text: 'Toque aqui para cadastrar um colaborador novo.' },
+        { type: 'message', text: 'Preencha o nome, defina um PIN de acesso e marque os setores/telas que essa pessoa pode usar.' },
+        { type: 'highlight_tap', anchorKey: 'collab.salvar', text: 'Toque aqui para salvar.' },
+      ],
+    },
+    {
       view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0,
       why: 'Agrupa seus produtos (ex.: "Tênis", "Sandálias") pra facilitar filtros e relatórios depois. Dica: abra "Modelos Disponíveis" pra escolher uma categoria pronta com um toque, sem precisar digitar.',
       guideSteps: [
@@ -8711,6 +8733,13 @@ export default function App() {
   }
 
   const themeVisual = THEME_VISUALS[appTheme] || THEME_VISUALS.light;
+  // Barra de navegação inferior: o "pill" de fundo continua com o gradiente escuro normal do
+  // tema — só o ícone/nome (modo Monocromático) vira branco nos temas escuros, só na hora de
+  // renderizar, sem tocar em navMonoColor/localStorage. Sem isso, uma cor escolhida pensando num
+  // fundo claro (ex.: preto) fica invisível sobre o pill escuro. Como é só visual, ao sair do
+  // tema escuro a barra volta sozinha pra cor que o usuário configurou, sem precisar "restaurar"
+  // nada de propósito.
+  const effectiveNavMonoColor = isDarkMode && navIconMode === 'mono' ? '#ffffff' : navMonoColor;
 
   return (
     <PrivacyContext.Provider value={hideFinancialValues}>
@@ -8836,6 +8865,43 @@ export default function App() {
             transition={{ duration: 0.15 }}
             className="px-3 py-5 min-h-full"
           >
+            {/* Mesmo chrome de Configuração Inicial usado dentro do Modal global (ver mais
+                abaixo) — duplicado aqui pra cobrir etapas cujo alvo NÃO é um MODAL_VIEWS (ex.:
+                Personalizar Empresa, Equipe/Colaboradores, que têm cabeçalho próprio com "←" em
+                vez do "X" do Modal — colocá-los em MODAL_VIEWS mudaria a navegação deles pra
+                todo mundo, não só no onboarding). */}
+            {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (
+              <StepWizardBar
+                isDarkMode={isDarkMode}
+                title="Configuração Inicial"
+                stepIndex={onboardingStepIndex + 1}
+                totalSteps={onboardingSteps.length}
+                isComplete={onboardingSteps[onboardingStepIndex].isComplete}
+                onContinue={handleOnboardingAdvance}
+                onSkipStep={handleOnboardingAdvance}
+                onDismiss={handleOnboardingDismiss}
+              />
+            )}
+            {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (
+              <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
+                <Info size={18} className="shrink-0 mt-0.5" />
+                <p className="text-xs font-bold leading-relaxed">
+                  {onboardingSteps[onboardingStepIndex].why}
+                </p>
+              </div>
+            )}
+            {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView)
+              && (onboardingSteps[onboardingStepIndex].guideSteps?.length ?? 0) > onboardingGuideStepIndex && (
+              <GuidedTourOverlay
+                title={onboardingSteps[onboardingStepIndex].label}
+                steps={onboardingSteps[onboardingStepIndex].guideSteps!}
+                stepIndex={onboardingGuideStepIndex}
+                currentView={lastNonModalView}
+                isDarkMode={isDarkMode}
+                onAdvance={() => setOnboardingGuideStepIndex(i => i + 1)}
+                onExit={() => setOnboardingGuideStepIndex(onboardingSteps[onboardingStepIndex].guideSteps!.length)}
+              />
+            )}
             <Suspense fallback={<ViewLoadingFallback />}>
               {renderView(lastNonModalView)}
             </Suspense>
@@ -9075,7 +9141,7 @@ export default function App() {
               appTheme={appTheme}
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.dashboard}
-              monoColor={navMonoColor}
+              monoColor={effectiveNavMonoColor}
               big
             />
             <div ref={attachMiddleNavContainerRef} className="flex-1 self-stretch min-w-0 overflow-hidden">
@@ -9130,7 +9196,7 @@ export default function App() {
                           appTheme={appTheme}
                           iconMode={navIconMode}
                           tintColor={NAV_TAB_COLORS[item.id]}
-                          monoColor={navMonoColor}
+                          monoColor={effectiveNavMonoColor}
                           anchorKey={item.anchorKey}
                           badge={(item as any).badge}
                           fluid
@@ -9150,9 +9216,9 @@ export default function App() {
               const isColored = navIconMode === 'colored';
               const settingsIconStyle: React.CSSProperties = isColored
                 ? { color: NAV_TAB_COLORS.settings, opacity: settingsActive ? 1 : 0.55 }
-                : { color: navMonoColor };
+                : { color: effectiveNavMonoColor };
               const settingsPillStyle: React.CSSProperties | undefined = settingsActive
-                ? { backgroundColor: `${(isColored ? NAV_TAB_COLORS.settings : navMonoColor)}1f` }
+                ? { backgroundColor: `${(isColored ? NAV_TAB_COLORS.settings : effectiveNavMonoColor)}1f` }
                 : undefined;
               const hasPager = navPages.length > 1;
               return (

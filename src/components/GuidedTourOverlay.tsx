@@ -63,12 +63,17 @@ export default function GuidedTourOverlay({ title, steps, stepIndex, currentView
   // spotlight cai fora da área visível e a tela inteira aparece escurecida sem nenhum destaque
   // visível pro usuário tocar. Roda só uma vez por passo (não a cada frame do loop de medição
   // acima), pra não brigar com um scroll manual do usuário depois.
+  // O limite inferior "visível" NÃO é window.innerHeight: a barra de navegação é fixed e fica por
+  // cima do fim da tela, então um alvo com r.bottom <= innerHeight ainda pode estar coberto por
+  // ela (ex.: botão "Salvar" no fim de um formulário longo) — usa o topo real da <nav> como
+  // limite quando ela existir.
   useEffect(() => {
     if (!isHighlight || !screenMatches) return;
     const el = document.querySelector(`[data-guide-anchor="${step.anchorKey}"]`);
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const outOfView = r.top < 0 || r.bottom > window.innerHeight || r.left < 0 || r.right > window.innerWidth;
+    const navTop = document.querySelector('nav')?.getBoundingClientRect().top ?? window.innerHeight;
+    const outOfView = r.top < 0 || r.bottom > navTop || r.left < 0 || r.right > window.innerWidth;
     if (outOfView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [isHighlight, screenMatches, step]);
 
@@ -143,11 +148,17 @@ export default function GuidedTourOverlay({ title, steps, stepIndex, currentView
   const width = rect.width + PADDING * 2;
   const height = rect.height + PADDING * 2;
   const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const trueVh = window.innerHeight;
+  // Limite "seguro" pra decidir onde encaixar o balão (embaixo cabe, ou tem que subir?) — a <nav>
+  // fixed cobre o final da tela, então esse limite não é a janela inteira. Mas o CSS `bottom` do
+  // balão (branch "acima do alvo") continua relativo à borda REAL da janela, já que o container é
+  // `fixed inset-0`: usar o limite da nav ali (em vez de trueVh) empurraria o balão pra baixo,
+  // sobrepondo o próprio alvo em vez de ficar acima dele.
+  const navTop = document.querySelector('nav')?.getBoundingClientRect().top ?? trueVh;
 
-  const balloonBelow = top + height + 140 < vh;
-  const balloonTop = balloonBelow ? Math.min(top + height + 12, vh - 20) : undefined;
-  const balloonBottom = !balloonBelow ? Math.max(vh - top + 12, 20) : undefined;
+  const balloonBelow = top + height + 140 < navTop;
+  const balloonTop = balloonBelow ? Math.min(top + height + 12, navTop - 20) : undefined;
+  const balloonBottom = !balloonBelow ? Math.max(trueVh - top + 12, 20) : undefined;
   const balloonLeft = Math.min(Math.max(left, 12), Math.max(vw - 300, 12));
 
   return (

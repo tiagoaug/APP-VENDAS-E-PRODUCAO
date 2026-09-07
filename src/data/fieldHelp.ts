@@ -654,7 +654,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
 
   // Hub do RH (RhView) — atalhos pra Colaboradores e pro Simulador de Rescisão.
   'rh.configGlobal': { text: 'Referências de pagamento da empresa toda — não substituem o dia de vencimento individual configurado na aba Financeira de cada colaborador, só servem pra contagem regressiva e visão geral aqui no RH.' },
-  'rh.expandirConfigGlobal': { text: 'Abre ou fecha os campos de dia de pagamento/adiantamento — os números de contagem regressiva e a visão geral logo abaixo ficam sempre visíveis, mesmo fechado.' },
+  'rh.expandirConfigGlobal': { text: 'Abre um popup pra configurar o dia de pagamento, o dia de adiantamento e a porcentagem dividida entre eles — os números de contagem regressiva e a visão geral logo abaixo ficam sempre visíveis, sem precisar abrir o popup.' },
   'rh.modoPagamentoFixo': { text: 'O pagamento cai sempre no mesmo dia do mês (o número ao lado) — se esse dia não existir num mês curto (ex.: dia 31 em fevereiro), usa o último dia do mês.' },
   'rh.modoPagamento5DiaUtil': { text: 'O pagamento cai sempre no 5º dia útil do mês (contando só de segunda a sexta — feriados não são descontados). Comum em empresas que seguem a convenção da categoria de pagar até o 5º dia útil.' },
   'rh.diaPagamento': { text: 'Dia do mês do pagamento mensal (ex.: dia 5) — usado só pra calcular "Faltam p/ Pagamento" abaixo. Só aparece no modo "Dia Fixo".' },
@@ -1199,7 +1199,9 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'collab.desbloquear': { text: 'Libera o acesso desse colaborador, zerando as tentativas de PIN erradas.' },
   'collab.pinRevelar': { text: 'Mostra ou esconde o PIN desse colaborador.' },
   'collab.formFechar': { text: 'Fecha sem salvar as alterações.' },
-  'collab.formAba': { text: 'Alterna entre as seções do cadastro (Dados, Financeiro, Permissões...).' },
+  'collab.abaPessoal': { text: 'Dados de identificação do colaborador: foto, nome, RG/CPF, e-mail e telefone.' },
+  'collab.abaFinanceira': { text: 'Dados de RH: admissão, cargo, salário base, adiantamento quinzenal e comissão de vendedor.' },
+  'collab.abaAcessos': { text: 'PIN de entrada no app, cor de identificação, setores liberados, permissões e cards do Dashboard visíveis pra ele.' },
   'collab.fotoRemover': { text: 'Remove a foto atual desse colaborador.' },
   'collab.pagamentoQuinzenal': { text: 'Liga pra pagar esse colaborador quinzenalmente em vez de mensalmente.' },
   'collab.vendedorToggle': { text: 'Marca esse colaborador como Vendedor — passa a aparecer como responsável em Vendas, com comissão calculada automaticamente sobre cada venda dele.' },

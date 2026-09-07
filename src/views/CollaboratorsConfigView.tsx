@@ -411,12 +411,15 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           </div>
 
           {/* Abas — separa Cadastro Pessoal, Financeira (RH) e Acessos do Programa por Telas,
-              que antes era tudo um formulário só, cada vez mais longo. */}
+              que antes era tudo um formulário só, cada vez mais longo. Cada aba tem seu próprio
+              anchor (não um só compartilhado) pra o "?" de ajuda explicar especificamente o que
+              tem em cada uma, e a frase logo abaixo do seletor reforça isso sem precisar tocar
+              no "?". */}
           <div className={`flex p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
             {([
-              { id: 'personal' as FormTab, label: 'Pessoal', icon: User },
-              { id: 'financial' as FormTab, label: 'Financeira', icon: DollarSign },
-              { id: 'access' as FormTab, label: 'Acessos', icon: ShieldCheck },
+              { id: 'personal' as FormTab, label: 'Pessoal', icon: User, anchor: 'collab.abaPessoal' },
+              { id: 'financial' as FormTab, label: 'Financeira', icon: DollarSign, anchor: 'collab.abaFinanceira' },
+              { id: 'access' as FormTab, label: 'Acessos', icon: ShieldCheck, anchor: 'collab.abaAcessos' },
             ]).map(tab => {
               const TabIcon = tab.icon;
               return (
@@ -424,7 +427,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   key={tab.id}
                   type="button"
                   onClick={() => setFormTab(tab.id)}
-                  data-guide-anchor="collab.formAba"
+                  data-guide-anchor={tab.anchor}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     formTab === tab.id
                       ? 'bg-indigo-600 text-white shadow-md'
@@ -437,6 +440,12 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               );
             })}
           </div>
+
+          <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 leading-relaxed px-1 -mt-2">
+            {formTab === 'personal' && 'Identificação do colaborador: foto, nome, RG/CPF, e-mail e telefone.'}
+            {formTab === 'financial' && 'Dados de RH: data de admissão, cargo, salário base, se recebe adiantamento quinzenal e se é vendedor com comissão.'}
+            {formTab === 'access' && 'Como ele entra no app: PIN de acesso, cor de identificação, setores liberados, permissões e quais cards do Dashboard ele enxerga.'}
+          </p>
 
           {formTab === 'personal' && (
           <>
@@ -778,7 +787,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 readOnly
                 value={showPin ? draft.pin : '•'.repeat(draft.pin.length)}
                 placeholder="GERE OU CRIE MANUALMENTE ABAIXO"
-                className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors tracking-[0.3em] cursor-default ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors tracking-[0.3em] placeholder:text-[10px] placeholder:tracking-normal cursor-default ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
               />
               <button
                 type="button"
