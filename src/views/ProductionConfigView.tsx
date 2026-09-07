@@ -88,6 +88,7 @@ import {
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot, FlowTagTemplate, SectorTemplate } from '../types';
 import { subscribeToFlowTagTemplates, saveFlowTagTemplate } from '../services/flowTagTemplatesService';
 import { subscribeToSectorTemplates, saveSectorTemplate } from '../services/sectorTemplatesService';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 import Modal from '../components/Modal';
 import PersonModal from '../components/PersonModal';
 import MaterialFormFields from '../components/MaterialFormFields';
@@ -460,6 +461,7 @@ interface ProductionConfigViewProps {
   // direto em vez de `setCurrentScreen('MENU')` — o menu com Facas/Matrizes/Fichas etc. (tudo
   // que só faz sentido com Produção) nunca chega a renderizar.
   restrictToPackaging?: boolean;
+  onStartJourney?: (journeyId: string) => void;
 }
 
 // Quando a conjugação é < 1, a faca precisa de mais de 1 batida para formar 1 par
@@ -503,6 +505,7 @@ export default function ProductionConfigView({
   products = [],
   soleStock = [],
   restrictToPackaging = false,
+  onStartJourney,
 }: ProductionConfigViewProps) {
 
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
@@ -841,23 +844,28 @@ export default function ProductionConfigView({
             </div>
           )}
 
-          {sectorTemplates.length > 0 && (
-            <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
-              <button
-                type="button"
-                onClick={() => setSectorTemplatesOpen(o => !o)}
-                data-guide-anchor="sector.modelosToggle"
-                className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} />
-                  <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
-                </div>
-                <ChevronDown size={16} className={`transition-transform duration-200 ${sectorTemplatesOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {sectorTemplatesOpen && (
-                <div className="px-4 pb-4 flex flex-wrap gap-2">
-                  {sectorTemplates.map(template => {
+          <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+            <button
+              type="button"
+              onClick={() => setSectorTemplatesOpen(o => !o)}
+              data-guide-anchor="sector.modelosToggle"
+              className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} />
+                <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
+              </div>
+              <ChevronDown size={16} className={`transition-transform duration-200 ${sectorTemplatesOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {sectorTemplatesOpen && (
+              <div className="px-4 pb-4 flex flex-wrap gap-2">
+                <p className="w-full text-[10px] font-bold text-rose-600 dark:text-rose-400 leading-snug">
+                  Toque num modelo abaixo para adicioná-lo aos seus setores.
+                </p>
+                {sectorTemplates.length === 0 && (
+                  <p className="text-[10px] font-bold text-slate-400 italic py-2">Nenhum modelo disponível ainda.</p>
+                )}
+                {sectorTemplates.map(template => {
                     const exists = sectors.some(s => s.name.toUpperCase() === template.name.toUpperCase());
                     return (
                       <button
@@ -879,8 +887,17 @@ export default function ProductionConfigView({
                   })}
                 </div>
               )}
+              {sectorTemplatesOpen && onStartJourney && (
+                <button
+                  type="button"
+                  onClick={() => onStartJourney('tour_cadastrar_setor')}
+                  data-guide-anchor="sector.naoAchouModelo"
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-3 border-t border-violet-100/50 dark:border-violet-900/30 text-[10px] font-black uppercase tracking-widest text-violet-500 hover:text-violet-600 transition-colors"
+                >
+                  Não achou um modelo? Veja como criar uma nova
+                </button>
+              )}
             </div>
-          )}
         </div>
       </Modal>
 
@@ -932,20 +949,22 @@ export default function ProductionConfigView({
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => handleSaveFlowTagAsTemplate(tag)}
-                    data-guide-anchor="flowtag.salvarModelo"
-                    disabled={isFlowTagSavedAsTemplate(tag)}
-                    title={isFlowTagSavedAsTemplate(tag) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
-                    aria-label={isFlowTagSavedAsTemplate(tag) ? `${tag.name} já é um modelo disponível` : `Salvar ${tag.name} como modelo pra outras contas`}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                      isFlowTagSavedAsTemplate(tag)
-                        ? 'text-violet-500'
-                        : isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-violet-400' : 'bg-slate-50 text-slate-400 hover:text-violet-600'
-                    }`}
-                  >
-                    {isFlowTagSavedAsTemplate(tag) ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
-                  </button>
+                  {isTemplateAdmin() && (
+                    <button
+                      onClick={() => handleSaveFlowTagAsTemplate(tag)}
+                      data-guide-anchor="flowtag.salvarModelo"
+                      disabled={isFlowTagSavedAsTemplate(tag)}
+                      title={isFlowTagSavedAsTemplate(tag) ? 'Usada como exemplo pra novas contas' : 'Usar como exemplo pra novas contas'}
+                      aria-label={isFlowTagSavedAsTemplate(tag) ? `${tag.name} já é um modelo disponível` : `Usar ${tag.name} como exemplo pra novas contas`}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                        isFlowTagSavedAsTemplate(tag)
+                          ? 'text-violet-500'
+                          : isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-violet-400' : 'bg-slate-50 text-slate-400 hover:text-violet-600'
+                      }`}
+                    >
+                      {isFlowTagSavedAsTemplate(tag) ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setEditingTag({ ...tag });
@@ -983,23 +1002,28 @@ export default function ProductionConfigView({
             )}
           </div>
 
-          {flowTagTemplates.length > 0 && (
-            <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
-              <button
-                type="button"
-                onClick={() => setFlowTagTemplatesOpen(o => !o)}
-                data-guide-anchor="flowtag.modelosToggle"
-                className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} />
-                  <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
-                </div>
-                <ChevronDown size={16} className={`transition-transform duration-200 ${flowTagTemplatesOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {flowTagTemplatesOpen && (
-                <div className="px-4 pb-4 flex flex-wrap gap-2">
-                  {flowTagTemplates.map(template => {
+          <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+            <button
+              type="button"
+              onClick={() => setFlowTagTemplatesOpen(o => !o)}
+              data-guide-anchor="flowtag.modelosToggle"
+              className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} />
+                <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
+              </div>
+              <ChevronDown size={16} className={`transition-transform duration-200 ${flowTagTemplatesOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {flowTagTemplatesOpen && (
+              <div className="px-4 pb-4 flex flex-wrap gap-2">
+                <p className="w-full text-[10px] font-bold text-rose-600 dark:text-rose-400 leading-snug">
+                  Toque num modelo abaixo para adicioná-lo às suas Flow Tags.
+                </p>
+                {flowTagTemplates.length === 0 && (
+                  <p className="text-[10px] font-bold text-slate-400 italic py-2">Nenhum modelo disponível ainda.</p>
+                )}
+                {flowTagTemplates.map(template => {
                     const exists = flowTags.some(t => t.name.toUpperCase() === template.name.toUpperCase());
                     return (
                       <button
@@ -1021,8 +1045,17 @@ export default function ProductionConfigView({
                   })}
                 </div>
               )}
+              {flowTagTemplatesOpen && onStartJourney && (
+                <button
+                  type="button"
+                  onClick={() => onStartJourney('tour_cadastrar_flowtag')}
+                  data-guide-anchor="flowtag.naoAchouModelo"
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-3 border-t border-violet-100/50 dark:border-violet-900/30 text-[10px] font-black uppercase tracking-widest text-violet-500 hover:text-violet-600 transition-colors"
+                >
+                  Não achou um modelo? Veja como criar uma nova
+                </button>
+              )}
             </div>
-          )}
         </div>
       </Modal>
 
@@ -1315,6 +1348,7 @@ export default function ProductionConfigView({
 
           <button
             type="submit"
+            data-guide-anchor="flowtag.salvar"
             className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4"
           >
             <Check size={18} strokeWidth={3} />
@@ -4143,20 +4177,22 @@ function SectorCard({ sector, flowTags, isDarkMode, pendingCount, isSavedAsTempl
         </div>
 
         <div className="flex gap-2">
-          <button
-            onClick={onSaveAsTemplate}
-            data-guide-anchor="sector.salvarModelo"
-            disabled={isSavedAsTemplate}
-            title={isSavedAsTemplate ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
-            aria-label={isSavedAsTemplate ? `${sector.name} já é um modelo disponível` : `Salvar ${sector.name} como modelo pra outras contas`}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-              isSavedAsTemplate
-                ? 'text-violet-500'
-                : isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-violet-400' : 'bg-slate-50 text-slate-400 hover:text-violet-600'
-            }`}
-          >
-            {isSavedAsTemplate ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
-          </button>
+          {isTemplateAdmin() && (
+            <button
+              onClick={onSaveAsTemplate}
+              data-guide-anchor="sector.salvarModelo"
+              disabled={isSavedAsTemplate}
+              title={isSavedAsTemplate ? 'Usado como exemplo pra novas contas' : 'Usar como exemplo pra novas contas'}
+              aria-label={isSavedAsTemplate ? `${sector.name} já é um modelo disponível` : `Usar ${sector.name} como exemplo pra novas contas`}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                isSavedAsTemplate
+                  ? 'text-violet-500'
+                  : isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-violet-400' : 'bg-slate-50 text-slate-400 hover:text-violet-600'
+              }`}
+            >
+              {isSavedAsTemplate ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
+            </button>
+          )}
           <button
             onClick={onToggleHidden}
             data-guide-anchor="sector.ocultarToggle"

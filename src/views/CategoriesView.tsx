@@ -6,6 +6,7 @@ import CategoryModal from '../components/CategoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { getCategoryModules, categoryModulesInclude } from '../utils/categories';
 import { subscribeToCategoryTemplates, saveCategoryTemplate } from '../services/categoryTemplatesService';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 
 interface CategoriesViewProps {
   categories: Category[];
@@ -15,9 +16,10 @@ interface CategoriesViewProps {
   isDarkMode: boolean;
   modulesConfig: AppModulesConfig;
   onNavigate: (view: ViewType) => void;
+  onStartJourney?: (journeyId: string) => void;
 }
 
-export default function CategoriesView({ categories, onAdd, onEdit, onDelete, isDarkMode, modulesConfig, onNavigate }: CategoriesViewProps) {
+export default function CategoriesView({ categories, onAdd, onEdit, onDelete, isDarkMode, modulesConfig, onNavigate, onStartJourney }: CategoriesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -308,46 +310,60 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
           );
         })()}
 
-        {templatesForActiveTab.length > 0 && (
-          <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+        <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+          <button
+            type="button"
+            onClick={() => setTemplatesOpen(o => !o)}
+            data-guide-anchor="cat.alternarModelos"
+            className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} />
+              <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
+            </div>
+            <ChevronDown size={16} className={`transition-transform duration-200 ${templatesOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {templatesOpen && (
+            <div className="px-4 pb-4 flex flex-wrap gap-2">
+              <p className="w-full text-[10px] font-bold text-rose-600 dark:text-rose-400 leading-snug">
+                Toque num modelo abaixo para adicioná-lo às suas categorias.
+              </p>
+              {templatesForActiveTab.length === 0 && (
+                <p className="text-[10px] font-bold text-slate-400 italic py-2">Nenhum modelo disponível ainda pra este tipo.</p>
+              )}
+              {templatesForActiveTab.map(template => {
+                const exists = categories.some(c => c.name.toUpperCase() === template.name.toUpperCase() && c.type === template.type);
+                return (
+                  <button
+                    type="button"
+                    key={template.id}
+                    onClick={() => handleAddFromTemplate(template)}
+                    disabled={exists}
+                    data-guide-anchor="cat.adicionarModelo"
+                    title={`Adicionar modelo: ${template.name}`}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
+                      exists
+                        ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-transparent'
+                        : 'bg-white dark:bg-slate-900 text-violet-600 border-violet-100 hover:border-violet-500 dark:text-violet-400 dark:border-violet-900 shadow-sm active:scale-95'
+                    }`}
+                  >
+                    {template.name} {exists && '✓'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {templatesOpen && onStartJourney && (
             <button
               type="button"
-              onClick={() => setTemplatesOpen(o => !o)}
-              data-guide-anchor="cat.alternarModelos"
-              className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+              onClick={() => onStartJourney('tour_cadastrar_categoria')}
+              data-guide-anchor="cat.naoAchouModelo"
+              className="w-full flex items-center justify-center gap-1.5 px-4 py-3 border-t border-violet-100/50 dark:border-violet-900/30 text-[10px] font-black uppercase tracking-widest text-violet-500 hover:text-violet-600 transition-colors"
             >
-              <div className="flex items-center gap-2">
-                <Sparkles size={14} />
-                <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
-              </div>
-              <ChevronDown size={16} className={`transition-transform duration-200 ${templatesOpen ? 'rotate-180' : ''}`} />
+              Não achou um modelo? Veja como criar uma nova
             </button>
-            {templatesOpen && (
-              <div className="px-4 pb-4 flex flex-wrap gap-2">
-                {templatesForActiveTab.map(template => {
-                  const exists = categories.some(c => c.name.toUpperCase() === template.name.toUpperCase() && c.type === template.type);
-                  return (
-                    <button
-                      type="button"
-                      key={template.id}
-                      onClick={() => handleAddFromTemplate(template)}
-                      disabled={exists}
-                      data-guide-anchor="cat.adicionarModelo"
-                      title={`Adicionar modelo: ${template.name}`}
-                      className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
-                        exists
-                          ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-transparent'
-                          : 'bg-white dark:bg-slate-900 text-violet-600 border-violet-100 hover:border-violet-500 dark:text-violet-400 dark:border-violet-900 shadow-sm active:scale-95'
-                      }`}
-                    >
-                      {template.name} {exists && '✓'}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -383,19 +399,21 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                   </div>
 
                   <div className="flex items-center gap-2 pr-2">
-                      <button
-                        onClick={() => handleSaveAsTemplate(parent)}
-                        disabled={isSavedAsTemplate(parent)}
-                        data-guide-anchor="cat.salvarModelo"
-                        title={isSavedAsTemplate(parent) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
-                        className={`p-2 rounded-xl transition-colors ${
-                          isSavedAsTemplate(parent)
-                            ? 'text-violet-500'
-                            : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        {isSavedAsTemplate(parent) ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
-                      </button>
+                      {isTemplateAdmin() && (
+                        <button
+                          onClick={() => handleSaveAsTemplate(parent)}
+                          disabled={isSavedAsTemplate(parent)}
+                          data-guide-anchor="cat.salvarModelo"
+                          title={isSavedAsTemplate(parent) ? 'Usada como exemplo pra novas contas' : 'Usar como exemplo pra novas contas'}
+                          className={`p-2 rounded-xl transition-colors ${
+                            isSavedAsTemplate(parent)
+                              ? 'text-violet-500'
+                              : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {isSavedAsTemplate(parent) ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+                        </button>
+                      )}
                       <button
                         onClick={() => { setEditingCategory(parent); setIsModalOpen(true); }}
                         data-guide-anchor="cat.editar"
@@ -424,19 +442,21 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                     </div>
                     
                     <div className="flex items-center gap-1 pr-1">
-                      <button
-                        onClick={() => handleSaveAsTemplate(child)}
-                        disabled={isSavedAsTemplate(child)}
-                        data-guide-anchor="cat.salvarModelo"
-                        title={isSavedAsTemplate(child) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          isSavedAsTemplate(child)
-                            ? 'text-violet-500'
-                            : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        {isSavedAsTemplate(child) ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
-                      </button>
+                      {isTemplateAdmin() && (
+                        <button
+                          onClick={() => handleSaveAsTemplate(child)}
+                          disabled={isSavedAsTemplate(child)}
+                          data-guide-anchor="cat.salvarModelo"
+                          title={isSavedAsTemplate(child) ? 'Usada como exemplo pra novas contas' : 'Usar como exemplo pra novas contas'}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            isSavedAsTemplate(child)
+                              ? 'text-violet-500'
+                              : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {isSavedAsTemplate(child) ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                        </button>
+                      )}
                       <button
                         onClick={() => { setEditingCategory(child); setIsModalOpen(true); }}
                         data-guide-anchor="cat.editar"

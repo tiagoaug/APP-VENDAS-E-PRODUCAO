@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect } from 'react';
 import { Grid, GridType, GridTemplate } from '../types';
 import { Plus, TableCellsMerge, Trash2, Edit, Ruler, Target, Footprints, Scissors, Filter, Box, LayoutGrid, Zap, Bookmark, BookmarkCheck, Sparkles, ChevronDown } from 'lucide-react';
 import GradeModal from '../components/GradeModal';
-import { subscribeToGridTemplates, saveGridTemplate } from '../services/gridTemplatesService';
+import { subscribeToGridTemplates, saveGridTemplate, deleteGridTemplate } from '../services/gridTemplatesService';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 
 interface GradesViewProps {
   grids: Grid[];
@@ -10,17 +11,19 @@ interface GradesViewProps {
   onEdit: (id: string, grid: Omit<Grid, 'id'>) => void;
   onDelete: (id: string) => void;
   isDarkMode: boolean;
+  onStartJourney?: (journeyId: string) => void;
 }
 
-export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode }: GradesViewProps) {
+export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode, onStartJourney }: GradesViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGrid, setEditingGrid] = useState<Grid | null>(null);
   const [activeFilter, setActiveFilter] = useState<GridType | 'ALL'>('ALL');
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
 
   // Modelos de grade salvos por qualquer conta (coleção compartilhada, fora de users/{uid})
   // — pool de sugestões prontas pra tocar e adicionar, alimentada pelo botão de marcador em
-  // cada grade já cadastrada (ver handleSaveAsTemplate abaixo).
+  // cada grade já cadastrada (ver handleToggleTemplate abaixo).
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
   useEffect(() => {
     const unsub = subscribeToGridTemplates(setTemplates);
@@ -32,12 +35,17 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
     return templates.filter(t => t.type === activeFilter);
   }, [templates, activeFilter]);
 
-  const isSavedAsTemplate = (grid: Grid) =>
-    templates.some(t => t.name.toUpperCase() === grid.name.toUpperCase() && t.type === grid.type);
+  const findTemplateFor = (grid: Grid) =>
+    templates.find(t => t.name.toUpperCase() === grid.name.toUpperCase() && t.type === grid.type);
 
-  const handleSaveAsTemplate = (grid: Grid) => {
-    if (isSavedAsTemplate(grid)) return;
-    saveGridTemplate({ name: grid.name, type: grid.type, sizes: grid.sizes });
+  const isSavedAsTemplate = (grid: Grid) => !!findTemplateFor(grid);
+
+  // Toggle real — clicar de novo numa grade já marcada desmarca (apaga o modelo
+  // compartilhado), em vez de ficar travado só como "salvar".
+  const handleToggleTemplate = (grid: Grid) => {
+    const existing = findTemplateFor(grid);
+    if (existing) deleteGridTemplate(existing.id);
+    else saveGridTemplate({ name: grid.name, type: grid.type, sizes: grid.sizes });
   };
 
   const handleAddFromTemplate = (template: GridTemplate) => {
@@ -131,98 +139,155 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
           })()}
         </div>
 
-        {templatesForActiveFilter.length > 0 && (
-          <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
-            <button
-              type="button"
-              onClick={() => setTemplatesOpen(o => !o)}
-              data-guide-anchor="grade.alternarModelos"
-              className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
-            >
-              <div className="flex items-center gap-2">
-                <Sparkles size={14} />
-                <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
-              </div>
-              <ChevronDown size={16} className={`transition-transform duration-200 ${templatesOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {templatesOpen && (
-              <div className="px-4 pb-4 flex flex-wrap gap-2">
-                {templatesForActiveFilter.map(template => {
+        <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+          <button
+            type="button"
+            onClick={() => setTemplatesOpen(o => !o)}
+            data-guide-anchor="grade.alternarModelos"
+            className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} />
+              <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
+            </div>
+            <ChevronDown size={16} className={`transition-transform duration-200 ${templatesOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {templatesOpen && (
+            <div className="px-4 pb-4 flex flex-col gap-2">
+              <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 leading-snug">
+                Toque num modelo abaixo para adicioná-lo às suas {
+                  activeFilter === GridType.SOLADO ? 'grades de solado'
+                  : activeFilter === GridType.FACA ? 'grades de faca'
+                  : activeFilter === GridType.EMBALAGEM ? 'grades de embalagem'
+                  : activeFilter === GridType.FORMA ? 'grades de forma'
+                  : 'grades'
+                }.
+              </p>
+              {templatesForActiveFilter.length === 0 && (
+                <p className="text-[10px] font-bold text-slate-400 italic py-2">Nenhum modelo disponível ainda pra este tipo.</p>
+              )}
+              {templatesForActiveFilter.map(template => {
                   const exists = grids.some(g => g.name.toUpperCase() === template.name.toUpperCase() && g.type === template.type);
+                  const isExpanded = expandedTemplateId === template.id;
                   return (
-                    <button
-                      type="button"
+                    <div
                       key={template.id}
-                      onClick={() => handleAddFromTemplate(template)}
-                      disabled={exists}
-                      data-guide-anchor="grade.adicionarModelo"
-                      title={`Adicionar modelo: ${template.name}`}
-                      className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
+                      className={`rounded-xl border-2 overflow-hidden ${
                         exists
-                          ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-transparent'
-                          : 'bg-white dark:bg-slate-900 text-violet-600 border-violet-100 hover:border-violet-500 dark:text-violet-400 dark:border-violet-900 shadow-sm active:scale-95'
+                          ? 'bg-slate-100 dark:bg-slate-800 border-transparent'
+                          : 'bg-white dark:bg-slate-900 border-violet-100 dark:border-violet-900 shadow-sm'
                       }`}
                     >
-                      {template.name} {exists && '✓'}
-                    </button>
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => handleAddFromTemplate(template)}
+                          disabled={exists}
+                          data-guide-anchor="grade.adicionarModelo"
+                          title={`Adicionar modelo: ${template.name}`}
+                          className={`flex-1 text-left px-3 py-2.5 text-[11px] font-black uppercase tracking-widest active:scale-[0.98] ${
+                            exists ? 'text-slate-300 dark:text-slate-600' : 'text-violet-600 dark:text-violet-400'
+                          }`}
+                        >
+                          {template.name} {exists && '✓'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedTemplateId(isExpanded ? null : template.id)}
+                          data-guide-anchor="grade.previaModelo"
+                          title={isExpanded ? 'Ocultar prévia das numerações' : 'Mostrar prévia das numerações'}
+                          aria-label={isExpanded ? 'Ocultar prévia das numerações' : 'Mostrar prévia das numerações'}
+                          className={`px-3 py-2.5 shrink-0 ${exists ? 'text-slate-300 dark:text-slate-600' : 'text-violet-400 hover:text-violet-600'}`}
+                        >
+                          <ChevronDown size={14} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      </div>
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-1 flex flex-wrap gap-1.5 border-t border-violet-100/60 dark:border-violet-900/40">
+                          {(template.sizes || []).map(size => (
+                            <span
+                              key={size}
+                              className={`px-2 py-1 rounded-lg border text-[9px] font-black ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
+                            >
+                              {size}
+                            </span>
+                          ))}
+                          {(template.sizes || []).length === 0 && (
+                            <span className="text-[9px] text-slate-300 dark:text-slate-700 font-bold italic">Sem numerações</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             )}
+            {templatesOpen && onStartJourney && (
+              <button
+                type="button"
+                onClick={() => onStartJourney('tour_cadastrar_grade')}
+                data-guide-anchor="grade.naoAchouModelo"
+                className="w-full flex items-center justify-center gap-1.5 px-4 py-3 border-t border-violet-100/50 dark:border-violet-900/30 text-[10px] font-black uppercase tracking-widest text-violet-500 hover:text-violet-600 transition-colors"
+              >
+                Não achou um modelo? Veja como criar uma nova
+              </button>
+            )}
           </div>
-        )}
 
         {filteredGrids.map((grid) => (
           <div key={grid.id} className={`p-4 sm:p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-5 group transition-all hover:shadow-md ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}>
                   <TableCellsMerge size={24} />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className={`font-black text-base uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{grid.name}</h3>
-                    <div className={`px-2 py-0.5 rounded-md flex items-center gap-1 border ${
-                      grid.type === GridType.SOLADO 
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-                        : grid.type === GridType.FACA
-                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-                          : grid.type === GridType.EMBALAGEM
-                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
-                            : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500'
-                    }`}>
-                      {grid.type === GridType.SOLADO ? <Footprints size={12} /> : grid.type === GridType.FACA ? <Scissors size={12} /> : grid.type === GridType.EMBALAGEM ? <Box size={12} /> : <Target size={12} />}
-                      <span className="text-[8px] font-black uppercase tracking-widest">
-                        {grid.type === GridType.SOLADO ? 'Solado' : grid.type === GridType.FACA ? 'Faca' : grid.type === GridType.EMBALAGEM ? 'Emb.' : 'Forma'}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                    {grid.sizes?.length || 0} Numerações
-                  </p>
+                <div className={`inline-flex px-2 py-0.5 rounded-md items-center gap-1 border ${
+                  grid.type === GridType.SOLADO
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                    : grid.type === GridType.FACA
+                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                      : grid.type === GridType.EMBALAGEM
+                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                        : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500'
+                }`}>
+                  {grid.type === GridType.SOLADO ? <Footprints size={12} /> : grid.type === GridType.FACA ? <Scissors size={12} /> : grid.type === GridType.EMBALAGEM ? <Box size={12} /> : <Target size={12} />}
+                  <span className="text-[8px] font-black uppercase tracking-widest">
+                    {grid.type === GridType.SOLADO ? 'Solado' : grid.type === GridType.FACA ? 'Faca' : grid.type === GridType.EMBALAGEM ? 'Emb.' : 'Forma'}
+                  </span>
                 </div>
               </div>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => handleSaveAsTemplate(grid)}
-                  disabled={isSavedAsTemplate(grid)}
-                  data-guide-anchor="grade.salvarModelo"
-                  title={isSavedAsTemplate(grid) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
-                  className={`p-2 rounded-xl transition-colors ${
-                    isSavedAsTemplate(grid)
-                      ? 'text-violet-500'
-                      : isDarkMode ? 'text-slate-500 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {isSavedAsTemplate(grid) ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
+
+              <div className="min-w-0">
+                <h3 className={`font-black text-base uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{grid.name}</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                  {grid.sizes?.length || 0} Numerações
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button title="Editar Grade" onClick={() => { setEditingGrid(grid); setIsModalOpen(true); }} data-guide-anchor="grade.editar" className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-50 text-slate-500 hover:text-indigo-600'}`}>
+                  <Edit size={14} /> Editar
                 </button>
-                <button title="Editar Grade" onClick={() => { setEditingGrid(grid); setIsModalOpen(true); }} data-guide-anchor="grade.editar" className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-white hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}>
-                  <Edit size={20} />
-                </button>
-                <button title="Excluir Grade" onClick={() => onDelete(grid.id)} data-guide-anchor="grade.excluir" className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}>
-                  <Trash2 size={20} />
+                <button title="Excluir Grade" onClick={() => onDelete(grid.id)} data-guide-anchor="grade.excluir" className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-rose-400' : 'bg-slate-50 text-slate-500 hover:text-rose-500'}`}>
+                  <Trash2 size={14} /> Excluir
                 </button>
               </div>
+
+              {isTemplateAdmin() && (
+                <button
+                  onClick={() => handleToggleTemplate(grid)}
+                  data-guide-anchor="grade.salvarModelo"
+                  title={isSavedAsTemplate(grid) ? 'Toque pra desmarcar como exemplo' : 'Usar como exemplo pra novas contas'}
+                  className={`self-start flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.97] ${
+                    isSavedAsTemplate(grid)
+                      ? 'bg-violet-100 border-violet-200 text-violet-700 dark:bg-violet-500/20 dark:border-violet-500/40 dark:text-violet-300'
+                      : 'bg-slate-200 border-slate-200 text-slate-600 dark:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {isSavedAsTemplate(grid) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+                  {isSavedAsTemplate(grid) ? 'Usada como exemplo' : 'Marcar como modelo'}
+                </button>
+              )}
             </div>
 
             {/* Size chips */}

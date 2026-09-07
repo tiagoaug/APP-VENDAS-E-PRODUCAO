@@ -101,6 +101,7 @@ import {
   FamilyMember,
   Budget,
   DashboardConfig,
+  DashboardCardConfig,
   NavConfig,
   DeliveryPrintPrefs,
   FlowTag,
@@ -182,6 +183,7 @@ const DashboardConfigView = lazy(() => import("./views/DashboardConfigView"));
 const ProductionConfigView = lazy(() => import("./views/ProductionConfigView"));
 const PersonalFinancialView = lazy(() => import("./views/PersonalFinancialView"));
 const ModuleConfigView = lazy(() => import("./views/ModuleConfigView"));
+const NewUserDefaultsView = lazy(() => import("./views/NewUserDefaultsView"));
 const CollaboratorsConfigView = lazy(() => import("./views/CollaboratorsConfigView"));
 const RhView = lazy(() => import("./views/RhView"));
 const LaborTerminationSimulatorView = lazy(() => import("./views/LaborTerminationSimulatorView"));
@@ -246,6 +248,8 @@ import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, N
 import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession, isViewTaskAllowed, isSectorAllowed } from './utils/collaborators';
 import { LaborSimParams, DEFAULT_LABOR_SIM_PARAMS } from './utils/laborTermination';
 import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
+import { subscribeToDashboardDefault, saveDashboardDefault, DashboardDefaultProfile } from './services/dashboardDefaultsService';
+import { subscribeToCardModuleOverrides, saveCardModuleOverrides, CardModuleOverrides } from './services/dashboardCardModulesService';
 import { initPushNotifications } from './services/pushNotificationService';
 import { toMillis } from './utils/firestoreTimestamp';
 
@@ -271,6 +275,7 @@ const MODAL_VIEWS = [
   ViewType.PRODUCT_DETAIL,
   ViewType.REPORT_DETAILED,
   ViewType.MODULES_CONFIG,
+  ViewType.NEW_USER_DEFAULTS,
 ];
 
 const MODULE_VIEWS: Record<string, ViewType[]> = {
@@ -844,10 +849,8 @@ export default function App() {
       { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
       { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
       { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
-      { id: 'print_labels', label: 'Impressão de Etiquetas', visible: true, order: 19.5, module: 'production' },
       { id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' },
       { id: 'pcp_purchase_needs', label: 'Necessidades de Compras (PCP)', visible: true, order: 21, module: 'production' },
-      { id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: 23, module: 'sales' },
     ]
   };
 
@@ -895,9 +898,9 @@ export default function App() {
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
-    // Migration: ensure print_labels is present (antes era um ícone fixo no topo do app)
-    if (config.cards && !config.cards.find((c: any) => c.id === 'print_labels')) {
-      config.cards.push({ id: 'print_labels', label: 'Impressão de Etiquetas', visible: true, order: 19.5, module: 'production' });
+    // Migration: remove print_labels card — feature descontinuada
+    if (config.cards && config.cards.find((c: any) => c.id === 'print_labels')) {
+      config.cards = config.cards.filter((c: any) => c.id !== 'print_labels');
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
     // Migration: ensure factory_config card is present
@@ -916,16 +919,15 @@ export default function App() {
       config.cards.push({ id: 'ai_assistant', label: 'Assistente IA (Claude)', visible: true, order: -1, module: 'any' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
-    // Migration: ensure qr_scanner card is present
-    if (config.cards && !config.cards.find((c: any) => c.id === 'qr_scanner')) {
-      config.cards.push({ id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: config.cards.length, module: 'sales' });
+    // Migration: remove qr_scanner card — feature descontinuada
+    if (config.cards && config.cards.find((c: any) => c.id === 'qr_scanner')) {
+      config.cards = config.cards.filter((c: any) => c.id !== 'qr_scanner');
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
-    // Migration: reminders/activity/qr_scanner passam a exigir módulo Vendas — não têm nada
-    // a ver com o módulo Pessoal sozinho (dívidas de fornecedor, feed de vendas, scanner de
-    // produto).
+    // Migration: reminders/activity passam a exigir módulo Vendas — não têm nada a ver com o
+    // módulo Pessoal sozinho (dívidas de fornecedor, feed de vendas).
     if (config.cards) {
-      ['reminders', 'activity', 'qr_scanner'].forEach(id => {
+      ['reminders', 'activity'].forEach(id => {
         const card = config.cards.find((c: any) => c.id === id);
         if (card && card.module !== 'sales') {
           card.module = 'sales';
@@ -967,6 +969,33 @@ export default function App() {
     return config;
   });
 
+  // Perfis de Dashboard "recomendado" (Vendas x Produção) publicados pela conta de
+  // desenvolvimento — só usados pra decidir o layout inicial de uma CONTA NOVA (nenhum
+  // dashboard_config salvo ainda, ver reconciliação do snapshot abaixo). Refs porque são lidos
+  // dentro do callback da subscription de dashboard_config, montado uma única vez.
+  const [dashboardDefaultSales, setDashboardDefaultSales] = useState<DashboardCardConfig[] | null>(null);
+  const [dashboardDefaultProduction, setDashboardDefaultProduction] = useState<DashboardCardConfig[] | null>(null);
+  const dashboardDefaultSalesRef = useRef<DashboardCardConfig[] | null>(null);
+  const dashboardDefaultProductionRef = useRef<DashboardCardConfig[] | null>(null);
+  useEffect(() => { dashboardDefaultSalesRef.current = dashboardDefaultSales; }, [dashboardDefaultSales]);
+  useEffect(() => { dashboardDefaultProductionRef.current = dashboardDefaultProduction; }, [dashboardDefaultProduction]);
+
+  // Correção do módulo (Vendas/Produção/...) de cards de Dashboard que nasceram com o módulo
+  // errado no código — publicada só pela conta de desenvolvimento, aplicada por cima do array
+  // fixo antes de qualquer outro uso (reconciliação de conta existente, padrão de conta nova,
+  // fallback direto). Ref porque também é lida dentro do callback (montado uma única vez) da
+  // subscription de dashboard_config.
+  const [cardModuleOverrides, setCardModuleOverrides] = useState<CardModuleOverrides>({});
+  const cardModuleOverridesRef = useRef<CardModuleOverrides>({});
+  useEffect(() => { cardModuleOverridesRef.current = cardModuleOverrides; }, [cardModuleOverrides]);
+  const applyCardModuleOverrides = (cards: DashboardCardConfig[], overrides: CardModuleOverrides): DashboardCardConfig[] =>
+    cards.map(c => (overrides[c.id] ? { ...c, module: overrides[c.id] as any } : c));
+
+  const effectiveDefaultDashboardConfig: DashboardConfig = useMemo(
+    () => ({ cards: applyCardModuleOverrides(defaultDashboardConfig.cards, cardModuleOverrides) }),
+    [cardModuleOverrides]
+  );
+
   const defaultModulesConfig: AppModulesConfig = {
     personal: true,
     sales: true,
@@ -985,6 +1014,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('modules_config', JSON.stringify(modulesConfig));
   }, [modulesConfig]);
+
+  // Ref sempre atualizada — lida dentro do callback (closure fixa, montado uma única vez) da
+  // subscription de dashboard_config, pra decidir o padrão de conta nova sem re-assinar nada.
+  const modulesConfigRef = useRef(modulesConfig);
+  useEffect(() => { modulesConfigRef.current = modulesConfig; }, [modulesConfig]);
 
   // Sync with Firestore
   useEffect(() => {
@@ -1433,6 +1467,10 @@ export default function App() {
       (data) => setCatalogProfiles([...data].sort((a, b) => b.createdAt - a.createdAt))
     );
 
+    const unsubDashboardDefaultSales = subscribeToDashboardDefault('sales', setDashboardDefaultSales);
+    const unsubDashboardDefaultProduction = subscribeToDashboardDefault('production', setDashboardDefaultProduction);
+    const unsubCardModuleOverrides = subscribeToCardModuleOverrides(setCardModuleOverrides);
+
     const unsubServiceOrders = firebaseService.subscribeToRecentOrOpen<ServiceOrder>(
       "serviceOrders",
       { dateField: "createdAt", cutoffMs: Date.now() - 12 * 30 * 24 * 60 * 60 * 1000, openField: "status", openValues: ["PENDING"] },
@@ -1452,7 +1490,7 @@ export default function App() {
         const mainConfig = sortedData.find(c => c.id === 'main_config') || sortedData[0];
         if (mainConfig) {
           // Reconciliar a configuração carregada com a padrão para garantir que novos cards apareçam
-          const defaultCards = defaultDashboardConfig.cards;
+          const defaultCards = applyCardModuleOverrides(defaultDashboardConfig.cards, cardModuleOverridesRef.current);
           const currentCards = mainConfig.cards || [];
           const currentCardMap = new Map(currentCards.map(c => [c.id, c]));
           
@@ -1469,9 +1507,10 @@ export default function App() {
           });
 
           // Incluir cards que estão no Firestore mas não estão no default (suporte a IDs antigos ou customizados)
-          // — exceto 'print_center', removido de propósito (feature descontinuada).
+          // — exceto os removidos de propósito (features descontinuadas).
+          const discontinuedCardIds = new Set(['print_center', 'print_labels', 'qr_scanner']);
           const defaultIds = new Set(defaultCards.map(c => c.id));
-          const extraCards = currentCards.filter(c => !defaultIds.has(c.id) && c.id !== 'print_center');
+          const extraCards = currentCards.filter(c => !defaultIds.has(c.id) && !discontinuedCardIds.has(c.id));
           
           const combinedCards = [...reconciledCards, ...extraCards];
 
@@ -1481,7 +1520,32 @@ export default function App() {
 
           setDashboardConfig({ ...mainConfig, cards: finalCards });
         } else {
-          setDashboardConfig(defaultDashboardConfig);
+          // Conta nova de verdade (nenhum dashboard_config salvo ainda) — aplica o(s) perfil(is)
+          // "recomendado" publicado(s) pela conta de desenvolvimento pros módulos que essa conta
+          // já tem ativos, por cima do array padrão do código. Nunca roda de novo depois disso:
+          // assim que a conta salvar qualquer coisa, cai no ramo `if (mainConfig)` acima pra sempre.
+          const mc = modulesConfigRef.current;
+          const salesProfile = dashboardDefaultSalesRef.current;
+          const productionProfile = dashboardDefaultProductionRef.current;
+          const baseCards = applyCardModuleOverrides(defaultDashboardConfig.cards, cardModuleOverridesRef.current);
+          const overrideMap = new Map<string, { visible: boolean; order: number }>();
+          if (mc.sales && salesProfile) {
+            salesProfile.forEach(c => overrideMap.set(c.id, { visible: c.visible, order: c.order }));
+          }
+          if (mc.production && productionProfile) {
+            productionProfile.forEach(c => overrideMap.set(c.id, { visible: c.visible, order: c.order }));
+          }
+          if (overrideMap.size === 0) {
+            setDashboardConfig({ cards: baseCards });
+          } else {
+            const merged = baseCards.map(card => {
+              const override = overrideMap.get(card.id);
+              return override ? { ...card, visible: override.visible, order: override.order } : card;
+            });
+            merged.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+            const finalCards = merged.map((card, index) => ({ ...card, order: index }));
+            setDashboardConfig({ cards: finalCards });
+          }
         }
       }
     );
@@ -1552,6 +1616,9 @@ export default function App() {
       unsubCatalogLinks();
       unsubCatalogRequests();
       unsubCatalogProfiles();
+      unsubDashboardDefaultSales();
+      unsubDashboardDefaultProduction();
+      unsubCardModuleOverrides();
       unsubServiceOrders();
       unsubDashboardConfig();
       unsubNavConfig();
@@ -1707,6 +1774,8 @@ export default function App() {
       view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0,
       why: 'Agrupa seus produtos (ex.: "Tênis", "Sandálias") pra facilitar filtros e relatórios depois. Dica: abra "Modelos Disponíveis" pra escolher uma categoria pronta com um toque, sem precisar digitar.',
       guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'cat.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+        { type: 'message', text: 'Veja se tem uma categoria aqui que já serve — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
         { type: 'highlight_tap', anchorKey: 'cat.novo', text: 'Toque aqui para cadastrar uma categoria nova.' },
         { type: 'highlight_tap', anchorKey: 'cat.salvar', text: 'Digite o nome e toque aqui para salvar.' },
       ],
@@ -1715,6 +1784,8 @@ export default function App() {
       view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0,
       why: 'A paleta de cores fica pronta pra usar em qualquer produto, sem digitar o nome toda vez.',
       guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'color.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+        { type: 'message', text: 'Veja se tem uma cor aqui que já serve — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
         { type: 'highlight_tap', anchorKey: 'color.novo', text: 'Toque aqui para cadastrar uma cor nova.' },
         { type: 'highlight_tap', anchorKey: 'color.salvar', text: 'Digite o nome e toque aqui para salvar.' },
       ],
@@ -1724,6 +1795,8 @@ export default function App() {
           view: ViewType.GRIDS, label: 'Cadastre uma Grade/Unidade', isComplete: grids.length > 0,
           why: 'Define os tamanhos que um produto vem (ex.: 34 ao 39) — usada na hora de cadastrar cada modelo.',
           guideSteps: [
+            { type: 'highlight_tap' as const, anchorKey: 'grade.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+            { type: 'message' as const, text: 'Veja se tem uma grade aqui com as numerações que você precisa — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
             { type: 'highlight_tap' as const, anchorKey: 'grade.novo', text: 'Toque aqui para criar uma grade nova.' },
             { type: 'message' as const, text: 'Dê um nome e adicione pelo menos um tamanho.' },
             { type: 'highlight_tap' as const, anchorKey: 'grade.salvar', text: 'Toque aqui para salvar a grade.' },
@@ -5066,7 +5139,7 @@ export default function App() {
   // Colaborador restrito: lista de cards do Dashboard fica filtrada aos seus
   // setores, com a personalização (visível/ordem) que ele próprio já salvou.
   const effectiveDashboardCards = getEffectiveDashboardCards(
-    (dashboardConfig || defaultDashboardConfig).cards,
+    (dashboardConfig || effectiveDefaultDashboardConfig).cards,
     activeCollaborator
   );
 
@@ -5190,13 +5263,18 @@ export default function App() {
             onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
             activeCollaborator={activeCollaborator}
             aiEnabled={aiEnabled}
-            onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
           />
         );
       case ViewType.DASHBOARD_CONFIG:
         return (
           <DashboardConfigView
-            config={{ cards: effectiveDashboardCards }}
+            config={
+              currentParams?.editingDefaultProfile === 'sales'
+                ? { cards: dashboardDefaultSales || effectiveDefaultDashboardConfig.cards }
+                : currentParams?.editingDefaultProfile === 'production'
+                  ? { cards: dashboardDefaultProduction || effectiveDefaultDashboardConfig.cards }
+                  : { cards: effectiveDashboardCards }
+            }
             onSave={async (newConfig) => {
               if (activeCollaborator && !activeCollaborator.isUnrestricted) {
                 await saveCollaborator({ ...activeCollaborator, dashboardConfig: newConfig.cards });
@@ -5213,6 +5291,23 @@ export default function App() {
             isDarkMode={isDarkMode}
             modulesConfig={modulesConfig}
             activeCollaborator={activeCollaborator}
+            editingDefaultProfile={currentParams?.editingDefaultProfile as DashboardDefaultProfile | undefined}
+            onSaveDefaultProfile={async (profile, cards) => {
+              try {
+                await saveDashboardDefault(profile, cards);
+                toast.show('Padrão salvo!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar padrão: ' + (err.message || err));
+              }
+            }}
+            onChangeCardModule={async (cardId, module) => {
+              try {
+                await saveCardModuleOverrides({ ...cardModuleOverridesRef.current, [cardId]: module });
+                toast.show('Módulo salvo!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar módulo: ' + (err.message || err));
+              }
+            }}
           />
         );
       case ViewType.SETTINGS:
@@ -5452,6 +5547,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             modulesConfig={modulesConfig}
             onNavigate={navigateTo}
+            onStartJourney={handleStartJourney}
           />
         );
       case ViewType.CATEGORY_CONFIG:
@@ -5495,6 +5591,7 @@ export default function App() {
               }
             }}
             isDarkMode={isDarkMode}
+            onStartJourney={handleStartJourney}
           />
         );
       case ViewType.COLORS:
@@ -5524,6 +5621,7 @@ export default function App() {
               }
             }}
             isDarkMode={isDarkMode}
+            onStartJourney={handleStartJourney}
           />
         );
       case ViewType.BRANDS:
@@ -7330,6 +7428,7 @@ export default function App() {
             products={products}
             soleStock={soleStockEntries}
             restrictToPackaging={!modulesConfig.production}
+            onStartJourney={handleStartJourney}
           />
         );
       case ViewType.PRODUCT_SHEET:
@@ -7888,6 +7987,7 @@ export default function App() {
             lots={productionLots}
             products={products}
             soleStock={soleStockEntries}
+            onStartJourney={handleStartJourney}
           />
         );
 
@@ -8036,6 +8136,23 @@ export default function App() {
             isDarkMode={isDarkMode}
           />
         );
+      case ViewType.NEW_USER_DEFAULTS:
+        return (
+          <NewUserDefaultsView
+            onNavigate={navigateTo}
+            isDarkMode={isDarkMode}
+            allCards={defaultDashboardConfig.cards}
+            cardModuleOverrides={cardModuleOverrides}
+            onSaveCardModuleOverrides={async (overrides) => {
+              try {
+                await saveCardModuleOverrides(overrides);
+                toast.show('Módulos salvos!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar módulos: ' + (err.message || err));
+              }
+            }}
+          />
+        );
       case ViewType.COLLABORATORS_CONFIG:
         return (
           <CollaboratorsConfigView
@@ -8043,7 +8160,7 @@ export default function App() {
             onSave={saveCollaborator}
             onDelete={deleteCollaborator}
             isDarkMode={isDarkMode}
-            dashboardCards={(dashboardConfig || defaultDashboardConfig).cards}
+            dashboardCards={(dashboardConfig || effectiveDefaultDashboardConfig).cards}
             sales={sales}
             rhConfig={rhConfig}
             loans={loans}
@@ -8450,6 +8567,8 @@ export default function App() {
         return "Personalizar Empresa";
       case ViewType.COLLABORATORS_CONFIG:
         return "Equipe";
+      case ViewType.NEW_USER_DEFAULTS:
+        return "Configurações Padrão";
       case ViewType.LABOR_TERMINATION_SIMULATOR:
         return "Simulador de Rescisão";
       case ViewType.LABOR_SIM_PARAMS:

@@ -10,6 +10,10 @@ service cloud.firestore {
     function isSignedIn() { return request.auth != null; }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     function isEmailVerified() { return request.auth.token.email_verified == true; }
+    // Só a conta de desenvolvimento pode publicar novos modelos/exemplos nas coleções
+    // compartilhadas entre contas (categoryTemplates, gridTemplates, colorTemplates,
+    // flowTagTemplates, sectorTemplates) — qualquer usuário pode ler/usar, ninguém mais escreve.
+    function isTemplateAdmin() { return isSignedIn() && request.auth.token.email == 'fabricananet@gmail.com'; }
     function isValidId(id) { return id is string && id.size() <= 128; }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
@@ -195,7 +199,7 @@ service cloud.firestore {
     // qualquer usuário logado; escrita segue dono-do-documento (createdBy), não dono-da-conta.
     match /categoryTemplates/{templateId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
+      allow create: if isTemplateAdmin()
         && incoming().createdBy == request.auth.uid
         && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
         && incoming().type is string
@@ -206,7 +210,7 @@ service cloud.firestore {
     // Modelos de cor compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
     match /colorTemplates/{templateId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
+      allow create: if isTemplateAdmin()
         && incoming().createdBy == request.auth.uid
         && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
         && incoming().createdAt is number;
@@ -216,7 +220,7 @@ service cloud.firestore {
     // Modelos de grade compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
     match /gridTemplates/{templateId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
+      allow create: if isTemplateAdmin()
         && incoming().createdBy == request.auth.uid
         && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
         && incoming().type is string
@@ -227,7 +231,7 @@ service cloud.firestore {
     // Modelos de flow tag compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
     match /flowTagTemplates/{templateId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
+      allow create: if isTemplateAdmin()
         && incoming().createdBy == request.auth.uid
         && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
         && incoming().createdAt is number;
@@ -237,11 +241,27 @@ service cloud.firestore {
     // Modelos de setor compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
     match /sectorTemplates/{templateId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
+      allow create: if isTemplateAdmin()
         && incoming().createdBy == request.auth.uid
         && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
         && incoming().createdAt is number;
       allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+    }
+
+    // Configuração padrão de Dashboard pra CONTAS NOVAS (perfis 'sales'/'production') — só a
+    // conta de desenvolvimento publica; qualquer conta logada lê pra herdar o padrão a
+    // primeira vez que abre o app (ver dashboardDefaultsService.ts).
+    match /appDefaultDashboards/{profile} {
+      allow read: if isSignedIn();
+      allow write: if isTemplateAdmin();
+    }
+
+    // Correção do módulo (Vendas/Produção/...) de cada card de Dashboard — só a conta de
+    // desenvolvimento publica; toda conta lê, pois isso decide quais cards aparecem pra ela
+    // (ver dashboardCardModulesService.ts).
+    match /appConfig/dashboardCardModules {
+      allow read: if isSignedIn();
+      allow write: if isTemplateAdmin();
     }
   }
 }

@@ -21,7 +21,9 @@ const DOC_ID = 'main';
 
 export const DEFAULT_PRODUCTION_SCHEDULE_CONFIG: ProductionScheduleConfig = {
   excludeWeekends: true,
-  averageMode: 'FULL_PERIOD',
+  // 'ELAPSED' é o recomendado (ver "Recomendado" nos botões de SettingsView.tsx) — mostra o
+  // ritmo real de produção até agora, sem diluir pelos dias que ainda faltam no período.
+  averageMode: 'ELAPSED',
 };
 
 export function subscribeToProductionScheduleConfig(callback: (config: ProductionScheduleConfig) => void) {

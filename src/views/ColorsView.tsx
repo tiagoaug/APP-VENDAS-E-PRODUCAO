@@ -3,6 +3,7 @@ import { ColorValue, ColorTemplate } from '../types';
 import { Plus, Trash2, Edit, Bookmark, BookmarkCheck, Sparkles, ChevronDown, Layers } from 'lucide-react';
 import ColorModal from '../components/ColorModal';
 import { subscribeToColorTemplates, saveColorTemplate } from '../services/colorTemplatesService';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 
 interface ColorsViewProps {
   colors: ColorValue[];
@@ -10,9 +11,10 @@ interface ColorsViewProps {
   onEdit: (id: string, color: Omit<ColorValue, 'id'>) => void;
   onDelete: (id: string) => void;
   isDarkMode: boolean;
+  onStartJourney?: (journeyId: string) => void;
 }
 
-export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode }: ColorsViewProps) {
+export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode, onStartJourney }: ColorsViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingColor, setEditingColor] = useState<ColorValue | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState<{ primary: boolean; composite: boolean }>({ primary: false, composite: false });
@@ -57,19 +59,21 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          onClick={(e) => { e.stopPropagation(); handleSaveAsTemplate(color); }}
-          disabled={isSavedAsTemplate(color)}
-          data-guide-anchor="color.salvarModelo"
-          title={isSavedAsTemplate(color) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
-          className={`p-2 rounded-xl transition-colors ${
-            isSavedAsTemplate(color)
-              ? 'text-violet-500'
-              : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
-          }`}
-        >
-          {isSavedAsTemplate(color) ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
-        </button>
+        {isTemplateAdmin() && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleSaveAsTemplate(color); }}
+            disabled={isSavedAsTemplate(color)}
+            data-guide-anchor="color.salvarModelo"
+            title={isSavedAsTemplate(color) ? 'Usada como exemplo pra novas contas' : 'Usar como exemplo pra novas contas'}
+            className={`p-2 rounded-xl transition-colors ${
+              isSavedAsTemplate(color)
+                ? 'text-violet-500'
+                : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
+            }`}
+          >
+            {isSavedAsTemplate(color) ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+          </button>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); setEditingColor(color); setIsModalOpen(true); }}
           data-guide-anchor="color.editar"
@@ -92,7 +96,6 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
 
   const renderTemplatesSection = (kind: 'primary' | 'composite') => {
     const available = templates.filter(t => !!t.isComposite === (kind === 'composite'));
-    if (available.length === 0) return null;
     return (
       <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
         <button
@@ -109,6 +112,12 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
         </button>
         {templatesOpen[kind] && (
           <div className="px-4 pb-4 flex flex-wrap gap-2">
+            <p className="w-full text-[10px] font-bold text-rose-600 dark:text-rose-400 leading-snug">
+              Toque num modelo abaixo para adicioná-lo à sua paleta de cores.
+            </p>
+            {available.length === 0 && (
+              <p className="text-[10px] font-bold text-slate-400 italic py-2">Nenhum modelo disponível ainda pra este tipo.</p>
+            )}
             {available.map(template => {
               const exists = colors.some(c => c.name.toUpperCase() === template.name.toUpperCase());
               return (
@@ -131,6 +140,16 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
             })}
           </div>
         )}
+        {templatesOpen[kind] && onStartJourney && (
+          <button
+            type="button"
+            onClick={() => onStartJourney('tour_cadastrar_cor')}
+            data-guide-anchor="color.naoAchouModelo"
+            className="w-full flex items-center justify-center gap-1.5 px-4 py-3 border-t border-violet-100/50 dark:border-violet-900/30 text-[10px] font-black uppercase tracking-widest text-violet-500 hover:text-violet-600 transition-colors"
+          >
+            Não achou um modelo? Veja como criar uma nova
+          </button>
+        )}
       </div>
     );
   };
@@ -147,7 +166,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
         color={editingColor || undefined}
       />
 
-      {colors.length > 0 && (
+      {colors.length > 0 && isTemplateAdmin() && (
         <button
           onClick={handleSaveAllAsTemplates}
           data-guide-anchor="color.salvarTodosModelos"

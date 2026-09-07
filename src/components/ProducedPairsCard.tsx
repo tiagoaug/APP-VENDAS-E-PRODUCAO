@@ -27,7 +27,7 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
   // dias já passados — configurável em Configuração de Fábrica; espelha o mesmo toggle usado
   // pela barra de estatísticas do PCP Monitor.
   const [excludeWeekends, setExcludeWeekends] = useState(true);
-  const [averageMode, setAverageMode] = useState<'FULL_PERIOD' | 'ELAPSED'>('FULL_PERIOD');
+  const [averageMode, setAverageMode] = useState<'FULL_PERIOD' | 'ELAPSED'>('ELAPSED');
   useEffect(() => {
     const unsub = subscribeToProductionScheduleConfig(cfg => { setExcludeWeekends(cfg.excludeWeekends); setAverageMode(cfg.averageMode); });
     return () => unsub();

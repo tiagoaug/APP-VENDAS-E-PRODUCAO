@@ -56,6 +56,7 @@ import BottomNavConfigModal from '../components/BottomNavConfigModal';
 import CustomPinKeypad from '../components/CustomPinKeypad';
 import { PIN_LENGTH } from '../utils/pinKeypad';
 import { subscribeToProductionScheduleConfig, saveProductionScheduleConfig } from '../services/productionScheduleService';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 
 // Atalhos diretos pra cada sub-tela de "Configuração de Fábrica" (ProductionConfigView) —
 // pulam o menu intermediário e abrem a sub-tela na hora (mesmo mecanismo já usado por
@@ -73,7 +74,7 @@ const PRODUCTION_CONFIG_SCREENS: Record<string, ProductionScreenType> = {
 };
 
 interface SettingsViewProps {
-  onNavigate: (view: ViewType) => void;
+  onNavigate: (view: ViewType, params?: Record<string, any>) => void;
   onNavigateProduction: (screen: ProductionScreenType) => void;
   isDarkMode: boolean;
   appTheme: ThemeId;
@@ -156,7 +157,7 @@ export default function SettingsView({
   // 'FULL_PERIOD' = dias úteis do período inteiro (comportamento de sempre); 'ELAPSED' = só os
   // dias úteis já passados até agora — as duas opções são mutuamente exclusivas (ver botões
   // abaixo, escolher uma desmarca a outra automaticamente).
-  const [averageMode, setAverageMode] = useState<'FULL_PERIOD' | 'ELAPSED'>('FULL_PERIOD');
+  const [averageMode, setAverageMode] = useState<'FULL_PERIOD' | 'ELAPSED'>('ELAPSED');
   useEffect(() => {
     const unsub = subscribeToProductionScheduleConfig(cfg => { setExcludeWeekends(cfg.excludeWeekends); setAverageMode(cfg.averageMode); });
     return () => unsub();
@@ -232,7 +233,7 @@ export default function SettingsView({
         { id: ViewType.PRODUCTS, label: "Produtos Cadastrados", icon: <Package size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
         { id: ViewType.PRODUCT_FORM, label: "Cadastrar Novo Modelo", icon: <Plus size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'sales' },
         { id: ViewType.STOCK, label: "Expedição e Estoque", icon: <Boxes size={22} />, color: "text-amber-700 dark:text-amber-500", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'sales' },
-        { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={22} />, color: "text-pink-600 dark:text-pink-400", bg: "bg-pink-50 dark:bg-pink-900/30", module: 'any' },
+        { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={22} />, color: "text-pink-600 dark:text-pink-400", bg: "bg-pink-50 dark:bg-pink-900/30", module: 'sales' },
         { id: ViewType.CATEGORIES, label: "Categorias e Grupos", icon: <Tags size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'any' },
         { id: ViewType.BRANDS, label: "Marcas", icon: <Bookmark size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/30", module: 'sales' },
         { id: ViewType.MODELS, label: "Nome de Modelos", icon: <Layers size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/30", module: 'sales' },
@@ -405,7 +406,10 @@ export default function SettingsView({
                         {averageMode === 'ELAPSED' && <div className="w-2 h-2 rounded-full bg-indigo-600" />}
                       </div>
                       <div className="min-w-0">
-                        <p className={`text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Média até o Momento no Mês</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className={`text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Média até o Momento no Mês</p>
+                          <span className="px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">Recomendado</span>
+                        </div>
                         <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">Divide só pelos dias úteis já trabalhados até hoje — não dilui pelos dias que ainda faltam</p>
                       </div>
                     </button>
@@ -511,6 +515,27 @@ export default function SettingsView({
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
             </button>
+
+            {/* ── CONFIGURAÇÕES PADRÃO PARA NOVOS USUÁRIOS (só conta de desenvolvimento) ── */}
+            {isTemplateAdmin() && (
+              <button
+                onClick={() => onNavigate(ViewType.NEW_USER_DEFAULTS)}
+                title="Configurações Padrão para Novos Usuários"
+                aria-label="Abrir configurações padrão para novos usuários"
+                className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center shrink-0 text-violet-600 dark:text-violet-400">
+                    <Bookmark size={22} />
+                  </div>
+                  <div className="text-left">
+                    <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Configurações Padrão (Novos Usuários)</p>
+                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Só você vê isto</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
+            )}
 
             {/* ── PERSONALIZAR NAVEGAÇÃO ── */}
             <button

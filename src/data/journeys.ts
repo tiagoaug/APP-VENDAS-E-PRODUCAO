@@ -58,6 +58,8 @@ export const JOURNEYS: Journey[] = [
     title: 'Como cadastrar uma categoria',
     entryScreen: ViewType.CATEGORIES,
     steps: [
+      { type: 'highlight_tap', anchorKey: 'cat.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+      { type: 'message', text: 'Veja se tem uma categoria aqui que já serve — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
       { type: 'highlight_tap', anchorKey: 'cat.novo', text: 'Toque aqui para cadastrar uma categoria nova.' },
       { type: 'highlight_tap', anchorKey: 'cat.salvar', text: 'Digite o nome e toque aqui para salvar.' },
     ],
@@ -67,6 +69,8 @@ export const JOURNEYS: Journey[] = [
     title: 'Como cadastrar uma cor',
     entryScreen: ViewType.COLORS,
     steps: [
+      { type: 'highlight_tap', anchorKey: 'color.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+      { type: 'message', text: 'Veja se tem uma cor aqui que já serve — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
       { type: 'highlight_tap', anchorKey: 'color.novo', text: 'Toque aqui para cadastrar uma cor nova.' },
       { type: 'highlight_tap', anchorKey: 'color.salvar', text: 'Digite o nome e toque aqui para salvar.' },
     ],
@@ -77,6 +81,8 @@ export const JOURNEYS: Journey[] = [
     productionOnly: true,
     entryScreen: ViewType.GRIDS,
     steps: [
+      { type: 'highlight_tap', anchorKey: 'grade.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+      { type: 'message', text: 'Veja se tem uma grade aqui com as numerações que você precisa — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
       { type: 'highlight_tap', anchorKey: 'grade.novo', text: 'Toque aqui para criar uma grade nova.' },
       { type: 'message', text: 'Dê um nome e adicione pelo menos um tamanho.' },
       { type: 'highlight_tap', anchorKey: 'grade.salvar', text: 'Toque aqui para salvar a grade.' },
@@ -218,9 +224,25 @@ export const JOURNEYS: Journey[] = [
     entryScreen: ViewType.PRODUCTION_CONFIG,
     productionSubScreen: 'SECTORS',
     steps: [
+      { type: 'highlight_tap', anchorKey: 'sector.modelosToggle', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+      { type: 'message', text: 'Veja se tem um setor aqui que já serve — é só tocar nele pra adicionar. Se não tiver nenhum que sirva, toque em "Entendi" e vamos criar um novo.' },
       { type: 'highlight_tap', anchorKey: 'sector.novo', text: 'Toque aqui para cadastrar um setor novo.' },
       { type: 'message', text: 'Dê um nome ao setor e, se quiser, vincule as Etapas/Flow Tags que ele executa.' },
       { type: 'highlight_tap', anchorKey: 'sector.salvar', text: 'Toque aqui para salvar o setor.' },
+    ],
+  },
+  {
+    id: 'tour_cadastrar_flowtag',
+    title: 'Como cadastrar uma Flow Tag',
+    productionOnly: true,
+    entryScreen: ViewType.PRODUCTION_CONFIG,
+    productionSubScreen: 'FLOW_TAGS',
+    steps: [
+      { type: 'highlight_tap', anchorKey: 'flowtag.modelosToggle', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
+      { type: 'message', text: 'Veja se tem uma Flow Tag aqui que já serve — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
+      { type: 'highlight_tap', anchorKey: 'flowtag.novo', text: 'Toque aqui para cadastrar uma Flow Tag nova.' },
+      { type: 'message', text: 'Dê um nome à etapa e adicione as subcategorias de status que ela pode ter.' },
+      { type: 'highlight_tap', anchorKey: 'flowtag.salvar', text: 'Toque aqui para salvar a Flow Tag.' },
     ],
   },
   {

@@ -364,7 +364,7 @@ export default function PCPView({
   // dias já passados — configurável em Configuração de Fábrica; espelha o mesmo toggle usado
   // pelo card "Pares Produzidos" do Dashboard.
   const [excludeWeekendsInAvg, setExcludeWeekendsInAvg] = useState(true);
-  const [avgModeInAvg, setAvgModeInAvg] = useState<'FULL_PERIOD' | 'ELAPSED'>('FULL_PERIOD');
+  const [avgModeInAvg, setAvgModeInAvg] = useState<'FULL_PERIOD' | 'ELAPSED'>('ELAPSED');
   useEffect(() => {
     const unsub = subscribeToProductionScheduleConfig(cfg => { setExcludeWeekendsInAvg(cfg.excludeWeekends); setAvgModeInAvg(cfg.averageMode); });
     return () => unsub();

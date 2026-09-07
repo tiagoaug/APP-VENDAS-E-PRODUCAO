@@ -65,6 +65,10 @@ export default function TransactionModal({
   const [referenceNumber, setReferenceNumber] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [totalInstallments, setTotalInstallments] = useState(2);
+  // Parcelas com valores diferentes — ex.: parcela 1 R$100, parcela 2 R$150 etc., em vez de
+  // repetir o mesmo "Valor" em todas. `installmentAmounts[i]` é a parcela i+1.
+  const [hasCustomInstallmentValues, setHasCustomInstallmentValues] = useState(false);
+  const [installmentAmounts, setInstallmentAmounts] = useState<(number | string)[]>([]);
   const [reminderTitle, setReminderTitle] = useState('');
   const [reminderAt, setReminderAt] = useState<number | null>(null);
   const [reminderAlarmMode, setReminderAlarmMode] = useState<boolean>(true);
@@ -102,6 +106,8 @@ export default function TransactionModal({
       setReferenceNumber(transaction.referenceNumber || '');
       setIsRecurring(false);
       setTotalInstallments(2);
+      setHasCustomInstallmentValues(false);
+      setInstallmentAmounts([]);
       setReminderTitle('');
       setReminderAt(null);
       setReminderAlarmMode(true);
@@ -112,6 +118,8 @@ export default function TransactionModal({
       setReferenceNumber('');
       setIsRecurring(initialIsRecurring);
       setTotalInstallments(2);
+      setHasCustomInstallmentValues(false);
+      setInstallmentAmounts([]);
       setReminderTitle('');
       setReminderAt(null);
       setReminderAlarmMode(true);
@@ -171,6 +179,20 @@ export default function TransactionModal({
     }
   }, [itemsTotal, items.length]);
 
+  // Mantém installmentAmounts do tamanho de totalInstallments quando "valores diferentes" está
+  // ligado — novas parcelas nascem com o valor atual do campo "Valor", parcelas removidas
+  // (menos parcelas) são só cortadas do fim, preservando o que já foi editado.
+  useEffect(() => {
+    if (!hasCustomInstallmentValues) return;
+    setInstallmentAmounts(prev => {
+      const next = [...prev];
+      while (next.length < totalInstallments) next.push(Number(amount) || 0);
+      next.length = totalInstallments;
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasCustomInstallmentValues, totalInstallments]);
+
   if (!isOpen) return null;
 
   const handleSave = async () => {
@@ -180,6 +202,10 @@ export default function TransactionModal({
     }
     if (!transaction && isRecurring && (!totalInstallments || totalInstallments < 2)) {
       toast.show('Informe quantas parcelas (mínimo 2)');
+      return;
+    }
+    if (!transaction && isRecurring && hasCustomInstallmentValues && installmentAmounts.slice(0, totalInstallments).some(v => !(Number(v) > 0))) {
+      toast.show('Informe o valor de todas as parcelas (maior que zero)');
       return;
     }
 
@@ -214,6 +240,7 @@ export default function TransactionModal({
         const occId = generateId();
         const occurrence: Omit<Transaction, 'id'> & { id?: string } = {
           ...buildTx(occDate, i + 1, groupId),
+          amount: hasCustomInstallmentValues ? (Number(installmentAmounts[i]) || 0) : Number(amount),
           reminderAt: occReminderAt,
           reminderTitle: reminderTitle || null,
           reminderAlarmMode,
@@ -722,6 +749,54 @@ export default function TransactionModal({
                       <p className="text-[9px] font-bold text-slate-400 mt-2 ml-1">
                         Gera {totalInstallments} lançamentos, um por mês a partir da data informada.
                       </p>
+
+                      <button
+                        type="button"
+                        onClick={() => setHasCustomInstallmentValues(v => !v)}
+                        data-guide-anchor="transacao.parcelasValoresDiferentesToggle"
+                        className={`flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] mt-3 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}
+                      >
+                        <span className="text-[10px] font-black uppercase tracking-tight text-left dark:text-white">
+                          Parcelas com valores diferentes
+                        </span>
+                        <div className={`w-10 h-6 rounded-full p-1 flex items-center transition-all shrink-0 ${hasCustomInstallmentValues ? 'bg-cyan-500 justify-end' : (isDarkMode ? 'bg-slate-700 justify-start' : 'bg-slate-300 justify-start')}`}>
+                          <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+                        </div>
+                      </button>
+
+                      {hasCustomInstallmentValues && (
+                        <div className="mt-3 flex flex-col gap-2">
+                          {Array.from({ length: totalInstallments }).map((_, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest w-14 shrink-0">Parc. {i + 1}</span>
+                              <div className="relative flex-1">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">R$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={installmentAmounts[i] ?? ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setInstallmentAmounts(prev => {
+                                      const next = [...prev];
+                                      next[i] = val;
+                                      return next;
+                                    });
+                                  }}
+                                  className="w-full bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl py-2 pl-8 pr-3 text-xs font-black focus:ring-4 focus:ring-cyan-500/10 transition-all dark:text-white outline-none"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between px-1 pt-1">
+                            <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Total a pagar</span>
+                            <span className="text-sm font-black text-cyan-600 dark:text-cyan-400">
+                              R$ {installmentAmounts.reduce<number>((acc, v) => acc + (Number(v) || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="relative mt-2">
                         <ReminderPickerModal
                           isDarkMode={isDarkMode}

@@ -4,12 +4,13 @@ import {
   Layout, Eye, EyeOff, Save, CheckCircle2, ChevronLeft, GripVertical, RefreshCcw,
   Sparkles, Package, Plus, Wallet, TrendingUp, TrendingDown, DollarSign, Grid3X3,
   Users, BarChart3, Landmark, Search, ShoppingCart, AlertCircle, Filter, Calendar,
-  Boxes, Copy, Share2, Hash, User, History, Factory, Settings, ScanLine,
-  QrCode, Trash2, ClipboardList, Footprints, Layers, PackageOpen, Clipboard, Clock,
+  Boxes, Copy, Share2, Hash, User, History, Factory, Settings,
+  Trash2, ClipboardList, Footprints, Layers, PackageOpen, Clipboard, Clock,
   ChevronRight, ShoppingBag, BookOpen, CreditCard, Database, Bell
 } from 'lucide-react';
 import { motion, Reorder, AnimatePresence, useDragControls } from 'motion/react';
 import { isDashboardCardAllowed } from '../utils/collaborators';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 
 export type ViewMode = 'name' | 'joint' | 'full';
 
@@ -20,6 +21,15 @@ interface DashboardConfigViewProps {
   isDarkMode: boolean;
   modulesConfig: import("../types").AppModulesConfig;
   activeCollaborator?: Collaborator | null;
+  // Modo admin (só conta de desenvolvimento) — em vez de editar o dashboard_config da própria
+  // conta, edita o perfil "recomendado" que contas NOVAS herdam ao ativar Vendas ou Produção
+  // pela primeira vez (ver App.tsx, reconciliação do snapshot de dashboard_config).
+  editingDefaultProfile?: 'sales' | 'production';
+  onSaveDefaultProfile?: (profile: 'sales' | 'production', cards: DashboardCardConfig[]) => void | Promise<void>;
+  // Correção do módulo de um card (só a conta de desenvolvimento vê/usa) — salva na hora,
+  // separado do fluxo de "Salvar" de visibilidade/ordem (vale pra TODAS as contas do app, não
+  // só o perfil sendo editado agora). Ver NewUserDefaultsView.tsx pra edição em lista.
+  onChangeCardModule?: (cardId: string, module: string) => void;
 }
 
 interface CardPreviewProps {
@@ -28,7 +38,9 @@ interface CardPreviewProps {
   mini: boolean;
 }
 
-function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
+// Exportado pra reaproveitar em NewUserDefaultsView.tsx — quem tá escolhendo o módulo de cada
+// card precisa ver a cara real dele (não só nome/ID) pra saber do que se trata.
+export function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
   const containerClass = `mt-3 p-4 rounded-[1.5rem] border flex flex-col gap-3 w-full text-[11px] select-none pointer-events-none transition-all duration-300 ${
     isDarkMode ? 'bg-slate-900 border-slate-800/80 text-slate-400' : 'bg-slate-50/50 border-slate-100 text-slate-500'
   } ${mini ? 'p-2.5 rounded-xl gap-1.5 text-[8.5px]' : ''}`;
@@ -477,16 +489,6 @@ function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
         </div>
       );
 
-    case 'qr_scanner':
-      return (
-        <div className={containerClass}>
-          <div className={headerClass}>
-            <span className={titleClass}>Scanner Rápido</span>
-            <ScanLine size={mini ? 12 : 16} className="text-indigo-500" />
-          </div>
-          <div className={buttonClass}><QrCode size={mini ? 10 : 12} /> Escanear Código</div>
-        </div>
-      );
 
     default:
       return null;
@@ -498,11 +500,25 @@ interface CardItemProps {
   isDarkMode: boolean;
   onToggleVisibility: (id: string) => void;
   viewMode: ViewMode;
+  onChangeModule?: (cardId: string, module: string) => void;
   key?: string | number;
 }
 
-function CardItem({ card, isDarkMode, onToggleVisibility, viewMode }: CardItemProps) {
+const MODULE_BADGE: Record<string, { label: string; cls: string }> = {
+  sales: { label: 'Vendas', cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  production: { label: 'Produção', cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  sales_production: { label: 'Ambos', cls: 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' },
+  personal: { label: 'Pessoal', cls: 'bg-pink-50 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400' },
+  entregas: { label: 'Entregas', cls: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400' },
+  bling: { label: 'Bling', cls: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+  rh: { label: 'RH', cls: 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400' },
+  ai: { label: 'IA', cls: 'bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
+  any: { label: 'Qualquer', cls: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' },
+};
+
+function CardItem({ card, isDarkMode, onToggleVisibility, viewMode, onChangeModule }: CardItemProps) {
   const controls = useDragControls();
+  const moduleBadge = MODULE_BADGE[card.module || 'any'] || MODULE_BADGE.any;
 
   return (
     <Reorder.Item 
@@ -530,9 +546,27 @@ function CardItem({ card, isDarkMode, onToggleVisibility, viewMode }: CardItemPr
             <GripVertical size={20} />
           </div>
           <div className="flex flex-col flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className={`w-2 h-2 rounded-full ${card.visible ? 'bg-emerald-500' : 'bg-slate-300'}`} />
               <p className={`text-[11px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{card.label}</p>
+              {onChangeModule && isTemplateAdmin() ? (
+                <select
+                  value={card.module || 'any'}
+                  onChange={(e) => onChangeModule(card.id, e.target.value)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  title={`Módulo de ${card.label}`}
+                  aria-label={`Módulo de ${card.label}`}
+                  className={`appearance-none border-none outline-none cursor-pointer px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${moduleBadge.cls}`}
+                >
+                  {Object.entries(MODULE_BADGE).map(([value, { label }]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              ) : (
+                <span className={`px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${moduleBadge.cls}`}>
+                  {moduleBadge.label}
+                </span>
+              )}
             </div>
             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-4">
               ID: {card.id}
@@ -566,11 +600,17 @@ function CardItem({ card, isDarkMode, onToggleVisibility, viewMode }: CardItemPr
   );
 }
 
-export default function DashboardConfigView({ config, onSave, onBack, isDarkMode, modulesConfig, activeCollaborator = null }: DashboardConfigViewProps) {
+export default function DashboardConfigView({ config, onSave, onBack, isDarkMode, modulesConfig, activeCollaborator = null, editingDefaultProfile, onSaveDefaultProfile, onChangeCardModule }: DashboardConfigViewProps) {
   const passesFilter = (card: DashboardCardConfig) => {
+    // Curadoria do padrão pra contas novas: mostra só os cards do módulo sendo editado
+    // (+ os de "qualquer módulo"), sem olhar a conta/colaborador de quem tá editando agora.
+    if (editingDefaultProfile) {
+      return !card.module || card.module === 'any' || card.module === editingDefaultProfile || card.module === 'sales_production';
+    }
     if (!isDashboardCardAllowed(activeCollaborator, card.id)) return false;
     if (!card.module || card.module === 'any') return true;
     if (!modulesConfig) return true; // Fallback if modulesConfig is missing
+    if (card.module === 'sales_production') return !!modulesConfig.sales || !!modulesConfig.production;
     return (modulesConfig as any)[card.module];
   };
 
@@ -610,7 +650,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       );
     }
-  }, [config, isSaving, isSaved, modulesConfig, activeCollaborator]); // Removed localCards from deps to prevent loop, we use localContent internally
+  }, [config, isSaving, isSaved, modulesConfig, activeCollaborator, editingDefaultProfile]); // Removed localCards from deps to prevent loop, we use localContent internally
 
   const handleToggleVisibility = (id: string) => {
     setLocalCards(prev => prev.map(card => 
@@ -623,10 +663,14 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
     setIsSaving(true);
     // Update order based on current list position
     const updatedCards = localCards.map((card, index) => ({ ...card, order: index }));
-    await onSave({ cards: updatedCards });
+    if (editingDefaultProfile && onSaveDefaultProfile) {
+      await onSaveDefaultProfile(editingDefaultProfile, updatedCards);
+    } else {
+      await onSave({ cards: updatedCards });
+    }
     setIsSaved(true);
     setIsSaving(false);
-    setShowReloadPrompt(true);
+    if (!editingDefaultProfile) setShowReloadPrompt(true);
     // Remove the timeout that resets isSaved to false, so the "Salvo!" state persists until next change
   };
 
@@ -648,9 +692,13 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
             <ChevronLeft size={20} />
           </button>
           <div>
-            <h2 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Layout</h2>
+            <h2 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              {editingDefaultProfile ? `Padrão: ${editingDefaultProfile === 'sales' ? 'Vendas' : 'Produção'}` : 'Layout'}
+            </h2>
             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-0.5">
-              {activeCollaborator && !activeCollaborator.isUnrestricted ? `Painel Pessoal — ${activeCollaborator.name}` : 'Painel Principal'}
+              {editingDefaultProfile
+                ? 'Layout inicial de contas novas — só você vê isto'
+                : (activeCollaborator && !activeCollaborator.isUnrestricted ? `Painel Pessoal — ${activeCollaborator.name}` : 'Painel Principal')}
             </p>
           </div>
         </div>
@@ -712,12 +760,13 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
             className="flex flex-col gap-3"
           >
             {localCards.map((card) => (
-              <CardItem 
-                key={card.id} 
-                card={card} 
-                isDarkMode={isDarkMode} 
-                onToggleVisibility={handleToggleVisibility} 
+              <CardItem
+                key={card.id}
+                card={card}
+                isDarkMode={isDarkMode}
+                onToggleVisibility={handleToggleVisibility}
                 viewMode={viewMode}
+                onChangeModule={onChangeCardModule}
               />
             ))}
           </Reorder.Group>

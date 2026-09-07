@@ -975,6 +975,9 @@ export enum ViewType {
   RULE_OF_THREE = 'RULE_OF_THREE',
   CATALOG_REQUESTS = 'CATALOG_REQUESTS',
   COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
+  // Tela só da conta de desenvolvimento — configurações "padrão" oferecidas a contas novas
+  // (hoje: layout de Dashboard recomendado por Vendas/Produção; ver NewUserDefaultsView.tsx).
+  NEW_USER_DEFAULTS = 'NEW_USER_DEFAULTS',
   // Módulo RH — hub que reúne Colaboradores (cadastro/PIN/permissões) e Comissão a Vendedores,
   // que antes viviam espalhados em Configurações e Financeiro (ver RhView.tsx).
   RH_MENU = 'RH_MENU',
@@ -1019,7 +1022,10 @@ export type DashboardCardConfig = {
   visible: boolean;
   order: number;
   initialScreen?: ProductionScreenType;
-  module?: keyof AppModulesConfig | 'any';
+  // 'sales_production' = card só faz sentido pra quem tem Vendas OU Produção ativo (nem
+  // sempre é um dos dois isolado, nem "qualquer módulo" — ver DashboardView.tsx/
+  // DashboardConfigView.tsx, filtro de módulo).
+  module?: keyof AppModulesConfig | 'any' | 'sales_production';
 };
 
 export type DashboardConfig = {
