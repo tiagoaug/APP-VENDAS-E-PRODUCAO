@@ -23,6 +23,7 @@ import {
   ProductionLot,
   AppModulesConfig,
   ReminderTonePattern,
+  Collaborator,
 } from "../types";
 import DatePicker from "../components/DatePicker";
 import ReminderPickerModal from "../components/ReminderPickerModal";
@@ -107,6 +108,9 @@ interface PurchaseFormViewProps {
   accounts: Account[];
   grids: Grid[];
   people: Person[];
+  // Colaboradores com cargo 'comprador' — responsáveis pelas compras da empresa, selecionáveis
+  // no campo "Comprador/Representante" abaixo (ver CollaboratorsConfigView.tsx).
+  collaborators?: Collaborator[];
   productionConfigs?: ProductionConfigItem[];
   colors?: ColorValue[];
   productionOrders: ProductionOrder[];
@@ -136,6 +140,7 @@ export default function PurchaseFormView({
   accounts,
   grids,
   people,
+  collaborators = [],
   productionConfigs = [],
   colors = [],
   productionOrders,
@@ -945,7 +950,7 @@ export default function PurchaseFormView({
       prioridade: type === PurchaseType.REPLENISHMENT ? prioridade : undefined,
       deliveryDate: type === PurchaseType.REPLENISHMENT && deliveryDate ? new Date(deliveryDate).getTime() : undefined,
       sellerId,
-      sellerName: people.find(p => p.id === sellerId)?.name || sellerId || '',
+      sellerName: people.find(p => p.id === sellerId)?.name || collaborators.find(c => c.id === sellerId)?.name || sellerId || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
       reminderAt: paymentTerm === PaymentTerm.INSTALLMENTS ? (reminderAt ?? null) : null,
       reminderTitle: paymentTerm === PaymentTerm.INSTALLMENTS ? (reminderTitle || null) : null,
@@ -1445,7 +1450,7 @@ export default function PurchaseFormView({
             <div data-guide-anchor="purchaseForm.comprador">
               <ComboBox
                 options={[
-                  ...people.filter(p => p.isSeller || p.isBuyer).map(p => ({ id: p.id, name: p.name })),
+                  ...collaborators.filter(c => c.cargo === 'comprador').map(c => ({ id: c.id, name: c.name })),
                   ...(availableThirdParties.find(s => s.id === supplierId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
                 ]}
                 value={sellerId}

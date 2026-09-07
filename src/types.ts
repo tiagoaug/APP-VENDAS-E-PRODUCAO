@@ -978,6 +978,7 @@ export enum ViewType {
   // Tela só da conta de desenvolvimento — configurações "padrão" oferecidas a contas novas
   // (hoje: layout de Dashboard recomendado por Vendas/Produção; ver NewUserDefaultsView.tsx).
   NEW_USER_DEFAULTS = 'NEW_USER_DEFAULTS',
+  DEVELOPER_ACCOUNT = 'DEVELOPER_ACCOUNT',
   // Módulo RH — hub que reúne Colaboradores (cadastro/PIN/permissões) e Comissão a Vendedores,
   // que antes viviam espalhados em Configurações e Financeiro (ver RhView.tsx).
   RH_MENU = 'RH_MENU',
@@ -1363,10 +1364,11 @@ export type Collaborator = {
   // SECTOR_TASKS em utils/collaborators.ts). Ausente = 'edit' (acesso total, como sempre foi).
   taskPermissions?: Record<string, TaskPermissionLevel>;
   canUseAI: boolean;
-  // Colaborador pode ser escolhido como "Vendedor/Responsável" no Lançamento de Venda (junto
-  // das Pessoas marcadas isSeller) — commissionPercent (0-100) é aplicado sobre o total de cada
-  // venda dele pra alimentar o painel "Comissão a Vendedores" em Financeiro (ver Sale.
-  // commissionAmount, calculado e "assado" na venda a cada salvamento).
+  // Colaborador pode ser escolhido como "Vendedor/Responsável" no Lançamento de Venda —
+  // commissionPercent (0-100) é aplicado sobre o total de cada venda dele pra alimentar o
+  // painel "Comissão a Vendedores" em Financeiro (ver Sale.commissionAmount, calculado e
+  // "assado" na venda a cada salvamento). Sempre true (forçado) quando cargo é
+  // 'representante_externo', mas também pode ser ligado num colaborador interno normal.
   isSeller?: boolean;
   commissionPercent?: number;
   themePref?: string;
@@ -1404,15 +1406,29 @@ export type Collaborator = {
   // configuráveis por colaborador — sempre usam o padrão global (RhGlobalConfig.paymentDay/
   // advanceDay, RH → Configurações Globais), pra manter todo mundo na mesma data.
   paymentFrequency?: 'MONTHLY' | 'BIWEEKLY';
-  // Cargo — Diretor (sem salário base, recebe só Pró-labore), Gerente (salário normal, sem
-  // Pró-labore) ou Colaborador (salário normal + Função livre em roleTitle). Ausente = tratado
-  // como Colaborador. Ver computeCollaboratorPayroll em utils/collaborators.ts e a Folha de
-  // Pagamento (CommissionToSellersCard.tsx).
-  cargo?: 'diretor' | 'gerente' | 'colaborador';
+  // Cargo — 5 valores fixos com comportamento especial no app: Diretor (sem salário base,
+  // recebe só Pró-labore), Gerente (salário normal, sem Pró-labore), Colaborador (salário
+  // normal + Função livre em roleTitle), Representante Externo (sem salário/PIN/acesso ao app —
+  // só comissão, isSeller forçado true, não aparece em "Acessos") ou Comprador (colaborador
+  // normal responsável pelas compras da empresa, selecionável no campo "Comprador/Representante"
+  // de uma Compra). Além desses, aceita o id de um cargo CUSTOM cadastrado pela conta em
+  // CollaboratorCargo (coleção 'collaboratorCargos', CRUD em CollaboratorsConfigView.tsx) —
+  // esses se comportam como Colaborador (salário normal, PIN/Acessos normais), só muda o rótulo
+  // exibido. Ausente = tratado como Colaborador. Ver computeCollaboratorPayroll em
+  // utils/collaborators.ts e a Folha de Pagamento (CommissionToSellersCard.tsx).
+  cargo?: 'diretor' | 'gerente' | 'colaborador' | 'representante_externo' | 'comprador' | (string & {});
   proLaboreValue?: number;
   // Função desempenhada — texto livre, só faz sentido pra cargo 'colaborador' (Diretor e
   // Gerente já têm o cargo como identificação).
   roleTitle?: string;
+};
+
+// Cargo customizado — cadastrado pela própria conta (não compartilhado entre contas, diferente
+// dos *Template), pra além dos 5 fixos de Collaborator.cargo. CRUD completo em
+// CollaboratorsConfigView.tsx (coleção 'collaboratorCargos').
+export type CollaboratorCargo = {
+  id: string;
+  name: string;
 };
 
 // Um abatimento registrado num Empréstimo de colaborador — 'payroll' quando descontado
@@ -1524,6 +1540,8 @@ export type ProductionConfigItem = {
     category?: string;
     moldReference?: string;
     hasTransfer?: boolean;
+    buysReadySole?: boolean;
+    readySoleCost?: number;
     buysMaterials?: boolean;
     hasSoleServices?: boolean;
     tracksWeight?: boolean;

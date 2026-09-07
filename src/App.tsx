@@ -114,6 +114,7 @@ import {
   BottomNavItemId,
   RhGlobalConfig,
   CollaboratorLoan,
+  CollaboratorCargo,
   CompanyProfile,
   SoleStockEntry,
   SolePurchaseItem,
@@ -184,6 +185,7 @@ const ProductionConfigView = lazy(() => import("./views/ProductionConfigView"));
 const PersonalFinancialView = lazy(() => import("./views/PersonalFinancialView"));
 const ModuleConfigView = lazy(() => import("./views/ModuleConfigView"));
 const NewUserDefaultsView = lazy(() => import("./views/NewUserDefaultsView"));
+const DeveloperAccountView = lazy(() => import("./views/DeveloperAccountView"));
 const CollaboratorsConfigView = lazy(() => import("./views/CollaboratorsConfigView"));
 const RhView = lazy(() => import("./views/RhView"));
 const LaborTerminationSimulatorView = lazy(() => import("./views/LaborTerminationSimulatorView"));
@@ -250,6 +252,10 @@ import { LaborSimParams, DEFAULT_LABOR_SIM_PARAMS } from './utils/laborTerminati
 import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
 import { subscribeToDashboardDefault, saveDashboardDefault, DashboardDefaultProfile } from './services/dashboardDefaultsService';
 import { subscribeToCardModuleOverrides, saveCardModuleOverrides, CardModuleOverrides } from './services/dashboardCardModulesService';
+import { subscribeToDeveloperAccount, saveDeveloperAccount } from './services/developerAccountService';
+import { setDeveloperAccountEmail } from './utils/templateAdmin';
+import { subscribeToSalesDefaultFilters, saveSalesDefaultFilters, SalesDefaultFilters, subscribeToPcpDefaultFilters, savePcpDefaultFilters, PcpDefaultFilters } from './services/defaultFiltersService';
+import { subscribeToDefaultUnits, saveDefaultUnits, DefaultUnitItem } from './services/defaultUnitsService';
 import { initPushNotifications } from './services/pushNotificationService';
 import { toMillis } from './utils/firestoreTimestamp';
 
@@ -276,6 +282,7 @@ const MODAL_VIEWS = [
   ViewType.REPORT_DETAILED,
   ViewType.MODULES_CONFIG,
   ViewType.NEW_USER_DEFAULTS,
+  ViewType.DEVELOPER_ACCOUNT,
 ];
 
 const MODULE_VIEWS: Record<string, ViewType[]> = {
@@ -991,6 +998,23 @@ export default function App() {
   const applyCardModuleOverrides = (cards: DashboardCardConfig[], overrides: CardModuleOverrides): DashboardCardConfig[] =>
     cards.map(c => (overrides[c.id] ? { ...c, module: overrides[c.id] as any } : c));
 
+  // Delegação da conta de desenvolvimento (ver isTemplateAdmin()/templateAdmin.ts) — mantém o
+  // util em dia (usado em toda a árvore sem prop drilling) e guarda o valor aqui só pra exibir
+  // na tela DeveloperAccountView.
+  const [developerAccountEmail, setDeveloperAccountEmailState] = useState<string | null>(null);
+
+  // Filtros/visualização padrão de Vendas pra contas novas — só aplicados em SalesView se a
+  // conta ainda não tiver nada salvo localmente (ver useEffect lá dentro).
+  const [salesDefaultFilters, setSalesDefaultFilters] = useState<SalesDefaultFilters | null>(null);
+
+  // Filtros padrão do popup "Filtros" do PCP (Barra de Estatísticas/Menu de Ações Flutuante) —
+  // mesma ideia de salesDefaultFilters acima, ver PCPView.tsx.
+  const [pcpDefaultFilters, setPcpDefaultFilters] = useState<PcpDefaultFilters | null>(null);
+
+  // Unidades de Medida sugeridas pro botão "Carregar Unidades Padrão" — null enquanto a conta de
+  // desenvolvimento não publicar nada (ProductionConfigView cai no DEFAULT_UNITS hardcoded nesse caso).
+  const [defaultUnits, setDefaultUnits] = useState<DefaultUnitItem[] | null>(null);
+
   const effectiveDefaultDashboardConfig: DashboardConfig = useMemo(
     () => ({ cards: applyCardModuleOverrides(defaultDashboardConfig.cards, cardModuleOverrides) }),
     [cardModuleOverrides]
@@ -1197,6 +1221,27 @@ export default function App() {
 
   const deleteLoan = async (id: string) => {
     await firebaseService.deleteDocument("collaborator_loans", id);
+  };
+
+  // Cargos customizados de Equipe (RH) — além dos 5 fixos de Collaborator.cargo, a própria
+  // conta pode cadastrar outros (ex.: "Estoquista", "Motorista de Entrega") com CRUD completo,
+  // ver CollaboratorsConfigView.tsx. Mesmo padrão de coleção simples de "loans" acima.
+  const [collaboratorCargos, setCollaboratorCargos] = useState<CollaboratorCargo[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    const unsubCollaboratorCargos = firebaseService.subscribeToCollection<CollaboratorCargo>(
+      "collaborator_cargos",
+      setCollaboratorCargos,
+    );
+    return () => unsubCollaboratorCargos();
+  }, [user]);
+
+  const saveCollaboratorCargo = async (cargo: CollaboratorCargo) => {
+    await firebaseService.saveDocument("collaborator_cargos", cargo);
+  };
+
+  const deleteCollaboratorCargo = async (id: string) => {
+    await firebaseService.deleteDocument("collaborator_cargos", id);
   };
 
   // Identidade da empresa (Personalizar Empresa) — mesmo padrão de app_modules_config acima.
@@ -1470,6 +1515,13 @@ export default function App() {
     const unsubDashboardDefaultSales = subscribeToDashboardDefault('sales', setDashboardDefaultSales);
     const unsubDashboardDefaultProduction = subscribeToDashboardDefault('production', setDashboardDefaultProduction);
     const unsubCardModuleOverrides = subscribeToCardModuleOverrides(setCardModuleOverrides);
+    const unsubDeveloperAccount = subscribeToDeveloperAccount((email) => {
+      setDeveloperAccountEmailState(email);
+      setDeveloperAccountEmail(email);
+    });
+    const unsubSalesDefaultFilters = subscribeToSalesDefaultFilters(setSalesDefaultFilters);
+    const unsubPcpDefaultFilters = subscribeToPcpDefaultFilters(setPcpDefaultFilters);
+    const unsubDefaultUnits = subscribeToDefaultUnits(setDefaultUnits);
 
     const unsubServiceOrders = firebaseService.subscribeToRecentOrOpen<ServiceOrder>(
       "serviceOrders",
@@ -1619,6 +1671,10 @@ export default function App() {
       unsubDashboardDefaultSales();
       unsubDashboardDefaultProduction();
       unsubCardModuleOverrides();
+      unsubDeveloperAccount();
+      unsubSalesDefaultFilters();
+      unsubPcpDefaultFilters();
+      unsubDefaultUnits();
       unsubServiceOrders();
       unsubDashboardConfig();
       unsubNavConfig();
@@ -5997,6 +6053,7 @@ export default function App() {
             accounts={accounts}
             grids={grids}
             people={people}
+            collaborators={collaborators}
             colors={colors}
             productionConfigs={productionConfigs}
             initialParams={currentParams}
@@ -6275,6 +6332,15 @@ export default function App() {
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
             onOpenPastedOrder={(draft) => navigateTo(ViewType.SALE_FORM, draft)}
             openCatalogSendNonce={currentParams?.openCatalogSendNonce}
+            defaultFilters={salesDefaultFilters}
+            onSaveDefaultFilters={async (data) => {
+              try {
+                await saveSalesDefaultFilters(data);
+                toast.show('Filtros salvos como padrão pra novas contas!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar filtros: ' + (err.message || err));
+              }
+            }}
             onEdit={(sale) => navigateTo(ViewType.SALE_FORM, sale.id)}
             onCancelOnly={handleCancelOnlySale}
             onCancelAndRevert={handleCancelSaleWithRevert}
@@ -7416,6 +7482,11 @@ export default function App() {
               toast.show('Insumo cadastrado!');
               return result as ProductionConfigItem;
             }}
+            onQuickAddColor={async (color: any) => {
+              const result = await firebaseService.saveDocument("colors", color);
+              toast.show('Cor cadastrada!');
+              return result as ColorValue;
+            }}
             onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
             onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
             onDeleteSector={(id: string) => firebaseService.deleteDocument("sectors", id)}
@@ -7442,6 +7513,15 @@ export default function App() {
             onUpdateGrid={handleUpdateGrid}
             onDeleteGrid={handleDeleteGrid}
             categories={categories}
+            defaultUnits={defaultUnits}
+            onSaveDefaultUnits={async (items) => {
+              try {
+                await saveDefaultUnits(items);
+                toast.show('Unidades salvas como padrão pra novas contas!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar unidades: ' + (err.message || err));
+              }
+            }}
             initialScreen={productionSubScreen}
             onNavigate={navigateTo}
             onAddProduct={handleOpenProductCreationChoice}
@@ -7522,6 +7602,15 @@ export default function App() {
             productionConfigs={productionConfigs}
             soleStock={soleStockEntries}
             palmilhaStock={palmilhaStockEntries}
+            defaultFilters={pcpDefaultFilters}
+            onSaveDefaultFilters={async (data) => {
+              try {
+                await savePcpDefaultFilters(data);
+                toast.show('Filtros salvos como padrão pra novas contas!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar filtros: ' + (err.message || err));
+              }
+            }}
             onNavigate={navigateTo}
             onNavigateProduction={navigateToProduction}
             labelFiles={labelFiles}
@@ -7976,6 +8065,11 @@ export default function App() {
               toast.show('Insumo cadastrado!');
               return result as ProductionConfigItem;
             }}
+            onQuickAddColor={async (color: any) => {
+              const result = await firebaseService.saveDocument("colors", color);
+              toast.show('Cor cadastrada!');
+              return result as ColorValue;
+            }}
             onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
             onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
             onDeleteSector={(id: string) => firebaseService.deleteDocument("sectors", id)}
@@ -8002,6 +8096,15 @@ export default function App() {
             onUpdateGrid={handleUpdateGrid}
             onDeleteGrid={handleDeleteGrid}
             categories={categories}
+            defaultUnits={defaultUnits}
+            onSaveDefaultUnits={async (items) => {
+              try {
+                await saveDefaultUnits(items);
+                toast.show('Unidades salvas como padrão pra novas contas!');
+              } catch (err: any) {
+                toast.show('Erro ao salvar unidades: ' + (err.message || err));
+              }
+            }}
             initialScreen="INSUMOS"
             onNavigate={navigateTo}
             onAddProduct={handleOpenProductCreationChoice}
@@ -8175,6 +8278,16 @@ export default function App() {
             }}
           />
         );
+      case ViewType.DEVELOPER_ACCOUNT:
+        return (
+          <DeveloperAccountView
+            isDarkMode={isDarkMode}
+            currentUserEmail={user?.email ?? null}
+            developerAccountEmail={developerAccountEmail}
+            onSaveDeveloperAccount={saveDeveloperAccount}
+            onNavigate={navigateTo}
+          />
+        );
       case ViewType.COLLABORATORS_CONFIG:
         return (
           <CollaboratorsConfigView
@@ -8186,6 +8299,9 @@ export default function App() {
             sales={sales}
             rhConfig={rhConfig}
             loans={loans}
+            customCargos={collaboratorCargos}
+            onSaveCustomCargo={saveCollaboratorCargo}
+            onDeleteCustomCargo={deleteCollaboratorCargo}
           />
         );
       case ViewType.RH_MENU:
@@ -8591,6 +8707,8 @@ export default function App() {
         return "Equipe";
       case ViewType.NEW_USER_DEFAULTS:
         return "Configurações Padrão";
+      case ViewType.DEVELOPER_ACCOUNT:
+        return "Conta Desenvolvedora";
       case ViewType.LABOR_TERMINATION_SIMULATOR:
         return "Simulador de Rescisão";
       case ViewType.LABOR_SIM_PARAMS:

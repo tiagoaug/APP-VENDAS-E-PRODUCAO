@@ -34,7 +34,7 @@ import {
   User,
   HandCoins,
 } from 'lucide-react';
-import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel, Sale, RhGlobalConfig, CollaboratorLoan } from '../types';
+import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel, Sale, RhGlobalConfig, CollaboratorLoan, CollaboratorCargo } from '../types';
 import { SECTORS, isDashboardCardAllowed, getTaskLevel, computeCollaboratorPayroll } from '../utils/collaborators';
 import { NAV_MONO_PALETTE } from '../utils/themes';
 import { generateId } from '../utils/id';
@@ -74,6 +74,12 @@ interface CollaboratorsConfigViewProps {
   // Empréstimos ativos (RH → Empréstimos) — só pra mostrar o Restante em aberto no card de cada
   // colaborador; gerenciar (criar/pagar) fica todo na tela de Empréstimos, não aqui.
   loans?: CollaboratorLoan[];
+  // Cargos customizados da própria conta (CRUD completo aqui mesmo, dentro do seletor de Cargo)
+  // — além dos 5 fixos (Diretor/Gerente/Colaborador/Representante Externo/Comprador), que têm
+  // comportamento especial no app; um cargo custom se comporta como Colaborador normal.
+  customCargos?: CollaboratorCargo[];
+  onSaveCustomCargo?: (cargo: CollaboratorCargo) => void | Promise<void>;
+  onDeleteCustomCargo?: (id: string) => void | Promise<void>;
 }
 
 function emptyDraft(): Collaborator {
@@ -90,7 +96,7 @@ function emptyDraft(): Collaborator {
 
 type FormTab = 'personal' | 'financial' | 'access';
 
-export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode, dashboardCards, sales = [], rhConfig, loans = [] }: CollaboratorsConfigViewProps) {
+export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode, dashboardCards, sales = [], rhConfig, loans = [], customCargos = [], onSaveCustomCargo, onDeleteCustomCargo }: CollaboratorsConfigViewProps) {
   const [draft, setDraft] = useState<Collaborator | null>(null);
   const [formTab, setFormTab] = useState<FormTab>('personal');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -107,6 +113,12 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   const [sectorPopup, setSectorPopup] = useState<SectorId | null>(null);
   const [includePendingCommission, setIncludePendingCommission] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState<{ url: string; name: string } | null>(null);
+  // CRUD de cargos customizados (ver customCargos prop) — inline dentro do próprio seletor de
+  // Cargo, sem modal separado. newCargoName = campo "+ Novo Cargo"; editingCargoId/editingCargoName
+  // = renomeando um já existente (toque no lápis).
+  const [newCargoName, setNewCargoName] = useState('');
+  const [editingCargoId, setEditingCargoId] = useState<string | null>(null);
+  const [editingCargoName, setEditingCargoName] = useState('');
 
   const startNew = () => { setDraft(emptyDraft()); setShowPin(false); setPinKeypadOpen(false); setFormTab('personal'); };
   const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); setPinKeypadOpen(false); setFormTab('personal'); };
@@ -115,7 +127,8 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   // Colaborador novo exige PIN de 6 dígitos. Editando um já existente, só exige que
   // o PIN não esteja vazio — assim um registro antigo com PIN fora do padrão atual
   // não trava pra sempre o salvamento de outras mudanças (ex.: setores liberados).
-  const pinValid = !!draft && (isExistingDraft ? draft.pin.trim().length > 0 : draft.pin.length === 6);
+  // Representante Externo nunca loga no app — não exige PIN.
+  const pinValid = !!draft && (draft.cargo === 'representante_externo' || (isExistingDraft ? draft.pin.trim().length > 0 : draft.pin.length === 6));
 
   const toggleSector = (sectorId: typeof SECTORS[number]['id']) => {
     if (!draft) return;
@@ -204,6 +217,34 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
     }
   };
 
+  const handleAddCustomCargo = async () => {
+    const name = newCargoName.trim();
+    if (!name || !onSaveCustomCargo) return;
+    const cargo: CollaboratorCargo = { id: generateId(), name };
+    await onSaveCustomCargo(cargo);
+    setNewCargoName('');
+  };
+
+  const startEditCustomCargo = (cargo: CollaboratorCargo) => {
+    setEditingCargoId(cargo.id);
+    setEditingCargoName(cargo.name);
+  };
+
+  const handleSaveCustomCargoRename = async () => {
+    const name = editingCargoName.trim();
+    if (!name || !editingCargoId || !onSaveCustomCargo) return;
+    await onSaveCustomCargo({ id: editingCargoId, name });
+    setEditingCargoId(null);
+    setEditingCargoName('');
+  };
+
+  const handleDeleteCustomCargo = async (cargo: CollaboratorCargo) => {
+    if (!onDeleteCustomCargo) return;
+    if (confirm(`Excluir o cargo "${cargo.name}"? Colaboradores já cadastrados com ele mantêm o cargo salvo, só some da lista pra escolher em novos cadastros.`)) {
+      await onDeleteCustomCargo(cargo.id);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-8 pb-32 max-w-4xl mx-auto">
       <header className="flex flex-col gap-2">
@@ -285,14 +326,31 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[9px] font-black uppercase tracking-wider">
                     <UserCog size={12} /> Gerente
                   </span>
+                ) : collab.cargo === 'representante_externo' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider">
+                    <Percent size={12} /> Representante Externo
+                  </span>
+                ) : collab.cargo === 'comprador' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 text-[9px] font-black uppercase tracking-wider">
+                    <ShoppingBag size={12} /> Comprador
+                  </span>
+                ) : customCargos.find(c => c.id === collab.cargo) ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[9px] font-black uppercase tracking-wider">
+                    <User size={12} /> {customCargos.find(c => c.id === collab.cargo)?.name}
+                  </span>
                 ) : collab.roleTitle ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase tracking-wider">
                     <User size={12} /> {collab.roleTitle}
                   </span>
                 ) : null}
-                {collab.isSeller && (
+                {collab.isSeller && collab.cargo !== 'representante_externo' && (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider">
                     <Percent size={12} /> Vendedor · {collab.commissionPercent ?? 0}% comissão
+                  </span>
+                )}
+                {collab.cargo === 'representante_externo' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider">
+                    <Percent size={12} /> {collab.commissionPercent ?? 0}% comissão
                   </span>
                 )}
                 {(() => {
@@ -419,7 +477,9 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             {([
               { id: 'personal' as FormTab, label: 'Pessoal', icon: User, anchor: 'collab.abaPessoal' },
               { id: 'financial' as FormTab, label: 'Financeira', icon: DollarSign, anchor: 'collab.abaFinanceira' },
-              { id: 'access' as FormTab, label: 'Acessos', icon: ShieldCheck, anchor: 'collab.abaAcessos' },
+              // Representante Externo não loga no app — sem PIN/setores/cards, a aba Acessos não
+              // se aplica a ele.
+              ...(draft.cargo === 'representante_externo' ? [] : [{ id: 'access' as FormTab, label: 'Acessos', icon: ShieldCheck, anchor: 'collab.abaAcessos' }]),
             ]).map(tab => {
               const TabIcon = tab.icon;
               return (
@@ -584,7 +644,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             />
           </div>
 
-          {draft.cargo !== 'diretor' && (
+          {draft.cargo !== 'diretor' && draft.cargo !== 'representante_externo' && (
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><DollarSign size={11} /> Salário Base (R$)</label>
             <input
@@ -600,6 +660,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           </div>
           )}
 
+          {draft.cargo !== 'representante_externo' && (
           <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${draft.paymentFrequency === 'BIWEEKLY' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
             <button
               type="button"
@@ -624,7 +685,37 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 : <>Pagamento {rhConfig?.paymentDayMode === 'business_day_5' ? 'no 5º dia útil' : `dia ${rhConfig?.paymentDay ?? 5}`} <span className="italic">(config. global de RH → Configurações Globais)</span></>}
             </p>
           </div>
+          )}
 
+          {draft.cargo === 'representante_externo' ? (
+            <div className="flex flex-col gap-3 p-4 rounded-2xl border-2 border-amber-500 bg-amber-50 dark:bg-amber-900/20">
+              <div className="flex items-center gap-3">
+                <Percent size={20} className="text-amber-500" />
+                <div>
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Comissão do Representante Externo</p>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Sem salário — só comissão sobre o que vende</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pl-[52px]">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 shrink-0">Comissão</label>
+                <div className="relative flex-1 max-w-[140px]">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={draft.commissionPercent ?? ''}
+                    onChange={e => setDraft({ ...draft, commissionPercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    placeholder="0"
+                    className={`w-full pl-3 pr-7 py-2 rounded-xl border-2 text-sm font-bold outline-none focus:border-amber-500 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">%</span>
+                </div>
+                <p className="text-[9px] text-slate-400 font-medium leading-tight flex-1">sobre o total de cada venda dele</p>
+              </div>
+            </div>
+          ) : (
           <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${draft.isSeller ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
             <button
               type="button"
@@ -664,15 +755,16 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               </div>
             )}
           </div>
+          )}
 
-          <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 ${draft.cargo === 'diretor' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : draft.cargo === 'gerente' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+          <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 ${draft.cargo === 'diretor' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : draft.cargo === 'gerente' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : draft.cargo === 'representante_externo' ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : draft.cargo === 'comprador' ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Cargo</label>
-            <div className={`flex p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className={`flex flex-col gap-1 p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
               <button
                 type="button"
                 onClick={() => setDraft({ ...draft, cargo: 'diretor' })}
                 data-guide-anchor="collab.cargoSelecionar"
-                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'diretor' ? 'bg-violet-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'diretor' ? 'bg-violet-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
               >
                 Diretor
               </button>
@@ -680,7 +772,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 type="button"
                 onClick={() => setDraft({ ...draft, cargo: 'gerente' })}
                 data-guide-anchor="collab.cargoSelecionar"
-                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'gerente' ? 'bg-blue-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'gerente' ? 'bg-blue-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
               >
                 Gerente
               </button>
@@ -688,11 +780,94 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 type="button"
                 onClick={() => setDraft({ ...draft, cargo: 'colaborador' })}
                 data-guide-anchor="collab.cargoSelecionar"
-                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!draft.cargo || draft.cargo === 'colaborador') ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!draft.cargo || draft.cargo === 'colaborador') ? 'bg-indigo-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
               >
                 Colaborador
               </button>
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, cargo: 'representante_externo', isSeller: true })}
+                data-guide-anchor="collab.cargoSelecionar"
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'representante_externo' ? 'bg-amber-500 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+              >
+                Representante Externo
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, cargo: 'comprador' })}
+                data-guide-anchor="collab.cargoSelecionar"
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'comprador' ? 'bg-teal-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+              >
+                Comprador
+              </button>
+              {customCargos.map(cargo => (
+                editingCargoId === cargo.id ? (
+                  <div key={cargo.id} className="flex items-center gap-1.5 p-1">
+                    <input
+                      type="text"
+                      value={editingCargoName}
+                      onChange={e => setEditingCargoName(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleSaveCustomCargoRename())}
+                      autoFocus
+                      className={`flex-1 min-w-0 px-3 py-2 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest outline-none focus:border-indigo-500 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                    />
+                    <button type="button" onClick={handleSaveCustomCargoRename} title="Salvar" aria-label={`Salvar nome do cargo ${cargo.name}`} className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center bg-emerald-600 text-white">
+                      <Check size={14} strokeWidth={3} />
+                    </button>
+                    <button type="button" onClick={() => { setEditingCargoId(null); setEditingCargoName(''); }} title="Cancelar" aria-label="Cancelar edição do cargo" className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div key={cargo.id} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setDraft({ ...draft, cargo: cargo.id })}
+                      data-guide-anchor="collab.cargoSelecionar"
+                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === cargo.id ? 'bg-slate-700 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+                    >
+                      {cargo.name}
+                    </button>
+                    <button type="button" onClick={() => startEditCustomCargo(cargo)} title="Renomear" aria-label={`Renomear cargo ${cargo.name}`} className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${isDarkMode ? 'text-slate-500 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}>
+                      <Pencil size={13} />
+                    </button>
+                    <button type="button" onClick={() => handleDeleteCustomCargo(cargo)} title="Excluir" aria-label={`Excluir cargo ${cargo.name}`} className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-500">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                )
+              ))}
+              {onSaveCustomCargo && (
+                <div className="flex items-center gap-1.5 p-1">
+                  <input
+                    type="text"
+                    value={newCargoName}
+                    onChange={e => setNewCargoName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomCargo())}
+                    placeholder="Novo cargo... ex: Estoquista"
+                    data-guide-anchor="collab.novoCargoNome"
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest outline-none focus:border-indigo-500 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder:text-slate-600 placeholder:normal-case placeholder:tracking-normal placeholder:font-medium' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-300 placeholder:normal-case placeholder:tracking-normal placeholder:font-medium'}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomCargo}
+                    disabled={!newCargoName.trim()}
+                    title="Adicionar Cargo"
+                    aria-label="Adicionar novo cargo"
+                    data-guide-anchor="collab.novoCargoAdicionar"
+                    className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center bg-indigo-600 text-white disabled:opacity-40"
+                  >
+                    <Plus size={16} strokeWidth={3} />
+                  </button>
+                </div>
+              )}
             </div>
+            {draft.cargo === 'representante_externo' && (
+              <p className="text-[9px] text-slate-400 font-medium leading-tight px-1">Sem PIN nem acesso ao app — só recebe comissão e aparece em Vendas/RH. Ver aba "Comissão a Vendedores".</p>
+            )}
+            {draft.cargo === 'comprador' && (
+              <p className="text-[9px] text-slate-400 font-medium leading-tight px-1">Colaborador normal, responsável pelas compras — fica selecionável no campo "Comprador/Representante" de uma Compra.</p>
+            )}
 
             {draft.cargo === 'diretor' && (
               <div className="flex items-center gap-3">

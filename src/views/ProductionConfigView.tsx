@@ -89,6 +89,7 @@ import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridTy
 import { subscribeToFlowTagTemplates, saveFlowTagTemplate } from '../services/flowTagTemplatesService';
 import { subscribeToSectorTemplates, saveSectorTemplate } from '../services/sectorTemplatesService';
 import { isTemplateAdmin } from '../utils/templateAdmin';
+import { DefaultUnitItem } from '../services/defaultUnitsService';
 import Modal from '../components/Modal';
 import PersonModal from '../components/PersonModal';
 import MaterialFormFields from '../components/MaterialFormFields';
@@ -432,6 +433,8 @@ interface ProductionConfigViewProps {
   // Cadastro rápido de Insumo (Material) sem sair do cadastro de Solados — mesmo padrão
   // (retorna o item criado, com id) já usado por onQuickAddFlowTag/onQuickAddCategory.
   onQuickAddMaterial?: (item: Omit<ProductionConfigItem, 'id'>) => Promise<ProductionConfigItem>;
+  // Cadastro rápido de Cor — usado pelos campos "Cores Disponíveis" (MaterialFormFields).
+  onQuickAddColor?: (color: Omit<ColorValue, 'id'>) => Promise<ColorValue>;
   onSaveSector: (sector: Sector) => Promise<void>;
   onDeleteSector: (id: string) => Promise<void>;
   onSaveConfigItem: (item: ProductionConfigItem) => Promise<void>;
@@ -462,6 +465,12 @@ interface ProductionConfigViewProps {
   // que só faz sentido com Produção) nunca chega a renderizar.
   restrictToPackaging?: boolean;
   onStartJourney?: (journeyId: string) => void;
+  // Unidades de Medida sugeridas pro botão "Carregar Unidades Padrão" — vem do Firestore
+  // (appDefaultUnits/units, ver defaultUnitsService.ts) quando a conta de desenvolvimento já
+  // publicou um padrão customizado; cai em DEFAULT_UNITS (hardcoded acima) enquanto isso não
+  // acontece. onSaveDefaultUnits só aparece pra quem já é dev (ver isTemplateAdmin()).
+  defaultUnits?: DefaultUnitItem[] | null;
+  onSaveDefaultUnits?: (items: DefaultUnitItem[]) => void | Promise<void>;
 }
 
 // Quando a conjugação é < 1, a faca precisa de mais de 1 batida para formar 1 par
@@ -483,6 +492,7 @@ export default function ProductionConfigView({
   onQuickAddCategory,
   onQuickAddPerson,
   onQuickAddMaterial,
+  onQuickAddColor,
   onSaveSector,
   onDeleteSector,
   onSaveConfigItem,
@@ -506,6 +516,8 @@ export default function ProductionConfigView({
   soleStock = [],
   restrictToPackaging = false,
   onStartJourney,
+  defaultUnits,
+  onSaveDefaultUnits,
 }: ProductionConfigViewProps) {
 
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
@@ -1076,7 +1088,8 @@ export default function ProductionConfigView({
           onDelete={onDeleteConfigItem}
           onBack={() => setCurrentScreen('MENU')}
           placeholderLabel="Nenhuma unidade cadastrada"
-          seedDefaults={DEFAULT_UNITS}
+          seedDefaults={defaultUnits ?? DEFAULT_UNITS}
+          onSaveAsDefault={onSaveDefaultUnits}
           productionConfigs={productionConfigs}
           people={people}
           onNavigateToScreen={handleNavigateShortcut}
@@ -1203,6 +1216,11 @@ export default function ProductionConfigView({
           supplyCategoryNames={supplyCategoryNames}
           colors={colors}
           flowTags={flowTags}
+          onQuickAddCategory={onQuickAddCategory}
+          onQuickAddFlowTag={onQuickAddFlowTag}
+          onQuickAddPerson={onQuickAddPerson}
+          onQuickAddMaterial={onQuickAddMaterial}
+          onQuickAddColor={onQuickAddColor}
           onNavigateToScreen={handleNavigateShortcut}
           zIndex={60000}
           purchaseNeeds={purchaseNeeds}
@@ -1239,6 +1257,7 @@ export default function ProductionConfigView({
             onQuickAddCategory={onQuickAddCategory}
             onQuickAddPerson={onQuickAddPerson}
             onQuickAddMaterial={onQuickAddMaterial}
+            onQuickAddColor={onQuickAddColor}
             productionConfigs={productionConfigs}
             onNavigateToScreen={handleNavigateShortcut}
             soleStock={soleStock}
@@ -1462,6 +1481,7 @@ function GenericConfigList({
   onBack,
   placeholderLabel,
   seedDefaults,
+  onSaveAsDefault,
   people = [],
   colors = [],
   flowTags = [],
@@ -1475,6 +1495,7 @@ function GenericConfigList({
   onQuickAddCategory,
   onQuickAddPerson,
   onQuickAddMaterial,
+  onQuickAddColor,
   supplyCategoryNames = [],
   toolCategoryNames = [],
   products = [],
@@ -1495,6 +1516,10 @@ function GenericConfigList({
   onBack?: () => void;
   placeholderLabel: string;
   seedDefaults?: { name: string; description: string }[];
+  // Só a conta de desenvolvimento vê o botão que chama isto — grava os itens ATUAIS deste tipo
+  // como o novo `seedDefaults` que contas novas verão no botão "Carregar Padrão" (ver
+  // defaultUnitsService.ts; hoje só passado pra type="UNIT").
+  onSaveAsDefault?: (items: { name: string; description: string }[]) => void | Promise<void>;
   people?: Person[];
   colors?: ColorValue[];
   flowTags?: FlowTag[];
@@ -1508,6 +1533,7 @@ function GenericConfigList({
   onQuickAddCategory?: (category: Omit<Category, 'id'>) => Promise<Category>;
   onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
   onQuickAddMaterial?: (item: Omit<ProductionConfigItem, 'id'>) => Promise<ProductionConfigItem>;
+  onQuickAddColor?: (color: Omit<ColorValue, 'id'>) => Promise<ColorValue>;
   supplyCategoryNames?: string[];
   toolCategoryNames?: string[];
   products?: Product[];
@@ -1544,6 +1570,17 @@ function GenericConfigList({
   const [newGridName, setNewGridName] = useState('');
   const [newGridSizes, setNewGridSizes] = useState<string[]>([]);
   const [newGridSizeInput, setNewGridSizeInput] = useState('');
+  // "Buscar Padrão de Embalagem" — mesmo desenho do "Buscar Grade" do Molde acima (isGridSearchOpen
+  // etc.), só que salva/aplica GridType.EMBALAGEM em vez de SOLADO, e escreve em sizeQuantities
+  // (não sizeWeights). Duplicado em vez de generalizado pra não arriscar mexer no fluxo do Molde,
+  // que já está em produção.
+  const [isPackGridSearchOpen, setIsPackGridSearchOpen] = useState(false);
+  const [packGridSearchTerm, setPackGridSearchTerm] = useState('');
+  const [isCreatingPackGridInline, setIsCreatingPackGridInline] = useState(false);
+  const [editingPackGridId, setEditingPackGridId] = useState<string | null>(null);
+  const [newPackGridName, setNewPackGridName] = useState('');
+  const [newPackGridSizes, setNewPackGridSizes] = useState<string[]>([]);
+  const [newPackGridSizeInput, setNewPackGridSizeInput] = useState('');
   const [isFlowTagPickerOpen, setIsFlowTagPickerOpen] = useState(false);
   const [flowTagSearch, setFlowTagSearch] = useState('');
   const [isCreatingFlowTagInline, setIsCreatingFlowTagInline] = useState(false);
@@ -1666,6 +1703,7 @@ function GenericConfigList({
   // As 3 perguntas de Solado (materiais/serviços/peso) inferem o valor inicial do togle a
   // partir de dado já cadastrado — nunca escondem, por padrão, composição/serviços/pesos que
   // uma matriz já tinha antes dessas perguntas existirem.
+  const moldBuysReadySole = editingItem?.metadata?.buysReadySole ?? false;
   const moldBuysMaterials = editingItem?.metadata?.buysMaterials
     ?? ((editingItem?.metadata?.composition?.length ?? 0) > 0 || !!editingItem?.metadata?.baseMaterialId);
   const moldHasSoleServices = editingItem?.metadata?.hasSoleServices
@@ -1944,6 +1982,64 @@ function GenericConfigList({
     }
   };
 
+  const applyGridToPack = (grid: Grid, sizesOverride?: string[]) => {
+    const gridSizes = sizesOverride || grid.sizes || [];
+    setEditingItem(prev => {
+      if (!prev) return null;
+      const quantities: Record<string, number> = { ...(prev.metadata?.sizeQuantities || {}) };
+      gridSizes.forEach((s: string) => { if (quantities[s] === undefined) quantities[s] = 0; });
+      return { ...prev, metadata: { ...prev.metadata, sizes: gridSizes, sizeQuantities: quantities } };
+    });
+    setIsPackGridSearchOpen(false);
+    setIsCreatingPackGridInline(false);
+    setEditingPackGridId(null);
+    setPackGridSearchTerm('');
+    setNewPackGridName('');
+    setNewPackGridSizes([]);
+    setNewPackGridSizeInput('');
+  };
+
+  const addNewPackGridSize = () => {
+    const trimmed = newPackGridSizeInput.trim();
+    if (trimmed !== '' && !newPackGridSizes.includes(trimmed)) {
+      setNewPackGridSizes(prev => [...prev, trimmed]);
+      setNewPackGridSizeInput('');
+    }
+  };
+
+  const removeNewPackGridSize = (size: string) => {
+    setNewPackGridSizes(prev => prev.filter(s => s !== size));
+  };
+
+  const startCreatePackGrid = () => {
+    setEditingPackGridId(null);
+    setNewPackGridName('');
+    setNewPackGridSizes([]);
+    setIsCreatingPackGridInline(true);
+  };
+
+  const startEditPackGrid = (grid: Grid) => {
+    setEditingPackGridId(grid.id);
+    setNewPackGridName(grid.name);
+    setNewPackGridSizes(grid.sizes || []);
+    setIsCreatingPackGridInline(true);
+  };
+
+  const handleSaveInlinePackGrid = async () => {
+    if (!newPackGridName.trim() || newPackGridSizes.length === 0) return;
+    if (editingPackGridId) {
+      if (!onUpdateGrid) return;
+      const existing = grids.find(g => g.id === editingPackGridId);
+      const updated = { name: newPackGridName.trim(), type: GridType.EMBALAGEM, sizes: newPackGridSizes, configuration: existing?.configuration || {} };
+      await onUpdateGrid(editingPackGridId, updated);
+      applyGridToPack({ id: editingPackGridId, ...updated });
+    } else {
+      if (!onCreateGrid) return;
+      await onCreateGrid({ name: newPackGridName.trim(), type: GridType.EMBALAGEM, sizes: newPackGridSizes, configuration: {} });
+      applyGridToPack({ id: '', name: newPackGridName.trim(), type: GridType.EMBALAGEM, sizes: newPackGridSizes, configuration: {} });
+    }
+  };
+
   const handleQuickCreateFlowTag = async () => {
     if (!newFlowTagName.trim() || !onQuickAddFlowTag) return;
     const created = await onQuickAddFlowTag({ name: newFlowTagName.trim().toUpperCase(), subcategories: [], isCuttingFlowTag: false });
@@ -2155,6 +2251,17 @@ function GenericConfigList({
             }`}
         />
       </div>
+
+      {onSaveAsDefault && isTemplateAdmin() && (
+        <button
+          type="button"
+          onClick={() => onSaveAsDefault(items.filter(i => i?.type === type).map(i => ({ name: i.name, description: i.description || '' })))}
+          data-guide-anchor="prodcfg.salvarPadraoNovasContas"
+          className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white bg-gradient-to-b from-violet-500 to-violet-600 shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+        >
+          <Bookmark size={14} /> Salvar Como Padrão para Novas Contas
+        </button>
+      )}
 
       {type === 'TOOL' && products.length > 0 && (
         <div className="relative">
@@ -2600,6 +2707,43 @@ function GenericConfigList({
                 />
               )}
               {renderYesNoToggle(
+                moldBuysReadySole,
+                (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, buysReadySole: val } } : null),
+                'Você compra o solado pronto?',
+                <CheckCircle2 size={18} className="text-emerald-500" />,
+                'Se sim: informe direto quanto você paga por par do solado já pronto, sem precisar cadastrar material/composição.',
+                'mold.buysReadySole'
+              )}
+              {moldBuysReadySole && (
+                <div className="flex flex-col gap-2" data-guide-anchor="mold.custoSoladoPronto">
+                  <label htmlFor="mold-ready-sole-cost" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Valor Pago por Par (R$)</label>
+                  <div className="relative group">
+                    <input
+                      id="mold-ready-sole-cost"
+                      type="number"
+                      step="0.01"
+                      value={editingItem?.metadata?.readySoleCost ?? ''}
+                      onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, readySoleCost: parseFloat(e.target.value) || 0 } } : null)}
+                      title="Valor pago por par do solado pronto"
+                      placeholder="0,00"
+                      className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                    />
+                    <button
+                      type="button"
+                      title="Abrir Calculadora"
+                      aria-label="Abrir calculadora para definir o valor pago por par"
+                      onClick={() => setActiveCalc({
+                        initialValue: editingItem?.metadata?.readySoleCost || 0,
+                        onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, readySoleCost: val } } : null)
+                      })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
+                    >
+                      <Calculator size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+              {renderYesNoToggle(
                 moldBuysMaterials,
                 (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, buysMaterials: val } } : null),
                 'Você compra materiais para o solado?',
@@ -2839,6 +2983,11 @@ function GenericConfigList({
                       units={units}
                       supplyCategoryNames={supplyCategoryNames}
                       existingReferences={existingMaterialReferences}
+                      onQuickAddCategory={onQuickAddCategory}
+                      onQuickAddFlowTag={onQuickAddFlowTag}
+                      onQuickAddPerson={onQuickAddPerson}
+                      onQuickAddUnit={onQuickAddMaterial}
+                      onQuickAddColor={onQuickAddColor}
                     />
                     <div className="flex gap-2 pt-1">
                       <button type="button" onClick={() => { setIsCreatingMaterialInline(false); setNewMaterialItem(null); }} data-guide-anchor="mold.materialInlineVoltar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
@@ -3509,7 +3658,11 @@ function GenericConfigList({
               units={units}
               supplyCategoryNames={supplyCategoryNames}
               existingReferences={productionConfigs.filter(c => c.type === 'MATERIAL' && c.id !== editingItem?.id).map(c => (c.metadata?.reference || '').toUpperCase()).filter(Boolean)}
-              onNavigateToScreen={onNavigateToScreen}
+              onQuickAddCategory={onQuickAddCategory}
+              onQuickAddFlowTag={onQuickAddFlowTag}
+              onQuickAddPerson={onQuickAddPerson}
+              onQuickAddUnit={onQuickAddMaterial}
+              onQuickAddColor={onQuickAddColor}
             />
           ) : type === 'TOOL' ? (
             <div className="flex flex-col gap-6">
@@ -3871,7 +4024,27 @@ function GenericConfigList({
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Grid3X3 size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Grades e<br />Tamanhos para Embalagens</p></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div data-guide-anchor="pkg.tipoGradeToggle" className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label>
+                <div data-guide-anchor="pkg.tipoGradeToggle" className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)}
+                    className={`flex flex-col gap-1 p-4 rounded-2xl border-2 text-left transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}
+                  >
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>Grade Fixa</span>
+                    <span className="text-[10px] font-medium normal-case text-slate-400 leading-relaxed">Use quando toda caixa desse padrão sempre leva a mesma quantidade de pares de cada numeração (ex.: 1 par de cada tamanho, do 34 ao 40). Você define essa distribuição abaixo.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)}
+                    className={`flex flex-col gap-1 p-4 rounded-2xl border-2 text-left transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}
+                  >
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${editingItem?.metadata?.mode === 'FREE' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>Grade Livre</span>
+                    <span className="text-[10px] font-medium normal-case text-slate-400 leading-relaxed">Use quando a mistura de numerações dentro da caixa varia a cada vez — só a capacidade total de pares importa, sem uma distribuição fixa por tamanho.</span>
+                  </button>
+                </div>
+              </div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
 
               {/* Cor do badge de estoque (ex.: "12P") — escolhida aqui pra diferenciar de
@@ -3920,29 +4093,126 @@ function GenericConfigList({
 
               {editingItem?.metadata?.mode !== 'FREE' && (
                 <div className="flex flex-col gap-6">
-                  <div className="flex items-center justify-between mb-2 ml-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500"><TableCellsMerge size={16} /></div>
-                      {renderLabelWithShortcut('pack-pull-grid', 'Puxar Grade', ViewType.GRIDS)}
+                  <button
+                    type="button"
+                    onClick={() => { setIsPackGridSearchOpen(true); setIsCreatingPackGridInline(false); setEditingPackGridId(null); setPackGridSearchTerm(''); }}
+                    data-guide-anchor="pkg.buscarGrade"
+                    className={`w-full py-4 px-6 rounded-2xl flex items-center justify-between transition-all active:scale-[0.98] border-2 ${isDarkMode ? 'bg-amber-900/20 text-amber-400 border-amber-500/30 hover:bg-amber-900/40' : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100/50'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <TableCellsMerge size={20} />
+                      <div className="text-left">
+                        <span className="text-xs font-black uppercase tracking-widest block">Buscar Padrão de Embalagem</span>
+                        <span className="text-xs font-bold uppercase tracking-widest opacity-70">Usar um padrão já cadastrado ou criar um novo</span>
+                      </div>
                     </div>
-                    <select
-                      id="pack-pull-grid"
-                      title="Selecionar Grade"
-                      onChange={(e) => {
-                        const gridId = e.target.value;
-                        const grid = grids.find(g => g.id === gridId);
-                        if (grid) {
-                          const quantities: Record<string, number> = {};
-                          grid.sizes.forEach(s => { quantities[s] = editingItem?.metadata?.sizeQuantities?.[s] || 0; });
-                          setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeQuantities: quantities, sizes: grid.sizes } } : null);
-                        }
-                      }}
-                      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-600 focus:border-indigo-600'}`}
-                    >
-                      <option value="">Selecionar...</option>
-                      {grids.filter(g => g.type === GridType.EMBALAGEM || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                    </select>
-                  </div>
+                    <ChevronRight size={18} />
+                  </button>
+
+                  <Modal isOpen={isPackGridSearchOpen} onClose={() => { setIsPackGridSearchOpen(false); setIsCreatingPackGridInline(false); setEditingPackGridId(null); }} title="Buscar Padrão de Embalagem" icon={<TableCellsMerge size={20} />} maxWidth="max-w-md" zIndex={80000}>
+                    {!isCreatingPackGridInline ? (
+                      <div className="flex flex-col gap-4">
+                        <div className="relative">
+                          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                          <input
+                            type="text"
+                            value={packGridSearchTerm}
+                            onChange={(e) => setPackGridSearchTerm(e.target.value)}
+                            placeholder="Buscar padrão de embalagem..."
+                            className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                          {grids.filter(g => g.type === GridType.EMBALAGEM && g.name.toLowerCase().includes(packGridSearchTerm.toLowerCase())).map(g => (
+                            <div
+                              key={g.id}
+                              className={`w-full flex items-center gap-2 p-4 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+                            >
+                              <div className="flex flex-col flex-1 min-w-0">
+                                <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                                  {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
+                                </span>
+                              </div>
+                              <button type="button" title="Usar este Padrão" aria-label={`Usar o padrão ${g.name}`} onClick={() => applyGridToPack(g)} className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0">
+                                <Check size={14} strokeWidth={3} />
+                              </button>
+                              <button type="button" title="Editar Padrão" aria-label={`Editar o padrão ${g.name}`} onClick={() => startEditPackGrid(g)} className={`p-2.5 rounded-xl transition-colors shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-700'}`}>
+                                <Edit3 size={14} />
+                              </button>
+                              <button type="button" title="Excluir Padrão" aria-label={`Excluir o padrão ${g.name}`} onClick={() => handleDeleteGrid(g)} className="p-2.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          {grids.filter(g => g.type === GridType.EMBALAGEM && g.name.toLowerCase().includes(packGridSearchTerm.toLowerCase())).length === 0 && (
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Não encontrou um padrão de embalagem? Crie um aqui.</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={startCreatePackGrid}
+                          data-guide-anchor="pkg.buscarGrade.criar"
+                          className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <Plus size={14} strokeWidth={3} /> Não encontrou? Criar Novo Padrão
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-4">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingPackGridId ? 'Editando Padrão' : 'Novo Padrão de Embalagem'}</p>
+                        <div>
+                          <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome do Padrão</label>
+                          <input
+                            type="text"
+                            value={newPackGridName}
+                            onChange={(e) => setNewPackGridName(e.target.value)}
+                            placeholder="Ex: Caixa 12 Pares"
+                            className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={newPackGridSizeInput}
+                              onChange={(e) => setNewPackGridSizeInput(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNewPackGridSize())}
+                              placeholder="Ex: 38"
+                              className={`flex-1 px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                            />
+                            <button type="button" onClick={addNewPackGridSize} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black transition-colors">
+                              <Plus size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="min-h-[50px] flex flex-wrap gap-2 p-3 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
+                          {newPackGridSizes.map(size => (
+                            <span key={size} className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
+                              {size}
+                              <button type="button" onClick={() => removeNewPackGridSize(size)} className="text-rose-400 hover:text-rose-600">×</button>
+                            </span>
+                          ))}
+                          {newPackGridSizes.length === 0 && <span className="text-[10px] text-slate-300 dark:text-slate-700 font-bold italic self-center">Adicione numerações acima</span>}
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <button type="button" onClick={() => { setIsCreatingPackGridInline(false); setEditingPackGridId(null); }} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                            Voltar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveInlinePackGrid}
+                            data-guide-anchor="pkg.gradeInlineSalvar"
+                            disabled={!newPackGridName.trim() || newPackGridSizes.length === 0}
+                            className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                          >
+                            {editingPackGridId ? 'Salvar Alterações e Usar' : 'Salvar e Usar'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </Modal>
 
                   <div className="flex flex-col gap-4">
                     <label htmlFor="pack-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Adicionar Numerações</label>

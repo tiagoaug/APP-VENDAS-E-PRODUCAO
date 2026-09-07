@@ -120,6 +120,9 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'sales.vizBarraValores': { text: 'Mostra ou esconde a barra de métricas (Entregues, Aguardando Entrega, A Receber) no topo da lista.' },
   'sales.vizCardDisponivel': { text: 'Mostra ou esconde o card "Disponível em Estoque" no topo da lista.' },
   'sales.limparFiltros': { text: 'Volta todos os filtros e preferências de visualização pro padrão original.' },
+  'sales.salvarFiltrosPadrao': { text: 'Só a conta de desenvolvimento vê este botão. Grava os filtros e preferências de visualização atuais como o padrão que toda conta nova recebe de largada — nunca muda quem já usa o app.' },
+  'prodcfg.salvarPadraoNovasContas': { text: 'Só a conta de desenvolvimento vê este botão. Grava a lista atual como o novo padrão do botão "Carregar Padrão" — o que toda conta nova vê ao clicar, com a lista ainda vazia.' },
+  'pcp.salvarFiltrosPadrao': { text: 'Só a conta de desenvolvimento vê este botão. Grava a Barra de Estatísticas e o Menu de Ações Flutuante atuais como o padrão que toda conta nova recebe de largada — nunca muda quem já usa o app.' },
 
   // ── Card de venda — cabeçalho e badges ───────────────────────────────────────────────
   'sales.cardDataPedido': { text: 'Data em que o pedido foi cadastrado no app.' },
@@ -609,6 +612,8 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
 
   // Cadastro de Solado (Matriz), tela "Cadastro de Solados" — 3 perguntas sim/não que mostram só as
   // seções que fazem sentido pra cada solado, mais o popup de busca/criação de grade.
+  'mold.buysReadySole': { text: 'Ligue se você compra o solado já pronto/fabricado (não faz nem manda fazer) — libera um campo só pra informar quanto você paga por par, sem precisar cadastrar material base nem composição.' },
+  'mold.custoSoladoPronto': { text: 'Quanto você paga por par do solado já pronto — pode digitar direto ou usar a calculadora ao lado.' },
   'mold.buysMaterials': { text: 'Se você compra insumos soltos pra fazer esse solado (borracha, EVA, etc.), ligue esta opção — ela libera o Material Base (pra puxar preço/kg) e a Composição de Materiais abaixo. Desligada, essas seções ficam escondidas mas nenhum dado já cadastrado é apagado.' },
   'mold.hasSoleServices': { text: 'Se essa sola passa por algum serviço terceirizado ou mão de obra específica (pintura, injeção de sola, colar etiquetas), ligue esta opção — ela libera a lista de Serviços Agregados abaixo, com o custo de cada um.' },
   'mold.tracksWeight': { text: 'Se você pesa a sola pra conferência (saber o peso por par de cada numeração), ligue esta opção — ela libera o cadastro de Pesos por Tamanho, Pesos por Cor e o resumo de Rendimento por KG.' },
@@ -1502,7 +1507,11 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'completedOS.gerarArquivo': { text: 'Gera o arquivo de verdade, no formato escolhido.' },
 
   // Formulário de Insumo/Material (MaterialFormFields.tsx) — Etapa 2: cobertura completa.
-  'materialForm.atalhoConfigurar': { text: 'Atalho pra sair da edição atual e configurar isso em outra tela — pede confirmação porque o que está sendo editado aqui pode se perder se você não salvar antes.' },
+  'materialForm.criarCategoria': { text: 'Não achou a categoria que precisa? Digite o nome aqui mesmo, sem sair do cadastro do insumo.' },
+  'materialForm.criarFlowTag': { text: 'Não achou a Flow Tag (estágio) que precisa? Cadastre uma nova aqui mesmo, sem sair do cadastro do insumo.' },
+  'materialForm.criarFornecedor': { text: 'Não achou o fornecedor que precisa? Cadastre um novo aqui mesmo, sem sair do cadastro do insumo.' },
+  'materialForm.criarUnidade': { text: 'Não achou a unidade que precisa? Cadastre uma nova aqui mesmo, sem sair do cadastro do insumo.' },
+  'materialForm.criarCor': { text: 'Não achou a cor que precisa? Cadastre uma nova aqui mesmo, sem sair do cadastro do insumo.' },
   'materialForm.gerarReferencia': { text: 'Gera automaticamente um código de referência novo pra este insumo.' },
   'materialForm.pesoEmbalagemCalc': { text: 'Abre uma calculadora pra te ajudar a definir o peso da embalagem.' },
   'materialForm.precoEmbalagemCalc': { text: 'Abre uma calculadora pra te ajudar a definir o preço da embalagem.' },
@@ -2299,7 +2308,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'people.editar': { text: 'Abre este cadastro pra editar os dados.' },
   'people.excluir': { text: 'Pede confirmação para excluir este cadastro. As transações, vendas e compras já feitas continuam no histórico.' },
   'people.historico': { text: 'Mostra o histórico de pagamentos ligados a esta pessoa.' },
-  'people.selecionarFiltro': { text: 'Filtra a lista mostrando só Clientes, Fornecedores, Vendedores ou Compradores.' },
+  'people.selecionarFiltro': { text: 'Filtra a lista mostrando só Clientes, Fornecedores ou Prestadores de Serviço.' },
 
   // Cadastro de Pessoa, popup (PersonModal.tsx) — Etapa 7
   'person.cancelar': { text: 'Fecha a janela sem salvar nada.' },

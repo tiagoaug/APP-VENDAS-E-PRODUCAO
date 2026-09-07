@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Person, Sale, Purchase, Transaction } from '../types';
-import { Search, Plus, User, Mail, Phone, Trash2, Edit, Truck, ShieldCheck, ChevronRight, ChevronDown, History, Tag, ShoppingBag } from 'lucide-react';
+import { Search, Plus, User, Mail, Phone, Trash2, Edit, Truck, ShieldCheck, ChevronRight, ChevronDown, History, Wrench } from 'lucide-react';
 import PersonModal from '../components/PersonModal';
 import FinancialHistoryModal from '../components/FinancialHistoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -22,7 +22,7 @@ interface PeopleViewProps {
 
 export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode, aiPrefillData, onPrefillConsumed, initialFilter }: PeopleViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SELLER' | 'BUYER'>(() => initialFilter ?? 'ALL');
+  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SERVICE_PROVIDER'>(() => initialFilter ?? 'ALL');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
@@ -57,8 +57,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
     
     if (filter === 'CUSTOMER') return matchesSearch && p.isCustomer;
     if (filter === 'SUPPLIER') return matchesSearch && p.isSupplier;
-    if (filter === 'SELLER') return matchesSearch && p.isSeller;
-    if (filter === 'BUYER') return matchesSearch && p.isBuyer;
+    if (filter === 'SERVICE_PROVIDER') return matchesSearch && p.isServiceProvider;
     return matchesSearch;
   });
 
@@ -148,18 +147,11 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
             Fornecedores
           </button>
           <button
-            onClick={() => setFilter('SELLER')}
+            onClick={() => setFilter('SERVICE_PROVIDER')}
             data-guide-anchor="people.selecionarFiltro"
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SELLER' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SERVICE_PROVIDER' ? 'bg-teal-600 text-white' : 'text-slate-400'}`}
           >
-            Vendedores
-          </button>
-          <button
-            onClick={() => setFilter('BUYER')}
-            data-guide-anchor="people.selecionarFiltro"
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'BUYER' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
-          >
-            Compradores
+            Prestadores
           </button>
         </div>
       </div>
@@ -171,7 +163,9 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
               <div className="flex items-center gap-4 flex-1 min-w-0" onClick={() => onShowDetail(person.id)} data-guide-anchor="people.abrirDetalhe">
                 <div className={`w-12 h-12 flex items-center justify-center font-black text-xl transition-colors ${
                   person.isCustomer && person.isSupplier ? 'text-indigo-600 dark:text-indigo-400' :
-                  person.isCustomer ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                  person.isCustomer ? 'text-emerald-600 dark:text-emerald-400' :
+                  person.isSupplier ? 'text-amber-600 dark:text-amber-400' :
+                  person.isServiceProvider ? 'text-teal-600 dark:text-teal-400' : 'text-slate-500 dark:text-slate-400'
                 }`}>
                   {person.name.charAt(0)}
                 </div>
@@ -181,8 +175,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
                     <div className="flex gap-1">
                       {person.isCustomer && <ShieldCheck size={14} className="text-emerald-500" />}
                       {person.isSupplier && <Truck size={14} className="text-amber-500" />}
-                      {person.isSeller && <Tag size={14} className="text-indigo-500" />}
-                      {person.isBuyer && <ShoppingBag size={14} className="text-emerald-500" />}
+                      {person.isServiceProvider && <Wrench size={14} className="text-teal-500" />}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 mt-1.5 overflow-x-auto no-scrollbar">

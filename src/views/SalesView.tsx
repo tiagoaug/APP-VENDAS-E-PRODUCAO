@@ -30,6 +30,8 @@ import StockDiagnosticsModal from '../components/StockDiagnosticsModal';
 import SalePaymentModal from '../components/SalePaymentModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { toast } from '../utils/toast';
+import { isTemplateAdmin } from '../utils/templateAdmin';
+import { SalesDefaultFilters } from '../services/defaultFiltersService';
 import { saleProductionHasProgressed, getLotPendingSectorGroups } from '../utils/productionRoute';
 import { firebaseService } from '../services/firebaseService';
 import { getWholesaleBoxes, getRetailPairs } from '../utils/stockPools';
@@ -140,6 +142,11 @@ interface SalesViewProps {
   // { openCatalogSendNonce: Date.now() }), abre o popup de escolher cliente direto, sem passar
   // pelo "+". Nonce (não boolean) pra disparar de novo mesmo clicando 2x seguidas sem sair da tela.
   openCatalogSendNonce?: number;
+  // Filtros/visualização padrão pra contas NOVAS (ver botão "Salvar Como Padrão para Novas
+  // Contas" dentro do painel "Filtros e Configurações", só visível pra conta de desenvolvimento)
+  // — aplicado só se a conta ainda não tiver nada salvo localmente, ver useEffect abaixo.
+  defaultFilters?: SalesDefaultFilters | null;
+  onSaveDefaultFilters?: (data: SalesDefaultFilters) => void | Promise<void>;
   onEdit: (sale: Sale) => void;
   onCancelOnly: (id: string) => void;
   onCancelAndRevert: (id: string) => void;
@@ -232,6 +239,8 @@ export default function SalesView({
   catalogRequests = [],
   onNavigateCatalogRequests,
   openCatalogSendNonce,
+  defaultFilters,
+  onSaveDefaultFilters,
   onEdit,
   onCancelOnly,
   onCancelAndRevert,
@@ -323,6 +332,34 @@ export default function SalesView({
   // Miniatura do produto no popup "Pedido & Separação" — opcional pois nem toda base tem
   // foto cadastrada, e alguém pode preferir a lista mais compacta sem imagens.
   const [showSeparationThumbnails, setShowSeparationThumbnails] = usePersistedToggle('salesView_showSeparationThumbnails', true);
+
+  // Aplica o padrão publicado pela conta de desenvolvimento (ver defaultFiltersService.ts) só
+  // pras chaves que essa conta ainda não tiver salvo localmente — nunca sobrescreve escolha de
+  // quem já usa o app. Roda de novo sempre que defaultFilters chegar/mudar (o fetch do Firestore
+  // é assíncrono e pode terminar depois do primeiro render), mas o guard de localStorage garante
+  // que só faz efeito uma vez de verdade, na primeira visita.
+  useEffect(() => {
+    if (!defaultFilters) return;
+    const applyIfUnset = <T,>(key: string, setter: (v: T) => void, value: T | undefined) => {
+      if (value !== undefined && localStorage.getItem(key) === null) setter(value);
+    };
+    applyIfUnset('salesView_filter', setFilter, defaultFilters.filter);
+    applyIfUnset('salesView_paymentFilter', setPaymentFilter, defaultFilters.paymentFilter);
+    applyIfUnset('salesView_deliveryFilter', setDeliveryFilter, defaultFilters.deliveryFilter);
+    applyIfUnset('salesView_periodPreset', setPeriodPreset, defaultFilters.periodPreset);
+    applyIfUnset('salesView_periodStart', setPeriodStart, defaultFilters.periodStart);
+    applyIfUnset('salesView_periodEnd', setPeriodEnd, defaultFilters.periodEnd);
+    applyIfUnset('salesView_selectedStatuses', setSelectedStatuses, defaultFilters.selectedStatuses);
+    applyIfUnset('salesView_expandedCards', setExpandedCards, defaultFilters.expandedCards);
+    applyIfUnset('salesView_showProducts', setShowProducts, defaultFilters.showProducts);
+    applyIfUnset('salesView_showGradeBreakdown', setShowGradeBreakdown, defaultFilters.showGradeBreakdown);
+    applyIfUnset('salesView_showSeparationInfo', setShowSeparationInfo, defaultFilters.showSeparationInfo);
+    applyIfUnset('salesView_showSeparationThumbnails', setShowSeparationThumbnails, defaultFilters.showSeparationThumbnails);
+    applyIfUnset('salesView_showSummaryBar', setShowSummaryBar, defaultFilters.showSummaryBar);
+    applyIfUnset('salesView_showStockGlanceCard', setShowStockGlanceCard, defaultFilters.showStockGlanceCard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultFilters]);
+
   // Toque na miniatura amplia a foto em tela cheia; outro toque (em qualquer lugar) fecha.
   const [zoomedThumbnail, setZoomedThumbnail] = useState<string | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -2299,6 +2336,24 @@ export default function SalesView({
             >
               Limpar Filtros
             </button>
+
+            {/* Só a conta de desenvolvimento vê isto — grava o que está configurado agora como
+                o padrão que TODA conta nova (sem nada salvo localmente ainda) recebe de largada
+                nesta tela (ver defaultFiltersService.ts e o useEffect logo no início do
+                componente que aplica isso). */}
+            {isTemplateAdmin() && (
+              <button
+                onClick={() => onSaveDefaultFilters?.({
+                  filter, paymentFilter, deliveryFilter, periodPreset, periodStart, periodEnd, selectedStatuses,
+                  expandedCards, showProducts, showGradeBreakdown, showSeparationInfo, showSeparationThumbnails,
+                  showSummaryBar, showStockGlanceCard,
+                })}
+                data-guide-anchor="sales.salvarFiltrosPadrao"
+                className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-white bg-gradient-to-b from-violet-500 to-violet-600 shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              >
+                <Bookmark size={14} /> Salvar Como Padrão para Novas Contas
+              </button>
+            )}
             </div>
           </div>
         </div>

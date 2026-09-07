@@ -267,30 +267,10 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                 <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque quando essa pessoa/empresa vende matéria-prima, produtos ou serviços para você. Ela aparece como opção nas Compras e Ordens de Serviço.</span>
               </div>
             </label>
-            <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
-              <input
-                type="checkbox"
-                className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
-                checked={isSeller}
-                onChange={(e) => setIsSeller(e.target.checked)}
-              />
-              <div className="min-w-0">
-                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Vendedor</span>
-                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque para uma pessoa (não colaborador) que pode ser escolhida como Vendedor/Responsável no lançamento de uma Venda — ex.: representante externo.</span>
-              </div>
-            </label>
-            <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
-              <input
-                type="checkbox"
-                className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
-                checked={isBuyer}
-                onChange={(e) => setIsBuyer(e.target.checked)}
-              />
-              <div className="min-w-0">
-                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Comprador</span>
-                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque para uma pessoa que pode ser escolhida como Comprador/Representante no lançamento de uma Compra — ex.: quem negociou com o fornecedor.</span>
-              </div>
-            </label>
+            {/* "Representante Externo" (isSeller) e "Comprador" (isBuyer) saíram daqui — agora
+                são cadastrados como cargo dentro de Equipe (RH), ver CollaboratorsConfigView.tsx.
+                isSeller/isBuyer continuam existindo no tipo Person só pra não apagar valor de
+                registros antigos ao salvar por outro motivo; não há mais UI pra ligá-los aqui. */}
             <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
               <input
                 type="checkbox"

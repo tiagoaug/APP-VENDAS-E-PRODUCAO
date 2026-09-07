@@ -13,7 +13,17 @@ service cloud.firestore {
     // Só a conta de desenvolvimento pode publicar novos modelos/exemplos nas coleções
     // compartilhadas entre contas (categoryTemplates, gridTemplates, colorTemplates,
     // flowTagTemplates, sectorTemplates) — qualquer usuário pode ler/usar, ninguém mais escreve.
-    function isTemplateAdmin() { return isSignedIn() && request.auth.token.email == 'fabricananet@gmail.com'; }
+    // Além do e-mail fixo (âncora que nunca muda sem deploy), aceita também quem estiver
+    // delegado em appConfig/developerAccount (ver developerAccountService.ts) — só quem já é
+    // dev hoje pode escrever nesse doc (ver regra abaixo), então a delegação é sempre feita
+    // "de dev pra dev", nunca uma autopromoção.
+    function isTemplateAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'fabricananet@gmail.com' ||
+        (exists(/databases/$(database)/documents/appConfig/developerAccount) &&
+         get(/databases/$(database)/documents/appConfig/developerAccount).data.email == request.auth.token.email)
+      );
+    }
     function isValidId(id) { return id is string && id.size() <= 128; }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
@@ -260,6 +270,28 @@ service cloud.firestore {
     // desenvolvimento publica; toda conta lê, pois isso decide quais cards aparecem pra ela
     // (ver dashboardCardModulesService.ts).
     match /appConfig/dashboardCardModules {
+      allow read: if isSignedIn();
+      allow write: if isTemplateAdmin();
+    }
+
+    // Delegação de quem é a conta de desenvolvimento (ver templateAdmin.ts/isTemplateAdmin
+    // acima) — só quem JÁ é dev (e-mail fixo ou já delegado) pode reatribuir; ninguém pode se
+    // autopromover escrevendo aqui do nada.
+    match /appConfig/developerAccount {
+      allow read: if isSignedIn();
+      allow write: if isTemplateAdmin();
+    }
+
+    // Filtros/visualização padrão que uma conta NOVA recebe em Vendas — só a conta de
+    // desenvolvimento publica; qualquer conta lê pra herdar o padrão (ver defaultFiltersService.ts).
+    match /appDefaultFilters/{profile} {
+      allow read: if isSignedIn();
+      allow write: if isTemplateAdmin();
+    }
+
+    // Unidades de Medida sugeridas pra contas NOVAS (botão "Carregar Unidades Padrão" em Produção
+    // > Unidades) — só a conta de desenvolvimento publica; qualquer conta lê (ver defaultUnitsService.ts).
+    match /appDefaultUnits/{profile} {
       allow read: if isSignedIn();
       allow write: if isTemplateAdmin();
     }

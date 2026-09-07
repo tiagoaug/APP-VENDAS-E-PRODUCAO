@@ -46,7 +46,8 @@ import {
   CalendarClock,
   GanttChartSquare,
   Box,
-  PackageOpen
+  PackageOpen,
+  ShieldCheck
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
@@ -516,20 +517,22 @@ export default function SettingsView({
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
             </button>
 
-            {/* ── CONFIGURAÇÕES PADRÃO PARA NOVOS USUÁRIOS (só conta de desenvolvimento) ── */}
+            {/* ── CONTA DESENVOLVEDORA (só quem já é conta de desenvolvimento) — reúne
+                "Configurações Padrão (Novos Usuários)" e demais ações de dev lá dentro, ver
+                DeveloperAccountView.tsx ── */}
             {isTemplateAdmin() && (
               <button
-                onClick={() => onNavigate(ViewType.NEW_USER_DEFAULTS)}
-                title="Configurações Padrão para Novos Usuários"
-                aria-label="Abrir configurações padrão para novos usuários"
+                onClick={() => onNavigate(ViewType.DEVELOPER_ACCOUNT)}
+                title="Conta Desenvolvedora"
+                aria-label="Abrir gerenciamento da conta desenvolvedora"
                 className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
               >
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 rounded-2xl bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center shrink-0 text-violet-600 dark:text-violet-400">
-                    <Bookmark size={22} />
+                    <ShieldCheck size={22} />
                   </div>
                   <div className="text-left">
-                    <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Configurações Padrão (Novos Usuários)</p>
+                    <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Conta Desenvolvedora</p>
                     <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Só você vê isto</p>
                   </div>
                 </div>

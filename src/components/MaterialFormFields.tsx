@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Wand2, Calculator, Settings } from 'lucide-react';
-import { ProductionConfigItem, Person, FlowTag, ColorValue, ProductionScreenType, ViewType } from '../types';
+import { Wand2, Calculator, Plus, Check, X, Settings } from 'lucide-react';
+import { ProductionConfigItem, Person, FlowTag, ColorValue, Category, CategoryType } from '../types';
 import ComboBox from './ComboBox';
 import Modal from './Modal';
 import CalculatorModal from './CalculatorModal';
@@ -17,10 +17,20 @@ interface MaterialFormFieldsProps {
   // Referências (MAT-XXX) já usadas por outros insumos — pra gerar/validar código novo sem
   // colidir. Passe já filtrado (exclui o próprio item, se for edição).
   existingReferences: string[];
-  // Omitido (undefined) quando usado dentro do cadastro de Solados — sem atalho de navegar pra
-  // outra tela e perder o progresso do Solado em andamento. Presente no uso normal da tela de
-  // Insumos, onde sair pra configurar Categoria/Flow Tag/Fornecedor/Unidade é seguro.
-  onNavigateToScreen?: (screen: ProductionScreenType | ViewType) => void;
+  // "Não encontrou? Crie um aqui" — cadastro rápido embutido em cada campo de busca (Categoria,
+  // Flow Tag, Fornecedor, Unidade, Cor), sem sair do cadastro de Insumo em andamento. Cada um
+  // retorna o registro criado (com id) pra já deixar selecionado. Substituiu o antigo atalho de
+  // engrenagem que navegava pra outra tela (perdia o progresso do cadastro em andamento).
+  // Cria de verdade uma Categoria (tipo Insumo) — mesma coleção usada pela tela Categorias e
+  // pelo picker de Categoria Mestre (supplyCategoryNames), então fica disponível pra escolher em
+  // qualquer outro Insumo depois, não só "colada" neste material.
+  onQuickAddCategory?: (category: Omit<Category, 'id'>) => Promise<Category>;
+  onQuickAddFlowTag?: (tag: Omit<FlowTag, 'id'>) => Promise<FlowTag>;
+  onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
+  // Reaproveita o mesmo "criar insumo rápido" usado no popup de Materiais dos Solados — uma
+  // Unidade é só outro ProductionConfigItem (type: 'UNIT') na mesma coleção.
+  onQuickAddUnit?: (item: Omit<ProductionConfigItem, 'id'>) => Promise<ProductionConfigItem>;
+  onQuickAddColor?: (color: Omit<ColorValue, 'id'>) => Promise<ColorValue>;
 }
 
 // Formulário completo de cadastro/edição de Insumo (Material) — extraído de
@@ -32,7 +42,8 @@ interface MaterialFormFieldsProps {
 // do GenericConfigList que o hospeda — evita qualquer conflito entre "o que está sendo editado
 // lá fora" (ex.: o Solado) e "o insumo sendo criado/editado aqui dentro".
 export default function MaterialFormFields({
-  item, onChange, isDarkMode, suppliers, flowTags, colors, units, supplyCategoryNames, existingReferences, onNavigateToScreen,
+  item, onChange, isDarkMode, suppliers, flowTags, colors, units, supplyCategoryNames, existingReferences,
+  onQuickAddCategory, onQuickAddFlowTag, onQuickAddPerson, onQuickAddUnit, onQuickAddColor,
 }: MaterialFormFieldsProps) {
   const [activeCalc, setActiveCalc] = useState<{ initialValue: number; onResult: (val: number) => void } | null>(null);
   const [isStockColorModalOpen, setIsStockColorModalOpen] = useState(false);
@@ -40,30 +51,82 @@ export default function MaterialFormFields({
   const [editingPriceColors, setEditingPriceColors] = useState<Record<string, number>>({});
   const [stockPackagesInput, setStockPackagesInput] = useState('');
 
+  // "Não encontrou? Crie um aqui" — um toggle+nome por campo, todos com o mesmo formato: um
+  // botão discreto abre um input+"Criar", que ao salvar já seleciona o registro criado e fecha.
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [creatingFlowTag, setCreatingFlowTag] = useState(false);
+  const [newFlowTagName, setNewFlowTagName] = useState('');
+  const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
+  const [creatingUnit, setCreatingUnit] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
+  const [newUnitDesc, setNewUnitDesc] = useState('');
+  const [creatingColor, setCreatingColor] = useState(false);
+  const [newColorName, setNewColorName] = useState('');
+  const [newColorHex, setNewColorHex] = useState('#6366f1');
+
+  const handleCreateCategory = async () => {
+    const name = newCategoryName.trim().toUpperCase();
+    if (!name) return;
+    // Cria uma Categoria de verdade (tipo Insumo) quando possível — fica disponível pra
+    // escolher em qualquer outro Insumo depois (ver supplyCategoryNames), não só "colada" neste
+    // material. Sem onQuickAddCategory (ex.: uso dentro do popup de Materiais dos Solados sem
+    // esse prop), cai pro texto livre de antes.
+    if (onQuickAddCategory) {
+      const created = await onQuickAddCategory({ name, type: CategoryType.SUPPLY, color: 'bg-emerald-500' });
+      onChange({ ...item, metadata: { ...item.metadata, masterCategory: created.name } });
+    } else {
+      onChange({ ...item, metadata: { ...item.metadata, masterCategory: name } });
+    }
+    setNewCategoryName('');
+    setCreatingCategory(false);
+  };
+  const handleCreateFlowTag = async () => {
+    const name = newFlowTagName.trim();
+    if (!name || !onQuickAddFlowTag) return;
+    const created = await onQuickAddFlowTag({ name: name.toUpperCase(), subcategories: [], isCuttingFlowTag: false });
+    onChange({ ...item, metadata: { ...item.metadata, flowTagId: created.id } });
+    setNewFlowTagName('');
+    setCreatingFlowTag(false);
+  };
+  const handleCreateSupplier = async () => {
+    const name = newSupplierName.trim();
+    if (!name || !onQuickAddPerson) return;
+    const created = await onQuickAddPerson({ name, isCustomer: false, isSupplier: true });
+    onChange({ ...item, metadata: { ...item.metadata, supplierId: created.id } });
+    setNewSupplierName('');
+    setCreatingSupplier(false);
+  };
+  const handleCreateUnit = async () => {
+    const name = newUnitName.trim();
+    if (!name || !onQuickAddUnit) return;
+    const created = await onQuickAddUnit({ name: name.toUpperCase(), description: newUnitDesc.trim(), type: 'UNIT', createdAt: Date.now() });
+    onChange({ ...item, metadata: { ...item.metadata, unitId: created.id } });
+    setNewUnitName('');
+    setNewUnitDesc('');
+    setCreatingUnit(false);
+  };
+  const handleCreateColor = async () => {
+    const name = newColorName.trim();
+    if (!name || !onQuickAddColor) return;
+    const created = await onQuickAddColor({ name: name.toUpperCase(), hex: newColorHex });
+    const currentIds = item.metadata?.colorIds || [];
+    onChange({ ...item, metadata: { ...item.metadata, colorIds: [...currentIds, created.id] } });
+    setNewColorName('');
+    setCreatingColor(false);
+  };
+
   const selectedUnitName = units.find(u => u.id === item.metadata?.unitId)?.name || '';
   const isKgMaterialUnit = selectedUnitName.trim().toUpperCase() === 'KG';
 
-  const renderLabel = (id: string, text: string, screen?: ProductionScreenType | ViewType, required: boolean = false) => (
-    <div className="flex items-center justify-between ml-2">
-      <label htmlFor={id} className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">
-        {text} {required && '*'}
-      </label>
-      {screen && onNavigateToScreen && (
-        <button
-          type="button"
-          onClick={() => {
-            if (confirm(`Deseja sair da edição atual para configurar ${text}? Salve suas alterações primeiro!`)) {
-              onNavigateToScreen(screen);
-            }
-          }}
-          data-guide-anchor="materialForm.atalhoConfigurar"
-          className="p-1 rounded-lg bg-indigo-500/10 text-indigo-500 hover:bg-indigo-500/20 transition-all"
-          title={`Configurar ${text}`}
-        >
-          <Settings size={10} />
-        </button>
-      )}
-    </div>
+  // A engrenagem que navegava pra outra tela pra cadastrar Categoria/Flow Tag/Fornecedor/
+  // Unidade/Cor saiu — cada campo agora tem seu próprio "Não encontrou? Crie um aqui" embutido
+  // (ver onQuickAdd* acima), sem precisar sair do cadastro de Insumo em andamento.
+  const renderLabel = (id: string, text: string, required: boolean = false) => (
+    <label htmlFor={id} className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">
+      {text} {required && '*'}
+    </label>
   );
 
   const generateReference = () => {
@@ -91,11 +154,17 @@ export default function MaterialFormFields({
     setIsStockColorModalOpen(true);
   };
 
+  const cardCls = `flex flex-col gap-2 p-4 rounded-2xl border-2 ${isDarkMode ? 'border-slate-800 bg-slate-900/40' : 'border-slate-100 bg-slate-50/60'}`;
+  const quickCreateToggleCls = `self-start flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'text-indigo-400 hover:bg-indigo-500/10' : 'text-indigo-600 hover:bg-indigo-50'}`;
+  const quickCreateInputCls = `flex-1 px-4 py-2.5 rounded-xl font-bold text-xs outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-500'}`;
+  const quickCreateSaveCls = 'p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0 disabled:opacity-40';
+  const quickCreateCancelCls = `p-2.5 rounded-xl shrink-0 transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}`;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          {renderLabel('mat-master-category', 'Categoria Mestre', ViewType.CATEGORIES, true)}
+        <div className={cardCls}>
+          {renderLabel('mat-master-category', 'Categoria Mestre', true)}
           <ComboBox
             options={supplyCategoryNames.map(cat => ({ id: cat, name: cat }))}
             value={item.metadata?.masterCategory || ''}
@@ -105,6 +174,15 @@ export default function MaterialFormFields({
             usePopupModal
             popupZIndex={85000}
           />
+          {creatingCategory ? (
+            <div className="flex items-center gap-2 mt-1">
+              <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateCategory())} placeholder="Nome da nova categoria" autoFocus className={quickCreateInputCls} />
+              <button type="button" onClick={handleCreateCategory} disabled={!newCategoryName.trim()} title="Criar" aria-label="Criar categoria" className={quickCreateSaveCls}><Check size={14} strokeWidth={3} /></button>
+              <button type="button" onClick={() => { setCreatingCategory(false); setNewCategoryName(''); }} title="Cancelar" aria-label="Cancelar" className={quickCreateCancelCls}><X size={14} /></button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setCreatingCategory(true)} data-guide-anchor="materialForm.criarCategoria" className={quickCreateToggleCls}><Plus size={12} strokeWidth={3} /> Não encontrou? Crie uma aqui</button>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           <label htmlFor="mat-reference" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Referência / Código</label>
@@ -119,8 +197,8 @@ export default function MaterialFormFields({
         <input id="mat-name" type="text" value={item.name || ''} title="Nome do Material" placeholder="NOME DO MATERIAL" onChange={(e) => onChange({ ...item, name: e.target.value.toUpperCase() })} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
       </div>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          {renderLabel('mat-flowtag', 'Flow Tag (Estágio)', 'FLOW_TAGS')}
+        <div className={cardCls}>
+          {renderLabel('mat-flowtag', 'Flow Tag (Estágio)')}
           <ComboBox
             options={[{ id: '', name: 'Nenhuma' }, ...flowTags.map(tag => ({ id: tag.id, name: tag.name }))]}
             value={item.metadata?.flowTagId || ''}
@@ -130,9 +208,18 @@ export default function MaterialFormFields({
             usePopupModal
             popupZIndex={85000}
           />
+          {onQuickAddFlowTag && (creatingFlowTag ? (
+            <div className="flex items-center gap-2 mt-1">
+              <input type="text" value={newFlowTagName} onChange={(e) => setNewFlowTagName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateFlowTag())} placeholder="Nome da nova Flow Tag" autoFocus className={quickCreateInputCls} />
+              <button type="button" onClick={handleCreateFlowTag} disabled={!newFlowTagName.trim()} title="Criar" aria-label="Criar Flow Tag" className={quickCreateSaveCls}><Check size={14} strokeWidth={3} /></button>
+              <button type="button" onClick={() => { setCreatingFlowTag(false); setNewFlowTagName(''); }} title="Cancelar" aria-label="Cancelar" className={quickCreateCancelCls}><X size={14} /></button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setCreatingFlowTag(true)} data-guide-anchor="materialForm.criarFlowTag" className={quickCreateToggleCls}><Plus size={12} strokeWidth={3} /> Não encontrou? Crie uma aqui</button>
+          ))}
         </div>
-        <div className="flex flex-col gap-2">
-          {renderLabel('mat-supplier', 'Fornecedor Principal', ViewType.PEOPLE)}
+        <div className={cardCls}>
+          {renderLabel('mat-supplier', 'Fornecedor Principal')}
           <ComboBox
             options={[{ id: '', name: 'Nenhum' }, ...suppliers.map(p => ({ id: p.id, name: p.name }))]}
             value={item.metadata?.supplierId || ''}
@@ -142,11 +229,20 @@ export default function MaterialFormFields({
             usePopupModal
             popupZIndex={85000}
           />
+          {onQuickAddPerson && (creatingSupplier ? (
+            <div className="flex items-center gap-2 mt-1">
+              <input type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateSupplier())} placeholder="Nome do novo fornecedor" autoFocus className={quickCreateInputCls} />
+              <button type="button" onClick={handleCreateSupplier} disabled={!newSupplierName.trim()} title="Criar" aria-label="Criar fornecedor" className={quickCreateSaveCls}><Check size={14} strokeWidth={3} /></button>
+              <button type="button" onClick={() => { setCreatingSupplier(false); setNewSupplierName(''); }} title="Cancelar" aria-label="Cancelar" className={quickCreateCancelCls}><X size={14} /></button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setCreatingSupplier(true)} data-guide-anchor="materialForm.criarFornecedor" className={quickCreateToggleCls}><Plus size={12} strokeWidth={3} /> Não encontrou? Crie um aqui</button>
+          ))}
         </div>
       </div>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          {renderLabel('mat-unit', 'Unidade', 'UNIDADES', true)}
+        <div className={cardCls}>
+          {renderLabel('mat-unit', 'Unidade', true)}
           <ComboBox
             options={units.map(u => ({ id: u.id, name: u.name }))}
             value={item.metadata?.unitId || ''}
@@ -156,6 +252,20 @@ export default function MaterialFormFields({
             usePopupModal
             popupZIndex={85000}
           />
+          {onQuickAddUnit && (creatingUnit ? (
+            <div className="flex flex-col gap-2 mt-1">
+              <div className="flex items-center gap-2">
+                <input type="text" value={newUnitName} onChange={(e) => setNewUnitName(e.target.value)} placeholder="Sigla (ex: KG)" autoFocus className={quickCreateInputCls} />
+                <input type="text" value={newUnitDesc} onChange={(e) => setNewUnitDesc(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateUnit())} placeholder="Descrição (ex: Quilograma)" className={quickCreateInputCls} />
+              </div>
+              <div className="flex items-center gap-2 self-end">
+                <button type="button" onClick={handleCreateUnit} disabled={!newUnitName.trim()} title="Criar" aria-label="Criar unidade" className={quickCreateSaveCls}><Check size={14} strokeWidth={3} /></button>
+                <button type="button" onClick={() => { setCreatingUnit(false); setNewUnitName(''); setNewUnitDesc(''); }} title="Cancelar" aria-label="Cancelar" className={quickCreateCancelCls}><X size={14} /></button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setCreatingUnit(true)} data-guide-anchor="materialForm.criarUnidade" className={quickCreateToggleCls}><Plus size={12} strokeWidth={3} /> Não encontrou? Crie uma aqui</button>
+          ))}
         </div>
         {isKgMaterialUnit ? (
           <>
@@ -241,9 +351,9 @@ export default function MaterialFormFields({
           </>
         )}
       </div>
-      <div className="flex flex-col gap-2">
+      <div className={cardCls}>
         <div className="flex items-center justify-between gap-2">
-          {renderLabel('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
+          {renderLabel('mat-colors', 'Cores Disponíveis')}
           <button
             type="button"
             onClick={() => {
@@ -262,7 +372,19 @@ export default function MaterialFormFields({
             Este material não usa cor — a seleção de cor fica oculta e não é obrigatória ao usar este material em um produto.
           </p>
         ) : (
-          <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (item.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = item.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; onChange({ ...item, metadata: { ...item.metadata, colorIds: newIds } }); if (!wasSelected) openStockColorModal(newIds); }} data-guide-anchor="materialForm.corToggle" className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
+          <>
+            <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (item.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = item.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; onChange({ ...item, metadata: { ...item.metadata, colorIds: newIds } }); if (!wasSelected) openStockColorModal(newIds); }} data-guide-anchor="materialForm.corToggle" className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
+            {onQuickAddColor && (creatingColor ? (
+              <div className="flex items-center gap-2 mt-1">
+                <input type="color" value={newColorHex} onChange={(e) => setNewColorHex(e.target.value)} title="Cor" className="w-11 h-11 shrink-0 rounded-xl border-2 border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                <input type="text" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateColor())} placeholder="Nome da nova cor" autoFocus className={quickCreateInputCls} />
+                <button type="button" onClick={handleCreateColor} disabled={!newColorName.trim()} title="Criar" aria-label="Criar cor" className={quickCreateSaveCls}><Check size={14} strokeWidth={3} /></button>
+                <button type="button" onClick={() => { setCreatingColor(false); setNewColorName(''); }} title="Cancelar" aria-label="Cancelar" className={quickCreateCancelCls}><X size={14} /></button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setCreatingColor(true)} data-guide-anchor="materialForm.criarCor" className={quickCreateToggleCls}><Plus size={12} strokeWidth={3} /> Não encontrou? Crie uma aqui</button>
+            ))}
+          </>
         )}
       </div>
       <div className="flex flex-col gap-4">

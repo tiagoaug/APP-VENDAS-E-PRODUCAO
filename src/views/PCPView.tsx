@@ -11,7 +11,8 @@ import {
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, ChevronUp, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
-  Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell, Wrench, LayoutGrid, ListChecks
+  Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell, Wrench, LayoutGrid, ListChecks,
+  Bookmark, Check
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -22,6 +23,8 @@ import {
   LabelFile, BatchLabelItem
 } from '../types';
 import { isViewAllowed, isViewTaskAllowed, isSectorAllowed } from '../utils/collaborators';
+import { isTemplateAdmin } from '../utils/templateAdmin';
+import { PcpDefaultFilters } from '../services/defaultFiltersService';
 import { computeProducedPairs } from '../utils/businessOverview';
 import { subscribeToProductionScheduleConfig } from '../services/productionScheduleService';
 import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
@@ -168,6 +171,11 @@ interface PCPViewProps {
   transactions?: Transaction[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
   activeCollaborator?: Collaborator | null;
+  // Filtros padrão do popup "Filtros" (Barra de Estatísticas/Menu de Ações Flutuante) pra contas
+  // NOVAS — só aplicado se a conta ainda não tiver nada salvo localmente (ver useEffect abaixo).
+  // Botão "Salvar Como Padrão para Novas Contas" só aparece pra conta de desenvolvimento.
+  defaultFilters?: PcpDefaultFilters | null;
+  onSaveDefaultFilters?: (data: PcpDefaultFilters) => void | Promise<void>;
 }
 
 export default function PCPView({
@@ -211,6 +219,8 @@ export default function PCPView({
   transactions = [],
   appTheme = 'light',
   activeCollaborator = null,
+  defaultFilters,
+  onSaveDefaultFilters,
 }: PCPViewProps) {
   // Mesma lógica de App.tsx `canShowMenuItem` — esconde atalhos pra sub-funções que o
   // colaborador não tem acesso, em vez de deixar o ícone visível sem levar a lugar nenhum.
@@ -392,6 +402,36 @@ export default function PCPView({
       return next;
     });
   };
+
+  // Aplica o padrão publicado pela conta de desenvolvimento (ver "Salvar Como Padrão para Novas
+  // Contas" no popup Filtros) só pras chaves que essa conta ainda não tiver salvo localmente —
+  // nunca sobrescreve escolha de quem já usa o app. Roda de novo sempre que defaultFilters
+  // chegar/mudar (o fetch do Firestore é assíncrono), mas o guard de localStorage garante que só
+  // faz efeito uma vez de verdade, na primeira visita.
+  useEffect(() => {
+    if (!defaultFilters) return;
+    if (defaultFilters.statsBarHidden !== undefined && localStorage.getItem('pcp_stats_bar_hidden') === null) {
+      setStatsBarHidden(defaultFilters.statsBarHidden);
+    }
+    if (defaultFilters.statsBarTiles !== undefined && localStorage.getItem('pcp_stats_bar_tiles') === null) {
+      setStatsBarTiles(prev => ({ ...prev, ...defaultFilters.statsBarTiles }));
+    }
+    if (defaultFilters.floatingActionMenuEnabled !== undefined && localStorage.getItem('pcp_floating_action_menu') === null) {
+      setFloatingActionMenuEnabled(defaultFilters.floatingActionMenuEnabled);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultFilters]);
+
+  // Feedback visual do botão "Salvar Como Padrão para Novas Contas" — vira um "Salvo!" com
+  // check por 2s, além do toast (ver App.tsx onSaveDefaultFilters).
+  const [justSavedPcpDefaults, setJustSavedPcpDefaults] = useState(false);
+  const handleSavePcpDefaults = async () => {
+    if (!onSaveDefaultFilters) return;
+    await onSaveDefaultFilters({ statsBarHidden, statsBarTiles, floatingActionMenuEnabled });
+    setJustSavedPcpDefaults(true);
+    setTimeout(() => setJustSavedPcpDefaults(false), 2000);
+  };
+
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [isRequestingBatch, setIsRequestingBatch] = useState(false);
   const [inTransitPopupItem, setInTransitPopupItem] = useState<any | null>(null);
@@ -5495,6 +5535,20 @@ export default function PCPView({
                     </span>
                   </button>
                 </div>
+
+                {/* Só a conta de desenvolvimento vê isto — grava o que está configurado agora
+                    como o padrão que TODA conta nova (sem nada salvo localmente ainda) recebe de
+                    largada neste popup de Filtros. */}
+                {onSaveDefaultFilters && isTemplateAdmin() && (
+                  <button
+                    type="button"
+                    onClick={handleSavePcpDefaults}
+                    data-guide-anchor="pcp.salvarFiltrosPadrao"
+                    className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${justSavedPcpDefaults ? 'bg-emerald-600' : 'bg-gradient-to-b from-violet-500 to-violet-600'}`}
+                  >
+                    {justSavedPcpDefaults ? (<><Check size={14} strokeWidth={3} /> Salvo!</>) : (<><Bookmark size={14} /> Salvar Como Padrão para Novas Contas</>)}
+                  </button>
+                )}
               </div>
             </div>
           </div>
