@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick, BookOpen } from 'lucide-react';
 import { ViewType } from '../types';
 import { HelpTopic } from '../data/helpKnowledgeBase';
 import { getTopicForView, searchHelp } from '../utils/helpMatching';
@@ -73,6 +73,21 @@ export default function HelpCenterModal({
             className={`w-full pl-11 pr-4 py-3 rounded-2xl text-sm font-bold outline-none border-2 transition-colors ${isDarkMode ? 'bg-slate-800 border-transparent focus:border-indigo-500 text-white placeholder:text-slate-500' : 'bg-slate-50 border-transparent focus:border-indigo-500 text-slate-900 placeholder:text-slate-400'}`}
           />
         </div>
+
+        <button
+          type="button"
+          onClick={() => { onNavigate(ViewType.MANUAL); onClose(); }}
+          className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl transition-colors ${isDarkMode ? 'bg-amber-900/20 hover:bg-amber-900/30' : 'bg-amber-50 hover:bg-amber-100'}`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <BookOpen size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <div className="min-w-0 text-left">
+              <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Manual do Sistema</p>
+              <p className={`text-[10px] font-bold mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Guia completo de todo o app, tela por tela</p>
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-amber-500 shrink-0" />
+        </button>
 
         <label className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl cursor-pointer ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
           <div className="min-w-0">

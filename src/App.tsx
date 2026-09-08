@@ -8971,6 +8971,11 @@ export default function App() {
           )}
           {/* Impressão de Etiquetas saiu do topo — agora vive só em Mais > Módulo de Produção
               e como card do Painel Inicial (ver handleOpenLabelPrintStudio abaixo). */}
+          {/* Central de Ajuda escondida nas telas de onboarding — ela tem botões próprios que
+              navegam pra outras telas (Manual do Sistema, "Ir para a tela relacionada" de FAQs,
+              "Iniciar tour" de Guias), que eram uma segunda forma de escapar da introdução
+              inicial mesmo com o menu de navegação já escondido (ver <nav> mais abaixo). */}
+          {![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
           <motion.button
             type="button"
             onClick={() => setIsHelpCenterOpen(true)}
@@ -8983,6 +8988,7 @@ export default function App() {
           >
             <HelpCircle size={20} />
           </motion.button>
+          )}
           {isTemplateAdmin() && modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
             <motion.button
               type="button"
@@ -9286,7 +9292,11 @@ export default function App() {
       {/* Bottom Tab Navigation — Home e Mais ficam fixos nas pontas; o meio é paginado por setas
           laterais (sem swipe manual — o container é overflow-hidden, só as setas mudam a página
           visível) cujo conteúdo/ordem vem de middleNavItems, personalizável em Configurações >
-          Personalizar Navegação (ver BottomNavConfigModal). */}
+          Personalizar Navegação (ver BottomNavConfigModal). Escondida nas telas de onboarding
+          (Boas-vindas/Roteiro/Conclusão) — sem isso dava pra pular a introdução inicial só
+          tocando em qualquer ícone do menu, sem escolher um tipo de negócio nem apertar "Pular
+          por agora". */}
+      {![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
         <div className="relative w-full max-w-md pointer-events-auto">
           <div className={`relative flex items-center w-full px-2 py-1.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
@@ -9417,6 +9427,7 @@ export default function App() {
           </div>
         </div>
       </nav>
+      )}
       <ProductCreationChoiceModal
         isOpen={showProductCreationChoice}
         onClose={() => setShowProductCreationChoice(false)}
@@ -9542,7 +9553,10 @@ export default function App() {
         onChangeHelpPointMode={setHelpPointMode}
       />
 
-      {guideModeEnabled && (
+      {/* Mesmo bloqueio da Central de Ajuda acima — o "?" arrastável também tem um botão de
+          navegar pra tela relacionada dentro da explicação de campo, outra saída possível
+          durante o onboarding mesmo se "Me guie" já estava ligado de uma sessão anterior. */}
+      {guideModeEnabled && ![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
         <DraggableHelpPoint
           isDarkMode={isDarkMode}
           mode={helpPointMode}

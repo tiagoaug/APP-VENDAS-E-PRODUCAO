@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Store, Layers, ArrowRight, Sparkles } from 'lucide-react';
+import { Store, Layers, ArrowRight, Sparkles, Info } from 'lucide-react';
 import type { BusinessType } from '../types';
 
 interface OnboardingWelcomeViewProps {
@@ -66,6 +66,13 @@ export default function OnboardingWelcomeView({ isDarkMode, onSelectBusinessType
             <ArrowRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
           </motion.button>
         ))}
+      </div>
+
+      <div className={`mt-4 p-4 rounded-2xl flex items-start gap-2.5 ${isDarkMode ? 'bg-indigo-950/20' : 'bg-indigo-50'}`}>
+        <Info size={16} className="text-indigo-500 shrink-0 mt-0.5" />
+        <p className={`text-[11px] font-medium leading-relaxed ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>
+          Só fabrica e não revende produto pronto? Escolha <span className="font-black">"Fabricação + Revenda"</span> mesmo assim — os cadastros usados (produtos, categorias, etc.) são os mesmos nos dois casos.
+        </p>
       </div>
 
       <button

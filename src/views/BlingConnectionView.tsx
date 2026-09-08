@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Building2, Link2, RefreshCw, CheckCircle2, Clock, ListOrdered, Tags as TagsIcon, ChevronRight, KeyRound, Eye, EyeOff, LogOut, PackageMinus, Boxes, FileText, ExternalLink, Timer, HeartPulse, PackageX, ChevronDown, ChevronUp } from 'lucide-react';
+import { Building2, Link2, RefreshCw, CheckCircle2, Clock, ListOrdered, Tags as TagsIcon, ChevronRight, KeyRound, Eye, EyeOff, LogOut, PackageMinus, Boxes, FileText, ExternalLink, Timer, HeartPulse, PackageX, ChevronDown, ChevronUp, HelpCircle, Copy, Sparkles } from 'lucide-react';
 import { BlingConnection, ViewType } from '../types';
 import { subscribeToBlingConnection, saveBlingCredentials, getBlingAuthUrl, syncBlingOrdersNow, fetchBlingProducts, disconnectBling, setBlingAutoSyncInterval } from '../services/blingService';
 import { toast } from '../utils/toast';
@@ -46,6 +46,7 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
   const [savingInterval, setSavingInterval] = useState(false);
   const [autoSyncOpen, setAutoSyncOpen] = useState(false);
   const [syncSectionOpen, setSyncSectionOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => subscribeToBlingConnection(setConnection), []);
 
@@ -133,6 +134,76 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
 
   return (
     <div className="flex flex-col gap-6 pb-32">
+      <div className={`rounded-[2rem] border overflow-hidden ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
+        <button
+          type="button"
+          onClick={() => setHelpOpen((v) => !v)}
+          data-guide-anchor="bling.ajudaExpandir"
+          className="w-full p-5 flex items-center justify-between gap-3 text-left"
+        >
+          <div className="flex items-center gap-3">
+            <HelpCircle size={20} className="text-indigo-500 shrink-0" />
+            <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Como conectar o Bling</p>
+          </div>
+          {helpOpen ? <ChevronUp size={16} className="text-indigo-400 shrink-0" /> : <ChevronDown size={16} className="text-indigo-400 shrink-0" />}
+        </button>
+
+        {helpOpen && (
+          <div className="px-5 pb-5 flex flex-col gap-4">
+            <div>
+              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>Pra que serve</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                Conecta esse app diretamente ao seu Bling, pra sincronizar pedidos de venda, produtos e estoque, e emitir notas fiscais — sem precisar cadastrar tudo duas vezes.
+              </p>
+            </div>
+
+            <div>
+              <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>Passo a passo (feito no site do Bling)</p>
+              <ol className="flex flex-col gap-2.5">
+                {[
+                  <>Acesse <span className="font-bold">developer.bling.com.br</span> e faça login com a mesma conta que você usa no Bling.</>,
+                  <>Clique em <span className="font-bold">"Novo Aplicativo"</span>.</>,
+                  <>Dê um nome qualquer pro app (ex: "Vendas e Produção") e escolha uma categoria como <span className="font-bold">Integração/ERP</span>.</>,
+                  <>No campo <span className="font-bold">"Link de redirecionamento" (Redirect URI)</span>, cole exatamente a URL abaixo — precisa ser idêntica, sem espaço a mais.</>,
+                  <>Em <span className="font-bold">Escopos/Permissões</span>, marque leitura E edição de: <span className="font-bold">Pedidos de Vendas, Produtos, Estoques, Notas Fiscais e Contatos</span>. Sem isso, a sincronização falha depois.</>,
+                  <>Salve o app — o Bling vai mostrar um <span className="font-bold">Client ID</span> e um <span className="font-bold">Client Secret</span>. Copie os dois.</>,
+                  <>Cole os dois nos campos abaixo, clique em <span className="font-bold">"Salvar credenciais"</span> e depois em <span className="font-bold">"Conectar com o Bling"</span>.</>,
+                ].map((text, i) => (
+                  <li key={i} className="flex items-start gap-2.5">
+                    <span className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black mt-0.5 ${isDarkMode ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>{i + 1}</span>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium leading-relaxed">{text}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <div className={`p-3 rounded-2xl flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
+              <p className={`text-[10px] font-mono break-all ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{BLING_OAUTH_CALLBACK_URL}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(BLING_OAUTH_CALLBACK_URL);
+                  toast.show('Link de redirecionamento copiado!');
+                }}
+                data-guide-anchor="bling.ajudaCopiarRedirect"
+                title="Copiar link de redirecionamento"
+                aria-label="Copiar link de redirecionamento"
+                className="shrink-0 p-2 rounded-xl bg-indigo-600 text-white"
+              >
+                <Copy size={14} />
+              </button>
+            </div>
+
+            <div className={`p-3 rounded-2xl flex items-start gap-2.5 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
+              <Sparkles size={16} className="text-violet-500 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                O Bling muda o próprio painel de vez em quando, então a tela real pode não bater 100% com esse passo a passo. Se travar em algum ponto, pesquise no Google por <span className="font-bold">"criar aplicativo developer bling client id"</span> ou pergunte pra uma IA (ChatGPT, Gemini etc.): <span className="italic">"como criar um app OAuth no Bling ERP e pegar o Client ID e Client Secret"</span> — costuma trazer o passo atualizado com print.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
         <div className="flex items-center gap-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isConnected ? 'bg-emerald-600' : 'bg-slate-200 dark:bg-slate-800'} text-white shadow-lg`}>

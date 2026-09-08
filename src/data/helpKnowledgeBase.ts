@@ -769,8 +769,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     summary: 'O primeiro passo ao usar o sistema: escolher se você revende, fabrica ou faz os dois — isso define quais módulos e telas aparecem pra você depois.',
     sections: [
       { heading: 'Revenda', body: 'Você compra produtos prontos e revende — sem ficha técnica, sem PCP. O sistema fica mais enxuto, só com o que interessa pra vender e controlar estoque.' },
-      { heading: 'Fabricação própria', body: 'Você produz seus modelos do zero — libera ficha técnica, PCP, Ordens de Serviço e toda a Configuração de Fábrica.' },
-      { heading: 'Fabricação + Revenda', body: 'As duas coisas juntas — alguns modelos você fabrica, outros só revende.' },
+      { heading: 'Fabricação + Revenda', body: 'Libera ficha técnica, PCP, Ordens de Serviço e toda a Configuração de Fábrica, além de Vendas. Escolha essa opção mesmo que você só fabrique e não revenda produto pronto — os cadastros usados (produtos, categorias, etc.) são os mesmos nos dois casos, não existe um modo "só fábrica" separado.' },
       { heading: 'Pular por agora', body: 'Dá pra pular essa escolha e configurar manualmente depois em Configurações → Módulos — mas responder aqui já deixa o app pronto mais rápido, sem precisar mexer em nada técnico.' },
       { heading: 'Retomar depois', body: 'Se você pulou ou saiu no meio do assistente de configuração inicial, tem um atalho em Configurações → Sistema & Backup → Assistente de Configuração que retoma exatamente de onde parou.' },
     ],
