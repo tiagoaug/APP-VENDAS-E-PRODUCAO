@@ -43,6 +43,7 @@ import CustomPinKeypad from '../components/CustomPinKeypad';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { toast } from '../utils/toast';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -1058,23 +1059,25 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             </div>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setDraft({ ...draft, canUseAI: !draft.canUseAI })}
-            data-guide-anchor="collab.iaToggle"
-            className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${draft.canUseAI ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
-          >
-            <div className="flex items-center gap-3 text-left min-w-0">
-              <Sparkles size={20} className={`shrink-0 ${draft.canUseAI ? 'text-violet-500' : 'text-slate-400'}`} />
-              <div className="min-w-0">
-                <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pode usar Assistente IA</p>
-                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Acesso ao assistente inteligente</p>
+          {isTemplateAdmin() && (
+            <button
+              type="button"
+              onClick={() => setDraft({ ...draft, canUseAI: !draft.canUseAI })}
+              data-guide-anchor="collab.iaToggle"
+              className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${draft.canUseAI ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+            >
+              <div className="flex items-center gap-3 text-left min-w-0">
+                <Sparkles size={20} className={`shrink-0 ${draft.canUseAI ? 'text-violet-500' : 'text-slate-400'}`} />
+                <div className="min-w-0">
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pode usar Assistente IA</p>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Acesso ao assistente inteligente</p>
+                </div>
               </div>
-            </div>
-            <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.canUseAI ? 'bg-violet-500' : 'bg-slate-200'}`}>
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.canUseAI ? 'left-7' : 'left-1'}`} />
-            </div>
-          </button>
+              <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.canUseAI ? 'bg-violet-500' : 'bg-slate-200'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.canUseAI ? 'left-7' : 'left-1'}`} />
+              </div>
+            </button>
+          )}
 
           {!draft.isUnrestricted && (
             <div className="flex flex-col gap-2">

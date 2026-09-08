@@ -4,6 +4,7 @@ import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowRightL
 import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
+import AccountModal from '../components/AccountModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CategoryModal from '../components/CategoryModal';
 import FamilyMemberModal from '../components/FamilyMemberModal';
@@ -102,6 +103,7 @@ export default function PersonalFinancialView({
 
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isCalcModalOpen, setIsCalcModalOpen] = useState(false);
+  const [isCreatePersonalAccountOpen, setIsCreatePersonalAccountOpen] = useState(false);
   const [calcResult, setCalcResult] = useState<number | null>(null);
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -402,6 +404,14 @@ export default function PersonalFinancialView({
         />
       )}
 
+      <AccountModal
+        isOpen={isCreatePersonalAccountOpen}
+        onClose={() => setIsCreatePersonalAccountOpen(false)}
+        onSave={onAddAccount}
+        modulesConfig={{ personal: true, sales: true, production: true, ai: false, entregas: false, bling: false, rh: false }}
+        initialType={AccountType.PERSONAL}
+      />
+
       <CategoryModal
         isOpen={isCatModalOpen}
         onClose={() => setIsCatModalOpen(false)}
@@ -528,10 +538,14 @@ export default function PersonalFinancialView({
           </div>
 
           {!personalAccount && (
-            <div className="bg-amber-50 dark:bg-amber-900/20 p-6 rounded-[2rem] flex flex-col items-center gap-4 text-center border border-amber-100 dark:border-amber-800">
+            <button
+              type="button"
+              onClick={() => setIsCreatePersonalAccountOpen(true)}
+              className="w-full bg-amber-50 dark:bg-amber-900/20 p-6 rounded-[2rem] flex flex-col items-center gap-4 text-center border border-amber-100 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all active:scale-[0.98]"
+            >
                 <AlertCircle size={32} className="text-amber-500" />
-                <p className="text-[10px] font-black uppercase tracking-tight text-amber-800">Crie sua conta pessoal nas configurações de contas do menu lateral.</p>
-            </div>
+                <p className="text-[10px] font-black uppercase tracking-tight text-amber-800 dark:text-amber-400">Toque aqui e crie sua conta pessoal — esse aviso some assim que ela existir.</p>
+            </button>
           )}
 
           <button

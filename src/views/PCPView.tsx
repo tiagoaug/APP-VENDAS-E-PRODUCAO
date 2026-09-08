@@ -2118,9 +2118,9 @@ export default function PCPView({
 
     if (os) {
       // Concluir a OS é só status de produção — NÃO liquida o financeiro sozinho (pedido
-      // explícito do usuário: pagar é um passo manual e separado, feito depois em Financeiro >
-      // Ordens de Serviço a Fornecedores, inclusive agrupando várias OS do mesmo fornecedor
-      // num pagamento só — ver ProviderServiceOrdersCard.handlePayProvider).
+      // explícito do usuário: pagar é um passo manual e separado, feito depois em
+      // Financeiro/Fornecedores, inclusive agrupando várias OS do mesmo fornecedor num
+      // pagamento só — ver FornecedoresView.handlePay).
       await firebaseService.updateDocument('serviceOrders', os.id, {
         status: 'COMPLETED',
         finishedAt: Date.now(),
@@ -4173,8 +4173,8 @@ export default function PCPView({
           : undefined;
 
         // Pra OUTSOURCED, o pedido do usuário é a ficha baixada virar "a pagar" na hora,
-        // sem esperar a OS inteira terminar (ver ProviderServiceOrdersCard: só soma
-        // openBalance de OS com status COMPLETED). Solução: separa a parte já baixada num
+        // sem esperar a OS inteira terminar (ver FornecedoresView: só soma completedUnpaidTotal
+        // de OS com status COMPLETED). Solução: separa a parte já baixada num
         // registro COMPLETED próprio — mesmo fornecedor/preço, só com a quantidade/valor
         // do que voltou agora — e a OS original segue PENDENTE só com o valor do que
         // ainda falta. INTERNAL não tem "a pagar" nenhum, então mantém como sempre foi

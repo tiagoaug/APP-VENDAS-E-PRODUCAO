@@ -318,11 +318,15 @@ export default function BusinessOverviewCard({
     const profit = income - expenses;
     const margin = income > 0 ? (profit / income) * 100 : 0;
 
-    // Lucro por Par — mesmo cálculo do card "Análise de Lucro" do Dashboard: (Receitas −
-    // Despesas) do período ÷ pares realmente finalizados na produção (Mapas com finishedAt)
-    // no mesmo período.
-    const producedPairs = computeProducedPairs(productionLots, start, end).total;
-    const profitPerPair = producedPairs > 0 ? profit / producedPairs : null;
+    // Lucro por Par — mesmo cálculo do card "Análise de Lucro" do Dashboard, mas sempre pelo
+    // MÊS CALENDÁRIO ATUAL (Receitas − Despesas do mês ÷ pares finalizados no mês), igual ao
+    // "Balanço do Mês (Liquidados)" acima — independente do período (Mês/Trimestre/Semestre/
+    // Ano) escolhido no seletor lá em cima, que só afeta os outros números deste card.
+    const monthRange = getPeriodRange('MONTH', format(new Date(), 'yyyy-MM'));
+    const monthFinancials = computePeriodFinancials(transactions, monthRange.start, monthRange.end);
+    const monthProfit = monthFinancials.income - monthFinancials.expenses;
+    const producedPairs = computeProducedPairs(productionLots, monthRange.start, monthRange.end).total;
+    const profitPerPair = producedPairs > 0 ? monthProfit / producedPairs : null;
 
     // Preço médio de venda (todos os modelos vendidos no período) — receita total das vendas
     // fechadas ÷ total de PARES vendidos, pra dar uma referência de ticket médio junto do
@@ -396,7 +400,7 @@ export default function BusinessOverviewCard({
         aria-expanded={isOverviewExpanded}
       >
         <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-[11px] font-black uppercase tracking-tight text-indigo-600 dark:text-indigo-400">
-          <TrendingUp size={13} /> Visualização do Meu Negócio
+          <TrendingUp size={13} /> Análise Detalhada
         </span>
         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
           <ChevronDown size={16} className={`transition-transform ${isOverviewExpanded ? 'rotate-180' : ''}`} />
@@ -663,7 +667,8 @@ export default function BusinessOverviewCard({
                         <p className={`text-sm font-black mt-0.5 ${businessOverview.profitPerPair === null ? 'text-slate-400' : businessOverview.profitPerPair >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                           {businessOverview.profitPerPair === null ? '—' : `R$ ${businessOverview.profitPerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                         </p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Mesmo cálculo do card "Análise de Lucro": (Receitas − Despesas) ÷ {businessOverview.producedPairs} {businessOverview.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} no período selecionado acima.</p>
+                        <p className="text-[8.5px] font-black text-indigo-500 mt-1 uppercase tracking-wide">Baseado nas despesas e receitas mensais</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Mesmo cálculo do card "Análise de Lucro": (Receitas − Despesas) ÷ {businessOverview.producedPairs} {businessOverview.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} — sempre pelo mês calendário atual, independente do período escolhido acima.</p>
                         <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                           <p className={`text-[11px] font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-700'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                             {businessOverview.avgSalePricePerPair === null ? '—' : `R$ ${businessOverview.avgSalePricePerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}

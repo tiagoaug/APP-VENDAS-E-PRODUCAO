@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder, ProductionConfigItem, CompanyProfile, GeneralPurchaseItem, CollaboratorLoan } from "../types";
 import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell, HelpCircle, Award } from "lucide-react";
-import { format, differenceInDays, startOfMonth } from "date-fns";
+import { format, differenceInDays, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -16,6 +16,7 @@ import { getPoolQty, getStockValue } from '../utils/stockPools';
 import { computeProducedPairs } from '../utils/businessOverview';
 import MonthYearPickerPopover from '../components/MonthYearPickerPopover';
 import { isDashboardCardAllowed, collaboratorCanUseAI } from '../utils/collaborators';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 import type { Collaborator } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
@@ -23,7 +24,7 @@ import DatePicker from '../components/DatePicker';
 import BusinessOverviewCard from '../components/BusinessOverviewCard';
 import ProducedPairsCard from '../components/ProducedPairsCard';
 import CommissionToSellersCard from '../components/CommissionToSellersCard';
-import ProviderServiceOrdersCard from '../components/ProviderServiceOrdersCard';
+import FornecedoresView from './FornecedoresView';
 import { getPeriodRange, OverviewPeriodType, STATS_PERIOD_LABELS } from '../utils/businessOverview';
 
 type DashboardScanItem = ScanHistoryEntry;
@@ -44,8 +45,8 @@ interface DashboardViewProps {
   purchaseRequests?: any[];
   serviceOrders?: ServiceOrder[];
   productionOrders?: ProductionOrder[];
-  /** Só pros cards Comissão a Vendedores / Ordens de Serviço a Fornecedores (ver
-   * CommissionToSellersCard.tsx/ProviderServiceOrdersCard.tsx) — mesmos dados/callbacks já
+  /** Só pros cards Comissão a Vendedores / Fornecedores (ver
+   * CommissionToSellersCard.tsx/FornecedoresView.tsx embedded) — mesmos dados/callbacks já
    * usados na versão desses cards em Financeiro. */
   collaborators?: Collaborator[];
   companyProfile?: CompanyProfile | null;
@@ -403,18 +404,32 @@ export default function DashboardView({
         return acc + Math.max(0, sale.total - totalPaid);
       }, 0);
 
-    return { 
-      consolidatedBalance, 
-      monthlyIncome, 
-      monthlyExpenses, 
-      lowStockAlerts, 
+    // Comparativo mês a mês do card "Saldo Pessoal" (últimos 6 meses, incluindo o atual) — cada
+    // ponto é o resultado líquido (receitas - despesas) do Financeiro Pessoal naquele mês, só
+    // transações já confirmadas (mesmo filtro do saldo/resumo do card).
+    const personalMonthlyHistory = Array.from({ length: 6 }).map((_, i) => {
+      const monthDate = subMonths(now, 5 - i);
+      const mStart = startOfMonth(monthDate).getTime();
+      const mEnd = endOfMonth(monthDate).getTime();
+      const monthTx = personalTransactions.filter(t => t.status === 'COMPLETED' && t.date >= mStart && t.date <= mEnd);
+      const income = monthTx.filter(t => t.type === TransactionType.INCOME).reduce((acc, t) => acc + t.amount, 0);
+      const expenses = monthTx.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, t) => acc + t.amount, 0);
+      return { label: format(monthDate, 'MMM', { locale: ptBR }), net: income - expenses };
+    });
+
+    return {
+      consolidatedBalance,
+      monthlyIncome,
+      monthlyExpenses,
+      lowStockAlerts,
       lowStockProducts,
       totalStockCostValue: stockSummary.totalCostValue,
       totalStockSaleValue: stockSummary.totalSaleValue,
       estimatedStockProfit: stockSummary.estimatedProfit,
       topColors,
       pendingReceivables,
-      personalBalance
+      personalBalance,
+      personalMonthlyHistory
     };
   }, [transactions, accounts, products, sales, packagingItems]);
 
@@ -684,7 +699,7 @@ export default function DashboardView({
 
         // Mostra só os cards do(s) setor(es) do colaborador ativo — sem colaborador
         // ativo (ou colaborador de acesso total), nada muda do comportamento atual.
-        if (card.id === 'ai_assistant' && (!modulesConfig.ai || !aiEnabled || !collaboratorCanUseAI(activeCollaborator))) return null;
+        if (card.id === 'ai_assistant' && (!isTemplateAdmin() || !modulesConfig.ai || !aiEnabled || !collaboratorCanUseAI(activeCollaborator))) return null;
         if (!isDashboardCardAllowed(activeCollaborator, card.id)) return null;
 
         // Strict Modular Gating
@@ -728,9 +743,9 @@ export default function DashboardView({
               </div>
             );
 
-          // Mesmos cards de Financeiro (ver CommissionToSellersCard.tsx/ProviderServiceOrdersCard.tsx),
-          // extraídos de lá pra serem reutilizados aqui — cada um já se esconde sozinho quando
-          // não há vendedor/OS lançada, então não precisa de checagem extra aqui.
+          // Mesmos cards de Financeiro (ver CommissionToSellersCard.tsx/FornecedoresView.tsx
+          // embedded), reaproveitados aqui — CommissionToSellersCard já se esconde sozinho
+          // quando não há vendedor/OS lançada; FornecedoresView mostra um estado vazio.
           case "commission_to_sellers":
             return (
               <CommissionToSellersCard
@@ -750,16 +765,17 @@ export default function DashboardView({
 
           case "provider_service_orders":
             return (
-              <ProviderServiceOrdersCard
-                key="provider_service_orders"
-                isDarkMode={isDarkMode}
-                serviceOrders={serviceOrders}
-                transactions={transactions}
-                people={people}
-                products={products}
-                companyProfile={companyProfile}
-                onPayProviderServiceOrders={onPayProviderServiceOrders}
-              />
+              <div key="provider_service_orders" className={`p-6 rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <FornecedoresView
+                  embedded
+                  isDarkMode={isDarkMode}
+                  serviceOrders={serviceOrders}
+                  transactions={transactions}
+                  people={people}
+                  products={products}
+                  onPayProviderServiceOrders={onPayProviderServiceOrders}
+                />
+              </div>
             );
 
           case "sales_products":
@@ -1220,7 +1236,9 @@ export default function DashboardView({
               </div>
             );
 
-          case "personal_balance":
+          case "personal_balance": {
+            const personalHistory = (stats as any).personalMonthlyHistory as { label: string; net: number }[];
+            const personalHistoryMaxAbs = Math.max(1, ...personalHistory.map(m => Math.abs(m.net)));
             return (
               <div key="personal_balance" className="flex flex-col gap-3">
                 <div
@@ -1267,8 +1285,30 @@ export default function DashboardView({
                     <span className="text-[9px] font-black uppercase tracking-widest">Despesa</span>
                   </button>
                 </div>
+
+                <div className={`p-4 rounded-2xl border flex flex-col gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Mês a Mês</p>
+                  <div className="flex items-end justify-between gap-2 h-16">
+                    {personalHistory.map((m, idx) => {
+                      const heightPct = m.net === 0 ? 4 : Math.max(6, Math.round((Math.abs(m.net) / personalHistoryMaxAbs) * 100));
+                      return (
+                        <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full">
+                          <div className="w-full flex-1 flex items-end">
+                            <div
+                              title={`R$ ${m.net.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              className={`w-full rounded-t-md transition-all ${m.net >= 0 ? 'bg-emerald-400' : 'bg-rose-400'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}
+                              style={{ height: `${heightPct}%` }}
+                            />
+                          </div>
+                          <span className="text-[8px] font-black uppercase text-slate-400">{m.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             );
+          }
 
 
           case "stock_alerts":
@@ -1999,6 +2039,9 @@ export default function DashboardView({
                                    <div>
                                      <p className="text-[8px] font-black text-slate-400 tracking-widest leading-none mb-1">Status</p>
                                      <p className={`text-[10px] font-bold ${statusMap[check.status]?.color || 'text-slate-600'}`}>{statusMap[check.status]?.label || check.status}</p>
+                                     {!isExpanded && (
+                                       <p className="text-[8px] font-bold mt-0.5 text-indigo-400 dark:text-indigo-500">Clique aqui para alterar</p>
+                                     )}
                                    </div>
                                  </div>
                                </div>

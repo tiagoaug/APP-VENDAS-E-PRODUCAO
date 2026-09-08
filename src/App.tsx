@@ -143,6 +143,7 @@ import {
   OnboardingStatus,
   BusinessType,
 } from "./types";
+import { PRODUCTION_TRIAL_DAYS, SALES_TRIAL_DAYS } from "./constants";
 import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable, isAblemarkPlatform } from "./lib/ablemarkPrinter";
 import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 
@@ -253,7 +254,7 @@ import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
 import { subscribeToDashboardDefault, saveDashboardDefault, DashboardDefaultProfile } from './services/dashboardDefaultsService';
 import { subscribeToCardModuleOverrides, saveCardModuleOverrides, CardModuleOverrides } from './services/dashboardCardModulesService';
 import { subscribeToDeveloperAccount, saveDeveloperAccount } from './services/developerAccountService';
-import { setDeveloperAccountEmail } from './utils/templateAdmin';
+import { setDeveloperAccountEmail, isTemplateAdmin } from './utils/templateAdmin';
 import { subscribeToSalesDefaultFilters, saveSalesDefaultFilters, SalesDefaultFilters, subscribeToPcpDefaultFilters, savePcpDefaultFilters, PcpDefaultFilters } from './services/defaultFiltersService';
 import { subscribeToDefaultUnits, saveDefaultUnits, DefaultUnitItem } from './services/defaultUnitsService';
 import { initPushNotifications } from './services/pushNotificationService';
@@ -850,7 +851,7 @@ export default function App() {
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
       { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'sales' },
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'sales' },
-      { id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' },
+      { id: 'business_overview', label: 'Análise Detalhada', visible: true, order: 16.5, module: 'sales' },
       { id: 'produced_pairs', label: 'Análise de Produção', visible: true, order: 16.7, module: 'production' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
@@ -951,7 +952,7 @@ export default function App() {
 
     // Migration: ensure business_overview card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'business_overview')) {
-      config.cards.push({ id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' });
+      config.cards.push({ id: 'business_overview', label: 'Análise Detalhada', visible: true, order: 16.5, module: 'sales' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -1020,11 +1021,16 @@ export default function App() {
     [cardModuleOverrides]
   );
 
+  // Produção é add-on pago comprado depois de Vendas (ver ModuleConfigView.tsx) — conta nova
+  // não nasce mais com ele ligado, fica disponível pra teste grátis assim que Vendas estiver
+  // ativo.
+  // IA ainda não é oferecida pra contas normais (só a de desenvolvimento — ver isTemplateAdmin()
+  // em ModuleConfigView.tsx, App.tsx e SettingsView.tsx) — conta nova não nasce mais com ela.
   const defaultModulesConfig: AppModulesConfig = {
     personal: true,
     sales: true,
-    production: true,
-    ai: true,
+    production: false,
+    ai: false,
     entregas: false,
     bling: false,
     rh: true,
@@ -1055,6 +1061,13 @@ export default function App() {
           // Remove ID from config before setting state
           const { id, ...rest } = config;
           setModulesConfig(rest as AppModulesConfig);
+        } else {
+          // Conta nova (nunca gravou app_modules_config) — carimba o início do teste grátis de
+          // Vendas já na criação, já que Vendas nasce ativo (diferente de Produção, que só
+          // começa a contar quando o próprio usuário liga o módulo em ModuleConfigView).
+          const initialConfig: AppModulesConfig = { ...defaultModulesConfig, salesTrialStartedAt: Date.now() };
+          setModulesConfig(initialConfig);
+          firebaseService.saveDocument("app_modules_config", { ...initialConfig, id: 'main_modules_config' });
         }
       }
     );
@@ -1090,6 +1103,36 @@ export default function App() {
       await firebaseService.saveDocument("app_modules_config", { ...newConfig, id: 'main_modules_config' });
     }
   };
+
+  // Expira sozinho o teste grátis do Módulo Produção (ver ModuleConfigView.tsx), mesmo que o
+  // usuário nunca mais abra a Central de Módulos — roda a cada mudança de modulesConfig
+  // (incluindo o carregamento inicial vindo do Firestore) e desliga o módulo se o prazo já
+  // passou. `productionTrialStartedAt` NÃO é apagado aqui, só o `production` vira false, pra não
+  // permitir um novo teste grátis reativando o módulo depois.
+  useEffect(() => {
+    if (!modulesConfig.production || modulesConfig.productionPurchased) return;
+    const trialStartedAt = modulesConfig.productionTrialStartedAt;
+    if (!trialStartedAt) return;
+    const trialEndsAt = trialStartedAt + PRODUCTION_TRIAL_DAYS * 24 * 60 * 60 * 1000;
+    if (Date.now() >= trialEndsAt) {
+      saveModulesConfig({ ...modulesConfig, production: false });
+    }
+  }, [modulesConfig]);
+
+  // Mesma ideia acima, mas pro Módulo Vendas (módulo base, ver salesTrialStartedAt em types.ts) —
+  // `salesTrialStartedAt` só existe em contas criadas depois dessa assinatura existir (gravado no
+  // else da subscription de app_modules_config acima), então contas antigas sem esse campo nunca
+  // expiram sozinhas aqui. Cascateia os dependentes desligados junto, igual a desativação manual
+  // de Vendas já faz em ModuleConfigView.confirmToggle.
+  useEffect(() => {
+    if (!modulesConfig.sales || modulesConfig.salesPurchased) return;
+    const trialStartedAt = modulesConfig.salesTrialStartedAt;
+    if (!trialStartedAt) return;
+    const trialEndsAt = trialStartedAt + SALES_TRIAL_DAYS * 24 * 60 * 60 * 1000;
+    if (Date.now() >= trialEndsAt) {
+      saveModulesConfig({ ...modulesConfig, sales: false, production: false, entregas: false, bling: false, rh: false });
+    }
+  }, [modulesConfig]);
 
   // Personalização da barra de navegação (Configurações > Personalizar Navegação) — mesmo
   // padrão de persistência do app_modules_config acima. RH some por padrão (hidden) pra não
@@ -1967,7 +2010,8 @@ export default function App() {
   // (OnboardingRoadmapView) com todos os passos que vêm pela frente, pra quem tá começando não
   // ser pego de surpresa passo a passo sem saber quantos faltam.
   const handleOnboardingSelectBusinessType = async (type: BusinessType) => {
-    await saveModulesConfig({ ...modulesConfig, production: type !== 'REVENDA' });
+    // Produção não liga mais sozinho aqui — virou add-on de teste grátis/compra, ativado pelo
+    // próprio usuário na Central de Módulos (ver ModuleConfigView.tsx).
     await saveOnboardingStatus({ businessType: type });
     navigateTo(ViewType.ONBOARDING_ROADMAP);
   };
@@ -8939,7 +8983,7 @@ export default function App() {
           >
             <HelpCircle size={20} />
           </motion.button>
-          {modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
+          {isTemplateAdmin() && modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
             <motion.button
               type="button"
               onClick={() => setIsAIAssistantOpen(true)}

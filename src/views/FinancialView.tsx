@@ -14,7 +14,7 @@ import { getPeriodRange, computePeriodFinancials, computeSalesProfitInPeriod, co
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import CommissionToSellersCard from '../components/CommissionToSellersCard';
 import TransactionListCard from '../components/TransactionListCard';
-import ProviderServiceOrdersCard from '../components/ProviderServiceOrdersCard';
+import FornecedoresView from './FornecedoresView';
 
 const STATS_PERIOD_PHRASE: Record<OverviewPeriodType, string> = { MONTH: 'no mês', QUARTER: 'no trimestre', SEMESTER: 'no semestre', YEAR: 'no ano' };
 
@@ -696,7 +696,7 @@ export default function FinancialView({
              </button>
           </div>
 
-          {/* Visualização do Meu Negócio — embutida no mesmo card (ver prop `embedded`), em vez
+          {/* Análise Detalhada — embutida no mesmo card (ver prop `embedded`), em vez
               de um card avulso separado abaixo. */}
           <div className={`p-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
             <BusinessOverviewCard
@@ -981,15 +981,17 @@ export default function FinancialView({
           loans={loans}
           onSaveLoan={onSaveLoan}
         />
-        <ProviderServiceOrdersCard
-          isDarkMode={isDarkMode}
-          serviceOrders={serviceOrders}
-          transactions={transactions}
-          people={people}
-          products={products}
-          companyProfile={companyProfile}
-          onPayProviderServiceOrders={onPayProviderServiceOrders}
-        />
+        <div className={`p-6 rounded-[2.5rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <FornecedoresView
+            embedded
+            isDarkMode={isDarkMode}
+            serviceOrders={serviceOrders}
+            transactions={transactions}
+            people={people}
+            products={products}
+            onPayProviderServiceOrders={onPayProviderServiceOrders}
+          />
+        </div>
 
         {/* Consultas — promovido do botão pequeno que ficava dentro do card "Lucro com Vendas"
             pra um card próprio aqui, mais visível. Abre o mesmo FinancialQueryModal de sempre

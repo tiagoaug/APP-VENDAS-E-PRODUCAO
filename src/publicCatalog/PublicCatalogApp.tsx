@@ -64,7 +64,16 @@ export default function PublicCatalogApp() {
   // sozinha quando o tempo acaba, em vez do cliente só descobrir no erro do envio.
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  // Lightbox — guarda a galeria inteira (não só a foto tocada) pra dar pra avançar/voltar entre
+  // as fotos da mesma cor sem fechar e reabrir. openLightbox acha o índice de partida a partir
+  // da URL tocada, então funciona igual clicando no ícone da cor ou em qualquer miniatura do álbum.
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
+  const openLightbox = (images: string[], startUrl: string) => {
+    const filtered = images.filter(Boolean);
+    if (filtered.length === 0) return;
+    const index = Math.max(0, filtered.indexOf(startUrl));
+    setLightbox({ images: filtered, index });
+  };
   // Link configurado pra mostrar quanto tem em estoque, só como referência (o cliente escolhe
   // livremente a quantidade, sempre a partir de zero — nunca pré-marcado como se fosse levar
   // tudo). Ver CatalogLink.useStockQuantities.
@@ -449,7 +458,7 @@ export default function PublicCatalogApp() {
                   alt={product.name}
                   loading="lazy"
                   decoding="async"
-                  onClick={() => setLightboxUrl(product.photoUrl!)}
+                  onClick={() => openLightbox([product.photoUrl!], product.photoUrl!)}
                   className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100 cursor-pointer active:scale-95 transition-all"
                 />
               ) : (
@@ -467,7 +476,9 @@ export default function PublicCatalogApp() {
               </div>
             </div>
             <div className="flex flex-col gap-3 px-4 pb-4">
-              {product.variations.map((variation) => (
+              {product.variations.map((variation) => {
+                const variationGallery = [variation.photoUrl, ...(variation.photoAlbum || [])].filter(Boolean) as string[];
+                return (
                 <div key={variation.variationId} className="rounded-xl bg-slate-50 p-3">
                   <div className="flex items-center gap-2 mb-2">
                     {variation.photoUrl && (
@@ -476,7 +487,7 @@ export default function PublicCatalogApp() {
                         alt={variation.colorName}
                         loading="lazy"
                         decoding="async"
-                        onClick={() => setLightboxUrl(variation.photoUrl!)}
+                        onClick={() => openLightbox(variationGallery, variation.photoUrl!)}
                         className="w-8 h-8 rounded-lg object-cover cursor-pointer active:scale-90 transition-all"
                       />
                     )}
@@ -491,7 +502,7 @@ export default function PublicCatalogApp() {
                           alt={`${variation.colorName} — foto ${idx + 1}`}
                           loading="lazy"
                           decoding="async"
-                          onClick={() => setLightboxUrl(url)}
+                          onClick={() => openLightbox(variationGallery, url)}
                           className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 cursor-pointer active:scale-95 transition-all"
                         />
                       ))}
@@ -537,7 +548,8 @@ export default function PublicCatalogApp() {
                     })}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <div className="px-4 pb-4">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Observação deste produto (opcional)</label>
@@ -609,12 +621,49 @@ export default function PublicCatalogApp() {
         </div>
       )}
 
-      {lightboxUrl && (
+      {lightbox && (
         <div
           className="fixed inset-0 z-30 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setLightboxUrl(null)}
+          onClick={() => setLightbox(null)}
         >
-          <img src={lightboxUrl} alt="Foto ampliada" className="max-w-full max-h-full rounded-xl object-contain" />
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setLightbox(null); }}
+            aria-label="Fechar"
+            className="absolute top-4 right-4 w-11 h-11 rounded-full bg-white/15 text-white flex items-center justify-center active:scale-90 transition-all"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+
+          {lightbox.images.length > 1 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.images.length) % prev.images.length } : prev); }}
+              aria-label="Foto anterior"
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white flex items-center justify-center active:scale-90 transition-all"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+          )}
+
+          <img src={lightbox.images[lightbox.index]} alt="Foto ampliada" onClick={(e) => e.stopPropagation()} className="max-w-full max-h-full rounded-xl object-contain" />
+
+          {lightbox.images.length > 1 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.images.length } : prev); }}
+              aria-label="Próxima foto"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white flex items-center justify-center active:scale-90 transition-all"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+          )}
+
+          {lightbox.images.length > 1 && (
+            <span className="absolute bottom-6 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-white/15 text-white text-xs font-bold">
+              {lightbox.index + 1} / {lightbox.images.length}
+            </span>
+          )}
         </div>
       )}
     </div>

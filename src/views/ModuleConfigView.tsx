@@ -22,6 +22,8 @@ import {
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { AppModulesConfig, ViewType } from '../types';
+import { PRODUCTION_TRIAL_DAYS, SALES_TRIAL_DAYS } from '../constants';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 interface ModuleConfigViewProps {
@@ -31,21 +33,74 @@ interface ModuleConfigViewProps {
   isDarkMode: boolean;
 }
 
+// Chaves booleanas de AppModulesConfig que dá pra ligar/desligar no toggle abaixo — exclui os
+// campos de controle dos testes grátis (productionTrialStartedAt/productionPurchased/
+// salesTrialStartedAt/salesPurchased), que não são módulos e nunca são atribuídos como
+// true/false direto por aqui.
+type ToggleableModule = Exclude<keyof AppModulesConfig, 'productionTrialStartedAt' | 'productionPurchased' | 'salesTrialStartedAt' | 'salesPurchased'>;
+
 export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMode }: ModuleConfigViewProps) {
-  
-  const [pendingModule, setPendingModule] = useState<keyof AppModulesConfig | null>(null);
+
+  const [pendingModule, setPendingModule] = useState<ToggleableModule | null>(null);
+  const [pendingAction, setPendingAction] = useState<'deactivate' | 'startProductionTrial' | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [confirmTitle, setConfirmTitle] = useState("");
   const [confirmMessage, setConfirmMessage] = useState("");
 
-  const toggleModule = (module: keyof AppModulesConfig) => {
+  // Produção é add-on pago comprado à parte de Vendas — quem já tem Vendas ativo pode testar
+  // grátis por PRODUCTION_TRIAL_DAYS antes de precisar comprar. `productionTrialStartedAt` só é
+  // gravado uma vez (na primeira ativação) e nunca resetado, então desligar/religar o módulo
+  // dentro do prazo não reinicia a contagem, e o prazo vencido não dá um teste novo de graça.
+  const trialStartedAt = config.productionTrialStartedAt ?? null;
+  const trialEndsAt = trialStartedAt ? trialStartedAt + PRODUCTION_TRIAL_DAYS * 24 * 60 * 60 * 1000 : null;
+  const isProductionPurchased = !!config.productionPurchased;
+  const isProductionTrialActive = !isProductionPurchased && !!trialEndsAt && Date.now() < trialEndsAt;
+  const isProductionTrialExpired = !isProductionPurchased && !!trialEndsAt && Date.now() >= trialEndsAt;
+  const productionTrialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / (24 * 60 * 60 * 1000))) : 0;
+
+  // Vendas é o módulo base, também assinado — mas ao contrário de Produção, o teste começa
+  // sozinho na criação da conta (ver App.tsx), não por um toggle manual aqui.
+  // salesTrialStartedAt ausente = conta criada antes dessa assinatura existir, nunca expira.
+  const salesTrialStartedAt = config.salesTrialStartedAt ?? null;
+  const salesTrialEndsAt = salesTrialStartedAt ? salesTrialStartedAt + SALES_TRIAL_DAYS * 24 * 60 * 60 * 1000 : null;
+  const isSalesPurchased = !!config.salesPurchased;
+  const isSalesTrialActive = !isSalesPurchased && !!salesTrialEndsAt && Date.now() < salesTrialEndsAt;
+  const isSalesTrialExpired = !isSalesPurchased && !!salesTrialEndsAt && Date.now() >= salesTrialEndsAt;
+  const salesTrialDaysLeft = salesTrialEndsAt ? Math.max(0, Math.ceil((salesTrialEndsAt - Date.now()) / (24 * 60 * 60 * 1000))) : 0;
+
+  const toggleModule = (module: ToggleableModule) => {
     const isActivating = !config[module];
-    
+
     if (isActivating) {
+      if (module === 'sales' && !isSalesPurchased && isSalesTrialExpired) {
+        setConfirmTitle("Assinatura Necessária");
+        setConfirmMessage(`Seu teste grátis de ${SALES_TRIAL_DAYS} dias do Módulo Vendas já acabou. A assinatura direto pelo app ainda está sendo implementada — em breve você poderá reativar aqui mesmo.`);
+        setPendingModule(null);
+        setPendingAction(null);
+        setIsConfirmOpen(true);
+        return;
+      }
       if (module === 'production' && !config.sales) {
         setConfirmTitle("Requisito Necessário");
-        setConfirmMessage("O Módulo de Produção requer que o Módulo de Vendas esteja ativo para funcionar corretamente.");
+        setConfirmMessage("O Módulo de Produção é um complemento pago do Módulo de Vendas — ative Vendas primeiro para poder testar ou adquirir Produção.");
         setPendingModule(null);
+        setPendingAction(null);
+        setIsConfirmOpen(true);
+        return;
+      }
+      if (module === 'production' && !isProductionPurchased && isProductionTrialExpired) {
+        setConfirmTitle("Teste Grátis Encerrado");
+        setConfirmMessage(`Seu teste grátis de ${PRODUCTION_TRIAL_DAYS} dias do Módulo Produção já acabou. A compra do módulo direto pelo app ainda está sendo implementada — em breve você poderá adquiri-lo aqui mesmo.`);
+        setPendingModule(null);
+        setPendingAction(null);
+        setIsConfirmOpen(true);
+        return;
+      }
+      if (module === 'production' && !isProductionPurchased && !trialStartedAt) {
+        setConfirmTitle("Testar Módulo Produção");
+        setConfirmMessage(`O Módulo Produção é vendido separado de Vendas. Você pode testar todas as funções de fábrica (Engenharia de Produto, Insumos, PCP) grátis por ${PRODUCTION_TRIAL_DAYS} dias a partir de agora. Depois desse prazo, o módulo trava até a compra ser confirmada. Quer começar o teste agora?`);
+        setPendingModule('production');
+        setPendingAction('startProductionTrial');
         setIsConfirmOpen(true);
         return;
       }
@@ -53,6 +108,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setConfirmTitle("Requisito Necessário");
         setConfirmMessage("O Módulo de Entregas requer que o Módulo de Vendas esteja ativo para funcionar corretamente.");
         setPendingModule(null);
+        setPendingAction(null);
         setIsConfirmOpen(true);
         return;
       }
@@ -60,6 +116,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setConfirmTitle("Requisito Necessário");
         setConfirmMessage("O Módulo Bling requer que o Módulo de Vendas esteja ativo — a vinculação de produtos e os pedidos vêm do seu catálogo de Vendas.");
         setPendingModule(null);
+        setPendingAction(null);
         setIsConfirmOpen(true);
         return;
       }
@@ -67,16 +124,18 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setConfirmTitle("Requisito Necessário");
         setConfirmMessage("O Módulo RH requer que o Módulo de Vendas esteja ativo — ele é pensado pra colaboradores de uma operação comercial, não pra uso pessoal.");
         setPendingModule(null);
+        setPendingAction(null);
         setIsConfirmOpen(true);
         return;
       }
-      // Activation is usually safe
+      // Activation is usually safe (Produção com teste ainda ativo/já comprado cai aqui direto)
       const newConfig = { ...config };
       newConfig[module] = true;
       onSave(newConfig);
     } else {
       // Deactivation requires warning
       setPendingModule(module);
+      setPendingAction('deactivate');
       if (module === 'sales' && (config.production || config.entregas || config.bling || config.rh)) {
         const dependents = [config.production && 'Produção', config.entregas && 'Entregas', config.bling && 'Bling', config.rh && 'RH'].filter(Boolean).join(', ');
         setConfirmTitle("Desativar Vendas");
@@ -97,7 +156,10 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     }
 
     const newConfig = { ...config };
-    if (pendingModule === 'sales') {
+    if (pendingAction === 'startProductionTrial') {
+      newConfig.production = true;
+      newConfig.productionTrialStartedAt = Date.now();
+    } else if (pendingModule === 'sales') {
       newConfig.sales = false;
       newConfig.production = false;
       newConfig.entregas = false;
@@ -110,6 +172,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     onSave(newConfig);
     setIsConfirmOpen(false);
     setPendingModule(null);
+    setPendingAction(null);
   };
 
   const modules = [
@@ -125,23 +188,35 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     {
       id: 'sales',
       name: 'Módulo Vendas',
-      description: 'Gestão comercial, estoque de produtos, compras e vendas.',
+      description: isSalesPurchased || !salesTrialStartedAt
+        ? 'Gestão comercial, estoque de produtos, compras e vendas.'
+        : `Gestão comercial, estoque de produtos, compras e vendas. Módulo base do sistema, com teste grátis de ${SALES_TRIAL_DAYS} dias antes de exigir assinatura.`,
       icon: <ShoppingBag size={28} />,
       active: config.sales,
+      disabled: isSalesTrialExpired && !isSalesPurchased,
+      lockLabel: 'Assinatura Necessária',
+      badge: isSalesTrialActive ? `Teste: ${salesTrialDaysLeft}d restantes` : undefined,
       color: 'bg-emerald-500',
       features: ['Vendas e Orçamentos', 'Compras de Mercadoria', 'Estoque de Produtos', 'Financeiro Empresarial']
     },
     {
       id: 'production',
       name: 'Módulo Produção',
-      description: 'Controle de fábrica, insumos, ficha técnica e PCP.',
+      description: isProductionPurchased
+        ? 'Controle de fábrica, insumos, ficha técnica e PCP.'
+        : `Controle de fábrica, insumos, ficha técnica e PCP. É um complemento pago do Módulo Vendas — teste grátis por ${PRODUCTION_TRIAL_DAYS} dias antes de decidir adquirir.`,
       icon: <Factory size={28} />,
       active: config.production,
-      disabled: !config.sales,
+      disabled: !config.sales || (isProductionTrialExpired && !isProductionPurchased),
+      lockLabel: !config.sales ? 'Requer Vendas' : 'Teste Expirado',
+      badge: isProductionTrialActive ? `Teste: ${productionTrialDaysLeft}d restantes` : undefined,
       color: 'bg-indigo-600',
       features: ['Engenharia de Produto', 'Estoque de Insumos', 'Controle de PCP', 'Necessidade de Compras']
     },
-    {
+    // Assistente de IA ainda não é oferecido pra contas normais (só consultas de leitura, sem
+    // cadastro/edição — ver diagnóstico feito com o usuário) — o card só aparece pra conta de
+    // desenvolvimento, pra não anunciar uma função que contas novas não podem usar.
+    ...(isTemplateAdmin() ? [{
       id: 'ai',
       name: 'Módulo Assistente de IA',
       description: 'Assistente inteligente no cabeçalho e no Dashboard, com prompts rápidos e consultas ao seu negócio.',
@@ -149,7 +224,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       active: config.ai,
       color: 'bg-violet-600',
       features: ['Perguntas sobre o Negócio', 'Prompts Rápidos', 'Relatórios sob Demanda']
-    },
+    }] : []),
     {
       id: 'entregas',
       name: 'Módulo Entregas',
@@ -214,7 +289,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         {modules.map((module) => (
           <button
             key={module.id}
-            onClick={() => toggleModule(module.id as keyof AppModulesConfig)}
+            onClick={() => toggleModule(module.id as ToggleableModule)}
             disabled={module.disabled}
             className={`relative flex flex-col text-left p-6 rounded-[2.5rem] border-2 transition-all duration-300 group ${
               module.active 
@@ -234,7 +309,13 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
                 <Circle className="text-slate-300" size={20} />
               )}
             </div>
-            
+
+            {'badge' in module && module.badge && (
+              <span className="self-start mb-2 px-2 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">
+                {module.badge}
+              </span>
+            )}
+
             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed mb-6 flex-1">
               {module.description}
             </p>
@@ -250,7 +331,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
             {module.disabled && (
               <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] rounded-[2.5rem] flex items-center justify-center">
                 <div className="bg-slate-900/90 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                  <Lock size={12} /> Requer Vendas
+                  <Lock size={12} /> {'lockLabel' in module && module.lockLabel ? module.lockLabel : 'Requer Vendas'}
                 </div>
               </div>
             )}

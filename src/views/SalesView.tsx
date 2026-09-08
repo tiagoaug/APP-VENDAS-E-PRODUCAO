@@ -2655,26 +2655,31 @@ export default function SalesView({
                           const items = sale.deliveryItems || [];
                           const preview = items.length > 0 ? formatDeliveryItemsList(items, products) : '';
                           return (
-                            <button
-                              type="button"
-                              onClick={() => setItemsPickerTarget({ saleId: sale.id })}
-                              data-guide-anchor="sales.entregaItensPicker"
-                              className={`flex items-center gap-2 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left border ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}`}
-                            >
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
-                                {items.length > 0 ? <Pencil size={14} /> : <ListChecks size={14} />}
-                              </div>
-                              <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
-                                {items.length > 0 ? (
-                                  <>
-                                    <span className={`block text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Itens na Entrega ({items.length})</span>
-                                    <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
-                                  </>
-                                ) : (
-                                  <span className="text-[10px] font-black uppercase tracking-widest">Itens na Entrega (opcional)</span>
-                                )}
-                              </span>
-                            </button>
+                            <div className="flex flex-col gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setItemsPickerTarget({ saleId: sale.id })}
+                                data-guide-anchor="sales.entregaItensPicker"
+                                className={`flex items-center gap-2 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left border ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}`}
+                              >
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+                                  {items.length > 0 ? <Pencil size={14} /> : <ListChecks size={14} />}
+                                </div>
+                                <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
+                                  {items.length > 0 ? (
+                                    <>
+                                      <span className={`block text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Itens na Entrega ({items.length})</span>
+                                      <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Itens na Entrega (opcional)</span>
+                                  )}
+                                </span>
+                              </button>
+                              {items.length === 0 && (
+                                <p className="text-[9px] font-bold text-slate-400 px-1 text-center">Aqui você escolhe quais produtos vão para onde</p>
+                              )}
+                            </div>
                           );
                         })()}
 

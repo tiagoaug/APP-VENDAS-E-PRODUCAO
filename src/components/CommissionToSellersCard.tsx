@@ -11,8 +11,8 @@ import { toast } from '../utils/toast';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 
 // Card "Folha de Pagamento" — era só "Comissão a Vendedores" (extraído de FinancialView.tsx pra
-// ser reutilizado também no Dashboard, ver ProviderServiceOrdersCard.tsx, extraído junto no
-// mesmo pedido), agora generalizado pra somar Salário + Comissão de QUALQUER colaborador (não só
+// ser reutilizado também no Dashboard, mesmo padrão usado pra embutir FornecedoresView.tsx nos
+// dois lugares), agora generalizado pra somar Salário + Comissão de QUALQUER colaborador (não só
 // vendedor) e virar o lugar único de gerar o pagamento — ver Collaborator.salary/
 // paymentFrequency em types.ts e a aba "Financeira" de Colaboradores (RhView), que só mostra o
 // cálculo individual de referência; a transação de pagamento em si nasce daqui. Cada instância

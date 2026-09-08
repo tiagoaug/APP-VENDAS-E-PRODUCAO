@@ -192,6 +192,10 @@ export default function SettingsView({
   // Bling/RH ligados de um jeito inconsistente antes dessa regra existir.
   const isModuleActive = (module: keyof AppModulesConfig | 'any') => {
     if (module === 'any') return true;
+    // Assistente de IA ainda não é oferecido pra contas normais (ver App.tsx/ModuleConfigView.tsx)
+    // — só a conta de desenvolvimento vê essa opção, independente do que estiver salvo em
+    // modulesConfig.ai (contas antigas podem ter isso true de antes dessa restrição existir).
+    if (module === 'ai') return isTemplateAdmin();
     if ((module === 'bling' || module === 'rh') && !modulesConfig.sales) return false;
     return !!modulesConfig[module];
   };
@@ -747,16 +751,18 @@ export default function SettingsView({
               )}
 
               {/* Tema — acordeão minimizado por padrão (escolha rara de revisitar). */}
-              <div className="flex flex-col gap-2.5">
+              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
                 <button
                   type="button"
                   onClick={() => setThemeSectionOpen(v => !v)}
                   data-guide-anchor="settings.temaAcordeao"
-                  className="flex items-center justify-between gap-2 px-1"
+                  className="flex items-center justify-between gap-2"
                 >
-                  <div className="flex items-center gap-2">
-                    <Palette size={14} className="text-slate-400" />
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tema</p>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-pink-400' : 'bg-pink-50 text-pink-500'}`}>
+                      <Palette size={18} />
+                    </div>
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tema</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${themeSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -790,16 +796,18 @@ export default function SettingsView({
               </div>
 
               {/* Fonte — acordeão minimizado por padrão (escolha rara de revisitar). */}
-              <div className="flex flex-col gap-2.5">
+              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
                 <button
                   type="button"
                   onClick={() => setFontSectionOpen(v => !v)}
                   data-guide-anchor="settings.fonteAcordeao"
-                  className="flex items-center justify-between gap-2 px-1"
+                  className="flex items-center justify-between gap-2"
                 >
-                  <div className="flex items-center gap-2">
-                    <Type size={14} className="text-slate-400" />
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Fonte</p>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-blue-400' : 'bg-blue-50 text-blue-500'}`}>
+                      <Type size={18} />
+                    </div>
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fonte</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -826,16 +834,18 @@ export default function SettingsView({
               </div>
 
               {/* Tamanho da Fonte — acordeão minimizado por padrão. */}
-              <div className="flex flex-col gap-2.5">
+              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
                 <button
                   type="button"
                   onClick={() => setFontScaleSectionOpen(v => !v)}
                   data-guide-anchor="settings.fonteTamanhoAcordeao"
-                  className="flex items-center justify-between gap-2 px-1"
+                  className="flex items-center justify-between gap-2"
                 >
-                  <div className="flex items-center gap-2">
-                    <Type size={14} className="text-slate-400" />
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tamanho da Fonte ({fontScale}%)</p>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-teal-400' : 'bg-teal-50 text-teal-500'}`}>
+                      <Type size={18} />
+                    </div>
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tamanho da Fonte ({fontScale}%)</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontScaleSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -862,16 +872,18 @@ export default function SettingsView({
 
               {/* Ícones do Menu — barra inferior (Home/Compras/Vendas/...) — acordeão minimizado
                   por padrão. */}
-              <div className="flex flex-col gap-2.5">
+              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
                 <button
                   type="button"
                   onClick={() => setNavIconsSectionOpen(v => !v)}
                   data-guide-anchor="settings.iconesMenuAcordeao"
-                  className="flex items-center justify-between gap-2 px-1"
+                  className="flex items-center justify-between gap-2"
                 >
-                  <div className="flex items-center gap-2">
-                    <Layout size={14} className="text-slate-400" />
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Ícones do Menu</p>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
+                      <Layout size={18} />
+                    </div>
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ícones do Menu</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${navIconsSectionOpen ? 'rotate-180' : ''}`} />
                 </button>

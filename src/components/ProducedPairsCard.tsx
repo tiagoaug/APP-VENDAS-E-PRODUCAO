@@ -11,7 +11,7 @@ import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 // Card "Análise de Produção" — pares finalizados (ProductionLot.finishedAt) num período
 // escolhido, com a média por dia (total ÷ dias do período) e comparação opcional com outro
 // período, além da média histórica (todo o período já produzido) por mês e por ano. Mesmo
-// padrão de período/comparação do "Visualização do Meu Negócio" (BusinessOverviewCard.tsx),
+// padrão de período/comparação do "Análise Detalhada" (BusinessOverviewCard.tsx),
 // mas isolado num card próprio por ser uma métrica de produção, não financeira. Estado local
 // (não persiste) — cada instância no Dashboard é independente.
 interface ProducedPairsCardProps {

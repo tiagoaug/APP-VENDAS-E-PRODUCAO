@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Store, Factory, Layers, ArrowRight, Sparkles } from 'lucide-react';
+import { Store, Layers, ArrowRight, Sparkles } from 'lucide-react';
 import type { BusinessType } from '../types';
 
 interface OnboardingWelcomeViewProps {
@@ -8,6 +8,10 @@ interface OnboardingWelcomeViewProps {
   onSkip: () => void;
 }
 
+// "FABRICACAO" (só fábrica, sem revenda) saiu da lista — não existe mais como estado real do
+// app: Produção sempre exige Vendas ativo (ver ModuleConfigView.tsx), então quem fabrica também
+// tem Vendas ligado por baixo dos panos. O tipo continua em BusinessType (types.ts) só por
+// compatibilidade com contas antigas que já escolheram essa opção antes dessa mudança.
 const OPTIONS: { type: BusinessType; title: string; description: string; icon: React.ReactNode; color: string }[] = [
   {
     type: 'REVENDA',
@@ -15,13 +19,6 @@ const OPTIONS: { type: BusinessType; title: string; description: string; icon: R
     description: 'Compro produtos prontos de fornecedores e revendo. Não fabrico nada.',
     icon: <Store size={28} />,
     color: 'bg-emerald-500',
-  },
-  {
-    type: 'FABRICACAO',
-    title: 'Fabricação própria',
-    description: 'Produzo meus próprios modelos na fábrica, do zero.',
-    icon: <Factory size={28} />,
-    color: 'bg-indigo-600',
   },
   {
     type: 'HIBRIDO',

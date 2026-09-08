@@ -1130,6 +1130,22 @@ export type AppModulesConfig = {
   entregas: boolean;
   bling: boolean;
   rh: boolean;
+  // Teste grátis do Módulo Produção (add-on comprado separado de Vendas, ver
+  // ModuleConfigView.tsx) — ausente/null = nunca testou. Gravado na primeira ativação e nunca
+  // resetado (mesmo desativando/reativando o módulo depois), pra não virar um teste grátis
+  // infinito só ligando e desligando.
+  productionTrialStartedAt?: number | null;
+  // true quando a compra real (Play Billing, verificada no servidor) existir e for confirmada —
+  // ainda não implementado; campo já reservado pra não precisar migrar o documento depois.
+  productionPurchased?: boolean;
+  // Teste grátis do Módulo Vendas (módulo base, agora também assinado) — gravado automaticamente
+  // na CRIAÇÃO da conta (ver App.tsx, subscription de app_modules_config), não por um toggle
+  // manual como Produção, já que Vendas já nasce ativo. Ausente = conta criada antes dessa
+  // assinatura existir (nunca expira sozinha, pra não travar quem já usava o app sem avisar).
+  salesTrialStartedAt?: number | null;
+  // true quando a assinatura de Vendas (Play Billing, verificada no servidor) existir e for
+  // confirmada — ainda não implementado; campo já reservado pra não precisar migrar depois.
+  salesPurchased?: boolean;
 };
 
 // Personalização da barra de navegação inferior (ver App.tsx, nav "carrossel deslizante") —

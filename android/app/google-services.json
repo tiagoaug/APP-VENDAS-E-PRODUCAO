@@ -7,41 +7,20 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:934569927713:android:74044d335fa1f1a3726f60",
-        "android_client_info": {
-          "package_name": "com.musgo.vendas"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyAY-eCUV4TBKMt8MPVjoNyEINfxsYfg3eQ"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
         "mobilesdk_app_id": "1:934569927713:android:8a6be5e4db244eeb726f60",
         "android_client_info": {
           "package_name": "com.musgo.vendaseproducao"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "934569927713-mv0clmv4qa4tafs667flsp5iog4gbd4e.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.musgo.vendaseproducao",
+            "certificate_hash": "34da2af76e3d8ee0118821f0d71f242f9014dc7a"
+          }
+        },
         {
           "client_id": "934569927713-tpb2pt3jl6h7jd9nb83mm0fjhajk0f5b.apps.googleusercontent.com",
           "client_type": 1,
@@ -66,6 +45,13 @@
             {
               "client_id": "934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "934569927713-n632i8ti3f4hbqij9tl6lui4q1gks6vk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.musgo.vendaseproducao"
+              }
             }
           ]
         }

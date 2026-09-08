@@ -2,6 +2,14 @@ import { Product, Grid, GridType, Sale, Purchase, PurchaseType, SaleType, Catego
 
 export const SIZES = ['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
 
+// Duração do teste grátis do Módulo Produção antes de exigir compra (ver ModuleConfigView.tsx
+// e o efeito de auto-expiração em App.tsx) — dias corridos a partir da primeira ativação.
+export const PRODUCTION_TRIAL_DAYS = 2;
+
+// Duração do teste grátis do Módulo Vendas (módulo base, também assinado) antes de exigir
+// assinatura — dias corridos a partir da CRIAÇÃO da conta (ver App.tsx e ModuleConfigView.tsx).
+export const SALES_TRIAL_DAYS = 2;
+
 export const MOCK_PEOPLE: Person[] = [
   { id: 'c1', name: 'João Silva', email: 'joao@email.com', phone: '(11) 99999-9999', isCustomer: true, isSupplier: false },
   { id: 'c2', name: 'Maria Oliveira', email: 'maria@email.com', phone: '(11) 88888-8888', isCustomer: true, isSupplier: false },

@@ -605,10 +605,16 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
     // Curadoria do padrão pra contas novas: mostra só os cards do módulo sendo editado
     // (+ os de "qualquer módulo"), sem olhar a conta/colaborador de quem tá editando agora.
     if (editingDefaultProfile) {
+      // IA nunca entra no padrão de conta nova (ver isTemplateAdmin() acima) — mesmo curando o
+      // perfil default, esse card não deve ser oferecido como opção pra incluir.
+      if (card.module === 'ai') return false;
       return !card.module || card.module === 'any' || card.module === editingDefaultProfile || card.module === 'sales_production';
     }
     if (!isDashboardCardAllowed(activeCollaborator, card.id)) return false;
     if (!card.module || card.module === 'any') return true;
+    // Assistente de IA só aparece pra conta de desenvolvimento (ver App.tsx/ModuleConfigView.tsx/
+    // SettingsView.tsx) — independente do que estiver salvo em modulesConfig.ai.
+    if (card.module === 'ai') return isTemplateAdmin();
     if (!modulesConfig) return true; // Fallback if modulesConfig is missing
     if (card.module === 'sales_production') return !!modulesConfig.sales || !!modulesConfig.production;
     return (modulesConfig as any)[card.module];

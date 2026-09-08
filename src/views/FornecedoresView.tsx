@@ -14,7 +14,13 @@ interface FornecedoresViewProps {
   transactions: Transaction[];
   people: Person[];
   products: Product[];
-  onBack: () => void;
+  // Ausente/false = tela cheia de sempre (com "←" e onBack obrigatório). true = incorporado
+  // dentro de outra tela (Financeiro, Dashboard) — some o cabeçalho de página, quem chama
+  // fornece o título/contexto ao redor. Substituiu o antigo ProviderServiceOrdersCard.tsx
+  // (removido), que duplicava esse mesmo agrupamento por fornecedor com números diferentes;
+  // agora só existe esta implementação, embutida ou não.
+  embedded?: boolean;
+  onBack?: () => void;
   onPayProviderServiceOrders?: (params: {
     supplierId?: string;
     initialGeneralItems: GeneralPurchaseItem[];
@@ -34,7 +40,7 @@ type FornecedorGroup = {
 };
 
 export default function FornecedoresView({
-  isDarkMode, serviceOrders, transactions, people, products, onBack, onPayProviderServiceOrders,
+  isDarkMode, serviceOrders, transactions, people, products, embedded = false, onBack, onPayProviderServiceOrders,
 }: FornecedoresViewProps) {
   const hidePrivacy = usePrivacyMode();
 
@@ -275,16 +281,23 @@ export default function FornecedoresView({
   };
 
   return (
-    <div className="flex flex-col gap-6 pb-32">
-      <div className="flex items-center gap-4">
-        <button onClick={onBack} data-guide-anchor="fornecedores.voltar" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-400" title="Voltar" aria-label="Voltar">
-          <ArrowLeft size={24} />
-        </button>
+    <div className={embedded ? 'flex flex-col gap-6' : 'flex flex-col gap-6 pb-32'}>
+      {embedded ? (
         <div>
-          <h2 className="text-xl font-black uppercase tracking-tight text-slate-800 dark:text-white">Fornecedores</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ordens de Serviço por fornecedor</p>
+          <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fornecedores</h2>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Ordens de Serviço por fornecedor</p>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} data-guide-anchor="fornecedores.voltar" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-400" title="Voltar" aria-label="Voltar">
+            <ArrowLeft size={24} />
+          </button>
+          <div>
+            <h2 className="text-xl font-black uppercase tracking-tight text-slate-800 dark:text-white">Fornecedores</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ordens de Serviço por fornecedor</p>
+          </div>
+        </div>
+      )}
 
       {groups.length === 0 && (
         <p className="text-center text-xs font-bold text-slate-400 py-10">Nenhuma Ordem de Serviço a Fornecedor ainda.</p>

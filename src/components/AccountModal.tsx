@@ -7,12 +7,16 @@ interface AccountModalProps {
   onSave: (account: Omit<Account, 'id'>) => void;
   account?: Account;
   modulesConfig: AppModulesConfig;
+  // Tipo pré-selecionado ao abrir pra CRIAR uma conta nova (ignorado ao editar uma existente) —
+  // usado pelo aviso "Crie sua conta pessoal" do Financeiro Pessoal, que já abre direto em
+  // AccountType.PERSONAL em vez de cair no padrão Banco.
+  initialType?: AccountType;
 }
 
-export default function AccountModal({ isOpen, onClose, onSave, account, modulesConfig }: AccountModalProps) {
+export default function AccountModal({ isOpen, onClose, onSave, account, modulesConfig, initialType }: AccountModalProps) {
   const [name, setName] = useState(account?.name || '');
   const [balance, setBalance] = useState<number>(account?.balance || 0);
-  const [type, setType] = useState<AccountType>(account?.type || AccountType.BANK);
+  const [type, setType] = useState<AccountType>(account?.type || initialType || AccountType.BANK);
   const [isDefault, setIsDefault] = useState(account?.isDefault || false);
 
   useEffect(() => {
@@ -24,10 +28,10 @@ export default function AccountModal({ isOpen, onClose, onSave, account, modules
     } else {
       setName('');
       setBalance(0);
-      setType(AccountType.BANK);
+      setType(initialType || AccountType.BANK);
       setIsDefault(false);
     }
-  }, [account, isOpen]);
+  }, [account, isOpen, initialType]);
 
   if (!isOpen) return null;
 

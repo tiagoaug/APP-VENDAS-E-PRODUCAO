@@ -1020,8 +1020,8 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'dash.scanner.item': { text: 'Abre os detalhes desse item já escaneado no histórico.' },
   'dash.scanner.limparHistorico': { text: 'Apaga todo o histórico de escaneamentos.' },
 
-  // Card "Visualização do Meu Negócio" (BusinessOverviewCard) — dentro do Painel Inicial
-  'dash.overview.expandir': { text: 'Abre ou fecha o painel de Visualização do Meu Negócio, com o lucro real calculado a partir das fontes que você escolher.' },
+  // Card "Análise Detalhada" (BusinessOverviewCard) — dentro do Painel Inicial
+  'dash.overview.expandir': { text: 'Abre ou fecha o painel de Análise Detalhada, com o lucro real calculado a partir das fontes que você escolher.' },
   'dash.overview.periodo': { text: 'Escolhe o período usado pra calcular Despesas e Receitas Totais nessa visualização (Mês, Trimestre, Semestre ou Ano).' },
   'dash.overview.mesEscolhido': { text: 'Escolhe o mês/ano exato do período selecionado acima.' },
   'dash.overview.modoComparacao': { text: 'Escolhe se compara o lucro com o período anterior automaticamente, com um período específico, ou não compara.' },
@@ -1060,24 +1060,9 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'dash.commission.exportar': { text: 'Gera um PDF ou uma imagem com o detalhamento da comissão desse vendedor no período.' },
   'dash.commission.exportarFolha': { text: 'Gera um PDF ou uma imagem com a Folha de Pagamento inteira do período (todos os colaboradores, salário/pró-labore/comissão/desconto de empréstimo e o líquido de cada um) — diferente do exportar individual, que só mostra um colaborador por vez.' },
 
-  // Card "Ordens de Serviço a Fornecedores" (ProviderServiceOrdersCard) — dentro do Painel Inicial
-  'dash.providerOS.expandir': { text: 'Abre ou fecha o card de Ordens de Serviço a Fornecedores, com o total em aberto acumulado de todos os fornecedores.' },
-  'dash.providerOS.limparBusca': { text: 'Limpa a busca e volta a mostrar todos os fornecedores.' },
-  'dash.providerOS.periodo': { text: 'Muda o período usado só pra conferir as OS concluídas — o Total em Aberto é sempre o acumulado geral, não muda com esse filtro.' },
-  'dash.providerOS.mesEscolhido': { text: 'Escolhe o mês/ano exato do período de conferência.' },
-  'dash.providerOS.agrupar': { text: 'Alterna entre ver uma linha por OS ou agrupado por modelo, somando cor e quantidade.' },
-  'dash.providerOS.fornecedorItem': { text: 'Abre o detalhe desse fornecedor: OS em aberto, OS concluídas no período, copiar lista e pagar.' },
-  'dash.providerOS.aba': { text: 'Alterna entre ver as OS em aberto (pendentes de pagamento) ou as concluídas dentro do período escolhido.' },
-  'dash.providerOS.osItem': { text: 'Marca essa OS como concluída sem gerar Compra nem lançamento financeiro — use só quando não vai haver pagamento por esse trabalho. Não pode ser desfeito por aqui.' },
-  'dash.providerOS.copiar': { text: 'Abre as opções de copiar a lista de OS em aberto desse fornecedor pra área de transferência.' },
-  'dash.providerOS.copiarComOS': { text: 'Copia uma lista com uma linha por OS, incluindo o número de cada uma.' },
-  'dash.providerOS.copiarSemOS': { text: 'Copia uma lista agrupada por referência/cor, sem mostrar o número de cada OS.' },
-  'dash.providerOS.pagar': { text: 'Abre uma Compra já preenchida com todas as OS em aberto desse fornecedor, pra registrar o pagamento.' },
-  'dash.providerOS.exportarAbrir': { text: 'Abre as opções de exportar as OS em aberto desse fornecedor como PDF ou imagem.' },
-  'dash.providerOS.exportarFormato': { text: 'Escolhe se o arquivo gerado é PDF ou JPG.' },
-  'dash.providerOS.exportarAgrupar': { text: 'Escolhe se o arquivo lista uma linha por OS ou agrupa por modelo (cor/quantidade somadas).' },
-  'dash.providerOS.exportarPorPagina': { text: 'Ajusta quantos itens entram em cada página/imagem — 0 coloca tudo numa página só (só no formato JPG).' },
-  'dash.providerOS.exportarConfirmar': { text: 'Gera o arquivo final com as opções escolhidas acima.' },
+  // Card/tela "Fornecedores" (FornecedoresView, embutida em Financeiro/Dashboard e também
+  // acessível como tela cheia via atalho "Fornec." — substituiu o antigo card "Ordens de
+  // Serviço a Fornecedores"/ProviderServiceOrdersCard, removido por duplicar a mesma ideia).
   'fornecedores.voltar': { text: 'Volta para a tela anterior.' },
   'fornecedores.cardFornecedor': { text: 'Abre o detalhe desse fornecedor: as OS Concluídas, as OS a Concluir e a opção de pagamento.' },
   'fornecedores.aba': { text: 'Alterna entre as OS já Concluídas e as que ainda estão em produção (a concluir).' },
