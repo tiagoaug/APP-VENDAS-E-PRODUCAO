@@ -193,6 +193,9 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
                 <Copy size={14} />
               </button>
             </div>
+            <p className="text-[10px] text-slate-400 font-medium italic leading-relaxed -mt-2">
+              Não abra esse link direto no navegador pra "testar" — ele não é uma página, é só colar no campo "Link de redirecionamento" do cadastro do app no Bling. Quem chama ele é o próprio Bling, automaticamente, no final da autorização.
+            </p>
 
             <div className={`p-3 rounded-2xl flex items-start gap-2.5 ${isDarkMode ? 'bg-slate-950' : 'bg-white'}`}>
               <Sparkles size={16} className="text-violet-500 shrink-0 mt-0.5" />

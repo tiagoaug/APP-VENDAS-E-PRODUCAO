@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { toast } from '../utils/toast';
-import { AbleMarkPairedDevice } from './ablemarkPrinter';
+import { AbleMarkPairedDevice, clearLabelPrintCache } from './ablemarkPrinter';
 
 interface AbleMarkPrinterPlugin2 {
   isBluetoothEnabled(): Promise<{ enabled: boolean }>;
@@ -63,6 +63,10 @@ export async function resetAbleMarkPrinter2(): Promise<void> {
   } catch (err: any) {
     toast.show('Erro ao resetar conexão: ' + (err?.message || err));
   }
+  // O botão promete "resetar conexão E CACHE" (ver PrinterConnectionCard.tsx), mas até aqui só
+  // resetava a conexão nativa — os PNGs temporários de cada etiqueta impressa (um por
+  // label/cópia, ver LabelEditorView.tsx) nunca eram apagados em lugar nenhum, só acumulavam.
+  await clearLabelPrintCache();
 }
 
 export async function isAbleMarkPrinterConnected2(): Promise<boolean> {

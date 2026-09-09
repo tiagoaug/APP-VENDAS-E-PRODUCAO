@@ -594,6 +594,12 @@ export default function App() {
 
   const handleLogout = () => {
     sessionStorage.removeItem('collab_session_confirmed');
+    // Lembretes locais (vencimentos de compra, pedidos, etc.) são agendados no sistema
+    // operacional do aparelho, não isolados por conta — sem cancelar tudo aqui, os lembretes
+    // desta conta continuariam disparando pra quem usar o aparelho depois, mesmo deslogado.
+    // A conta reagenda os próprios lembretes sozinha na próxima vez que logar (ver efeito em
+    // App.tsx que assina sales/purchases/etc.).
+    notificationService.cancelAll();
     logout();
   };
 
@@ -5317,6 +5323,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             onSelectBusinessType={handleOnboardingSelectBusinessType}
             onSkip={handleOnboardingWelcomeSkip}
+            onSwitchAccount={handleLogout}
           />
         );
       case ViewType.ONBOARDING_ROADMAP:
@@ -8923,7 +8930,11 @@ export default function App() {
           {/* 3D bottom shadow */}
           <div className="absolute bottom-0 left-8 right-8 h-[1px] rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent pointer-events-none" />
         <div className="flex items-center gap-3">
-          {history.length > 1 && (
+          {/* Escondido nas telas de onboarding — "Voltar" usa o histórico de navegação normal
+              (ver goBack acima), que podia levar de volta pra uma tela com o menu completo
+              liberado, outra saída da introdução inicial (ver bloqueios do <nav> e da Central de
+              Ajuda mais abaixo). */}
+          {history.length > 1 && ![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
             <button
               onClick={goBack}
               data-guide-anchor="app.headerVoltar"

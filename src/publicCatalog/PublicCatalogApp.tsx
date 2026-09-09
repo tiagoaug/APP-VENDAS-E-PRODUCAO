@@ -391,13 +391,16 @@ export default function PublicCatalogApp() {
               <button
                 type="button"
                 onClick={() => setCategoriesSectionOpen(v => !v)}
-                className="flex items-center justify-between gap-2 px-1"
+                className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-50"
               >
-                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                  Categorias e Marcas
-                  {(categoryFilter !== 'ALL' || brandFilter !== 'ALL') && <span className="text-indigo-500"> · filtro ativo</span>}
+                <span className="flex flex-col items-start min-w-0 text-left">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                    Categorias e Marcas
+                    {(categoryFilter !== 'ALL' || brandFilter !== 'ALL') && <span className="text-indigo-500"> · filtro ativo</span>}
+                  </span>
+                  <span className="text-[9px] font-bold text-slate-400 normal-case">Toque aqui para filtrar categorias</span>
                 </span>
-                <span className={`text-slate-400 transition-transform ${categoriesSectionOpen ? 'rotate-180' : ''}`}>⌄</span>
+                <span className={`shrink-0 text-slate-400 transition-transform ${categoriesSectionOpen ? 'rotate-180' : ''}`}>⌄</span>
               </button>
             )}
             {categoriesSectionOpen && categoryOptions.length > 0 && (

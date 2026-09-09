@@ -526,7 +526,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
         // Dá tempo da impressora terminar de alimentar/cortar a etiqueta anterior antes de
         // mandar a próxima — sem essa pausa o job seguinte chega enquanto o mecanismo ainda
         // está processando o de antes, e a impressão sai corrompida mesmo com bytes corretos.
-        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 2000));
+        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 3500));
         isFirst = false;
         try {
           const written = await Filesystem.writeFile({ path: `picking_studio_${Date.now()}_${i}_${c}.png`, data: base64, directory: Directory.Cache });
@@ -575,7 +575,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
         // Dá tempo da impressora terminar de alimentar/cortar a etiqueta anterior antes de
         // mandar a próxima — sem essa pausa o job seguinte chega enquanto o mecanismo ainda
         // está processando o de antes, e a impressão sai corrompida mesmo com bytes corretos.
-        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 2000));
+        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 3500));
         isFirst = false;
         const row: DisplayRow = {
           reference: g.reference,

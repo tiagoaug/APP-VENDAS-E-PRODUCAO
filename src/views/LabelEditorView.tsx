@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { LabelElement, LabelDataBinding, BatchLabelItem, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { printAbleMarkLabel2 as printAbleMarkLabel } from '../lib/ablemarkPrinter2';
+import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
+import PrinterConnectionCard from '../components/PrinterConnectionCard';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
 import { shareImages, sharePDF } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
@@ -685,7 +687,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           // Dá tempo da impressora terminar de alimentar/cortar a etiqueta anterior antes de
           // mandar a próxima — sem essa pausa o job seguinte chega enquanto o mecanismo ainda
           // está processando o de antes, e a impressão sai corrompida mesmo com bytes corretos.
-          if (printedCount > 0) await new Promise(resolve => setTimeout(resolve, 2000));
+          // Subiu de 2000 pra 3500ms — usuário relatou falhas ao imprimir mais de 4 etiquetas
+          // seguidas, e a impressora não manda nenhuma confirmação de "terminei" que dê pra
+          // esperar de verdade (só delay fixo mesmo); se ainda falhar, subir mais esse valor.
+          if (printedCount > 0) await new Promise(resolve => setTimeout(resolve, 3500));
           const written = await Filesystem.writeFile({ path: `label_${Date.now()}_${printedCount}.png`, data: base64, directory: Directory.Cache });
           const { sent, error } = await printAbleMarkLabel(written.uri, options.paperType, options.density);
           if (!sent) {
@@ -1655,6 +1660,12 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
 
   const saveButtons = (
     <div className="flex flex-col gap-2">
+      {/* Status da impressora sempre visível aqui (antes só aparecia dentro do preview de
+          impressão, e só quando desconectada) — pra dar pra ver se está conectada e resetar
+          conexão/cache antes mesmo de abrir o preview, sem precisar chegar até lá pra descobrir
+          que precisa reconectar. */}
+      {isAblemarkPlatform() && <PrinterConnectionCard isDarkMode={isDarkMode} />}
+
       {/* Só faz sentido perguntar isso quando o editor abriu a partir de Vendas — fora daí,
           "modelo para Vendas" não tem contexto de venda pra puxar dado nenhum. */}
       {session.batch && !session.productionContext && (

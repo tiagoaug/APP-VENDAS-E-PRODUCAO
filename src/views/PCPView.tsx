@@ -6738,7 +6738,17 @@ export default function PCPView({
                                       </span>
                                     </button>
                                   )}
-                                  {(!floatingActionMenuEnabled || floatingActionMenuOpen) && (
+                                  {(!floatingActionMenuEnabled || floatingActionMenuOpen) && (() => {
+                                // Cápsula branca com efeito 3D (mesmo padrão de PrinterConnectionCard.tsx) — o ícone
+                                // fica numa bolinha colorida à esquerda (uma cor por ação), o texto sempre preto/branco
+                                // neutro. Substitui o padrão antigo de pílula inteira colorida com texto colorido.
+                                const pillCls = `w-full py-2.5 px-3 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center justify-start gap-2 transition-all active:scale-95 border-b-[3px] ${
+                                  isDarkMode
+                                    ? 'bg-gradient-to-b from-slate-800 to-slate-800/80 border-slate-950 shadow-[0_4px_10px_-3px_rgba(0,0,0,0.5)] text-white'
+                                    : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 shadow-[0_4px_10px_-4px_rgba(15,23,42,0.18)] text-slate-900'
+                                }`;
+                                const badgeCls = (colorClass: string) => `w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white ${colorClass}`;
+                                return (
                                 <div className={floatingActionMenuEnabled
                                   ? `fixed bottom-40 right-4 left-4 z-[9000] flex flex-col gap-2 p-3 rounded-2xl border shadow-2xl max-h-[55vh] overflow-y-auto ${isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`
                                   : `flex flex-col gap-2 p-2 rounded-2xl border ${isDarkMode ? 'border-slate-700 bg-slate-800/40' : 'border-slate-200 bg-slate-50/60'}`
@@ -6749,9 +6759,9 @@ export default function PCPView({
                                       setShareModal({ isOpen: true, format: 'jpg', selectedItems: selectedFichasData });
                                     }}
                                     data-guide-anchor="pcp.pedidosAcaoCompartilharSelecionados"
-                                    className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-orange-500/15 text-orange-400 hover:bg-orange-500/25' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
+                                    className={pillCls}
                                   >
-                                    <Share2 size={13} /> Compartilhar {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
+                                    <span className={badgeCls('bg-orange-500')}><Share2 size={13} /></span> Compartilhar {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
                                   </button>
 
                                   <button type="button"
@@ -6767,9 +6777,9 @@ export default function PCPView({
                                       openLabelPicker(batch, singleLot, null);
                                     }}
                                     data-guide-anchor="pcp.pedidosAcaoImprimirSelecionados"
-                                    className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                                    className={pillCls}
                                   >
-                                    <Printer size={13} /> Imprimir Etiquetas — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
+                                    <span className={badgeCls('bg-emerald-500')}><Printer size={13} /></span> Imprimir Etiquetas — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
                                   </button>
 
                                   <button type="button"
@@ -6778,9 +6788,9 @@ export default function PCPView({
                                       setManualSectorPicker({ fichas: selectedFichasData });
                                     }}
                                     data-guide-anchor="pcp.pedidosAcaoTransferirSelecionados"
-                                    className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-violet-500/15 text-violet-400 hover:bg-violet-500/25' : 'bg-violet-50 text-violet-600 hover:bg-violet-100'}`}
+                                    className={pillCls}
                                   >
-                                    <ArrowLeftRight size={13} /> Transferir de Setor — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
+                                    <span className={badgeCls('bg-violet-500')}><ArrowLeftRight size={13} /></span> Transferir de Setor — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
                                   </button>
 
                                   {selByLot.size > 1 && (
@@ -6802,9 +6812,9 @@ export default function PCPView({
                                         handleOpenOSModalForOrder(uniqueLots, orderIds, undefined, sectorOvr, qtyOvr);
                                       }}
                                       data-guide-anchor="pcp.pedidosAcaoEmitirOS"
-                                      className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-sky-500/15 text-sky-400 hover:bg-sky-500/25' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
+                                      className={pillCls}
                                     >
-                                      <Hammer size={13} /> Emitir OS Unificada — {selected.length} Pedidos ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
+                                      <span className={badgeCls('bg-sky-500')}><Hammer size={13} /></span> Emitir OS Unificada — {selected.length} Pedidos ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
                                     </button>
                                   )}
 
@@ -6826,9 +6836,9 @@ export default function PCPView({
                                           handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
                                         }}
                                         data-guide-anchor="pcp.pedidosAcaoEmitirOS"
-                                        className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-sky-500/15 text-sky-400 hover:bg-sky-500/25' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
+                                        className={pillCls}
                                       >
-                                        <Hammer size={13} /> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty} {qty === 1 ? 'par' : 'pares'}) · MAPA{lot.orderNumber}
+                                        <span className={badgeCls('bg-sky-500')}><Hammer size={13} /></span> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty} {qty === 1 ? 'par' : 'pares'}) · MAPA{lot.orderNumber}
                                       </button>
                                     );
                                   })}
@@ -7022,7 +7032,8 @@ export default function PCPView({
                                     );
                                   })()}
                                 </div>
-                                  )}
+                                );
+                                  })()}
                                 </>
                               )}
 

@@ -167,7 +167,7 @@ export default function BusinessOverviewCard({
     try { el.showPicker ? el.showPicker() : el.focus(); } catch { el.focus(); }
   };
 
-  const [isOverviewExpanded, setIsOverviewExpanded] = useState(true);
+  const [isOverviewExpanded, setIsOverviewExpanded] = useState(false);
   const [isResumoExpanded, setIsResumoExpanded] = useState(true);
   const [overviewConfig, setOverviewConfig] = useState<BusinessOverviewConfig>(DEFAULT_BUSINESS_OVERVIEW_CONFIG);
 
@@ -318,15 +318,12 @@ export default function BusinessOverviewCard({
     const profit = income - expenses;
     const margin = income > 0 ? (profit / income) * 100 : 0;
 
-    // Lucro por Par — mesmo cálculo do card "Análise de Lucro" do Dashboard, mas sempre pelo
-    // MÊS CALENDÁRIO ATUAL (Receitas − Despesas do mês ÷ pares finalizados no mês), igual ao
-    // "Balanço do Mês (Liquidados)" acima — independente do período (Mês/Trimestre/Semestre/
-    // Ano) escolhido no seletor lá em cima, que só afeta os outros números deste card.
-    const monthRange = getPeriodRange('MONTH', format(new Date(), 'yyyy-MM'));
-    const monthFinancials = computePeriodFinancials(transactions, monthRange.start, monthRange.end);
-    const monthProfit = monthFinancials.income - monthFinancials.expenses;
-    const producedPairs = computeProducedPairs(productionLots, monthRange.start, monthRange.end).total;
-    const profitPerPair = producedPairs > 0 ? monthProfit / producedPairs : null;
+    // Lucro por Par — mesmo cálculo do card "Análise de Lucro" do Dashboard (Receitas −
+    // Despesas ÷ pares finalizados), agora pelo MESMO período (Mês/Trimestre/Semestre/Ano)
+    // escolhido no seletor acima — antes ficava sempre fixo no mês calendário atual,
+    // independente do período selecionado, o que confundia ao analisar outro mês/período.
+    const producedPairs = computeProducedPairs(productionLots, start, end).total;
+    const profitPerPair = producedPairs > 0 ? profit / producedPairs : null;
 
     // Preço médio de venda (todos os modelos vendidos no período) — receita total das vendas
     // fechadas ÷ total de PARES vendidos, pra dar uma referência de ticket médio junto do
@@ -667,8 +664,8 @@ export default function BusinessOverviewCard({
                         <p className={`text-sm font-black mt-0.5 ${businessOverview.profitPerPair === null ? 'text-slate-400' : businessOverview.profitPerPair >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                           {businessOverview.profitPerPair === null ? '—' : `R$ ${businessOverview.profitPerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                         </p>
-                        <p className="text-[8.5px] font-black text-indigo-500 mt-1 uppercase tracking-wide">Baseado nas despesas e receitas mensais</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Mesmo cálculo do card "Análise de Lucro": (Receitas − Despesas) ÷ {businessOverview.producedPairs} {businessOverview.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} — sempre pelo mês calendário atual, independente do período escolhido acima.</p>
+                        <p className="text-[8.5px] font-black text-indigo-500 mt-1 uppercase tracking-wide">Baseado nas despesas e receitas do período</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Mesmo cálculo do card "Análise de Lucro": (Receitas − Despesas) ÷ {businessOverview.producedPairs} {businessOverview.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} — pelo mesmo período (Mês/Trimestre/Semestre/Ano) escolhido no seletor acima.</p>
                         <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                           <p className={`text-[11px] font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-700'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                             {businessOverview.avgSalePricePerPair === null ? '—' : `R$ ${businessOverview.avgSalePricePerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}

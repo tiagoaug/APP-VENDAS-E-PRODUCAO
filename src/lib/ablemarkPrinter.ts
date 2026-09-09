@@ -96,8 +96,10 @@ export async function disconnectAbleMarkPrinter(): Promise<void> {
 
 // Apaga só os PNGs temporários gerados pra impressão (label_*/ablemark_test_*, ver
 // LabelEditorView e AblemarkPrinterTestModal) — best-effort, uma falha aqui não deve impedir o
-// reset da conexão em si.
-async function clearLabelPrintCache(): Promise<void> {
+// reset da conexão em si. Exportada porque ablemarkPrinter2.ts (módulo ativo) também precisa
+// dela no próprio resetAbleMarkPrinter2 — é lógica de arquivo, não amarrada a nenhum dos dois
+// protocolos nativos.
+export async function clearLabelPrintCache(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
     const { files } = await Filesystem.readdir({ path: '', directory: Directory.Cache });

@@ -11,6 +11,7 @@ import FamilyMemberModal from '../components/FamilyMemberModal';
 import PersonalContactModal from '../components/PersonalContactModal';
 import BudgetModal from '../components/BudgetModal';
 import TransferToPersonalModal from '../components/TransferToPersonalModal';
+import QuickReceiptModal from '../components/QuickReceiptModal';
 import CalculatorModal from '../components/CalculatorModal';
 import PartialPaymentModal from '../components/PartialPaymentModal';
 import { toast } from '../utils/toast';
@@ -102,6 +103,7 @@ export default function PersonalFinancialView({
   const [editingBudget, setEditingBudget] = useState<Budget | undefined>();
 
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isQuickReceiptOpen, setIsQuickReceiptOpen] = useState(false);
   const [isCalcModalOpen, setIsCalcModalOpen] = useState(false);
   const [isCreatePersonalAccountOpen, setIsCreatePersonalAccountOpen] = useState(false);
   const [calcResult, setCalcResult] = useState<number | null>(null);
@@ -252,17 +254,38 @@ export default function PersonalFinancialView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialAction]);
 
+  // Quem só tem o Módulo Pessoal ativo não tem nenhuma conta comercial pra "receber" — nesse
+  // caso o botão vira "Recebimentos" (QuickReceiptModal, só o valor) em vez de "Receber da
+  // Empresa" (TransferToPersonalModal, que pede uma conta de origem que não existe).
+  const hasBusinessAccounts = accounts.some(a => a.type !== AccountType.PERSONAL);
+
   const handleTransfer = () => {
     if (!personalAccount) {
       toast.show('Crie a Conta Pessoal primeiro.');
       return;
     }
-    const bizAccounts = accounts.filter(a => a.type !== AccountType.PERSONAL);
-    if (bizAccounts.length === 0) {
-      toast.show('Você não possui contas comerciais para transferir.');
+    if (!hasBusinessAccounts) {
+      setIsQuickReceiptOpen(true);
       return;
     }
     setIsTransferModalOpen(true);
+  };
+
+  const confirmQuickReceipt = async (amount: number) => {
+    if (!personalAccount) return;
+    const revenueCats = categories.filter(c => c.type === CategoryType.REVENUE);
+    const receiptCat = revenueCats.find(c => c.isPersonal)?.id || revenueCats[0]?.id || 'transfer';
+    await onSaveTransaction({
+      type: TransactionType.INCOME,
+      categoryId: receiptCat,
+      accountId: personalAccount.id,
+      amount,
+      date: Date.now(),
+      description: 'Recebimento',
+      status: 'COMPLETED',
+      isPersonal: true,
+    });
+    toast.show('Recebimento registrado!');
   };
 
   const confirmTransfer = async (fromId: string, amount: number) => {
@@ -468,6 +491,13 @@ export default function PersonalFinancialView({
         isDarkMode={isDarkMode}
       />
 
+      <QuickReceiptModal
+        isOpen={isQuickReceiptOpen}
+        onClose={() => setIsQuickReceiptOpen(false)}
+        onConfirm={confirmQuickReceipt}
+        isDarkMode={isDarkMode}
+      />
+
       <CalculatorModal 
         isOpen={isCalcModalOpen}
         onClose={() => setIsCalcModalOpen(false)}
@@ -504,10 +534,10 @@ export default function PersonalFinancialView({
                       ? 'bg-slate-800/80 text-indigo-400 border border-slate-700 hover:bg-slate-700'
                       : 'bg-white/60 text-sky-700 backdrop-blur-md border border-sky-200 hover:bg-white/80'
                   }`}
-                  title="Receber da Empresa"
-                  aria-label="Receber transferência da empresa para conta pessoal"
+                  title={hasBusinessAccounts ? "Receber da Empresa" : "Recebimentos"}
+                  aria-label={hasBusinessAccounts ? "Receber transferência da empresa para conta pessoal" : "Registrar um recebimento externo"}
                 >
-                  <ArrowRightLeft size={14} strokeWidth={3} /> Receber Empresa
+                  <ArrowRightLeft size={14} strokeWidth={3} /> {hasBusinessAccounts ? 'Receber Empresa' : 'Recebimentos'}
                 </button>
             </div>
             

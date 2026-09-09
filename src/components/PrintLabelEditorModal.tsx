@@ -1160,7 +1160,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         // mandar a próxima — sem essa pausa, o job seguinte chega enquanto o mecanismo ainda
         // está processando o de antes, e a impressão sai corrompida (caracteres bagunçados)
         // mesmo com os bytes enviados corretos.
-        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 2000));
+        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 3500));
         isFirst = false;
         try {
           const written = await Filesystem.writeFile({ path: `label_${Date.now()}_${i}_${c}.png`, data: base64, directory: Directory.Cache });

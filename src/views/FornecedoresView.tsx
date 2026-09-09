@@ -97,13 +97,17 @@ export default function FornecedoresView({
   // ainda em produção na mesma leva), guardada por id de OS. Zerada ao trocar de fornecedor
   // ou fechar o popup (ver openProvider/closeModal).
   const [selectMode, setSelectMode] = useState(false);
+  // Agrupamento da listagem (fora do modo seleção, ver abaixo) — "model" soma todas as cores de
+  // um mesmo modelo numa linha só; "modelColor" mantém as cores separadas, mas ainda soma OS
+  // repetidas do mesmo modelo+cor (ex.: várias entregas do mesmo par ao longo do tempo).
+  const [listGroupBy, setListGroupBy] = useState<'model' | 'modelColor'>('model');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Exportar OS deste fornecedor (PDF/JPG) — considera as selecionadas (se houver alguma
   // marcada) ou, senão, a lista visível na aba/filtro atual, mesmo padrão de precedência já
   // usado em "Pagar Selecionadas" acima.
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'jpg'>('pdf');
-  const [exportGroupBy, setExportGroupBy] = useState<'none' | 'model'>('none');
+  const [exportGroupBy, setExportGroupBy] = useState<'none' | 'model' | 'modelColor'>('none');
   const [exportPreviewUrls, setExportPreviewUrls] = useState<string[]>([]);
   const [isExportPreviewLoading, setIsExportPreviewLoading] = useState(false);
 
@@ -280,6 +284,69 @@ export default function FornecedoresView({
     );
   };
 
+  // Junta OS repetidas do mesmo modelo (ou modelo+cor) numa linha só, somando quantidade e
+  // valor — só usado fora do modo seleção (lá cada OS precisa continuar individual, é ela que
+  // é marcada/paga). "Pago"/"Em aberto" na linha some quando o grupo mistura os dois status,
+  // pra não passar a falsa impressão de que está tudo com o mesmo status.
+  type OsGroupRow = {
+    key: string;
+    reference?: string;
+    productName: string;
+    variationName?: string;
+    quantity: number;
+    totalValue: number;
+    count: number;
+    allPaid: boolean;
+    allOpen: boolean;
+  };
+  const groupDetailList = (list: ServiceOrder[]): OsGroupRow[] => {
+    const map = new Map<string, OsGroupRow>();
+    for (const os of list) {
+      const reference = products.find(p => p.id === os.productId)?.reference;
+      const key = listGroupBy === 'model' ? os.productId || os.productName : `${os.productId || os.productName}::${os.variationName || ''}`;
+      const paid = isOsPaid(os);
+      if (!map.has(key)) {
+        map.set(key, {
+          key, reference, productName: os.productName,
+          variationName: listGroupBy === 'modelColor' ? os.variationName : undefined,
+          quantity: 0, totalValue: 0, count: 0, allPaid: true, allOpen: true,
+        });
+      }
+      const g = map.get(key)!;
+      g.quantity += Number(os.quantity) || 0;
+      g.totalValue += Number(os.totalValue) || 0;
+      g.count += 1;
+      if (!paid) g.allPaid = false;
+      if (paid) g.allOpen = false;
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalValue - a.totalValue);
+  };
+
+  const renderOsGroupRow = (g: OsGroupRow) => (
+    <div key={g.key} className={`w-full flex items-center gap-2 p-2.5 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
+      <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className={`text-[10px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            {g.reference ? `${g.reference} ` : ''}{g.productName}
+          </p>
+          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+            {g.variationName ? `Cor: ${g.variationName} · ` : ''}{g.count} {g.count === 1 ? 'OS' : 'OS'} · {g.quantity} {g.quantity === 1 ? 'par' : 'pares'}
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className={`text-[11px] font-black transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''} ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+            R$ {g.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          {(g.allPaid || g.allOpen) && (
+            <p className={`text-[7px] font-black uppercase tracking-widest ${g.allPaid ? 'text-emerald-500' : 'text-rose-500'}`}>
+              {g.allPaid ? 'Pago' : 'Em aberto'}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className={embedded ? 'flex flex-col gap-6' : 'flex flex-col gap-6 pb-32'}>
       {embedded ? (
@@ -345,6 +412,10 @@ export default function FornecedoresView({
       <Modal isOpen={!!expandedKey} onClose={closeModal} title={selectedGroup?.providerName || ''} icon={<Factory size={20} />} maxWidth="max-w-lg" zIndex={96500}>
         {selectedGroup && (
           <div className="flex flex-col gap-3">
+            {/* Card agrupando os controles da tela (abas, exportar, seleção pra pagamento,
+                agrupamento da lista e filtro de status) — antes ficavam soltos direto no corpo
+                do modal, sem nenhuma separação visual do resto do conteúdo. */}
+            <div className={`flex flex-col gap-3 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
             <div className="flex items-center justify-between gap-2">
               {selectMode ? (
                 <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500">
@@ -402,6 +473,26 @@ export default function FornecedoresView({
               </button>
             )}
 
+            {/* Toggle de agrupamento da lista — só faz sentido fora do modo seleção (lá cada OS
+                precisa ficar individual, é ela que é marcada/paga). "Por Modelo" soma todas as
+                cores de um modelo numa linha; "Por Modelo e Cor" mantém as cores separadas, só
+                juntando OS repetidas do mesmo par. */}
+            {!selectMode && (
+              <button
+                type="button"
+                onClick={() => setListGroupBy(v => v === 'model' ? 'modelColor' : 'model')}
+                data-guide-anchor="fornecedores.agruparToggle"
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}
+              >
+                <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                  <Factory size={13} /> Agrupar por {listGroupBy === 'model' ? 'Modelo' : 'Modelo e Cor'}
+                </span>
+                <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${listGroupBy === 'modelColor' ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${listGroupBy === 'modelColor' ? 'translate-x-4' : ''}`} />
+                </span>
+              </button>
+            )}
+
             {/* Filtro por status de pagamento — evita a lista mostrar "PAGO" em tudo por baixo
                 de um total que só soma o que ainda falta pagar (ver paymentFilter acima). */}
             <div className={`flex gap-0.5 p-0.5 rounded-xl w-fit ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
@@ -429,6 +520,7 @@ export default function FornecedoresView({
               >
                 Todas
               </button>
+            </div>
             </div>
 
             {!selectMode && (
@@ -464,7 +556,7 @@ export default function FornecedoresView({
                   </div>
                 ))
               ) : (
-                detailList.map(os => renderOsRow(os))
+                groupDetailList(detailList).map(g => renderOsGroupRow(g))
               )}
               {selectMode
                 ? applyPaymentFilter(selectedGroup.completedOrders).length === 0 && applyPaymentFilter(selectedGroup.pendingOrders).length === 0 && (
@@ -571,9 +663,17 @@ export default function FornecedoresView({
                   className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportGroupBy === 'model' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
                   Por Modelo
                 </button>
+                <button type="button" onClick={() => { setExportGroupBy('modelColor'); setExportPreviewUrls([]); }}
+                  data-guide-anchor="fornecedores.exportarModo"
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${exportGroupBy === 'modelColor' ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                  Modelo e Cor
+                </button>
               </div>
               {exportGroupBy === 'model' && (
-                <p className="text-[9px] font-bold text-slate-400 mt-1.5 leading-relaxed">Agrupa por modelo/cor, somando quantidade e valor de cada um.</p>
+                <p className="text-[9px] font-bold text-slate-400 mt-1.5 leading-relaxed">Agrupa por modelo, somando todas as cores numa linha só.</p>
+              )}
+              {exportGroupBy === 'modelColor' && (
+                <p className="text-[9px] font-bold text-slate-400 mt-1.5 leading-relaxed">Agrupa por modelo e cor separadamente, somando quantidade e valor de cada um.</p>
               )}
             </div>
 

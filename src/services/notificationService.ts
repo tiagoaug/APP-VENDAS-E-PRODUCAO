@@ -235,6 +235,25 @@ export const notificationService = {
     }
   },
 
+  // Cancela TODAS as notificações locais pendentes no aparelho, sem exceção — usado no logout
+  // (ver App.tsx, handleLogout). Lembretes locais são agendados no sistema operacional, não
+  // filtrados por conta/usuário logado: sem isso, trocar de conta no mesmo aparelho deixava os
+  // lembretes da conta anterior (vencimentos de compra, pedidos, etc.) continuarem disparando
+  // pra quem estivesse usando o aparelho depois, mesmo sem estar logado naquela conta. A conta
+  // que acabou de sair recupera os próprios lembretes sozinha da próxima vez que logar (o efeito
+  // em App.tsx que assina sales/purchases/etc. já reagenda tudo a partir dos dados dela).
+  async cancelAll(): Promise<void> {
+    if (!isSupported()) return;
+    try {
+      const pending = await LocalNotifications.getPending();
+      if (pending.notifications.length > 0) {
+        await LocalNotifications.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) });
+      }
+    } catch (e) {
+      console.error('[notificationService] cancelAll failed', e);
+    }
+  },
+
   // Dispara uma notificação de teste ~2s no futuro, no canal do padrão escolhido —
   // usado pelo seletor de toque pra ouvir a diferença antes de salvar.
   async previewTone(soundPattern: ReminderTonePattern, alarmMode: boolean): Promise<void> {
