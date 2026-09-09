@@ -271,6 +271,16 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   // Categoria, só pra organizar/filtrar o Catálogo Público e a escolha de produtos do envio.
   const [brandId, setBrandId] = useState<string>(existingProduct?.brandId || '');
   const [modelId, setModelId] = useState<string>(existingProduct?.modelId || '');
+  // Descrição livre do calçado (material, forma, características) — só aparece no Catálogo
+  // Público, abaixo do banner da referência, pra ajudar o cliente a entender o produto sem
+  // precisar perguntar. Nunca usada em nenhum outro lugar do app (etiqueta, PCP, etc).
+  const [catalogDescription, setCatalogDescription] = useState<string>(existingProduct?.catalogDescription || '');
+  // Faixa de numerações da caixa fechada de Atacado (ex.: "38 ao 43") — diferente do Varejo, o
+  // Atacado não guarda tamanho por unidade vendida (a caixa é fechada), então isso é só uma
+  // informação declarada manualmente pelo vendedor, mostrada no Catálogo Público pra o cliente
+  // saber quais numerações vêm dentro da caixa.
+  const [wholesaleSizeFrom, setWholesaleSizeFrom] = useState<string>(existingProduct?.wholesaleSizeFrom || '');
+  const [wholesaleSizeTo, setWholesaleSizeTo] = useState<string>(existingProduct?.wholesaleSizeTo || '');
 
   // Cadastro Guiado — só faz sentido criando um modelo do zero (nunca editando um já
   // existente); "Encerrar assistente" na barra só sai do modo guiado, não do formulário.
@@ -508,6 +518,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       labelThumbnailUrl: labelThumbnailUrl || undefined,
       brandId: brandId || undefined,
       modelId: modelId || undefined,
+      catalogDescription: catalogDescription.trim() || undefined,
+      wholesaleSizeFrom: wholesaleSizeFrom.trim() || undefined,
+      wholesaleSizeTo: wholesaleSizeTo.trim() || undefined,
       createdAt: existingProduct?.createdAt || Date.now()
     };
   };
@@ -2228,6 +2241,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               pro produto inteiro (senão misturava fotos de cores diferentes no catálogo). */}
 
           {module === 'SALES' && showSection('tipoVenda') && (
+            <p className="text-[10px] font-bold text-slate-400 px-1 -mb-1">Como você vende esse produto? Escolha como desejar — pode escolher mais de uma opção.</p>
+          )}
+
+          {module === 'SALES' && showSection('tipoVenda') && (
             <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
               <button
                 onClick={() => {
@@ -2329,6 +2346,21 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   />
                   <p className="text-[9px] font-bold text-slate-400 px-1 mt-1">Opcional — cadastre novos modelos em Ficha do Produto {'>'} Modelos.</p>
                 </div>
+              </div>
+            )}
+
+            {module === 'SALES' && showSection('nome') && (
+              <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800/30 border-slate-700/50' : 'bg-slate-50/70 border-slate-100'}`}>
+                <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Descrição do Produto (Catálogo Público)</label>
+                <textarea
+                  data-guide-anchor="productForm.catalogDescription"
+                  placeholder="Ex: Cabedal em couro legítimo, forro em tecido respirável, solado em borracha antiderrapante..."
+                  rows={3}
+                  className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 resize-none ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-white border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
+                  value={catalogDescription}
+                  onChange={(e) => setCatalogDescription(e.target.value.slice(0, 600))}
+                />
+                <p className="text-[9px] font-bold text-blue-500 px-1 mt-1">Opcional — aparece abaixo da foto de capa quando o cliente abre esse produto no Catálogo Público (material, forma, características).</p>
               </div>
             )}
 
@@ -2582,6 +2614,42 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mt-1.5">
                         Usado no cálculo de embalagens menores no Pedido de Produção
                       </p>
+                    </div>
+                  )}
+
+                  {saleTypes.includes(SaleType.WHOLESALE) && (
+                    <div className="col-span-1 sm:col-span-2 p-5 bg-white/50 dark:bg-slate-900/50 rounded-3xl border border-dashed border-amber-200 dark:border-amber-900/30">
+                      <div className="flex items-center gap-3 mb-4">
+                        <Info size={16} className="text-amber-400" />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Faixa de Numerações da Caixa (Atacado)</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">De</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="Ex: 38"
+                            data-guide-anchor="productForm.wholesaleSizeFrom"
+                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-xs font-black text-slate-700 dark:text-slate-300 outline-none"
+                            value={wholesaleSizeFrom}
+                            onChange={(e) => setWholesaleSizeFrom(e.target.value.slice(0, 10))}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Até</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="Ex: 43"
+                            data-guide-anchor="productForm.wholesaleSizeTo"
+                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-xs font-black text-slate-700 dark:text-slate-300 outline-none"
+                            value={wholesaleSizeTo}
+                            onChange={(e) => setWholesaleSizeTo(e.target.value.slice(0, 10))}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[9px] font-bold text-blue-500 px-1 mt-2">Opcional — a caixa fechada não tem tamanho por unidade, então isso é só informativo pro cliente: aparece no banner do Catálogo Público (ex: "Numeração 38 ao 43").</p>
                     </div>
                   )}
 

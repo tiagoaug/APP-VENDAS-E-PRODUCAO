@@ -2354,6 +2354,9 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
 
   // Ficha de Produto, sobras (ProductFormView.tsx) — Etapa 7
   'productForm.abaCoresInfo': { text: 'Mostra a aba com foto, nome da cor e outras informações desta variação.' },
+  'productForm.catalogDescription': { text: 'Descrição livre do calçado (material, forro, solado, etc.) — aparece abaixo do banner desse produto quando o cliente abre o Catálogo Público. Opcional, não é usada em nenhum outro lugar do app.' },
+  'productForm.wholesaleSizeFrom': { text: 'Menor numeração que vem dentro da caixa fechada de Atacado (ex.: 38). Aparece no banner do Catálogo Público — a caixa não guarda tamanho por unidade, então isso é só informativo.' },
+  'productForm.wholesaleSizeTo': { text: 'Maior numeração que vem dentro da caixa fechada de Atacado (ex.: 43). Aparece no banner do Catálogo Público junto com o "De".' },
   'productForm.abrirMapeamentoSolados': { text: 'Abre a tela pra vincular cada tamanho do cabedal ao número correspondente da sola.' },
   'productForm.abrirSeletorSola': { text: 'Abre a lista de numerações da sola pra escolher qual corresponde a este tamanho de cabedal.' },
   'productForm.abrirValoresSetor': { text: 'Abre a janela pra definir um valor de R$ por par sugerido em cada setor do roteiro de produção.' },

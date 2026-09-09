@@ -1,6 +1,6 @@
 import type { firestore } from "firebase-admin";
 import * as admin from "firebase-admin";
-import { getWholesaleBoxes, getRetailSizeAvailability, ProductLike, VariationLike, SaleTypeServer } from "./stockPoolsServer";
+import { getWholesaleBoxes, getRetailSizeAvailability, productHasSaleType, ProductLike, VariationLike, SaleTypeServer } from "./stockPoolsServer";
 
 // Erro genérico único pra qualquer token inválido/expirado/revogado/inexistente — nunca revela
 // o motivo real, pra não dar sinal nenhum a quem tenta adivinhar/enumerar tokens.
@@ -69,6 +69,13 @@ export interface PublicCatalogProduct {
   brandName?: string;
   categoryId?: string;
   categoryName?: string;
+  // Descrição livre cadastrada em Produtos (Product.catalogDescription) — texto explicativo do
+  // calçado (material, forma, etc.), seguro de mostrar ao público.
+  description?: string;
+  // Faixa de numerações da caixa fechada de Atacado (ex.: "38 ao 43") — declarada manualmente
+  // pelo vendedor em Produtos (wholesaleSizeFrom/wholesaleSizeTo), já pronta em texto porque o
+  // Atacado não tem tamanho por unidade real pra calcular sozinho (ver getRetailSizeAvailability).
+  wholesaleSizeRange?: string;
   variations: PublicCatalogVariation[];
   // Ambos ausentes quando o link está configurado como "sem valores" (CatalogLink.hidePrices)
   // — nesse caso o cliente só escolhe modelo/cor/quantidade, sem ver preço nenhum. Presentes
@@ -169,6 +176,11 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
       photoUrl: p.photoUrl,
       ...(p.brandId && brandNames.has(p.brandId) ? { brandName: brandNames.get(p.brandId) } : {}),
       ...(p.categoryId ? { categoryId: p.categoryId, categoryName: categoryNames.get(p.categoryId) } : {}),
+      ...(p.catalogDescription ? { description: p.catalogDescription } : {}),
+      // Independente de ter estoque de caixa AGORA (hasWholesale é sobre estoque, isso aqui é só
+      // informação estática de cadastro) — usa o tipo de venda configurado no produto, não o
+      // saldo em estoque, senão a faixa some assim que a última caixa acaba.
+      ...(productHasSaleType(productLike, "WHOLESALE") && p.wholesaleSizeFrom && p.wholesaleSizeTo ? { wholesaleSizeRange: `${p.wholesaleSizeFrom} ao ${p.wholesaleSizeTo}` } : {}),
       variations,
       ...(link.hidePrices ? {} : {
         ...(pricePerPair !== undefined ? { pricePerPair } : {}),

@@ -374,6 +374,13 @@ export type Product = {
   // produtos do envio.
   brandId?: string;
   modelId?: string;
+  // Descrição livre do calçado (material, forma, características) — só usada no Catálogo
+  // Público, mostrada abaixo do banner da referência (ver ProductFormView e PublicCatalogApp).
+  catalogDescription?: string;
+  // Faixa de numerações da caixa fechada de Atacado (ex.: "38"/"43") — declarada manualmente
+  // pelo vendedor, já que o Atacado não guarda tamanho por unidade; só usada no Catálogo Público.
+  wholesaleSizeFrom?: string;
+  wholesaleSizeTo?: string;
   createdAt: number;
   // Usados para diluir itens de categoria Custo Fixo (Ficha Técnica) em custo por par: valor
   // mensal do item ÷ diasTrabalhadosMes ÷ paresDia. Preenchidos uma vez por produto, em vez de

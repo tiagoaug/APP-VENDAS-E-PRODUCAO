@@ -12572,14 +12572,22 @@ export default function PCPView({
             </button>
 
             {osBaixaPanel.items.some(it => it.included) && (
-              <button
-                type="button"
-                onClick={() => setOsBaixaSectorPickerFor('ALL')}
-                data-guide-anchor="pcp.osBaixaMoverSelecionados"
-                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-orange-900/20 text-orange-400 hover:bg-orange-900/40' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
-              >
-                <ChevronDown size={12} /> Mover Selecionados Para ({osBaixaPanel.items.filter(it => it.included).length})
-              </button>
+              <div className="flex flex-col gap-1.5">
+                <p className={`text-[9px] font-bold px-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Clique aqui para mover todos selecionados para o setor:
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setOsBaixaSectorPickerFor('ALL')}
+                  data-guide-anchor="pcp.osBaixaMoverSelecionados"
+                  className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl border-b-[3px] text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-sm ${isDarkMode ? 'bg-gradient-to-b from-slate-800 to-slate-800/80 border-slate-950 text-white hover:bg-slate-800' : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 text-slate-900 hover:bg-slate-50'}`}
+                >
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white bg-orange-500 animate-bounce">
+                    <ChevronDown size={14} strokeWidth={3} />
+                  </span>
+                  Mover Selecionados Para ({osBaixaPanel.items.filter(it => it.included).length})
+                </button>
+              </div>
             )}
 
             <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">

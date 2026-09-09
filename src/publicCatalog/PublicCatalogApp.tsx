@@ -18,6 +18,13 @@ type CatalogProduct = {
   brandName?: string;
   categoryId?: string;
   categoryName?: string;
+  // Descrição livre cadastrada em Produtos > Descrição do Produto — mostrada abaixo do
+  // nome/marca, logo depois do banner.
+  description?: string;
+  // Faixa de numerações da caixa fechada de Atacado (ex.: "38 ao 43"), declarada manualmente em
+  // Produtos > Faixa de Numerações da Caixa — usada como fallback no banner quando o produto não
+  // tem tamanho por unidade calculável (Atacado puro, sem Varejo).
+  wholesaleSizeRange?: string;
   pricePerPair?: number;
   pricePerBox?: number;
   variations: CatalogVariation[];
@@ -89,6 +96,11 @@ export default function PublicCatalogApp() {
   // loadCatalog abaixo); se ficar aberta um tempo, precisa recarregar manualmente pra ver mudança
   // feita pelo vendedor nesse meio tempo (nunca fica ouvindo mudança em tempo real).
   const [refreshing, setRefreshing] = useState(false);
+  // Acordeão "Fazer Pedido Desta Referência" — um por PRODUTO (não por cor), começa fechado
+  // (mesmo padrão de "Categorias e Marcas" acima) pra não deixar o catálogo extenso com todas as
+  // cores/numerações de todos os produtos abertas de uma vez; só expande quando o cliente quer
+  // mesmo montar o pedido daquele modelo.
+  const [openProducts, setOpenProducts] = useState<Record<string, boolean>>({});
   const token = useMemo(readTokenFromUrl, []);
 
   const categoryOptions = useMemo(() => {
@@ -452,9 +464,27 @@ export default function PublicCatalogApp() {
         {products.length > 0 && visibleProducts.length === 0 && (
           <p className="text-center text-sm text-slate-400 font-bold py-16">Nenhum produto encontrado com esse filtro.</p>
         )}
-        {visibleProducts.map((product) => (
+        {visibleProducts.map((product) => {
+          const saleTypes = new Set(product.variations.map(v => v.saleType));
+          const saleTypeLabel = saleTypes.has('WHOLESALE') && saleTypes.has('RETAIL')
+            ? 'Atacado e Varejo'
+            : saleTypes.has('WHOLESALE') ? 'Atacado' : 'Varejo';
+          const productOpen = !!openProducts[product.productId];
+          const totalSelectedInProduct = product.variations.reduce((sum, v) => sum + v.sizes.reduce((s2, sz) => s2 + (cart[cartKey(product.productId, v.variationId, sz.size)] || 0), 0), 0);
+          // Faixa de numerações da referência (ex.: "38 ao 43") — junta os tamanhos de TODAS as
+          // cores (nem toda cor tem a grade completa) e ordena numericamente pra mostrar já no
+          // banner, sem precisar abrir o acordeão só pra saber se tem o tamanho desejado.
+          const allSizes = Array.from(new Set(product.variations.flatMap(v => v.sizes.map(s => s.size).filter((s): s is string => !!s))))
+            .sort((a, b) => (parseFloat(a) - parseFloat(b)) || a.localeCompare(b));
+          // Atacado puro (só caixa fechada) não tem tamanho por unidade pra calcular sozinho —
+          // usa a faixa declarada manualmente em Produtos como alternativa.
+          const sizeRangeLabel = (allSizes.length > 1 ? `${allSizes[0]} ao ${allSizes[allSizes.length - 1]}` : allSizes[0]) || product.wholesaleSizeRange;
+          return (
           <div key={product.productId} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="flex items-center gap-3 p-4">
+            {/* Banner grande da referência — foto de capa com cabeçalho sobreposto (referência,
+                atacado/varejo e preço), substitui a antiga miniatura pequena pra dar mais
+                destaque ao produto dentro do catálogo do cliente. */}
+            <div className="relative w-full aspect-[4/3] bg-slate-100">
               {product.photoUrl ? (
                 <img
                   src={product.photoUrl}
@@ -462,123 +492,197 @@ export default function PublicCatalogApp() {
                   loading="lazy"
                   decoding="async"
                   onClick={() => openLightbox([product.photoUrl!], product.photoUrl!)}
-                  className="w-16 h-16 rounded-xl object-cover shrink-0 bg-slate-100 cursor-pointer active:scale-95 transition-all"
+                  className="w-full h-full object-cover cursor-pointer"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-xl bg-slate-100 shrink-0" />
+                <div className="w-full h-full flex items-center justify-center text-slate-300 text-5xl">📦</div>
               )}
-              <div className="min-w-0">
-                <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{product.reference}</p>
-                <p className="text-sm font-black text-slate-900 truncate">{product.name}</p>
-                {product.pricePerPair !== undefined && (
-                  <p className="text-sm font-black text-emerald-600 mt-0.5">{formatPrice(product.pricePerPair)} <span className="text-[10px] font-bold text-slate-400 uppercase">/par</span></p>
-                )}
-                {product.pricePerBox !== undefined && (
-                  <p className="text-sm font-black text-emerald-600 mt-0.5">{formatPrice(product.pricePerBox)} <span className="text-[10px] font-bold text-slate-400 uppercase">/caixa</span></p>
-                )}
+              <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 bg-gradient-to-b from-black/60 to-transparent">
+                <span className="px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black uppercase tracking-widest text-indigo-600 shadow-sm">
+                  {product.reference}
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-white/95 text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-sm">
+                  {saleTypeLabel}
+                </span>
               </div>
-            </div>
-            <div className="flex flex-col gap-3 px-4 pb-4">
-              {product.variations.map((variation) => {
-                const variationGallery = [variation.photoUrl, ...(variation.photoAlbum || [])].filter(Boolean) as string[];
-                return (
-                <div key={variation.variationId} className="rounded-xl bg-slate-50 p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    {variation.photoUrl && (
-                      <img
-                        src={variation.photoUrl}
-                        alt={variation.colorName}
-                        loading="lazy"
-                        decoding="async"
-                        onClick={() => openLightbox(variationGallery, variation.photoUrl!)}
-                        className="w-8 h-8 rounded-lg object-cover cursor-pointer active:scale-90 transition-all"
-                      />
+              {(sizeRangeLabel || product.pricePerPair !== undefined || product.pricePerBox !== undefined) && (
+                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1.5 p-3 bg-gradient-to-t from-black/70 to-transparent">
+                  {sizeRangeLabel ? (
+                    <span className="px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black uppercase tracking-widest text-slate-700 shadow-sm">
+                      Numeração {sizeRangeLabel}
+                    </span>
+                  ) : <span />}
+                  <div className="flex items-center gap-1.5">
+                    {product.pricePerPair !== undefined && (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-black shadow-sm">{formatPrice(product.pricePerPair)} <span className="font-bold opacity-80">/par</span></span>
                     )}
-                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-600">{variation.colorName}</p>
-                  </div>
-                  {variation.photoAlbum && variation.photoAlbum.length > 0 && (
-                    <div className="flex items-center gap-2 mb-3 overflow-x-auto no-scrollbar">
-                      {variation.photoAlbum.map((url, idx) => (
-                        <img
-                          key={idx}
-                          src={url}
-                          alt={`${variation.colorName} — foto ${idx + 1}`}
-                          loading="lazy"
-                          decoding="async"
-                          onClick={() => openLightbox(variationGallery, url)}
-                          className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 cursor-pointer active:scale-95 transition-all"
-                        />
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-2">
-                    {variation.sizes.map((s) => {
-                      const key = cartKey(product.productId, variation.variationId, s.size);
-                      const qty = cart[key] || 0;
-                      return (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2"
-                        >
-                          <div className="flex flex-col shrink-0 leading-tight">
-                            <span className="text-xs font-bold text-slate-500">{s.size || 'Cx'}</span>
-                            {showStockQuantities && (
-                              <span className="text-[9px] font-bold text-blue-600">{s.available} em estoque</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty - 1)}
-                              className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 font-black text-base active:scale-90 shrink-0"
-                            >-</button>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              value={qty || ''}
-                              onChange={(e) => setQty(product.productId, variation.variationId, s.size, s.available, Number(e.target.value))}
-                              className="w-12 text-center text-base font-black outline-none"
-                              placeholder="0"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty + 1)}
-                              className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 font-black text-base active:scale-90 shrink-0"
-                            >+</button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {product.pricePerBox !== undefined && (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-black shadow-sm">{formatPrice(product.pricePerBox)} <span className="font-bold opacity-80">/caixa</span></span>
+                    )}
                   </div>
                 </div>
-                );
-              })}
+              )}
             </div>
-            <div className="px-4 pb-4">
-              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Observação deste produto (opcional)</label>
-              <textarea
-                value={productNotes[product.productId] || ''}
-                onChange={(e) => setProductNotes((prev) => ({ ...prev, [product.productId]: e.target.value.slice(0, 200) }))}
-                rows={2}
-                className="w-full mt-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs outline-none"
-                placeholder="Ex: pedido no saquinho, com embalagem desmontada"
-              />
+            <div className="px-4 pt-3 pb-1">
+              <p className="text-base font-black text-slate-900 truncate">{product.name}</p>
+              {product.brandName && (
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{product.brandName}</p>
+              )}
+              {product.description && (
+                <p className="text-xs font-medium text-slate-500 leading-relaxed mt-2">{product.description}</p>
+              )}
+            </div>
+            <div className="px-4 pb-4 pt-3">
+              {/* Acordeão POR REFERÊNCIA (não por cor) — todas as cores/numerações dessa
+                  referência ficam escondidas atrás de um único botão, que só abre quando o
+                  cliente quer mesmo fazer pedido daquele modelo. Evita o catálogo inteiro
+                  ficando extenso com todas as cores de todos os produtos abertas de uma vez. */}
+              <button
+                type="button"
+                onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: !prev[product.productId] }))}
+                className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] ${productOpen ? 'bg-white border-slate-200' : 'bg-indigo-50 border-indigo-200'}`}
+              >
+                <span className={`flex items-center gap-2 text-[11px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-600' : 'text-indigo-600'}`}>
+                  Mostrar Variações
+                  {totalSelectedInProduct > 0 && (
+                    <span className="shrink-0 text-[9px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded-full">{totalSelectedInProduct} sel.</span>
+                  )}
+                </span>
+                <span className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-white text-sm transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500 animate-bounce'}`}>
+                  ⌄
+                </span>
+              </button>
+
+              {productOpen && (
+                <div className="flex flex-col gap-3 mt-3">
+                  {product.variations.map((variation) => {
+                    const variationGallery = [variation.photoUrl, ...(variation.photoAlbum || [])].filter(Boolean) as string[];
+                    const selectedInVariation = variation.sizes.reduce((sum, s) => sum + (cart[cartKey(product.productId, variation.variationId, s.size)] || 0), 0);
+                    // Faixa de numerações DESSA cor específica — pode ser diferente da faixa
+                    // geral do banner, já que o estoque de cada cor varia (uma cor pode não ter
+                    // os extremos da grade completa).
+                    const variationSizes = variation.sizes.map(s => s.size).filter((s): s is string => !!s)
+                      .sort((a, b) => (parseFloat(a) - parseFloat(b)) || a.localeCompare(b));
+                    const variationSizeRangeLabel = variationSizes.length > 1
+                      ? `${variationSizes[0]} ao ${variationSizes[variationSizes.length - 1]}`
+                      : variationSizes[0];
+                    return (
+                    <div key={variation.variationId} className="rounded-xl bg-slate-50 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        {variation.photoUrl && (
+                          <img
+                            src={variation.photoUrl}
+                            alt={variation.colorName}
+                            loading="lazy"
+                            decoding="async"
+                            onClick={() => openLightbox(variationGallery, variation.photoUrl!)}
+                            className="w-8 h-8 rounded-lg object-cover cursor-pointer active:scale-90 transition-all"
+                          />
+                        )}
+                        <p className="text-[11px] font-black uppercase tracking-wide text-slate-600 flex-1 min-w-0 truncate">{variation.colorName}</p>
+                        {selectedInVariation > 0 && (
+                          <span className="shrink-0 text-[9px] font-black text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">{selectedInVariation} sel.</span>
+                        )}
+                      </div>
+                      {variation.photoAlbum && variation.photoAlbum.length > 0 && (
+                        <div className="flex items-center gap-2 mb-3 overflow-x-auto no-scrollbar">
+                          {variation.photoAlbum.map((url, idx) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt={`${variation.colorName} — foto ${idx + 1}`}
+                              loading="lazy"
+                              decoding="async"
+                              onClick={() => openLightbox(variationGallery, url)}
+                              className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 cursor-pointer active:scale-95 transition-all"
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {variationSizeRangeLabel && (
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Numeração {variationSizeRangeLabel}</p>
+                      )}
+                      <div className="grid grid-cols-3 gap-2">
+                        {variation.sizes.map((s) => {
+                          const key = cartKey(product.productId, variation.variationId, s.size);
+                          const qty = cart[key] || 0;
+                          return (
+                            <div
+                              key={key}
+                              className="flex flex-col items-center gap-1.5 bg-white rounded-xl border border-slate-200 px-2 py-2.5"
+                            >
+                              <div className="flex flex-col items-center leading-tight">
+                                <span className="text-xs font-black text-slate-600">{s.size || 'Cx'}</span>
+                                {showStockQuantities && (
+                                  <span className="text-[8px] font-bold text-blue-600">{s.available} em estoque</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty - 1)}
+                                  className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 font-black text-sm active:scale-90 shrink-0"
+                                >-</button>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={qty || ''}
+                                  onChange={(e) => setQty(product.productId, variation.variationId, s.size, s.available, Number(e.target.value))}
+                                  className="w-8 text-center text-sm font-black outline-none"
+                                  placeholder="0"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty + 1)}
+                                  className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 font-black text-sm active:scale-90 shrink-0"
+                                >+</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    );
+                  })}
+
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Observação deste produto (opcional)</label>
+                    <textarea
+                      value={productNotes[product.productId] || ''}
+                      onChange={(e) => setProductNotes((prev) => ({ ...prev, [product.productId]: e.target.value.slice(0, 200) }))}
+                      rows={2}
+                      className="w-full mt-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs outline-none"
+                      placeholder="Ex: pedido no saquinho, com embalagem desmontada"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {products.length > 0 && isGeneric && (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Seu nome</label>
+          // Card em destaque total (preto + selo de alerta pulsando) enquanto o nome não é
+          // preenchido — sem ele o pedido nem pode ser enviado (ver disabled do botão abaixo),
+          // então precisa ficar impossível de passar batido rolando a tela.
+          <div className={`rounded-2xl shadow-sm p-4 transition-colors ${customerName.trim() ? 'bg-white border border-slate-100' : 'bg-slate-900 border border-slate-900'}`}>
+            <div className="flex items-center gap-2">
+              {!customerName.trim() && (
+                <span className="shrink-0 w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center text-sm font-black animate-pulse">!</span>
+              )}
+              <label className={`text-[10px] font-black uppercase tracking-widest ${customerName.trim() ? 'text-slate-400' : 'text-white'}`}>Seu nome</label>
+            </div>
             <input
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value.slice(0, 80))}
-              className="w-full mt-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm outline-none"
+              className={`w-full mt-1.5 p-3 rounded-xl text-sm outline-none ${customerName.trim() ? 'bg-slate-50 border border-slate-100' : 'bg-white border border-slate-700'}`}
               placeholder="Como podemos te chamar?"
             />
             {!customerName.trim() && (
-              <p className="text-[10px] font-bold text-rose-500 mt-1.5">É necessário informar seu nome para enviar o pedido.</p>
+              <p className="text-[10px] font-black text-rose-400 mt-1.5">É necessário informar seu nome para enviar o pedido.</p>
             )}
           </div>
         )}
