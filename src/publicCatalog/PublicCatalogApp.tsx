@@ -396,61 +396,63 @@ export default function PublicCatalogApp() {
         </div>
         {products.length > 0 && (
           <>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome ou referência..."
-              className="w-full px-3 py-2.5 rounded-xl bg-slate-100 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-400"
-            />
-            {(categoryOptions.length > 0 || brandOptions.length > 0) && (
-              <button
-                type="button"
-                onClick={() => setCategoriesSectionOpen(v => !v)}
-                className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-50"
-              >
-                <span className="flex flex-col items-start min-w-0 text-left">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-blue-600">
-                    Categorias e Marcas
-                    {(categoryFilter !== 'ALL' || brandFilter !== 'ALL') && <span className="text-indigo-500"> · filtro ativo</span>}
-                  </span>
-                  <span className="text-[9px] font-bold text-slate-400 normal-case">Toque aqui para filtrar categorias</span>
+            <button
+              type="button"
+              onClick={() => setCategoriesSectionOpen(v => !v)}
+              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-50"
+            >
+              <span className="flex flex-col items-start min-w-0 text-left">
+                <span className="text-[9px] font-black uppercase tracking-widest text-blue-600">
+                  Categorias e Marcas
+                  {(categoryFilter !== 'ALL' || brandFilter !== 'ALL' || search) && <span className="text-indigo-500"> · filtro ativo</span>}
                 </span>
-                <span className={`shrink-0 text-slate-400 transition-transform ${categoriesSectionOpen ? 'rotate-180' : ''}`}>⌄</span>
-              </button>
-            )}
-            {categoriesSectionOpen && categoryOptions.length > 0 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
-                <button
-                  type="button"
-                  onClick={() => setCategoryFilter('ALL')}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${categoryFilter === 'ALL' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}
-                >Todas Categorias</button>
-                {categoryOptions.map(([id, name]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setCategoryFilter(id)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${categoryFilter === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}
-                  >{name}</button>
-                ))}
-              </div>
-            )}
-            {categoriesSectionOpen && brandOptions.length > 0 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
-                <button
-                  type="button"
-                  onClick={() => setBrandFilter('ALL')}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${brandFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-500'}`}
-                >Todas Marcas</button>
-                {brandOptions.map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => setBrandFilter(b)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${brandFilter === b ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-500'}`}
-                  >{b}</button>
-                ))}
+                <span className="text-[9px] font-bold text-slate-400 normal-case">Toque aqui para buscar e filtrar</span>
+              </span>
+              <span className={`shrink-0 text-slate-400 transition-transform ${categoriesSectionOpen ? 'rotate-180' : ''}`}>⌄</span>
+            </button>
+            {categoriesSectionOpen && (
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar por nome ou referência..."
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-100 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-400"
+                />
+                {categoryOptions.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+                    <button
+                      type="button"
+                      onClick={() => setCategoryFilter('ALL')}
+                      className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${categoryFilter === 'ALL' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}
+                    >Todas Categorias</button>
+                    {categoryOptions.map(([id, name]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setCategoryFilter(id)}
+                        className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${categoryFilter === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}
+                      >{name}</button>
+                    ))}
+                  </div>
+                )}
+                {brandOptions.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+                    <button
+                      type="button"
+                      onClick={() => setBrandFilter('ALL')}
+                      className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${brandFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-500'}`}
+                    >Todas Marcas</button>
+                    {brandOptions.map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        onClick={() => setBrandFilter(b)}
+                        className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${brandFilter === b ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-500'}`}
+                      >{b}</button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -625,7 +627,10 @@ export default function PublicCatalogApp() {
                         // colunas fixas deixava célula(s) vazia(s) e o botão pequeno demais —
                         // usa só as colunas que existem de verdade e aumenta a cápsula pra
                         // aproveitar o espaço sobrando, facilitando o toque do cliente.
-                        const sizeCols = Math.min(variation.sizes.length, 3);
+                        // No Varejo, cada numeração fica sozinha na própria linha (mais fácil de
+                        // acertar o toque certo entre vários tamanhos); no Atacado (normalmente só
+                        // "Cx") mantém o grid dinâmico de sempre.
+                        const sizeCols = variation.saleType === 'RETAIL' ? 1 : Math.min(variation.sizes.length, 3);
                         const wide = sizeCols === 1;
                         return (
                         <div className={`grid gap-2 ${sizeCols === 1 ? 'grid-cols-1' : sizeCols === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>

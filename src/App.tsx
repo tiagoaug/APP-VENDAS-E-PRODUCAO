@@ -4793,15 +4793,35 @@ export default function App() {
   // separationReconcile.ts) — separações feitas antes da correção do desconto de
   // estoque, que reservaram um StockLot sem descontar o contador do produto.
   const handleReconcileSeparationGroup = async (group: SeparationReconcileGroup) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
     try {
-      const plan = buildSeparationReconcileFixPlan(group, products);
-      if (!plan.productWrite) {
+      let notFound = false;
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const productRef = doc(db, `users/${uid}/products`, group.productId);
+        const productSnap = await transaction.get(productRef);
+        if (!productSnap.exists()) { notFound = true; return; }
+        const freshProduct = { id: productSnap.id, ...productSnap.data() } as Product;
+
+        // Todos os `get` antes de qualquer `write` (regra de transação do Firestore) — um lote
+        // pode ter sido apagado/consumido nesse meio-tempo, então só marca os que ainda existem.
+        const lotRefs = group.lotIds.map(id => doc(db, `users/${uid}/stockLots`, id));
+        const lotExists: boolean[] = [];
+        for (const ref of lotRefs) {
+          const snap = await transaction.get(ref);
+          lotExists.push(snap.exists());
+        }
+
+        const plan = buildSeparationReconcileFixPlan(group, [freshProduct]);
+        if (!plan.productWrite) { notFound = true; return; }
+        transaction.set(productRef, deepClean(plan.productWrite), { merge: true });
+        lotRefs.forEach((ref, i) => {
+          if (lotExists[i]) transaction.update(ref, { stockDeductionApplied: true });
+        });
+      });
+      if (notFound) {
         toast.show('Produto ou cor não encontrado — pode ter sido excluído.');
         return;
-      }
-      await firebaseService.saveDocument('products', plan.productWrite);
-      for (const id of plan.lotIds) {
-        await firebaseService.updateDocument('stockLots', id, { stockDeductionApplied: true });
       }
       toast.show(`Estoque ajustado — ${group.totalToDeduct} ${group.isWholesale ? 'caixa(s)' : 'par(es)'} descontado(s) de ${group.productName} · ${group.variationName}.`);
     } catch (e) {
@@ -4832,8 +4852,48 @@ export default function App() {
         toast.show('Nada a corrigir — a duplicidade já não existe mais.');
         return;
       }
-      for (const prod of plan.productWrites) {
-        await firebaseService.saveDocument('products', prod);
+      // `plan.productWrites` já veio calculado em cima do estado local (pode estar
+      // desatualizado) — em vez de gravar esse array `variations` por cima do que estiver no
+      // servidor agora, extrai só o DELTA (diferença contra o produto local original que gerou
+      // o plano) e aplica via increment_stock, que relê o produto fresco dentro de uma
+      // transação real na hora de gravar.
+      const deltasByProduct = new Map<string, { variationId: string; key: string; delta: number; pkgId?: string; pkgDelta?: number }[]>();
+      for (const updatedProduct of plan.productWrites) {
+        const original = products.find(p => p.id === updatedProduct.id);
+        if (!original) continue;
+        for (const updatedVar of updatedProduct.variations) {
+          const originalVar = original.variations.find(v => v.id === updatedVar.id);
+          if (!originalVar) continue;
+          const originalAllocs = originalVar.stockPkgAllocations || [];
+          const updatedAllocs = updatedVar.stockPkgAllocations || [];
+          const pkgIds = new Set([...originalAllocs.map(a => a.pkgId), ...updatedAllocs.map(a => a.pkgId)]);
+          // A correção de duplicidade só mexe no pkgId do StockLot excedente sendo removido —
+          // no máximo um muda por variação aqui.
+          let pkgId: string | undefined; let pkgDelta = 0;
+          pkgIds.forEach(pid => {
+            const before = originalAllocs.find(a => a.pkgId === pid)?.qty || 0;
+            const after = updatedAllocs.find(a => a.pkgId === pid)?.qty || 0;
+            if (after !== before) { pkgId = pid; pkgDelta = after - before; }
+          });
+          const keys = new Set([...Object.keys(originalVar.stock || {}), ...Object.keys(updatedVar.stock || {})]);
+          keys.forEach(key => {
+            const before = (originalVar.stock as any)?.[key] || 0;
+            const after = (updatedVar.stock as any)?.[key] || 0;
+            const delta = after - before;
+            const carriesPkg = key === 'WHOLESALE' && pkgId;
+            if (delta === 0 && !carriesPkg) return;
+            const list = deltasByProduct.get(updatedProduct.id) || [];
+            list.push({ variationId: updatedVar.id, key, delta, ...(carriesPkg ? { pkgId, pkgDelta } : {}) });
+            deltasByProduct.set(updatedProduct.id, list);
+          });
+        }
+      }
+      if (deltasByProduct.size > 0) {
+        await firebaseService.runBatchWrites(
+          Array.from(deltasByProduct.entries()).map(([productId, deltas]) => ({
+            type: 'increment_stock' as const, path: 'products', id: productId, deltas,
+          }))
+        );
       }
       for (const id of plan.stockLotIdsToDelete) {
         await firebaseService.deleteDocument('stockLots', id);
@@ -4849,13 +4909,23 @@ export default function App() {
   // do produto, por causa do bug de gravação não-atômica já corrigido em
   // applyExpedicaoStockUpdate. Só soma o que falta, nunca subtrai; não mexe nos StockLots.
   const handleApplyUndercreditFix = async (group: UndercreditGroup) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
     try {
-      const plan = buildUndercreditFixPlan(group, products);
-      if (!plan.productWrite) {
+      let notFound = false;
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const productRef = doc(db, `users/${uid}/products`, group.productId);
+        const productSnap = await transaction.get(productRef);
+        if (!productSnap.exists()) { notFound = true; return; }
+        const freshProduct = { id: productSnap.id, ...productSnap.data() } as Product;
+        const plan = buildUndercreditFixPlan(group, [freshProduct]);
+        if (!plan.productWrite) { notFound = true; return; }
+        transaction.set(productRef, deepClean(plan.productWrite), { merge: true });
+      });
+      if (notFound) {
         toast.show('Produto ou cor não encontrado — pode ter sido excluído.');
         return;
       }
-      await firebaseService.saveDocument('products', plan.productWrite);
       const amount = group.isWholesale
         ? `${group.missingBoxes} caixa(s)`
         : `${Object.values(group.missingSizes || {}).reduce((s, q) => s + q, 0)} par(es)`;
@@ -6129,35 +6199,57 @@ export default function App() {
               for (const lot of newLots) {
                 await firebaseService.saveDocument("productionLots", lot);
               }
-              for (const d of deductions) {
-                const product = products.find(p => p.id === d.productId);
-                if (!product) continue;
-                const updatedProduct = JSON.parse(JSON.stringify(product));
-                const variation = updatedProduct.variations.find((v: any) => v.id === d.variationId);
-                if (!variation) continue;
-                if (d.size) {
-                  variation.stock[d.size] = Math.max(0, (variation.stock[d.size] || 0) - d.quantity);
-                } else {
-                  variation.stock['WHOLESALE'] = Math.max(0, (variation.stock['WHOLESALE'] || 0) - d.quantity);
+              // Deduz estoque via delta transacional (increment_stock) — relê o produto fresco na
+              // hora de gravar, então duas ordens deduzindo o mesmo produto perto uma da outra (ou
+              // uma delas com mais de uma variação/tamanho) não perdem o desconto uma da outra
+              // (mesmo mecanismo já usado em PCP/Separar Caixas/Expedir Venda pra fechar o gap do
+              // incidente de 26/08/2026 — antes gravava o array `variations` inteiro por cima de
+              // um `products.find` desatualizado).
+              if (deductions.length > 0) {
+                const deltasByProduct = new Map<string, { variationId: string; key: string; delta: number }[]>();
+                for (const d of deductions) {
+                  const key = d.size || 'WHOLESALE';
+                  const list = deltasByProduct.get(d.productId) || [];
+                  list.push({ variationId: d.variationId, key, delta: -d.quantity });
+                  deltasByProduct.set(d.productId, list);
                 }
-                await firebaseService.saveDocument("products", updatedProduct);
+                await firebaseService.runBatchWrites(
+                  Array.from(deltasByProduct.entries()).map(([productId, deltas]) => ({
+                    type: 'increment_stock' as const, path: 'products', id: productId, deltas,
+                  }))
+                );
               }
             }}
             onSave={async (purchase) => {
               try {
                 const prevPurchase = selectedPurchaseId ? purchases.find(p => p.id === selectedPurchaseId) : null;
                 
-                // Local maps to track mutations before saving
-                const productUpdates = new Map<string, any>();
-                const getProductForUpdate = (id: string) => {
-                  if (productUpdates.has(id)) return productUpdates.get(id);
-                  const p = products.find(prod => prod.id === id);
-                  if (p) {
-                    const cloned = JSON.parse(JSON.stringify(p));
-                    productUpdates.set(id, cloned);
-                    return cloned;
-                  }
-                  return null;
+                // Deltas de estoque acumulados nesta chamada (revert compra antiga + aplicar
+                // compra nova + auto-atender pedidos pendentes) — a gravação real acontece no
+                // final via runBatchWrites/increment_stock (transação real, relê o produto
+                // fresco), então duas compras no mesmo produto perto uma da outra não perdem o
+                // crédito/débito uma da outra (mesmo mecanismo já usado em PCP/Separar Caixas/
+                // Expedir Venda pra fechar o gap do incidente de 26/08/2026 — antes gravava o
+                // array `variations` inteiro por cima de um `products.find` desatualizado).
+                const stockDeltasByProduct = new Map<string, { variationId: string; key: string; delta: number }[]>();
+                const pendingDeltaTotals = new Map<string, number>();
+                const deltaMapKey = (productId: string, variationId: string, key: string) => `${productId}::${variationId}::${key}`;
+                const stageStockDelta = (productId: string, variationId: string, key: string, delta: number) => {
+                  if (!delta) return;
+                  const list = stockDeltasByProduct.get(productId) || [];
+                  list.push({ variationId, key, delta });
+                  stockDeltasByProduct.set(productId, list);
+                  const dk = deltaMapKey(productId, variationId, key);
+                  pendingDeltaTotals.set(dk, (pendingDeltaTotals.get(dk) || 0) + delta);
+                };
+                // Estoque "efetivo" pro auto-atendimento abaixo — soma o valor local (aproximação,
+                // igual sempre foi) com os deltas já empilhados nesta mesma chamada (ex.: a
+                // compra atual credita e o próprio auto-atendimento já usa esse crédito na hora).
+                const getEffectiveStock = (productId: string, variationId: string, key: string): number => {
+                  const product = products.find(p => p.id === productId);
+                  const variation = product?.variations.find((v: any) => v.id === variationId);
+                  const base = (variation?.stock as any)?.[key] || 0;
+                  return base + (pendingDeltaTotals.get(deltaMapKey(productId, variationId, key)) || 0);
                 };
 
                 const accountUpdates = new Map<string, any>();
@@ -6177,22 +6269,13 @@ export default function App() {
                 // (o estoque entra pela produção/Expedição), então também não revertem aqui.
                 if (prevPurchase && prevPurchase.type === PurchaseType.REPLENISHMENT && !prevPurchase.isProductionOrder && prevPurchase.items) {
                   for (const item of prevPurchase.items) {
-                    const updatedProduct = getProductForUpdate(item.productId);
-                    if (updatedProduct) {
-                      const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
-                      if (variationIndex !== -1) {
-                        const variation = updatedProduct.variations[variationIndex];
-                        const itemSaleType = item.saleType ?? updatedProduct.type;
-                        const key = (itemSaleType === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-
-                        const amountToSubtract = (itemSaleType === SaleType.RETAIL && item.isBox && !item.size) ? item.quantity * 12 : item.quantity;
-
-                        if (variation.stock[key] !== undefined) {
-                          variation.stock[key] -= amountToSubtract;
-                          if (variation.stock[key] < 0) variation.stock[key] = 0;
-                        }
-                      }
-                    }
+                    const product = products.find(p => p.id === item.productId);
+                    const variation = product?.variations.find((v: any) => v.id === item.variationId);
+                    if (!product || !variation) continue;
+                    const itemSaleType = item.saleType ?? product.type;
+                    const key = (itemSaleType === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                    const amountToSubtract = (itemSaleType === SaleType.RETAIL && item.isBox && !item.size) ? item.quantity * 12 : item.quantity;
+                    stageStockDelta(item.productId, item.variationId, key, -amountToSubtract);
                   }
                 }
 
@@ -6201,19 +6284,13 @@ export default function App() {
                 // estoque ocorre quando a produção é finalizada na Expedição.
                 if (purchase.type === PurchaseType.REPLENISHMENT && !purchase.isProductionOrder && purchase.items) {
                   for (const item of purchase.items) {
-                    const updatedProduct = getProductForUpdate(item.productId);
-                    if (updatedProduct) {
-                      const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
-                      if (variationIndex !== -1) {
-                        const variation = updatedProduct.variations[variationIndex];
-                        const itemSaleType = item.saleType ?? updatedProduct.type;
-                        const key = (itemSaleType === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-
-                        const amountToAdd = (itemSaleType === SaleType.RETAIL && item.isBox && !item.size) ? item.quantity * 12 : item.quantity;
-
-                        variation.stock[key] = (variation.stock[key] || 0) + amountToAdd;
-                      }
-                    }
+                    const product = products.find(p => p.id === item.productId);
+                    const variation = product?.variations.find((v: any) => v.id === item.variationId);
+                    if (!product || !variation) continue;
+                    const itemSaleType = item.saleType ?? product.type;
+                    const key = (itemSaleType === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                    const amountToAdd = (itemSaleType === SaleType.RETAIL && item.isBox && !item.size) ? item.quantity * 12 : item.quantity;
+                    stageStockDelta(item.productId, item.variationId, key, amountToAdd);
                   }
                 }
 
@@ -6236,14 +6313,13 @@ export default function App() {
                     for (let i = 0; i < newItems.length; i++) {
                       const item = newItems[i];
                       if (item.fulfilled === true) continue;
-                      const prod = getProductForUpdate(item.productId);
-                      if (!prod) continue;
-                      const variation = prod.variations.find((v: any) => v.id === item.variationId);
+                      const product = products.find(p => p.id === item.productId);
+                      const variation = product?.variations.find((v: any) => v.id === item.variationId);
                       if (!variation) continue;
                       const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
-                      const available = variation.stock[key] || 0;
+                      const available = getEffectiveStock(item.productId, item.variationId, key);
                       if (available >= item.quantity) {
-                        variation.stock[key] = Math.max(0, available - item.quantity);
+                        stageStockDelta(item.productId, item.variationId, key, -item.quantity);
                         newItems[i] = { ...item, fulfilled: true };
                         anyFulfilled = true;
                       }
@@ -6331,8 +6407,12 @@ export default function App() {
                 };
                 await firebaseService.saveDocument("purchases", purchaseToSave);
 
-                for (const [_, prod] of productUpdates) {
-                  await firebaseService.saveDocument("products", prod);
+                if (stockDeltasByProduct.size > 0) {
+                  await firebaseService.runBatchWrites(
+                    Array.from(stockDeltasByProduct.entries()).map(([productId, deltas]) => ({
+                      type: 'increment_stock' as const, path: 'products', id: productId, deltas,
+                    }))
+                  );
                 }
 
                 for (const [_, acc] of accountUpdates) {
@@ -6406,23 +6486,22 @@ export default function App() {
               // Balanço de estoque a partir da demanda dos orçamentos: incrementa o
               // estoque das variações (atacado em caixas/WHOLESALE; varejo por tamanho).
               // Agrupa por produto para salvar cada produto uma única vez.
-              const byProduct = new Map<string, { productId: string; variationId: string; key: string; amount: number }[]>();
+              // Delta transacional (increment_stock) em vez de gravar o array `variations` inteiro
+              // por cima de um `products.find` desatualizado — mesmo mecanismo de
+              // onCreateProductionOrder acima.
+              const byProduct = new Map<string, { variationId: string; key: string; delta: number }[]>();
               for (const adj of adjustments) {
                 if (adj.amount <= 0) continue;
-                if (!byProduct.has(adj.productId)) byProduct.set(adj.productId, []);
-                byProduct.get(adj.productId)!.push(adj);
+                const list = byProduct.get(adj.productId) || [];
+                list.push({ variationId: adj.variationId, key: adj.key, delta: adj.amount });
+                byProduct.set(adj.productId, list);
               }
-              for (const [productId, adjs] of byProduct) {
-                const product = products.find((p) => p.id === productId);
-                if (!product) continue;
-                const updated = JSON.parse(JSON.stringify(product));
-                for (const adj of adjs) {
-                  const v = updated.variations.find((vv: any) => vv.id === adj.variationId);
-                  if (!v) continue;
-                  v.stock = v.stock || {};
-                  v.stock[adj.key] = (v.stock[adj.key] || 0) + adj.amount;
-                }
-                await firebaseService.saveDocument("products", updated);
+              if (byProduct.size > 0) {
+                await firebaseService.runBatchWrites(
+                  Array.from(byProduct.entries()).map(([productId, deltas]) => ({
+                    type: 'increment_stock' as const, path: 'products', id: productId, deltas,
+                  }))
+                );
               }
               toast.show("Estoque atualizado com a demanda dos orçamentos.");
             }}
@@ -6855,18 +6934,25 @@ export default function App() {
               for (const lot of newLots) {
                 await firebaseService.saveDocument("productionLots", lot);
               }
-              for (const d of deductions) {
-                const product = products.find(p => p.id === d.productId);
-                if (!product) continue;
-                const updatedProduct = JSON.parse(JSON.stringify(product));
-                const variation = updatedProduct.variations.find((v: any) => v.id === d.variationId);
-                if (!variation) continue;
-                if (d.size) {
-                  variation.stock[d.size] = Math.max(0, (variation.stock[d.size] || 0) - d.quantity);
-                } else {
-                  variation.stock['WHOLESALE'] = Math.max(0, (variation.stock['WHOLESALE'] || 0) - d.quantity);
+              // Deduz estoque via delta transacional (increment_stock) — relê o produto fresco na
+              // hora de gravar, então duas ordens deduzindo o mesmo produto perto uma da outra (ou
+              // uma delas com mais de uma variação/tamanho) não perdem o desconto uma da outra
+              // (mesmo mecanismo já usado em PCP/Separar Caixas/Expedir Venda pra fechar o gap do
+              // incidente de 26/08/2026 — antes gravava o array `variations` inteiro por cima de
+              // um `products.find` desatualizado).
+              if (deductions.length > 0) {
+                const deltasByProduct = new Map<string, { variationId: string; key: string; delta: number }[]>();
+                for (const d of deductions) {
+                  const key = d.size || 'WHOLESALE';
+                  const list = deltasByProduct.get(d.productId) || [];
+                  list.push({ variationId: d.variationId, key, delta: -d.quantity });
+                  deltasByProduct.set(d.productId, list);
                 }
-                await firebaseService.saveDocument("products", updatedProduct);
+                await firebaseService.runBatchWrites(
+                  Array.from(deltasByProduct.entries()).map(([productId, deltas]) => ({
+                    type: 'increment_stock' as const, path: 'products', id: productId, deltas,
+                  }))
+                );
               }
               const sale = sales.find(s => s.id === order.saleId);
               if (sale) await firebaseService.saveDocument("sales", { ...sale, productionOrderId: order.id });
@@ -7180,19 +7266,25 @@ export default function App() {
               for (const lot of newLots) {
                 await firebaseService.saveDocument("productionLots", lot);
               }
-              // Deduct stock from products
-              for (const d of deductions) {
-                const product = products.find(p => p.id === d.productId);
-                if (!product) continue;
-                const updatedProduct = JSON.parse(JSON.stringify(product));
-                const variation = updatedProduct.variations.find((v: any) => v.id === d.variationId);
-                if (!variation) continue;
-                if (d.size) {
-                  variation.stock[d.size] = Math.max(0, (variation.stock[d.size] || 0) - d.quantity);
-                } else {
-                  variation.stock['WHOLESALE'] = Math.max(0, (variation.stock['WHOLESALE'] || 0) - d.quantity);
+              // Deduz estoque via delta transacional (increment_stock) — relê o produto fresco na
+              // hora de gravar, então duas ordens deduzindo o mesmo produto perto uma da outra (ou
+              // uma delas com mais de uma variação/tamanho) não perdem o desconto uma da outra
+              // (mesmo mecanismo já usado em PCP/Separar Caixas/Expedir Venda pra fechar o gap do
+              // incidente de 26/08/2026 — antes gravava o array `variations` inteiro por cima de
+              // um `products.find` desatualizado).
+              if (deductions.length > 0) {
+                const deltasByProduct = new Map<string, { variationId: string; key: string; delta: number }[]>();
+                for (const d of deductions) {
+                  const key = d.size || 'WHOLESALE';
+                  const list = deltasByProduct.get(d.productId) || [];
+                  list.push({ variationId: d.variationId, key, delta: -d.quantity });
+                  deltasByProduct.set(d.productId, list);
                 }
-                await firebaseService.saveDocument("products", updatedProduct);
+                await firebaseService.runBatchWrites(
+                  Array.from(deltasByProduct.entries()).map(([productId, deltas]) => ({
+                    type: 'increment_stock' as const, path: 'products', id: productId, deltas,
+                  }))
+                );
               }
               // Link order to sale
               const sale = sales.find(s => s.id === order.saleId);
@@ -7216,17 +7308,32 @@ export default function App() {
 
                 await firebaseService.saveDocument("sales", sale);
 
-              // Local map to track mutations before saving
-              const productUpdates = new Map<string, any>();
-              const getProductForUpdate = (id: string) => {
-                if (productUpdates.has(id)) return productUpdates.get(id);
-                const p = products.find(prod => prod.id === id);
-                if (p) {
-                  const cloned = JSON.parse(JSON.stringify(p));
-                  productUpdates.set(id, cloned);
-                  return cloned;
-                }
-                return null;
+              // Deltas de estoque acumulados nesta chamada (reverter venda antiga + aplicar venda
+              // nova) — a gravação real acontece no final via runBatchWrites/increment_stock
+              // (transação real, relê o produto fresco), então duas vendas do mesmo produto
+              // perto uma da outra (dois celulares, duas abas) não perdem o débito/crédito uma
+              // da outra (mesmo mecanismo já usado em PCP/Separar Caixas/Expedir Venda pra
+              // fechar o gap do incidente de 26/08/2026 — antes gravava o array `variations`
+              // inteiro por cima de um `products.find` desatualizado).
+              const stockDeltasByProduct = new Map<string, { variationId: string; key: string; delta: number }[]>();
+              const pendingDeltaTotals = new Map<string, number>();
+              const deltaMapKey = (productId: string, variationId: string, key: string) => `${productId}::${variationId}::${key}`;
+              const stageStockDelta = (productId: string, variationId: string, key: string, delta: number) => {
+                if (!delta) return;
+                const list = stockDeltasByProduct.get(productId) || [];
+                list.push({ variationId, key, delta });
+                stockDeltasByProduct.set(productId, list);
+                const dk = deltaMapKey(productId, variationId, key);
+                pendingDeltaTotals.set(dk, (pendingDeltaTotals.get(dk) || 0) + delta);
+              };
+              // Estoque "efetivo" pro cálculo de fulfilled abaixo — soma o valor local
+              // (aproximação, igual sempre foi) com os deltas já empilhados nesta mesma chamada
+              // (ex.: reverter a venda antiga credita e a venda nova já usa esse crédito).
+              const getEffectiveStock = (productId: string, variationId: string, key: string): number => {
+                const product = products.find(p => p.id === productId);
+                const variation = product?.variations.find((v: any) => v.id === variationId);
+                const base = (variation?.stock as any)?.[key] || 0;
+                return base + (pendingDeltaTotals.get(deltaMapKey(productId, variationId, key)) || 0);
               };
 
               const accountUpdates = new Map<string, any>();
@@ -7250,16 +7357,9 @@ export default function App() {
                    // Itens WHOLESALE não foram auto-abatidos, não há o que reverter
                    const isWholesaleItem = item.saleType === SaleType.WHOLESALE || (!item.size);
                    if (isWholesaleItem) continue;
-                   const updatedProduct = getProductForUpdate(item.productId);
-                   if (updatedProduct) {
-                     const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
-                     if (variationIndex !== -1) {
-                       const variation = updatedProduct.variations[variationIndex];
-                       // Já passamos pelo continue acima para itens WHOLESALE — aqui é sempre Varejo.
-                       const key = item.size || 'WHOLESALE';
-                       variation.stock[key] = (variation.stock[key] || 0) + item.quantity;
-                     }
-                   }
+                   // Já passamos pelo continue acima para itens WHOLESALE — aqui é sempre Varejo.
+                   const key = item.size || 'WHOLESALE';
+                   stageStockDelta(item.productId, item.variationId, key, item.quantity);
                 }
               }
 
@@ -7273,16 +7373,14 @@ export default function App() {
                   // Itens WHOLESALE não são auto-abatidos: aguardam separação manual
                   const isWholesaleItem = item.saleType === SaleType.WHOLESALE || (!item.size && item.saleType !== SaleType.RETAIL);
                   if (isWholesaleItem) { newItems[i] = { ...item, fulfilled: false }; continue; }
-                  const updatedProduct = getProductForUpdate(item.productId);
-                  if (!updatedProduct) { newItems[i] = { ...item, fulfilled: false }; continue; }
-                  const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
-                  if (variationIndex === -1) { newItems[i] = { ...item, fulfilled: false }; continue; }
-                  const variation = updatedProduct.variations[variationIndex];
+                  const product = products.find(p => p.id === item.productId);
+                  const variation = product?.variations.find((v: any) => v.id === item.variationId);
+                  if (!variation) { newItems[i] = { ...item, fulfilled: false }; continue; }
                   // Já passamos pelo continue acima para itens WHOLESALE — aqui é sempre Varejo.
                   const key = item.size || 'WHOLESALE';
-                  const available = variation.stock[key] || 0;
+                  const available = getEffectiveStock(item.productId, item.variationId, key);
                   if (available >= item.quantity) {
-                    variation.stock[key] = Math.max(0, available - item.quantity);
+                    stageStockDelta(item.productId, item.variationId, key, -item.quantity);
                     // boxesSeparated também setado pra bater com fulfilled — sem isso o item
                     // fica com o estoque já abatido mas boxesSeparated em 0/undefined, e
                     // reaparece como "pendente" nos resumos de separação (ver getEffectiveSeparated
@@ -7295,9 +7393,13 @@ export default function App() {
                 updatedSale = { ...sale, items: newItems };
               }
 
-              // Save accumulated product updates
-              for (const [_, prod] of productUpdates) {
-                await firebaseService.saveDocument("products", prod);
+              // Save accumulated product stock deltas
+              if (stockDeltasByProduct.size > 0) {
+                await firebaseService.runBatchWrites(
+                  Array.from(stockDeltasByProduct.entries()).map(([productId, deltas]) => ({
+                    type: 'increment_stock' as const, path: 'products', id: productId, deltas,
+                  }))
+                );
               }
 
               // Salva a venda com flags de fulfilled atualizados (se houver mudanças)
