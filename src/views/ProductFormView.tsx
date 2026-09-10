@@ -153,7 +153,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     } catch { return null; }
   });
   const [showToolMapping, setShowToolMapping] = useState(false);
-  const [type, setType] = useState<SaleType>(existingProduct?.type || SaleType.WHOLESALE);
   const [status, setStatus] = useState<ProductStatus>(existingProduct?.status || ProductStatus.ACTIVE);
   const [costPrice, setCostPrice] = useState<number | string>(existingProduct?.costPrice ?? 0);
   const [unitCostPrice, setUnitCostPrice] = useState<number | string>(existingProduct?.unitCostPrice ?? 0);
@@ -251,6 +250,14 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     }
   };
   const [saleTypes, setSaleTypes] = useState<SaleType[]>(existingProduct?.saleTypes || (existingProduct?.type ? [existingProduct.type] : [SaleType.WHOLESALE]));
+  // BUG CORRIGIDO: `type` era um useState separado que nunca era atualizado quando o vendedor
+  // clicava nos botões Atacado/Varejo (só `saleTypes` mudava) — o formulário ficava "congelado"
+  // no tipo original do produto, mostrando rótulo/campo de preço errado (ex.: "Valor de Venda da
+  // Caixa" continuava aparecendo depois de trocar pra Varejo puro), o que levava o vendedor a
+  // digitar valor de caixa/custo num campo que na verdade deveria ser "Venda Unitária" — daí
+  // preço errado aparecendo depois em Vendas e no Catálogo Público. Agora é sempre derivado ao
+  // vivo de `saleTypes` (mesma regra já usada ao salvar, ver `type: saleTypes[0]` abaixo).
+  const type = saleTypes[0] || SaleType.WHOLESALE;
   const [productionRoute, setProductionRoute] = useState<string[]>(existingProduct?.productionRoute || []);
   // Usados pra diluir itens de categoria Fixo Variável da Ficha Técnica em custo por par —
   // uma vez por produto, não por item (ver "Custo Total do Produto").

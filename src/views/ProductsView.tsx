@@ -44,6 +44,11 @@ export default function ProductsView({
   const displayName = (product: Product) => productModels.find(m => m.id === product.modelId)?.name || product.name;
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  // Segunda camada de proteção contra exclusão acidental — só libera o botão "Excluir" depois
+  // de digitar "DELETAR" (case-insensitive), já que excluir um produto perde todas as variações
+  // e não pode ser desfeito.
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const isDeleteConfirmed = deleteConfirmText.trim().toUpperCase() === "DELETAR";
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
 
   const filteredProducts = products.filter(
@@ -59,16 +64,28 @@ export default function ProductsView({
         <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300">
           <div
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            onClick={() => setItemToDelete(null)}
+            onClick={() => { setItemToDelete(null); setDeleteConfirmText(""); }}
           />
           <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
             <h3 className="font-bold text-slate-800 dark:text-white text-lg mb-2">Excluir Produto?</h3>
-            <p className="text-slate-600 dark:text-slate-400 text-sm mb-6">
+            <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
               Deseja realmente excluir este produto? Esta ação não pode ser desfeita e todas as combinações de variações serão perdidas.
             </p>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-1.5 block">
+              Digite DELETAR para confirmar
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="DELETAR"
+              data-guide-anchor="products.confirmarExclusaoDigitar"
+              autoFocus
+              className="w-full mb-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-black uppercase tracking-widest text-center outline-none focus:ring-2 focus:ring-rose-400"
+            />
             <div className="flex gap-3">
               <button
-                onClick={() => setItemToDelete(null)}
+                onClick={() => { setItemToDelete(null); setDeleteConfirmText(""); }}
                 data-guide-anchor="products.cancelarExclusao"
                 className="flex-1 py-3 px-4 rounded-xl font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all text-sm"
               >
@@ -76,11 +93,14 @@ export default function ProductsView({
               </button>
               <button
                 onClick={() => {
+                  if (!isDeleteConfirmed) return;
                   onDelete(itemToDelete);
                   setItemToDelete(null);
+                  setDeleteConfirmText("");
                 }}
+                disabled={!isDeleteConfirmed}
                 data-guide-anchor="products.confirmarExclusao"
-                className="flex-1 py-3 px-4 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all text-sm shadow-sm opacity-90"
+                className="flex-1 py-3 px-4 rounded-xl font-bold bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all text-sm shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 Excluir
               </button>

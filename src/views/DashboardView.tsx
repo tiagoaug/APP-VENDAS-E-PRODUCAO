@@ -10,6 +10,7 @@ import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import ScannerModal from '../components/ScannerModal';
 import { ProductionScreenType } from "../types";
 import { toast } from '../utils/toast';
+import PixIcon from '../components/icons/PixIcon';
 import { scannerService, SCAN_HISTORY_KEY, ScanHistoryEntry } from '../services/scannerService';
 import { getLotPendingSectorGroups } from '../utils/productionRoute';
 import { getPoolQty, getStockValue } from '../utils/stockPools';
@@ -1232,6 +1233,26 @@ export default function DashboardView({
                 </div>
                 <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-500">
                   <DollarSign size={24} strokeWidth={2.5} />
+                </div>
+              </div>
+            );
+
+          case "pix_payment_access":
+            return (
+              <div
+                key="pix_payment_access"
+                onClick={() => onNavigate(ViewType.PAYMENT_METHODS)}
+                data-guide-anchor="dash.pixPaymentAccess.card"
+                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+              >
+                <div>
+                  <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">Pix</p>
+                  <p className={`text-sm font-black tracking-tight leading-snug ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                    Meios de Recebimento
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-2xl flex items-center justify-center">
+                  <PixIcon size={26} />
                 </div>
               </div>
             );

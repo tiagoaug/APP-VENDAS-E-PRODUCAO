@@ -156,10 +156,11 @@ export type LabelElement = {
   // (Elem.combineFields / "Combinar Campos Neste Elemento"). Ausente/['reference'] = só a
   // referência, comportamento de sempre.
   combineFields?: ('reference' | 'name' | 'color')[];
-  // Só quando dataBinding === 'sectornotes': restringe a um setor+nota específicos em vez de
-  // concatenar todas as notas da variação (mesma ideia do noteFilter de PrintLabelEditorModal.tsx).
-  // Ausente = todas as notas, com cabeçalho por setor (comportamento padrão de getSectorNotesText).
-  sectorNoteFilter?: { sectorId: string; noteName: string };
+  // Só quando dataBinding === 'sectornotes': restringe a uma ou mais instruções (setor+nota)
+  // específicas em vez de concatenar todas as notas da variação (mesma ideia do noteFilter de
+  // PrintLabelEditorModal.tsx, agora podendo marcar mais de uma). Ausente/vazio = todas as
+  // notas, com cabeçalho por setor (comportamento padrão de getSectorNotesText).
+  sectorNoteFilter?: { sectorId: string; noteName: string }[];
   // type 'image'
   imageDataUrl?: string;
   grayscale?: boolean; // converte a imagem original pra tons de cinza (só na exibição/impressão, não altera o arquivo original)
@@ -1856,7 +1857,15 @@ export type ProductionLot = {
   notes?: string;
   createdAt: number;
   finishedAt?: number;
-  
+  // Histórico de quanto foi de fato finalizado (creditado em estoque/reserva) a cada baixa —
+  // registrado toda vez que uma parte do lote é finalizada (mesmo quando o lote inteiro ainda
+  // não terminou, ver applyLotAdvance/handleFinalizeSelectedSourceItems em PCPView.tsx). Usado
+  // por computeProducedPairs pra contar produção no dia CERTO de cada baixa parcial, em vez de
+  // só somar tudo de uma vez quando o último item do lote finalmente termina. Lotes salvos
+  // antes desse campo existir não têm isso — computeProducedPairs cai de volta pro
+  // finishedAt+quantity do lote inteiro nesse caso.
+  completionEvents?: { quantity: number; timestamp: number }[];
+
   // Fields from duplicate/legacy definition
   batchId?: string;
   gridId?: string;

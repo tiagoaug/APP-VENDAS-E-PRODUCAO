@@ -12,7 +12,7 @@ import {
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, ChevronUp, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
   Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell, Wrench, LayoutGrid, ListChecks,
-  Bookmark, Check
+  Bookmark, Check, Type, StickyNote,
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -27,13 +27,13 @@ import { isTemplateAdmin } from '../utils/templateAdmin';
 import { PcpDefaultFilters } from '../services/defaultFiltersService';
 import { computeProducedPairs } from '../utils/businessOverview';
 import { subscribeToProductionScheduleConfig } from '../services/productionScheduleService';
+import LabelElementConfigPopup from '../components/LabelElementConfigPopup';
 import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
 import { resolveSoleConsumption } from '../utils/soleNeeds';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import ReminderPickerModal from '../components/ReminderPickerModal';
 import ScannerModal from '../components/ScannerModal';
-import PrintOSModal from '../components/PrintOSModal';
 import LabelProfilePickerModal from '../components/LabelProfilePickerModal';
 import CompletedServiceOrdersModal from '../components/CompletedServiceOrdersModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -571,6 +571,25 @@ export default function PCPView({
   // ── Centro de Compartilhamento PCP ──────────────────────────────────────────
   const [isPCPShareModalOpen, setIsPCPShareModalOpen] = useState(false);
   const [shareModal, setShareModal] = useState<{ isOpen: boolean; format: 'pdf' | 'jpg'; selectedItems: any[] }>({ isOpen: false, format: 'jpg', selectedItems: [] });
+  // Popup "como compartilhar esta OS" — o botão "Compartilhar" do card de uma OS já existente
+  // abria direto a Central de Compartilhamento (com todas as opções de agrupar/config); agora
+  // pergunta primeiro, porque também dá pra fazer um compartilhamento rápido (PDF/JPG direto,
+  // sem passar pela tela de opções) — igual ao que já existe na tela de sucesso ao EMITIR uma
+  // OS nova (ver handleQuickShareOS), só que agora acessível a qualquer momento depois também.
+  const [osShareChoice, setOsShareChoice] = useState<ServiceOrder | null>(null);
+
+  // ── Configurações de Elementos da Etiqueta (Ações Rápidas) ──────────────────────────────────
+  // Tela com uma entrada por campo do editor de etiquetas (mesmos ícones de "Campos do Pedido"
+  // em LabelEditorView.tsx) — por ora só "Dados da OS" tem opções de verdade (quais dados
+  // aparecem nesse elemento); os demais ficam listados como "Em breve" até ganharem suas
+  // próprias configurações, um de cada vez.
+  const [showLabelElementsConfig, setShowLabelElementsConfig] = useState(false);
+  const [showOsDataFieldsConfig, setShowOsDataFieldsConfig] = useState(false);
+  // Popup genérico de "editar prefixo" — reaproveitado pelos 3 campos (Cliente/Destinatário/
+  // Embalagem) em vez de triplicar o mesmo popup só trocando o texto. A UI (input + prévia
+  // simbólica + toggles de Dados da OS) mora em LabelElementConfigPopup.tsx, reaproveitado
+  // também pelo atalho direto na aba Conteúdo do LabelEditorView.
+  const [prefixEditorField, setPrefixEditorField] = useState<'customerPrefix' | 'recipientPrefix' | 'packagingPrefix' | null>(null);
   const [shareReportType, setShareReportType] = useState<'sector' | 'lot' | 'customer'>('sector');
   const [shareFilterSectors, setShareFilterSectors] = useState<Set<string>>(new Set());
   const [shareFilterStatus, setShareFilterStatus] = useState<'active' | 'finished' | 'all'>('active');
@@ -594,8 +613,6 @@ export default function PCPView({
   const [osDirectComplete, setOsDirectComplete] = useState(false);
   const [osNaoContabil, setOsNaoContabil] = useState(false);
   const [isSavingOS, setIsSavingOS] = useState(false);
-  const [isPrintOSModalOpen, setIsPrintOSModalOpen] = useState(false);
-  const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
   // Tela 1 (LabelProfilePickerModal) do fluxo de impressão de etiqueta do PCP — abre com o lote
   // já montado e o lote/OS de contexto (pros campos "Dados da OS"/"Obs. Setor" do editor); a
   // tela 2 (o editor de verdade) só abre depois de escolher um perfil ou "Criar Novo Perfil"
@@ -2086,10 +2103,21 @@ export default function PCPView({
         overallFinalized = false;
       }
 
+      // Delta desta ação (antes → depois) — mesma lógica de applyLotAdvance, ver comentário no
+      // tipo ProductionLot.completionEvents. Precisa do delta (não só somar `toFinalize`) porque
+      // um item já finalizado numa ação anterior não deve ser contado de novo aqui.
+      const beforeFinalizedQty = allSI.reduce((sum, si) => sum + (getOrderEffectiveSector(currentLot, si.orderId, si) === ORDER_FINALIZED ? (si.qty || 0) : 0), 0);
+      const afterFinalizedQty = allSI.reduce((sum, si) => sum + (getOrderEffectiveSector(lotWithUpdatedSectors, si.orderId, si) === ORDER_FINALIZED ? (si.qty || 0) : 0), 0);
+      const newlyFinalizedQty = Math.max(0, afterFinalizedQty - beforeFinalizedQty);
+      const completionEvents = newlyFinalizedQty > 0
+        ? [...(currentLot.completionEvents || []), { quantity: newlyFinalizedQty, timestamp: Date.now() }]
+        : currentLot.completionEvents;
+
       if (allFinalized) {
         await onSaveLot({
           ...currentLot,
           finishedAt: Date.now(),
+          ...(completionEvents ? { completionEvents } : {}),
           metadata: { ...(currentLot as any).metadata, orderSectors: updatedOrderSectors },
           history: [...(currentLot.history || []), {
             sectorId: currentSectorId, statusId: '', timestamp: Date.now(),
@@ -2099,7 +2127,7 @@ export default function PCPView({
       } else {
         await firebaseService.runBatchWrites([
           ...stockWrites,
-          { type: 'update', path: 'productionLots', id: currentLot.id, data: { metadata: { ...(currentLot as any).metadata, orderSectors: updatedOrderSectors } } },
+          { type: 'update', path: 'productionLots', id: currentLot.id, data: { metadata: { ...(currentLot as any).metadata, orderSectors: updatedOrderSectors }, ...(completionEvents ? { completionEvents } : {}) } },
         ]);
       }
     }
@@ -2706,6 +2734,12 @@ export default function PCPView({
     extraWrites: BatchWrite[] = [],
   ): Promise<{ destSectorId: string; destSectorName: string; isFinished: boolean; skippedSectorNames: string[] }> => {
     const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+    // Quanto desse lote já estava finalizado ANTES desta ação — usado logo abaixo pra calcular
+    // só o que é NOVO nesta baixa (delta), pra registrar em completionEvents. Ver comentário no
+    // tipo ProductionLot.completionEvents sobre por que isso existe (baixa parcial rastreada).
+    const beforeFinalizedQty = allSourceItems.length > 0
+      ? allSourceItems.reduce((sum, si) => sum + (getOrderEffectiveSector(lot, si.orderId, si) === ORDER_FINALIZED ? (si.qty || 0) : 0), 0)
+      : (lot.finishedAt ? lot.quantity : 0);
     const reconstructedItems: { chosenSectorId: string; qty: number; skippedSectorNames: string[] }[] = [];
 
     if (allSourceItems.length > 0) {
@@ -2739,6 +2773,10 @@ export default function PCPView({
     }
 
     const isFinished = reconstructedItems.every(it => it.chosenSectorId === '');
+    // Delta desta ação: quanto passou a estar finalizado agora que não estava antes — pode ser
+    // uma baixa parcial (isFinished ainda false) ou o que fecha o lote inteiro (isFinished true).
+    const afterFinalizedQty = reconstructedItems.reduce((sum, it) => sum + (it.chosenSectorId === '' ? it.qty : 0), 0);
+    const newlyFinalizedQty = Math.max(0, afterFinalizedQty - beforeFinalizedQty);
     let destSectorId = '';
     if (!isFinished) {
       const activeReconstructed = reconstructedItems.filter(it => it.chosenSectorId !== '');
@@ -2861,6 +2899,7 @@ export default function PCPView({
       currentSectorIndex: isFinished ? lot.currentSectorIndex : advancedRoute.indexOf(destSectorId),
       currentStatusId: isFinished ? lot.currentStatusId : nextStatusId,
       finishedAt: isFinished ? Date.now() : undefined,
+      ...(newlyFinalizedQty > 0 ? { completionEvents: [...(lot.completionEvents || []), { quantity: newlyFinalizedQty, timestamp: Date.now() }] } : {}),
       metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
       history: [
         ...(lot.history || []),
@@ -3001,6 +3040,9 @@ export default function PCPView({
       history: newHistory,
       currentStatusId: prevStatusId,
       finishedAt: undefined, // desfaz finalização se houver
+      // Desfaz também o último evento de conclusão registrado (ver ProductionLot.completionEvents)
+      // — senão a produção revertida ficava contando pares que na verdade voltaram pra produção.
+      ...(lot.finishedAt && lot.completionEvents?.length ? { completionEvents: lot.completionEvents.slice(0, -1) } : {}),
       currentSectorIndex: lot.finishedAt
         ? (lot.route?.length ?? 1) - 1   // estava finalizado → volta ao último setor
         : Math.max(0, lot.currentSectorIndex - 1),
@@ -3021,6 +3063,9 @@ export default function PCPView({
       currentSectorIndex: newRoute.indexOf(targetSectorId),
       currentStatusId: undefined,
       finishedAt: undefined,
+      // Mesmo ajuste de handleRevertLot: desfaz o último evento de conclusão registrado, senão
+      // a produção fica contando pares que voltaram pra um setor de produção.
+      ...(lot.finishedAt && lot.completionEvents?.length ? { completionEvents: lot.completionEvents.slice(0, -1) } : {}),
       history: [
         ...(lot.history || []),
         {
@@ -4434,6 +4479,50 @@ export default function PCPView({
     return mappedFichas;
   };
 
+  // Compartilhamento rápido de uma OS já existente — mesmo preset fixo (sem passar pela tela de
+  // opções da Central de Compartilhamento) usado na tela de sucesso ao EMITIR uma OS nova
+  // (ver ServiceOrderFormView.handleShare), agora reaproveitado aqui pra ficar disponível a
+  // qualquer momento depois, não só logo após criar a OS.
+  const handleQuickShareOS = async (os: ServiceOrder, format: 'pdf' | 'jpg') => {
+    const fichas = getFichasForOS(os);
+    if (fichas.length === 0) {
+      toast.show('Nenhum pedido encontrado para esta OS.');
+      return;
+    }
+    const { finalItems, lotNumbers } = buildGroupedShareItems(fichas, 'none');
+    toast.show('Gerando arquivo de exportação...');
+    const result = await generatePCPShareExport({
+      lotNumber: lotNumbers || 'Vários',
+      items: finalItems,
+      additionalNote: `OS: ${os.osNumber} • Prestador: ${os.providerName}${os.notes ? `\n\nObservações: ${os.notes}` : ''}`,
+      isDarkMode,
+      showTotalGrid: true,
+      showItemGrid: true,
+      showSectorNotes: true,
+      showMaterials: false,
+      showOrderList: true,
+    }, format);
+    if (result) {
+      toast.show(`${format.toUpperCase()} exportado com sucesso!`);
+      setOsShareChoice(null);
+    }
+  };
+
+  // Imprimir/Etiqueta de uma OS já existente — usa o MESMO editor de etiquetas novo
+  // (LABEL_EDITOR, via openLabelPicker) já usado no resto do PCP, em vez do PrintOSModal antigo
+  // (que tinha sua própria tela de perfil + preview/impressão separada, desatualizada).
+  const handlePrintOSLabel = (os: ServiceOrder) => {
+    const fichas = getFichasForOS(os);
+    const batch = buildLabelBatchFromFichas(fichas);
+    if (batch.length === 0) {
+      toast.show('Nenhuma etiqueta válida entre os pedidos desta OS.');
+      return;
+    }
+    const osLotIds = os.lotIds && os.lotIds.length > 0 ? os.lotIds : (os.lotId ? [os.lotId] : []);
+    const singleLot = osLotIds.length === 1 ? (lots.find(l => l.id === osLotIds[0]) || null) : null;
+    openLabelPicker(batch, singleLot, os);
+  };
+
   const handlePrintLotLabel = (lot: ProductionLot) => {
     const product = products.find(p => p.id === lot.productId);
     const variation = product?.variations.find(v => v.id === lot.variationId);
@@ -4444,8 +4533,26 @@ export default function PCPView({
   // de Compartilhamento e menu de ações do "Ver Fichas") — monta os BatchLabelItem a partir de
   // qualquer lista de fichas selecionadas, pra abrir o Editor de Etiqueta em modo lote
   // (batchItems), que já sabe imprimir uma etiqueta por item na Ablemark.
+  // Resolve o texto do campo "Embalagem" pra ESTE pedido específico (não um texto genérico do
+  // produto) — usa o pkgId gravado no ProductionOrderItem no momento em que o pedido foi criado
+  // (ver ProductionOrderItem.pkgId em types.ts). "Grade Livre" (mode 'FREE', ou nenhum pkgId
+  // reconhecido) mostra só a quantidade de pares, já que não existe composição fixa por tamanho;
+  // "Grade Fixa" mostra a mini grade (tamanho x quantidade) cadastrada na embalagem.
+  const resolvePackagingText = (orderItem: any, totalPairs: number): string => {
+    const parLabel = totalPairs === 1 ? 'par avulso' : 'pares avulso';
+    const pkg = orderItem?.pkgId ? productionConfigs.find(c => c.id === orderItem.pkgId && c.type === 'PACKAGING') : undefined;
+    if (!pkg || (pkg.metadata as any)?.mode === 'FREE') return `${totalPairs} ${parLabel}`;
+    const sizeQuantities = (pkg.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+    const grid = Object.entries(sizeQuantities || {})
+      .filter(([, q]) => (q || 0) > 0)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([sz, q]) => `${sz}x${q}`)
+      .join('-');
+    return grid || `${totalPairs} ${parLabel}`;
+  };
+
   const buildLabelBatchFromFichas = (fichas: any[]) => {
-    const batch: { product: Product; variation: Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] = [];
+    const batch: { product: Product; variation: Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number; packagingName?: string }[] = [];
     for (const f of fichas) {
       const resolvedProductId = f.si.productId || f.orderItem?.productId;
       const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
@@ -4453,13 +4560,18 @@ export default function PCPView({
       const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
       const labelSizesSource = f.si?.fractionLabel ? (f.si?.sizes || f.orderItem?.sizes) : (f.orderItem?.sizes || f.si?.sizes);
       if (itemProduct && itemVariation && labelSizesSource) {
-        const szStr = Object.entries(labelSizesSource as Record<string, { toProduction: number }>)
-          .filter(([, s]) => s.toProduction > 0)
+        const entries = Object.entries(labelSizesSource as Record<string, { toProduction: number }>).filter(([, s]) => s.toProduction > 0);
+        const szStr = entries
           .sort(([a], [b]) => Number(a) - Number(b))
           .map(([sz, s]) => `${sz}x${s.toProduction}`)
           .join('-');
         if (szStr) {
-          batch.push({ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot?.id, orderId: f.si?.orderId, itemIdx: f.siIdx });
+          const totalPairs = entries.reduce((sum, [, s]) => sum + (s.toProduction || 0), 0);
+          batch.push({
+            product: itemProduct, variation: itemVariation, sizeGrid: szStr,
+            lotId: f.lot?.id, orderId: f.si?.orderId, itemIdx: f.siIdx,
+            packagingName: resolvePackagingText(f.orderItem, totalPairs),
+          });
         }
       }
     }
@@ -5681,6 +5793,7 @@ export default function PCPView({
                 { label: 'Cor Badges', icon: <Tag size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setIsBadgeColorPickerOpen(true), anchor: 'pcp.acaoOutras' },
                 { label: 'OS Concluídas', icon: <CheckSquare size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => setShowCompletedOSModal(true), anchor: 'pcp.acaoOSConcluidas' },
                 { label: 'Reparar Caixas', icon: <Wrench size={20} />, color: 'text-amber-500', bg: isDarkMode ? 'bg-amber-500/10' : 'bg-amber-50', run: () => { const items = buildStockRepairItems(); setStockRepairModal({ phase: 'preview', items, appliedCount: 0 }); }, anchor: 'pcp.acaoReparar' },
+                { label: 'Config. Elementos', icon: <FileText size={20} />, color: 'text-teal-500', bg: isDarkMode ? 'bg-teal-500/10' : 'bg-teal-50', run: () => setShowLabelElementsConfig(true), anchor: 'pcp.acaoConfigElementos' },
               ].map((action) => (
                 <button
                   key={action.label}
@@ -6635,22 +6748,8 @@ export default function PCPView({
                                             <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
                                               <button type="button"
                                                 onClick={() => {
-                                                  const resolvedProductId = f.si.productId || f.orderItem?.productId;
-                                                  const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
-                                                  const itemProduct = products.find(p => p.id === resolvedProductId);
-                                                  const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
-                                                  const labelSizesSource = f.si?.fractionLabel ? (f.si?.sizes || f.orderItem?.sizes) : (f.orderItem?.sizes || f.si?.sizes);
-                                                  if (itemProduct && itemVariation && labelSizesSource) {
-                                                    const szStr = Object.entries(labelSizesSource as Record<string, { toProduction: number }>)
-                                                      .filter(([, s]) => s.toProduction > 0)
-                                                      .sort(([a], [b]) => Number(a) - Number(b))
-                                                      .map(([sz, s]) => `${sz}x${s.toProduction}`)
-                                                      .join('-');
-
-                                                    if (szStr) {
-                                                      openLabelPicker([{ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot.id, orderId: f.si.orderId, itemIdx: f.siIdx }], f.lot, null);
-                                                    }
-                                                  }
+                                                  const batch = buildLabelBatchFromFichas([f]);
+                                                  if (batch.length > 0) openLabelPicker(batch, f.lot, null);
                                                 }}
                                                 data-guide-anchor="pcp.pedidoFichaImprimirEtiqueta"
                                                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 transition-all active:scale-95"
@@ -7229,11 +7328,6 @@ export default function PCPView({
                                 )}
 
                                 {filteredSectorOSList.map(os => {
-                                  const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
-                                  const nextSId = (lot?.route?.length ?? 0) > (lot?.currentSectorIndex ?? 0) + 1
-                                    ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
-                                    : '';
-                                  const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
                                   const isOSActionsOpen = fichaListOpen.has(os.id + '_actions_open');
                                   const isNaoContabil = !os.transactionId && os.totalValue > 0;
                                   return (
@@ -7335,7 +7429,9 @@ export default function PCPView({
                                           className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-[#e2e8f0] dark:border-[#334155] bg-[#ffffff] dark:bg-[#0f172a] transition-all active:scale-[0.98] hover:bg-[#f8fafc] dark:hover:bg-[#1e293b]"
                                         >
                                           <span className="text-[9px] font-black uppercase tracking-widest text-[#64748b] dark:text-[#94a3b8]">Mais Ações</span>
-                                          <ChevronDown size={14} className={`text-[#94a3b8] transition-transform duration-200 ${isOSActionsOpen ? 'rotate-180' : ''}`} />
+                                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white shrink-0 transition-transform duration-200 ${isOSActionsOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500 animate-bounce'}`}>
+                                            <ChevronDown size={12} />
+                                          </span>
                                         </button>
 
                                         {isOSActionsOpen && (
@@ -7350,15 +7446,12 @@ export default function PCPView({
                                               <Trash2 size={16} className="text-rose-500 dark:text-rose-400" />
                                               <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Excluir</span>
                                             </button>
-                                            <button type="button" title="Compartilhar OS" onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })} data-guide-anchor="pcp.osCompartilhar"
+                                            <button type="button" title="Compartilhar OS" onClick={() => setOsShareChoice(os)} data-guide-anchor="pcp.osCompartilhar"
                                               className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               <Share2 size={16} className="text-orange-500 dark:text-orange-400" />
                                               <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Compartilhar</span>
                                             </button>
-                                            <button type="button" title="Imprimir Etiqueta / OS" onClick={() => {
-                                              setPrintOSData({ os, nextSectorName: nextSName });
-                                              setIsPrintOSModalOpen(true);
-                                            }}
+                                            <button type="button" title="Imprimir Etiqueta / OS" onClick={() => handlePrintOSLabel(os)}
                                               data-guide-anchor="pcp.osImprimirEtiqueta"
                                               className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               <Printer size={16} className="text-emerald-500 dark:text-emerald-400" />
@@ -9710,8 +9803,8 @@ export default function PCPView({
 
                 // Cada pedido selecionado vira UMA etiqueta própria, com sua grade e
                 // instruções por setor (não agrega tudo num único mapa).
-                const computeBatchItems = (): { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] => {
-                  const items: { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] = [];
+                const computeBatchItems = (): { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number; packagingName?: string }[] => {
+                  const items: { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number; packagingName?: string }[] = [];
                   selectedItemsList.forEach((si: any) => {
                     const order = productionOrders.find(o => o.id === si.orderId);
                     const orderItem: any = si.itemIdx !== undefined
@@ -9723,13 +9816,14 @@ export default function PCPView({
                     const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
                     const batchSizesSource = si.fractionLabel ? (si.sizes || orderItem?.sizes) : (orderItem?.sizes || si.sizes);
                     if (!itemProduct || !itemVariation || !batchSizesSource) return;
-                    const itemSizeGrid = Object.entries(batchSizesSource as Record<string, { toProduction: number }>)
-                      .filter(([, s]) => s.toProduction > 0)
+                    const entries = Object.entries(batchSizesSource as Record<string, { toProduction: number }>).filter(([, s]) => s.toProduction > 0);
+                    const itemSizeGrid = entries
                       .sort(([a], [b]) => Number(a) - Number(b))
                       .map(([sz, s]) => `${sz}x${s.toProduction}`)
                       .join('-');
                     if (!itemSizeGrid) return;
-                    items.push({ product: itemProduct, variation: itemVariation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx });
+                    const totalPairs = entries.reduce((sum, [, s]) => sum + (s.toProduction || 0), 0);
+                    items.push({ product: itemProduct, variation: itemVariation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx, packagingName: resolvePackagingText(orderItem, totalPairs) });
                   });
                   return items;
                 };
@@ -10221,7 +10315,8 @@ export default function PCPView({
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           const itemSizeGrid = sizeEntries.map(([sz, s]) => `${sz}x${s.toProduction}`).join('-');
-                                          openLabelPicker([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx }], selectedLot, null);
+                                          const totalPairs = sizeEntries.reduce((sum, [, s]) => sum + (s.toProduction || 0), 0);
+                                          openLabelPicker([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx, packagingName: resolvePackagingText(orderItem, totalPairs) }], selectedLot, null);
                                         }}
                                         data-guide-anchor="pcp.detalhePedidoImprimirEtiqueta"
                                         className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
@@ -10816,47 +10911,8 @@ export default function PCPView({
 
                                 {/* Actions */}
                                 <div className="flex items-center gap-2">
-                                  <button type="button" onClick={() => {
-                                    const osLotIds = os.lotIds || [os.lotId];
-                                    const osSourceOrderIds = os.sourceOrderIds || [];
-                                    const osSourceItemKeys = os.sourceItemKeys || [];
-
-                                    const mappedFichas: any[] = [];
-                                    osLotIds.forEach(lId => {
-                                      const l = lots.find(lot => lot.id === lId);
-                                      if (!l) return;
-                                      const sourceItems: any[] = (l as any).metadata?.sourceItems || [];
-                                      sourceItems.forEach((si, siIdx) => {
-                                        const itemKey = `${l.id}::${si.orderId}::${siIdx}`;
-                                        const isIncluded = osSourceItemKeys.includes(itemKey) ||
-                                          (osSourceItemKeys.length === 0 && osSourceOrderIds.includes(si.orderId));
-
-                                        if (isIncluded) {
-                                          const prod = products.find(p => p.id === si.productId);
-                                          const vari = prod?.variations.find((v: any) => v.id === si.variationId);
-                                          const ord = productionOrders.find(o => o.id === si.orderId);
-                                          const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-
-                                          mappedFichas.push({
-                                            lot: l,
-                                            si,
-                                            siIdx,
-                                            product: prod,
-                                            variation: vari,
-                                            orderItem: ordItem,
-                                            order: ord,
-                                            coveringOS: os
-                                          });
-                                        }
-                                      });
-                                    });
-                                    setShareModal({ isOpen: true, format: 'jpg', selectedItems: mappedFichas });
-                                  }} data-guide-anchor="pcp.osCompartilhar" className="flex-1 text-[11px] font-black uppercase text-orange-600 bg-orange-50 dark:bg-orange-950/20 hover:bg-orange-100 py-2.5 rounded-xl transition-all text-center">Compartilhar</button>
-                                  <button type="button" onClick={() => {
-                                    const printNextSectorName = selectedLot ? computeOSAdvanceOutcome(os, selectedLot, products, sectors).nextSectorName : 'CONCLUÍDO';
-                                    setPrintOSData({ os, nextSectorName: printNextSectorName });
-                                    setIsPrintOSModalOpen(true);
-                                  }} data-guide-anchor="pcp.osImprimirEtiqueta" className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
+                                  <button type="button" onClick={() => setOsShareChoice(os)} data-guide-anchor="pcp.osCompartilhar" className="flex-1 text-[11px] font-black uppercase text-orange-600 bg-orange-50 dark:bg-orange-950/20 hover:bg-orange-100 py-2.5 rounded-xl transition-all text-center">Compartilhar</button>
+                                  <button type="button" onClick={() => handlePrintOSLabel(os)} data-guide-anchor="pcp.osImprimirEtiqueta" className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
                                   <button type="button" onClick={() => handleEditOS(os)} data-guide-anchor="pcp.osEditar" className="flex-1 text-[11px] font-black uppercase text-white bg-amber-400 hover:bg-amber-500 py-2.5 rounded-xl transition-all text-center active:scale-95">Editar</button>
                                   <button type="button" onClick={() => handleDeleteOS(os)} data-guide-anchor="pcp.osExcluir" className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center">Excluir</button>
                                 </div>
@@ -11896,19 +11952,6 @@ export default function PCPView({
 
 
 
-      {isPrintOSModalOpen && printOSData && (
-        <PrintOSModal
-          isOpen={isPrintOSModalOpen}
-          onClose={() => { setIsPrintOSModalOpen(false); setPrintOSData(null); }}
-          os={printOSData.os}
-          nextSectorName={printOSData.nextSectorName}
-          isDarkMode={isDarkMode}
-          product={(products || []).find(p => p.id === printOSData.os.productId)}
-          grids={grids || []}
-          lot={(lots || []).find(l => l.id === printOSData.os.lotId)}
-        />
-      )}
-
       <LabelProfilePickerModal
         isOpen={labelProfilePicker.open}
         onClose={() => setLabelProfilePicker({ open: false, items: [], lot: null, os: null })}
@@ -12235,8 +12278,8 @@ export default function PCPView({
         isDarkMode={isDarkMode}
         onViewOS={(os) => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
         onDeleteOS={handleDeleteOS}
-        onShareOS={(os) => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })}
-        onPrintOS={(os) => { setPrintOSData({ os, nextSectorName: 'CONCLUÍDO' }); setIsPrintOSModalOpen(true); }}
+        onShareOS={(os) => setOsShareChoice(os)}
+        onPrintOS={(os) => handlePrintOSLabel(os)}
         onOpenReminders={(os) => setOsNotesPopup(os)}
         onRevertPayment={handleRevertOsPayment}
         osBadgeBg={osBadgeBg}
@@ -13692,6 +13735,132 @@ export default function PCPView({
           </div>
         )}
       </Modal>
+
+      {/* Popup "Configurações de Elementos" — uma entrada por campo do editor de etiquetas
+          (mesmos ícones de "Campos do Pedido" em LabelEditorView.tsx). Só "Dados da OS" tem
+          configuração de verdade por enquanto; os demais entram "Em breve", um de cada vez. */}
+      {showLabelElementsConfig && createPortal(
+        <div className="fixed inset-0 z-[96700] flex items-center justify-center p-4" onClick={() => setShowLabelElementsConfig(false)}>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+          <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-sm max-h-[85vh] overflow-y-auto custom-scrollbar rounded-[2rem] shadow-2xl border p-5 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[12px] font-black uppercase tracking-widest block leading-none">Configurações de Elementos</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1 block">O que aparece em cada campo da etiqueta</span>
+              </div>
+              <button type="button" title="Fechar" onClick={() => setShowLabelElementsConfig(false)}
+                className={`p-1.5 rounded-lg shrink-0 ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {([
+              { label: 'Cliente', icon: <Type size={16} />, ready: true, onClick: () => { setShowLabelElementsConfig(false); setPrefixEditorField('customerPrefix'); }, anchor: 'pcp.configElementosPrefixo' },
+              { label: 'Destinatário', icon: <Type size={16} />, ready: true, onClick: () => { setShowLabelElementsConfig(false); setPrefixEditorField('recipientPrefix'); }, anchor: 'pcp.configElementosPrefixo' },
+              { label: 'Embalagem', icon: <Type size={16} />, ready: true, onClick: () => { setShowLabelElementsConfig(false); setPrefixEditorField('packagingPrefix'); }, anchor: 'pcp.configElementosPrefixo' },
+              { label: 'Dados da OS', icon: <FileText size={16} />, ready: true, onClick: () => { setShowLabelElementsConfig(false); setShowOsDataFieldsConfig(true); }, anchor: 'pcp.configElementosDadosOS' },
+              { label: 'Obs. Setor', icon: <StickyNote size={16} />, ready: false, onClick: undefined, anchor: 'pcp.configElementosEmBreve' },
+            ] as const).map((f) => (
+              <button
+                key={f.label}
+                type="button"
+                disabled={!f.ready}
+                onClick={f.onClick}
+                data-guide-anchor={f.anchor}
+                className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${f.ready ? `active:scale-[0.98] ${isDarkMode ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}` : `opacity-50 cursor-default ${isDarkMode ? 'bg-slate-800/20 border-slate-800' : 'bg-slate-50/60 border-slate-100'}`}`}
+              >
+                <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${f.ready ? 'bg-teal-500 text-white' : 'bg-slate-300 dark:bg-slate-700 text-white'}`}>{f.icon}</span>
+                <span className="min-w-0 flex-1 text-[11px] font-black uppercase tracking-widest">{f.label}</span>
+                {!f.ready && (
+                  <span className="shrink-0 text-[7px] font-black uppercase tracking-widest text-slate-400 border border-slate-300 dark:border-slate-700 rounded-full px-2 py-0.5">Em breve</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Sub-popup "Dados da OS" e "Prefixo" (Cliente/Destinatário/Embalagem) — UI compartilhada
+          com o atalho direto na aba Conteúdo do LabelEditorView (ver LabelElementConfigPopup.tsx). */}
+      {showOsDataFieldsConfig && (
+        <LabelElementConfigPopup
+          field="osdata"
+          isDarkMode={isDarkMode}
+          onClose={() => setShowOsDataFieldsConfig(false)}
+          onBack={() => { setShowOsDataFieldsConfig(false); setShowLabelElementsConfig(true); }}
+        />
+      )}
+      {prefixEditorField && (
+        <LabelElementConfigPopup
+          field={prefixEditorField}
+          isDarkMode={isDarkMode}
+          onClose={() => setPrefixEditorField(null)}
+          onBack={() => { setPrefixEditorField(null); setShowLabelElementsConfig(true); }}
+        />
+      )}
+
+      {/* Popup "Como compartilhar esta OS" — escolhe entre a Central de Compartilhamento (com
+          opções de agrupar/formato/etc., já existente) e o compartilhamento rápido em PDF/JPG
+          (mesmo preset fixo que só aparecia na tela de sucesso ao emitir uma OS nova, ver
+          handleQuickShareOS), agora disponível a qualquer momento depois também. */}
+      {osShareChoice && createPortal(
+        <div className="fixed inset-0 z-[96700] flex items-center justify-center p-4" onClick={() => setOsShareChoice(null)}>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+          <div onClick={(e) => e.stopPropagation()} className={`relative w-full max-w-sm rounded-[2rem] shadow-2xl border p-5 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[12px] font-black uppercase tracking-widest block leading-none">Compartilhar OS</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1 block">{osShareChoice.osNumber}</span>
+              </div>
+              <button type="button" title="Fechar" onClick={() => setOsShareChoice(null)}
+                className={`p-1.5 rounded-lg shrink-0 ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { const os = osShareChoice; setOsShareChoice(null); setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) }); }}
+              data-guide-anchor="pcp.osCompartilharCentral"
+              className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+            >
+              <span className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 bg-orange-500 text-white"><Share2 size={18} /></span>
+              <span className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest block">Central de Compartilhamento</span>
+                <span className="text-[9px] font-bold text-slate-400 block mt-0.5">Escolher formato, agrupamento e opções de exibição</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleQuickShareOS(osShareChoice, 'pdf')}
+              data-guide-anchor="pcp.osCompartilharRapidoPdf"
+              className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+            >
+              <span className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 bg-indigo-600 text-white"><Share2 size={18} /></span>
+              <span className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest block">Compartilhar Rápido — PDF</span>
+                <span className="text-[9px] font-bold text-slate-400 block mt-0.5">Gera na hora, sem passar pela tela de opções</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleQuickShareOS(osShareChoice, 'jpg')}
+              data-guide-anchor="pcp.osCompartilharRapidoJpg"
+              className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+            >
+              <span className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 bg-cyan-600 text-white"><Share2 size={18} /></span>
+              <span className="min-w-0">
+                <span className="text-[11px] font-black uppercase tracking-widest block">Compartilhar Rápido — Imagem (JPG)</span>
+                <span className="text-[9px] font-bold text-slate-400 block mt-0.5">Gera na hora, sem passar pela tela de opções</span>
+              </span>
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
 
       <ExportNoteModal
         isOpen={shareModal.isOpen}

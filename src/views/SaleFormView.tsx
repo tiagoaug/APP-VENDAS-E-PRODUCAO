@@ -24,7 +24,7 @@ import { generateId } from '../utils/id';
 import DatePicker from '../components/DatePicker';
 import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
 import { saleProductionHasProgressed } from '../utils/productionRoute';
-import { isHybridProduct } from '../utils/stockPools';
+import { isHybridProduct, resolveUnitSalePrice } from '../utils/stockPools';
 
 interface SaleBlock {
   id: string;
@@ -206,7 +206,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               productId: item.productId,
               saleType: item.saleType,
               price: item.price,
-              unitPrice: item.unitPrice ?? (products.find(p => p.id === item.productId)?.unitSalePrice || products.find(p => p.id === item.productId)?.salePrice || 0),
+              unitPrice: item.unitPrice ?? resolveUnitSalePrice(products.find(p => p.id === item.productId)),
               variations: {}
             };
           }
@@ -257,14 +257,14 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
           const variations: SaleBlock['variations'] = {};
           db.variations.forEach(v => {
             const key = v.size ? `${v.variationId}-${v.size}` : v.variationId;
-            variations[key] = { quantity: v.quantity, price: db.saleType === SaleType.WHOLESALE ? (product?.salePrice || 0) : (product?.unitSalePrice || product?.salePrice || 0), size: v.size };
+            variations[key] = { quantity: v.quantity, price: db.saleType === SaleType.WHOLESALE ? (product?.salePrice || 0) : resolveUnitSalePrice(product), size: v.size };
           });
           return {
             id: generateId(),
             productId: db.productId,
             saleType: db.saleType,
             price: product?.salePrice || 0,
-            unitPrice: product?.unitSalePrice || product?.salePrice || 0,
+            unitPrice: resolveUnitSalePrice(product),
             variations,
           };
         });
@@ -615,7 +615,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
       productId: p.id,
       saleType: defaultSaleType,
       price: p.salePrice || 0,
-      unitPrice: p.unitSalePrice || p.salePrice || 0,
+      unitPrice: resolveUnitSalePrice(p),
       variations: {},
       blockPkgId: defaultPkgId,
     };
@@ -709,7 +709,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
           productId,
           saleType: scanSaleType,
           price: product.salePrice || 0,
-          unitPrice: product.unitSalePrice || product.salePrice || 0,
+          unitPrice: resolveUnitSalePrice(product),
           variations: {},
           blockPkgId: defaultPkgId,
         };

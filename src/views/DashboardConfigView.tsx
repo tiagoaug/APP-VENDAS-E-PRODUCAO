@@ -11,6 +11,7 @@ import {
 import { motion, Reorder, AnimatePresence, useDragControls } from 'motion/react';
 import { isDashboardCardAllowed } from '../utils/collaborators';
 import { isTemplateAdmin } from '../utils/templateAdmin';
+import PixIcon from '../components/icons/PixIcon';
 
 export type ViewMode = 'name' | 'joint' | 'full';
 
@@ -240,6 +241,21 @@ export function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
             </div>
             <div className={`p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/20 text-indigo-500`}>
               <DollarSign size={mini ? 14 : 20} />
+            </div>
+          </div>
+        </div>
+      );
+
+    case 'pix_payment_access':
+      return (
+        <div className={containerClass}>
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pix</p>
+              <p className="text-sm font-black text-slate-700 dark:text-slate-200">Meios de Recebimento</p>
+            </div>
+            <div className="p-2 rounded-xl bg-teal-50 dark:bg-teal-950/20 text-teal-500">
+              <PixIcon size={mini ? 14 : 20} />
             </div>
           </div>
         </div>

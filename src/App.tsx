@@ -852,6 +852,7 @@ export default function App() {
       { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 10, module: 'sales' },
       { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 11, module: 'sales' },
       { id: 'commission_to_sellers', label: 'Folha de Pagamento', visible: true, order: 11.5, module: 'sales' },
+      { id: 'pix_payment_access', label: 'Pix — Meios de Recebimento', visible: true, order: 11.55, module: 'sales' },
       { id: 'provider_service_orders', label: 'Ordens de Serviço a Fornecedores', visible: true, order: 11.7, module: 'sales' },
       { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 13, module: 'sales' },
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
@@ -965,6 +966,12 @@ export default function App() {
     // Migration: ensure produced_pairs card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'produced_pairs')) {
       config.cards.push({ id: 'produced_pairs', label: 'Análise de Produção', visible: true, order: 16.7, module: 'production' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: ensure pix_payment_access card is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'pix_payment_access')) {
+      config.cards.push({ id: 'pix_payment_access', label: 'Pix — Meios de Recebimento', visible: true, order: 11.55, module: 'sales' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -8639,7 +8646,7 @@ export default function App() {
       case ViewType.DASHBOARD:
         return "LIM.O APP";
       case ViewType.PRODUCTS:
-        return "Produção de Produtos";
+        return "Catálogo de Produtos";
       case ViewType.STOCK:
         return "Expedição e Estoque";
       case ViewType.STOCK_GLANCE:

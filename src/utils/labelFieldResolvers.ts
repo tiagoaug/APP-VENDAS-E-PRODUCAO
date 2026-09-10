@@ -1,4 +1,5 @@
 import { BatchLabelItem, LabelDataBinding, ProductionLot, Sector, SectorNote, ServiceOrder, Variation } from '../types';
+import { OsDataFieldsConfig, DEFAULT_OS_DATA_FIELDS } from '../services/labelElementsConfigService';
 
 // Funções puras de resolução de dados de etiqueta, compartilhadas entre o sistema de blocos
 // fixos (PrintLabelEditorModal.tsx, "Elementos e Camadas") e o editor livre com vínculo a dados
@@ -27,18 +28,35 @@ export function parseSizeGridEntries(sg: string): { sz: string; qty: number | nu
     : [];
 }
 
+// Aceita tanto o formato novo (array) quanto um objeto solto isolado — templates salvos antes de
+// o filtro virar multi-seleção ainda têm `sectorNoteFilter` como objeto único no Firestore.
+function normalizeSectorNoteFilter(
+  filter?: { sectorId: string; noteName: string } | { sectorId: string; noteName: string }[],
+): { sectorId: string; noteName: string }[] {
+  if (!filter) return [];
+  return Array.isArray(filter) ? filter : [filter];
+}
+
 // Texto de observações por setor de uma variação — sem filtro, concatena todos os setores com
-// cabeçalho; com filtro, pega uma nota específica (setor + nome). Movida de
-// PrintLabelEditorModal.tsx: só mudou de closure (capturava `sectors` do componente) pra
-// parâmetro explícito, mesmo comportamento.
+// cabeçalho; com filtro, pega uma ou mais notas específicas (setor + nome), sem cabeçalho, uma
+// por linha. Movida de PrintLabelEditorModal.tsx: só mudou de closure (capturava `sectors` do
+// componente) pra parâmetro explícito, mesmo comportamento (agora com suporte a múltiplas notas).
 export function getSectorNotesText(
-  v: Variation | undefined, sectors: Sector[], filter?: { sectorId: string; noteName: string },
+  v: Variation | undefined, sectors: Sector[],
+  filter?: { sectorId: string; noteName: string } | { sectorId: string; noteName: string }[],
 ): string {
   if (!v?.sectorNotes) return '';
-  if (filter) {
-    const notes = (v.sectorNotes[filter.sectorId] || []) as SectorNote[];
-    const match = notes.find(n => (n.name || '').toUpperCase() === filter.noteName.toUpperCase()) || notes.find(n => n.text);
-    return match?.text || '';
+  const sectorNotes = v.sectorNotes;
+  const filters = normalizeSectorNoteFilter(filter);
+  if (filters.length > 0) {
+    return filters
+      .map(f => {
+        const notes = (sectorNotes[f.sectorId] || []) as SectorNote[];
+        const match = notes.find(n => (n.name || '').toUpperCase() === f.noteName.toUpperCase()) || notes.find(n => n.text);
+        return match?.text || '';
+      })
+      .filter(Boolean)
+      .join('\n');
   }
   return Object.entries(v.sectorNotes)
     .flatMap(([sid, notes]) => {
@@ -68,6 +86,16 @@ export interface LabelBindingContext {
   lot?: ProductionLot;
   os?: ServiceOrder | null;
   sectors?: Sector[];
+  // Quais campos aparecem no binding 'osdata' — configurável em PCP > Ações Rápidas >
+  // Configurações de Elementos > Dados da OS (ver labelElementsConfigService.ts). Ausente =
+  // usa DEFAULT_OS_DATA_FIELDS.
+  osDataFields?: OsDataFieldsConfig;
+  // Prefixo de texto opcional na frente do valor de 'customer'/'recipient'/'packaging' (ex.:
+  // "Cliente: " antes do nome) — mesma tela de Configurações de Elementos. Ausente/vazio = só
+  // o valor puro, comportamento de sempre.
+  customerPrefix?: string;
+  recipientPrefix?: string;
+  packagingPrefix?: string;
 }
 
 export type ResolvedBinding =
@@ -100,7 +128,7 @@ const PLACEHOLDER_GRADE_ENTRIES: { sz: string; qty: number | null }[] = [
 export function resolveLabelBinding(
   binding: LabelDataBinding, ctx: LabelBindingContext | null,
   combineFields?: ('reference' | 'name' | 'color')[],
-  sectorNoteFilter?: { sectorId: string; noteName: string },
+  sectorNoteFilter?: { sectorId: string; noteName: string } | { sectorId: string; noteName: string }[],
 ): ResolvedBinding {
   if (binding === 'reference' && combineFields && combineFields.length > 0) {
     const refText = ctx ? (ctx.item.product.reference || ctx.item.product.name) : PLACEHOLDER_TEXT.reference!;
@@ -120,14 +148,28 @@ export function resolveLabelBinding(
     case 'name': return { kind: 'text', text: item.product.name };
     case 'color': return { kind: 'text', text: item.variation.colorName || '---' };
     case 'size': return { kind: 'text', text: item.sizeGrid };
-    case 'customer': return { kind: 'text', text: item.customerName || '' };
-    case 'recipient': return { kind: 'text', text: item.recipientName || '' };
-    case 'packaging': return { kind: 'text', text: item.packagingName || '' };
+    case 'customer': return { kind: 'text', text: item.customerName ? `${ctx.customerPrefix || ''}${item.customerName}` : '' };
+    case 'recipient': return { kind: 'text', text: item.recipientName ? `${ctx.recipientPrefix || ''}${item.recipientName}` : '' };
+    case 'packaging': return { kind: 'text', text: item.packagingName ? `${ctx.packagingPrefix || ''}${item.packagingName}` : '' };
     case 'qr': return { kind: 'qr', qrText: buildLabelQrPayload(item, item.sizeGrid) };
     case 'photo': return item.product.labelThumbnailUrl ? { kind: 'image', imageUrl: item.product.labelThumbnailUrl } : { kind: 'empty' };
     case 'grade': return { kind: 'grade', gridEntries: parseSizeGridEntries(item.sizeGrid) };
-    case 'osdata':
-      return ctx.os ? { kind: 'text', text: `${ctx.os.osNumber} | ${ctx.os.providerName} | R$ ${ctx.os.totalValue.toFixed(2)}` } : { kind: 'empty' };
+    case 'osdata': {
+      if (!ctx.os) return { kind: 'empty' };
+      const os = ctx.os;
+      const fields = ctx.osDataFields || DEFAULT_OS_DATA_FIELDS;
+      const parts: string[] = [];
+      if (fields.osNumber) parts.push(os.osNumber);
+      if (fields.providerName) parts.push(os.providerName);
+      if (fields.totalValue) parts.push(`R$ ${os.totalValue.toFixed(2)}`);
+      if (fields.quantity) parts.push(`${os.quantity} ${os.quantity === 1 ? 'par' : 'pares'}`);
+      if (fields.valuePerPair) parts.push(`R$ ${os.valuePerPair.toFixed(2)}/par`);
+      if (fields.sectorName && os.sectorName) parts.push(os.sectorName);
+      if (fields.type) parts.push(os.type === 'OUTSOURCED' ? 'Terceirizada' : 'Interna');
+      if (fields.createdAt) parts.push(new Date(os.createdAt).toLocaleDateString('pt-BR'));
+      if (fields.notes && os.notes) parts.push(os.notes);
+      return { kind: 'text', text: parts.join(' | ') };
+    }
     case 'sectornotes':
       return { kind: 'text', text: getSectorNotesText(item.variation, ctx.sectors || [], sectorNoteFilter) };
     default: return { kind: 'empty' };

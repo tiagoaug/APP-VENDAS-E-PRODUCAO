@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Product, ProductStatus, Category, CatalogProfile, Brand } from '../types';
 import { X, Search, Check, Bookmark, Trash2, Save } from 'lucide-react';
@@ -9,17 +9,16 @@ interface CatalogProductPickerModalProps {
   categories: Category[];
   brands?: Brand[];
   profiles: CatalogProfile[];
-  // Vazio = "Catálogo completo" (todos os produtos ativos, sem restrição).
+  // Vazio = "Catálogo completo" (todos os produtos ativos, sem restrição) — controlado por um
+  // card próprio na tela de "Enviar Catálogo" (ver SalesView), não mais aqui dentro.
   initialSelectedIds: string[];
-  // true = o catálogo enviado por esse link não mostra preço nenhum dos produtos.
-  initialHidePrices?: boolean;
-  // true = cada tamanho/caixa já chega pré-preenchido com a quantidade em estoque, em vez de
-  // vazio — pra "vender o que já tem" (o cliente só confirma/ajusta).
-  initialUseStockQuantities?: boolean;
   isDarkMode: boolean;
-  onConfirm: (productIds: string[], hidePrices: boolean, useStockQuantities: boolean) => void;
+  onConfirm: (productIds: string[]) => void;
   onSaveProfile: (name: string, productIds: string[]) => Promise<void>;
   onDeleteProfile: (profileId: string) => Promise<void>;
+  // Botão extra opcional ao final (ex.: "Compartilhar Catálogo" no modo Grupo, que já dispara o
+  // envio direto — sem precisar fechar e reabrir a tela principal só pra clicar em outro botão).
+  shareCta?: { label: string; icon?: ReactNode; onClick: (productIds: string[]) => void };
 }
 
 export default function CatalogProductPickerModal({
@@ -29,17 +28,14 @@ export default function CatalogProductPickerModal({
   brands = [],
   profiles,
   initialSelectedIds,
-  initialHidePrices = false,
-  initialUseStockQuantities = false,
   isDarkMode,
   onConfirm,
   onSaveProfile,
   onDeleteProfile,
+  shareCta,
 }: CatalogProductPickerModalProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelectedIds));
   const [allSelectedMode, setAllSelectedMode] = useState(initialSelectedIds.length === 0);
-  const [hidePrices, setHidePrices] = useState(initialHidePrices);
-  const [useStockQuantities, setUseStockQuantities] = useState(initialUseStockQuantities);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [profileNameInput, setProfileNameInput] = useState('');
@@ -87,8 +83,16 @@ export default function CatalogProductPickerModal({
     setSelected(new Set(profile.productIds));
   };
 
+  const resolvedIds = () => (allSelectedMode ? [] : Array.from(selected));
+
   const handleConfirm = () => {
-    onConfirm(allSelectedMode ? [] : Array.from(selected), hidePrices, useStockQuantities);
+    onConfirm(resolvedIds());
+    onClose();
+  };
+
+  const handleShareCta = () => {
+    if (!shareCta) return;
+    shareCta.onClick(resolvedIds());
     onClose();
   };
 
@@ -125,50 +129,6 @@ export default function CatalogProductPickerModal({
         </div>
 
         <div className="flex flex-col gap-4 p-4 pb-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => { setAllSelectedMode(true); setSelected(new Set()); }}
-            data-guide-anchor="catalogPicker.catalogoCompletoToggle"
-            className={`flex items-center justify-between gap-2 p-3 rounded-xl text-left transition-all active:scale-[0.98] ${allSelectedMode ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-50 text-slate-600'}`}
-          >
-            <span className="text-[11px] font-black uppercase tracking-widest">Catálogo Completo (todos os produtos)</span>
-            {allSelectedMode && <Check size={16} strokeWidth={3} />}
-          </button>
-
-          <div className={`flex items-center justify-between gap-3 p-3 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-            <div className="min-w-0">
-              <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Enviar sem valores</p>
-              <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cliente escolhe modelo/cor/quantidade sem ver preço</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setHidePrices(prev => !prev)}
-              data-guide-anchor="catalogPicker.ocultarPrecosToggle"
-              className={`w-12 h-6 rounded-full relative shrink-0 transition-colors ${hidePrices ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
-              aria-label={hidePrices ? "Mostrar preços" : "Ocultar preços"}
-              title={hidePrices ? "Mostrar preços" : "Ocultar preços"}
-            >
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${hidePrices ? 'left-7' : 'left-1'}`} />
-            </button>
-          </div>
-
-          <div className={`flex items-center justify-between gap-3 p-3 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-            <div className="min-w-0">
-              <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Mostrar Quantidade em Estoque</p>
-              <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cliente vê quanto tem disponível, mas escolhe livremente a quantidade (sempre a partir de zero)</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setUseStockQuantities(prev => !prev)}
-              data-guide-anchor="catalogPicker.estoqueVisivelToggle"
-              className={`w-12 h-6 rounded-full relative shrink-0 transition-colors ${useStockQuantities ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
-              aria-label={useStockQuantities ? "Esconder quantidade em estoque" : "Mostrar quantidade em estoque"}
-              title={useStockQuantities ? "Esconder quantidade em estoque" : "Mostrar quantidade em estoque"}
-            >
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${useStockQuantities ? 'left-7' : 'left-1'}`} />
-            </button>
-          </div>
-
           {profiles.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Perfis Salvos</label>
@@ -293,10 +253,22 @@ export default function CatalogProductPickerModal({
             onClick={handleConfirm}
             disabled={selectedCount === 0}
             data-guide-anchor="catalogPicker.confirmar"
-            className="w-full py-3 rounded-2xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50"
+            className={`w-full py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50 ${shareCta ? (isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600') : 'bg-indigo-600 text-white'}`}
           >
-            Confirmar ({selectedCount})
+            Confirmar Seleção ({selectedCount})
           </button>
+          {shareCta && (
+            <button
+              type="button"
+              onClick={handleShareCta}
+              disabled={selectedCount === 0}
+              data-guide-anchor="catalogPicker.compartilharDireto"
+              className="w-full py-3 rounded-2xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {shareCta.icon}
+              {shareCta.label}
+            </button>
+          )}
         </div>
       </div>
     </div>,

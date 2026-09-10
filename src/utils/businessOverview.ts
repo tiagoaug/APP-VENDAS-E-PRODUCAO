@@ -109,9 +109,21 @@ function countPeriodDays(start: number, end: number, excludeWeekends: boolean): 
 // por dias futuros que ainda não tiveram chance de produzir nada. Pra período já encerrado no
 // passado, dá exatamente o mesmo resultado de `elapsedOnly=false` (todos os dias já passaram).
 export function computeProducedPairs(productionLots: ProductionLot[], start: number, end: number, excludeWeekends: boolean = false, elapsedOnly: boolean = false): { total: number; dailyAverage: number; workDays: number } {
-  const total = productionLots
-    .filter(l => l.finishedAt && l.finishedAt >= start && l.finishedAt <= end)
-    .reduce((acc, l) => acc + (l.quantity || 0), 0);
+  // Lotes com completionEvents (baixas parciais rastreadas, ver applyLotAdvance em PCPView.tsx)
+  // contam cada baixa no dia em que ela realmente aconteceu, em vez de esperar o lote inteiro
+  // terminar pra só então somar tudo de uma vez. Lotes antigos, salvos antes desse rastreio
+  // existir, caem de volta no comportamento anterior (finishedAt do lote inteiro).
+  const total = productionLots.reduce((acc, l) => {
+    if (l.completionEvents && l.completionEvents.length > 0) {
+      return acc + l.completionEvents
+        .filter(e => e.timestamp >= start && e.timestamp <= end)
+        .reduce((sum, e) => sum + (e.quantity || 0), 0);
+    }
+    if (l.finishedAt && l.finishedAt >= start && l.finishedAt <= end) {
+      return acc + (l.quantity || 0);
+    }
+    return acc;
+  }, 0);
   const effectiveEnd = elapsedOnly ? Math.min(end, Date.now()) : end;
   const workDays = countPeriodDays(start, effectiveEnd, excludeWeekends);
   return { total, dailyAverage: total / workDays, workDays };

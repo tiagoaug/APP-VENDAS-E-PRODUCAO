@@ -53,6 +53,24 @@ export function productHasSaleType(product: Product | undefined, saleType: SaleT
 }
 
 /**
+ * Preço por par pra usar em Vendas/Catálogo — nunca confia em `unitSalePrice` sozinho.
+ * `unitSalePrice`/`unitCostPrice` só são preenchidos pelo formulário quando o produto é
+ * híbrido (Atacado + Varejo ao mesmo tempo); num produto que já foi híbrido e depois virou
+ * Varejo puro, esses campos ficam com um valor RESIDUAL do tempo em que era híbrido (o campo
+ * nem aparece mais no formulário pra ser corrigido) — se algo confiar em "unitSalePrice > 0"
+ * sozinho, acaba usando esse preço antigo/errado em vez do `salePrice` atual (que É o preço
+ * de Varejo certo quando o produto não é mais híbrido). Só usa `unitSalePrice` quando o
+ * produto ainda vende em Atacado também (é aí que esse campo continua editável/válido).
+ */
+export function resolveUnitSalePrice(product: Product | undefined): number {
+  if (!product) return 0;
+  if (productHasSaleType(product, SaleType.WHOLESALE) && (product.unitSalePrice || 0) > 0) {
+    return product.unitSalePrice as number;
+  }
+  return product.salePrice || 0;
+}
+
+/**
  * Caixas do pool Atacado — zero se o produto não vende em Atacado, mesmo que
  * variation.stock tenha a chave 'WHOLESALE' com algum resíduo (produtos 100%
  * varejo nunca deveriam ter essa chave, mas o gate evita contar lixo de qualquer forma).

@@ -8,7 +8,7 @@ import {
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Plus, Check, X, ZoomIn, ZoomOut,
   Contrast, Crop as CropIcon, Download, Eye, EyeOff, Lock, Unlock, Layers as LayersIcon,
   Maximize2, Minimize2, Image as ImageIcon2, ChevronDown, Ruler as RulerIcon, RotateCw, Wrench, Grid3x3, Tag, Radius,
-  FileText, StickyNote, RectangleVertical, RectangleHorizontal,
+  FileText, StickyNote, RectangleVertical, RectangleHorizontal, Settings,
 } from 'lucide-react';
 import { LabelElement, LabelDataBinding, BatchLabelItem, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { printAbleMarkLabel2 as printAbleMarkLabel } from '../lib/ablemarkPrinter2';
@@ -24,6 +24,8 @@ import CropEditor, { CropRect, FULL_CROP, CENTER_CROP, cropEquals, cropImageToDa
 import { DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 import { resolveLabelBinding, LabelBindingContext, computeGradeLayout } from '../utils/labelFieldResolvers';
 import { LABEL_DOTS_PER_MM as DOTS_PER_MM, FONT_OPTIONS, cssFontFamily, loadImage, renderLabelElementsToCanvas } from '../utils/labelCanvasRenderer';
+import { subscribeToLabelElementsConfig, DEFAULT_LABEL_ELEMENTS_CONFIG } from '../services/labelElementsConfigService';
+import LabelElementConfigPopup, { LabelConfigField } from '../components/LabelElementConfigPopup';
 
 const BASE_PX_WIDTH = 300; // largura de referência do canvas em zoom 1.0x
 
@@ -133,7 +135,7 @@ const PRODUCTION_FIELD_OPTIONS: { binding: LabelDataBinding; icon: typeof Type }
 
 // Valor de texto pra mostrar ao vivo no canvas de um elemento vinculado — dado real quando há
 // contexto de venda (ctx), placeholder de exemplo quando não há (ver resolveLabelBinding).
-function previewBindingText(binding: LabelDataBinding, ctx: LabelBindingContext | null, combineFields?: ('reference' | 'name' | 'color')[], sectorNoteFilter?: { sectorId: string; noteName: string }): string {
+function previewBindingText(binding: LabelDataBinding, ctx: LabelBindingContext | null, combineFields?: ('reference' | 'name' | 'color')[], sectorNoteFilter?: { sectorId: string; noteName: string }[]): string {
   const resolved = resolveLabelBinding(binding, ctx, combineFields, sectorNoteFilter);
   return resolved.kind === 'text' ? resolved.text : '';
 }
@@ -287,10 +289,20 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
 
   const selected = elements.find(e => e.id === selectedId) || null;
 
+  // Configurações de Elementos da Etiqueta (Dados da OS + prefixos de Cliente/Destinatário/
+  // Embalagem) — ver PCP > Ações Rápidas > Configurações de Elementos (labelElementsConfigService.ts).
+  // Alguns campos só são relevantes quando a sessão veio do PCP, mas subscrever sempre é inofensivo.
+  const [labelElementsConfig, setLabelElementsConfig] = useState(DEFAULT_LABEL_ELEMENTS_CONFIG);
+  useEffect(() => {
+    const unsub = subscribeToLabelElementsConfig(setLabelElementsConfig);
+    return () => unsub();
+  }, []);
+  const { osDataFields, customerPrefix, recipientPrefix, packagingPrefix } = labelElementsConfig;
+
   // Representante do lote (modo de teste em Vendas) usado só pra prévia ao vivo enquanto edita
   // o modelo — a impressão em lote de verdade resolve cada item na hora (ver handlePrint).
   const activeBindingContext: LabelBindingContext | null = session.batch?.items?.[0]
-    ? { item: session.batch.items[0], lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors }
+    ? { item: session.batch.items[0], lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors, osDataFields, customerPrefix, recipientPrefix, packagingPrefix }
     : null;
 
   // Instruções por setor disponíveis pra escolher em "Obs. Setor" (ver LabelElement.sectorNoteFilter)
@@ -316,6 +328,14 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
     return Array.from(seen.values());
   })();
   const [notePickerOpen, setNotePickerOpen] = useState(false);
+  // Atalho direto na aba Conteúdo pro botão de engrenagem ao lado de "Campo vinculado" — abre a
+  // MESMA tela de configuração de PCP > Ações Rápidas > Configurações de Elementos, sem precisar
+  // sair do Editor de Etiqueta (ver LabelElementConfigPopup.tsx). Só existe pros campos que têm
+  // configuração de verdade hoje: Cliente/Destinatário/Embalagem (prefixo) e Dados da OS.
+  const [labelConfigPopupField, setLabelConfigPopupField] = useState<LabelConfigField | null>(null);
+  const LABEL_CONFIG_FIELD_BY_BINDING: Partial<Record<LabelDataBinding, LabelConfigField>> = {
+    customer: 'customerPrefix', recipient: 'recipientPrefix', packaging: 'packagingPrefix', osdata: 'osdata',
+  };
 
   useEffect(() => {
     if (selected) setAngleInput(String(Math.round(selected.rotation)));
@@ -613,7 +633,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
     if (batchItems && batchItems.length > 0) {
       const urls: string[] = [];
       for (const item of batchItems) {
-        const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 }, { item, lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors });
+        const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 }, { item, lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors, osDataFields, customerPrefix, recipientPrefix, packagingPrefix });
         urls.push(canvas.toDataURL('image/png'));
       }
       return urls;
@@ -675,7 +695,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
       // sempre foi. Em modo lote: 1 job por item da venda, cada um com seus campos vinculados
       // resolvidos pro dado daquela caixa/tamanho (ver renderToCanvas/resolveLabelBinding).
       const jobs: (LabelBindingContext | null)[] = batchItems && batchItems.length > 0
-        ? batchItems.map(item => ({ item, lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors }))
+        ? batchItems.map(item => ({ item, lot: session.productionContext?.lot, os: session.productionContext?.os, sectors: session.productionContext?.sectors, osDataFields, customerPrefix, recipientPrefix, packagingPrefix }))
         : [null];
       const totalJobs = jobs.length * options.copies;
       let printedCount = 0;
@@ -1021,6 +1041,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   // Painel de ferramentas do elemento selecionado — conteúdo muda por tipo (texto ganha as
   // abas Conteúdo/Estilo/Fonte; imagem ganha tons de cinza/recortar), mas largura/altura/
   // ângulo/duplicar/excluir valem pra qualquer tipo, inclusive linha e forma.
+  const selectedConfigField = selected?.dataBinding ? LABEL_CONFIG_FIELD_BY_BINDING[selected.dataBinding] : undefined;
   const toolPanel = selected && (
         <div className={`flex flex-col gap-2 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
           {selected.type === 'text' && (
@@ -1045,10 +1066,21 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                 selected.dataBinding ? (
                   <div className="flex flex-col gap-2">
                     <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                      <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
-                        <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <div className={`px-4 py-2 border-b flex items-center justify-between gap-2 ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                           Campo vinculado: {BINDING_LABELS[selected.dataBinding]}
                         </span>
+                        {selectedConfigField && (
+                          <button
+                            type="button"
+                            title="Configurar o que aparece nesse campo"
+                            data-guide-anchor="labelEditor.configElementoAtalho"
+                            onClick={() => setLabelConfigPopupField(selectedConfigField)}
+                            className={`shrink-0 p-1.5 rounded-lg ${isDarkMode ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30' : 'bg-blue-100 text-blue-600 hover:bg-blue-200'}`}
+                          >
+                            <Settings size={13} />
+                          </button>
+                        )}
                       </div>
                       <div className={`p-3 ${isDarkMode ? 'bg-slate-800/30' : 'bg-white'}`}>
                         <p className="text-xs font-bold text-slate-500">
@@ -1062,7 +1094,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                     {selected.dataBinding === 'reference' && (
                       <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                         <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
-                          <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Combinar campos neste elemento</span>
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>Combinar campos neste elemento</span>
                         </div>
                         <div className={`p-3 grid grid-cols-3 gap-1.5 ${isDarkMode ? 'bg-slate-800/30' : 'bg-white'}`}>
                           {([['reference', 'Ref'], ['name', 'Nome'], ['color', 'Cor']] as const).map(([field, label]) => {
@@ -1088,13 +1120,13 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                       </div>
                     )}
 
-                    {/* Instrução a Exibir — só no elemento Obs. Setor: escolhe UMA instrução
-                        específica (setor+nome) em vez da concatenação de todas (ver
+                    {/* Instrução a Exibir — só no elemento Obs. Setor: escolhe uma ou mais
+                        instruções específicas (setor+nome) em vez da concatenação de todas (ver
                         LabelElement.sectorNoteFilter/getSectorNotesText). */}
                     {selected.dataBinding === 'sectornotes' && (
                       <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                         <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
-                          <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Instrução a exibir</span>
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>Instrução a exibir</span>
                         </div>
                         <div className={`p-3 ${isDarkMode ? 'bg-slate-800/30' : 'bg-white'}`}>
                           {availableSectorNotes.length > 0 ? (
@@ -1105,10 +1137,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                               className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-800'}`}
                             >
                               <span className="truncate">
-                                {selected.sectorNoteFilter
-                                  ? availableSectorNotes.find(n => n.sectorId === selected.sectorNoteFilter!.sectorId && n.noteName === selected.sectorNoteFilter!.noteName)
-                                    ? `${availableSectorNotes.find(n => n.sectorId === selected.sectorNoteFilter!.sectorId && n.noteName === selected.sectorNoteFilter!.noteName)!.sectorName} — ${selected.sectorNoteFilter.noteName}`
-                                    : 'Todas as instruções'
+                                {selected.sectorNoteFilter && selected.sectorNoteFilter.length > 0
+                                  ? selected.sectorNoteFilter.length === 1
+                                    ? (availableSectorNotes.find(n => n.sectorId === selected.sectorNoteFilter![0].sectorId && n.noteName === selected.sectorNoteFilter![0].noteName)?.noteName || selected.sectorNoteFilter[0].noteName)
+                                    : `${selected.sectorNoteFilter.length} instruções selecionadas`
                                   : 'Todas as instruções'}
                               </span>
                               <ChevronDown size={14} className="shrink-0" />
@@ -1123,7 +1155,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                 ) : (
                   <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                     <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Texto da etiqueta</span>
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>Texto da etiqueta</span>
                     </div>
                     <div className={`p-3 ${isDarkMode ? 'bg-slate-800/30' : 'bg-white'}`}>
                       <textarea
@@ -1165,7 +1197,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               {textTab === 'font' && (
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Família</span>
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>Família</span>
                     <div className="grid grid-cols-5 gap-1.5">
                       {FONT_OPTIONS.map(f => (
                         <button
@@ -1187,7 +1219,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Tamanho</span><span className={selected.lockFontSize ? 'opacity-40' : ''}>{(selected.fontSize || 4).toFixed(1)}mm</span>
+                      <span className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>Tamanho</span><span className={selected.lockFontSize ? 'opacity-40' : ''}>{(selected.fontSize || 4).toFixed(1)}mm</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <button type="button" data-guide-anchor="labelEditor.travarFonte" onClick={() => updateElement(selected.id, { lockFontSize: !selected.lockFontSize })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockFontSize ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
@@ -1198,13 +1230,13 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Espaçamento entre letras</span><span>{(selected.letterSpacing || 0).toFixed(1)}px</span>
+                      <span className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>Espaçamento entre letras</span><span>{(selected.letterSpacing || 0).toFixed(1)}px</span>
                     </div>
                     <input type="range" min={0} max={10} step={0.5} value={selected.letterSpacing || 0} onChange={e => updateElement(selected.id, { letterSpacing: parseFloat(e.target.value) })} className="w-full" />
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Espaçamento entre linhas</span><span>{(selected.lineHeight || 1).toFixed(1)}x</span>
+                      <span className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>Espaçamento entre linhas</span><span>{(selected.lineHeight || 1).toFixed(1)}x</span>
                     </div>
                     <input type="range" min={0.8} max={2.5} step={0.1} value={selected.lineHeight || 1} onChange={e => updateElement(selected.id, { lineHeight: parseFloat(e.target.value) })} className="w-full" />
                   </div>
@@ -1858,6 +1890,14 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         onPickGallery={() => pickImage(CameraSource.Photos)}
       />
 
+      {labelConfigPopupField && (
+        <LabelElementConfigPopup
+          field={labelConfigPopupField}
+          isDarkMode={isDarkMode}
+          onClose={() => setLabelConfigPopupField(null)}
+        />
+      )}
+
       {selected && (
         <Modal isOpen={notePickerOpen} onClose={() => setNotePickerOpen(false)} title="Instrução a Exibir" icon={<StickyNote size={20} />} maxWidth="max-w-md" zIndex={98000}>
           <div className="flex flex-col gap-2">
@@ -1866,30 +1906,38 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               data-guide-anchor="labelEditor.instrucaoEscolher"
               onClick={() => { updateElement(selected.id, { sectorNoteFilter: undefined }); setNotePickerOpen(false); }}
               className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
-                !selected.sectorNoteFilter
+                !selected.sectorNoteFilter || selected.sectorNoteFilter.length === 0
                   ? 'border-indigo-500 bg-indigo-500/10'
                   : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
               }`}
             >
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${!selected.sectorNoteFilter ? 'border-indigo-500 bg-indigo-500 text-white' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
-                {!selected.sectorNoteFilter && <Check size={12} strokeWidth={3} />}
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${!selected.sectorNoteFilter || selected.sectorNoteFilter.length === 0 ? 'border-indigo-500 bg-indigo-500 text-white' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                {(!selected.sectorNoteFilter || selected.sectorNoteFilter.length === 0) && <Check size={12} strokeWidth={3} />}
               </span>
               <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Todas as instruções</span>
             </button>
 
+            <p className={`text-[8px] font-bold uppercase tracking-widest px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ou marque uma ou mais instruções específicas</p>
+
             {availableSectorNotes.map(n => {
-              const isSel = selected.sectorNoteFilter?.sectorId === n.sectorId && selected.sectorNoteFilter?.noteName === n.noteName;
+              const isSel = (selected.sectorNoteFilter || []).some(f => f.sectorId === n.sectorId && f.noteName === n.noteName);
               return (
                 <button
                   key={`${n.sectorId}::${n.noteName}`}
                   type="button"
                   data-guide-anchor="labelEditor.instrucaoEscolher"
-                  onClick={() => { updateElement(selected.id, { sectorNoteFilter: { sectorId: n.sectorId, noteName: n.noteName } }); setNotePickerOpen(false); }}
+                  onClick={() => {
+                    const current = selected.sectorNoteFilter || [];
+                    const next = isSel
+                      ? current.filter(f => !(f.sectorId === n.sectorId && f.noteName === n.noteName))
+                      : [...current, { sectorId: n.sectorId, noteName: n.noteName }];
+                    updateElement(selected.id, { sectorNoteFilter: next.length > 0 ? next : undefined });
+                  }}
                   className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
                     isSel ? 'border-indigo-500 bg-indigo-500/10' : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
                   }`}
                 >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${isSel ? 'border-indigo-500 bg-indigo-500 text-white' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                  <span className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 border-2 ${isSel ? 'border-indigo-500 bg-indigo-500 text-white' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
                     {isSel && <Check size={12} strokeWidth={3} />}
                   </span>
                   <div className="min-w-0">

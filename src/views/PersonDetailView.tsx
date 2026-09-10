@@ -313,10 +313,8 @@ export default function PersonDetailView({
             brands={brands}
             profiles={catalogProfiles}
             initialSelectedIds={activeCatalogLink.productIds || []}
-            initialHidePrices={activeCatalogLink.hidePrices || false}
-            initialUseStockQuantities={activeCatalogLink.useStockQuantities || false}
             isDarkMode={isDarkMode}
-            onConfirm={(productIds, hidePrices, useStockQuantities) => onSetCatalogLinkProducts(activeCatalogLink.id, productIds, hidePrices, useStockQuantities)}
+            onConfirm={(productIds) => { onSetCatalogLinkProducts(activeCatalogLink.id, productIds, activeCatalogLink.hidePrices || false, activeCatalogLink.useStockQuantities || false); }}
             onSaveProfile={async (name, ids) => { if (onSaveCatalogProfile) await onSaveCatalogProfile(name, ids); }}
             onDeleteProfile={async (id) => { if (onDeleteCatalogProfile) await onDeleteCatalogProfile(id); }}
           />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { getPublicCatalogRequest, submitCatalogRequestCall } from './firebaseClient';
 
 type CatalogVariation = {
@@ -74,12 +75,15 @@ export default function PublicCatalogApp() {
   // Lightbox — guarda a galeria inteira (não só a foto tocada) pra dar pra avançar/voltar entre
   // as fotos da mesma cor sem fechar e reabrir. openLightbox acha o índice de partida a partir
   // da URL tocada, então funciona igual clicando no ícone da cor ou em qualquer miniatura do álbum.
-  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
-  const openLightbox = (images: string[], startUrl: string) => {
+  // productId opcional — quando presente, mostra dentro do próprio lightbox o atalho "Clique
+  // Aqui Para Ver Variações" (segunda opção, além do botão de sempre no card), pra quem já abriu
+  // a foto grande não precisar fechar e procurar o botão lá embaixo do card.
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; productId?: string } | null>(null);
+  const openLightbox = (images: string[], startUrl: string, productId?: string) => {
     const filtered = images.filter(Boolean);
     if (filtered.length === 0) return;
     const index = Math.max(0, filtered.indexOf(startUrl));
-    setLightbox({ images: filtered, index });
+    setLightbox({ images: filtered, index, productId });
   };
   // Link configurado pra mostrar quanto tem em estoque, só como referência (o cliente escolhe
   // livremente a quantidade, sempre a partir de zero — nunca pré-marcado como se fosse levar
@@ -378,14 +382,14 @@ export default function PublicCatalogApp() {
           )}
         </div>
         <div className="flex items-center justify-between gap-2 bg-amber-50 rounded-xl pl-3 pr-1.5 py-1.5">
-          <p className="min-w-0 flex-1 text-[9px] font-bold text-amber-600 whitespace-nowrap overflow-hidden text-ellipsis">
+          <p className="min-w-0 flex-1 text-xs font-bold text-amber-600 whitespace-nowrap overflow-hidden text-ellipsis">
             Recarregue antes de pedir p/ ver o estoque atual.
           </p>
           <button
             type="button"
             onClick={() => loadCatalog(true)}
             disabled={refreshing}
-            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white text-amber-700 text-[9px] font-black uppercase tracking-wide active:scale-95 transition-all disabled:opacity-50"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white text-amber-700 text-[11px] font-black uppercase tracking-wide active:scale-95 transition-all disabled:opacity-50"
           >
             <span className={refreshing ? 'inline-block animate-spin' : ''}>↻</span> Atualizar
           </button>
@@ -406,7 +410,7 @@ export default function PublicCatalogApp() {
                 className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-50"
               >
                 <span className="flex flex-col items-start min-w-0 text-left">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-blue-600">
                     Categorias e Marcas
                     {(categoryFilter !== 'ALL' || brandFilter !== 'ALL') && <span className="text-indigo-500"> · filtro ativo</span>}
                   </span>
@@ -481,49 +485,58 @@ export default function PublicCatalogApp() {
           const sizeRangeLabel = (allSizes.length > 1 ? `${allSizes[0]} ao ${allSizes[allSizes.length - 1]}` : allSizes[0]) || product.wholesaleSizeRange;
           return (
           <div key={product.productId} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            {/* Banner grande da referência — foto de capa com cabeçalho sobreposto (referência,
-                atacado/varejo e preço), substitui a antiga miniatura pequena pra dar mais
-                destaque ao produto dentro do catálogo do cliente. */}
-            <div className="relative w-full aspect-[4/3] bg-slate-100">
-              {product.photoUrl ? (
-                <img
-                  src={product.photoUrl}
-                  alt={product.name}
-                  loading="lazy"
-                  decoding="async"
-                  onClick={() => openLightbox([product.photoUrl!], product.photoUrl!)}
-                  className="w-full h-full object-cover cursor-pointer"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-300 text-5xl">📦</div>
-              )}
-              <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 bg-gradient-to-b from-black/60 to-transparent">
-                <span className="px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black uppercase tracking-widest text-indigo-600 shadow-sm">
-                  {product.reference}
-                </span>
-                <span className="px-2.5 py-1 rounded-full bg-white/95 text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-sm">
+            {/* Banner menor (miniatura à esquerda, referência sobreposta como sempre) + coluna
+                lateral com Atacado/Varejo, Numeração e Preço fora da foto — antes esses 3 dados
+                ficavam sobrepostos na imagem; agora só a referência continua sobre o banner. */}
+            <div className="flex gap-3 p-3">
+              <div className="relative w-[42%] shrink-0 aspect-square rounded-xl overflow-hidden bg-slate-100">
+                {product.photoUrl ? (
+                  <img
+                    src={product.photoUrl}
+                    alt={product.name}
+                    loading="lazy"
+                    decoding="async"
+                    onClick={() => openLightbox([product.photoUrl!], product.photoUrl!, product.productId)}
+                    className="w-full h-full object-cover cursor-pointer"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-300 text-4xl">📦</div>
+                )}
+                <div className="absolute inset-x-0 top-0 p-2 bg-gradient-to-b from-black/60 to-transparent">
+                  <span className="px-2 py-1 rounded-full bg-white/95 text-[9px] font-black uppercase tracking-widest text-indigo-600 shadow-sm">
+                    {product.reference}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0 flex flex-col items-end justify-between gap-2">
+                <span className="self-end px-2.5 py-1 rounded-full bg-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-600">
                   {saleTypeLabel}
                 </span>
-              </div>
-              {(sizeRangeLabel || product.pricePerPair !== undefined || product.pricePerBox !== undefined) && (
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1.5 p-3 bg-gradient-to-t from-black/70 to-transparent">
-                  {sizeRangeLabel ? (
-                    <span className="px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black uppercase tracking-widest text-slate-700 shadow-sm">
+                {/* Numeração + Preço ficam colados um no outro, encostados na base da coluna —
+                    o preço alinhado com o fim da foto do banner, numeração logo acima dele. */}
+                <div className="flex flex-col items-end gap-1.5">
+                  {sizeRangeLabel && (
+                    <span className="self-end px-2.5 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-700">
                       Numeração {sizeRangeLabel}
                     </span>
-                  ) : <span />}
-                  <div className="flex items-center gap-1.5">
-                    {product.pricePerPair !== undefined && (
-                      <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-black shadow-sm">{formatPrice(product.pricePerPair)} <span className="font-bold opacity-80">/par</span></span>
-                    )}
-                    {product.pricePerBox !== undefined && (
-                      <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-black shadow-sm">{formatPrice(product.pricePerBox)} <span className="font-bold opacity-80">/caixa</span></span>
-                    )}
-                  </div>
+                  )}
+                  {(product.pricePerPair !== undefined || product.pricePerBox !== undefined) && (
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {product.pricePerPair !== undefined && (
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-black shadow-sm">{formatPrice(product.pricePerPair)} <span className="font-bold opacity-80">/par</span></span>
+                      )}
+                      {product.pricePerBox !== undefined && (
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-black shadow-sm">{formatPrice(product.pricePerBox)} <span className="font-bold opacity-80">/caixa</span></span>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-            <div className="px-4 pt-3 pb-1">
+
+            {/* Retângulo de descrição — nome + marca + texto, separado do resto do card */}
+            <div className="mx-3 mb-3 p-3 rounded-xl bg-slate-50">
               <p className="text-base font-black text-slate-900 truncate">{product.name}</p>
               {product.brandName && (
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{product.brandName}</p>
@@ -532,7 +545,8 @@ export default function PublicCatalogApp() {
                 <p className="text-xs font-medium text-slate-500 leading-relaxed mt-2">{product.description}</p>
               )}
             </div>
-            <div className="px-4 pb-4 pt-3">
+
+            <div className="px-3 pb-3">
               {/* Acordeão POR REFERÊNCIA (não por cor) — todas as cores/numerações dessa
                   referência ficam escondidas atrás de um único botão, que só abre quando o
                   cliente quer mesmo fazer pedido daquele modelo. Evita o catálogo inteiro
@@ -543,13 +557,16 @@ export default function PublicCatalogApp() {
                 className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] ${productOpen ? 'bg-white border-slate-200' : 'bg-indigo-50 border-indigo-200'}`}
               >
                 <span className={`flex items-center gap-2 text-[11px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-600' : 'text-indigo-600'}`}>
-                  Mostrar Variações
+                  Clique Aqui para Ver Variações
                   {totalSelectedInProduct > 0 && (
                     <span className="shrink-0 text-[9px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded-full">{totalSelectedInProduct} sel.</span>
                   )}
                 </span>
-                <span className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-white text-sm transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500 animate-bounce'}`}>
-                  ⌄
+                <span className="relative shrink-0 w-7 h-7">
+                  {!productOpen && <span className="absolute inset-0 rounded-full bg-indigo-400 animate-ping opacity-75" />}
+                  <span className={`relative w-7 h-7 rounded-full flex items-center justify-center text-white text-xl font-black transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500'}`}>
+                    ⌄
+                  </span>
                 </span>
               </button>
 
@@ -575,8 +592,8 @@ export default function PublicCatalogApp() {
                             alt={variation.colorName}
                             loading="lazy"
                             decoding="async"
-                            onClick={() => openLightbox(variationGallery, variation.photoUrl!)}
-                            className="w-8 h-8 rounded-lg object-cover cursor-pointer active:scale-90 transition-all"
+                            onClick={() => openLightbox(variationGallery, variation.photoUrl!, product.productId)}
+                            className="w-12 h-12 rounded-lg object-cover cursor-pointer active:scale-90 transition-all"
                           />
                         )}
                         <p className="text-[11px] font-black uppercase tracking-wide text-slate-600 flex-1 min-w-0 truncate">{variation.colorName}</p>
@@ -593,7 +610,7 @@ export default function PublicCatalogApp() {
                               alt={`${variation.colorName} — foto ${idx + 1}`}
                               loading="lazy"
                               decoding="async"
-                              onClick={() => openLightbox(variationGallery, url)}
+                              onClick={() => openLightbox(variationGallery, url, product.productId)}
                               className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 cursor-pointer active:scale-95 transition-all"
                             />
                           ))}
@@ -603,51 +620,72 @@ export default function PublicCatalogApp() {
                       {variationSizeRangeLabel && (
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Numeração {variationSizeRangeLabel}</p>
                       )}
-                      <div className="grid grid-cols-3 gap-2">
-                        {variation.sizes.map((s) => {
-                          const key = cartKey(product.productId, variation.variationId, s.size);
-                          const qty = cart[key] || 0;
-                          return (
-                            <div
-                              key={key}
-                              className="flex flex-col items-center gap-1.5 bg-white rounded-xl border border-slate-200 px-2 py-2.5"
-                            >
-                              <div className="flex flex-col items-center leading-tight">
-                                <span className="text-xs font-black text-slate-600">{s.size || 'Cx'}</span>
-                                {showStockQuantities && (
-                                  <span className="text-[8px] font-bold text-blue-600">{s.available} em estoque</span>
-                                )}
+                      {(() => {
+                        // Quando tem pouca numeração (ex.: Atacado puro, só "Cx"), o grid de 3
+                        // colunas fixas deixava célula(s) vazia(s) e o botão pequeno demais —
+                        // usa só as colunas que existem de verdade e aumenta a cápsula pra
+                        // aproveitar o espaço sobrando, facilitando o toque do cliente.
+                        const sizeCols = Math.min(variation.sizes.length, 3);
+                        const wide = sizeCols === 1;
+                        return (
+                        <div className={`grid gap-2 ${sizeCols === 1 ? 'grid-cols-1' : sizeCols === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                          {variation.sizes.map((s) => {
+                            const key = cartKey(product.productId, variation.variationId, s.size);
+                            const qty = cart[key] || 0;
+                            return (
+                              <div
+                                key={key}
+                                className={`flex bg-white rounded-xl border border-slate-200 gap-2 ${wide ? 'flex-row items-center justify-between px-4 py-3' : 'flex-col items-center px-2 py-2.5'}`}
+                              >
+                                <div className={`flex leading-tight ${wide ? 'flex-row items-baseline gap-2' : 'flex-col items-center'}`}>
+                                  <span className={`font-black text-slate-600 ${wide ? 'text-base' : 'text-xs'}`}>{s.size || 'Cx'}</span>
+                                  {showStockQuantities && (
+                                    <span className={`font-bold text-blue-600 ${wide ? 'text-[10px]' : 'text-[8px]'}`}>{s.available} em estoque</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty - 1)}
+                                    className={`rounded-lg bg-slate-100 text-slate-600 font-black active:scale-90 shrink-0 ${wide ? 'w-10 h-10 text-lg' : 'w-7 h-7 text-sm'}`}
+                                  >-</button>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={qty || ''}
+                                    onChange={(e) => setQty(product.productId, variation.variationId, s.size, s.available, Number(e.target.value))}
+                                    className={`text-center font-black outline-none ${wide ? 'w-12 text-lg' : 'w-8 text-sm'}`}
+                                    placeholder="0"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty + 1)}
+                                    className={`rounded-lg bg-indigo-50 text-indigo-600 font-black active:scale-90 shrink-0 ${wide ? 'w-10 h-10 text-lg' : 'w-7 h-7 text-sm'}`}
+                                  >+</button>
+                                  {/* Sempre ocupa o espaço (mesmo com qty 0) pra +/- não pularem de posição
+                                      quando o cliente digita algo — só fica visível/clicável a partir daí. */}
+                                  <button
+                                    type="button"
+                                    title="Limpar quantidade"
+                                    disabled={qty === 0}
+                                    onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, 0)}
+                                    className={`rounded-lg flex items-center justify-center shrink-0 transition-opacity ${wide ? 'w-10 h-10' : 'w-7 h-7'} ${qty > 0 ? 'bg-rose-50 text-rose-500 active:scale-90 opacity-100' : 'opacity-0 pointer-events-none'}`}
+                                  >
+                                    <Trash2 size={wide ? 16 : 13} />
+                                  </button>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty - 1)}
-                                  className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 font-black text-sm active:scale-90 shrink-0"
-                                >-</button>
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  value={qty || ''}
-                                  onChange={(e) => setQty(product.productId, variation.variationId, s.size, s.available, Number(e.target.value))}
-                                  className="w-8 text-center text-sm font-black outline-none"
-                                  placeholder="0"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setQty(product.productId, variation.variationId, s.size, s.available, qty + 1)}
-                                  className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 font-black text-sm active:scale-90 shrink-0"
-                                >+</button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                        );
+                      })()}
                     </div>
                     );
                   })}
 
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Observação deste produto (opcional)</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-blue-600">Observação deste produto (opcional)</label>
                     <textarea
                       value={productNotes[product.productId] || ''}
                       onChange={(e) => setProductNotes((prev) => ({ ...prev, [product.productId]: e.target.value.slice(0, 200) }))}
@@ -770,6 +808,23 @@ export default function PublicCatalogApp() {
             <span className="absolute bottom-6 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-white/15 text-white text-xs font-bold">
               {lightbox.index + 1} / {lightbox.images.length}
             </span>
+          )}
+
+          {/* Segunda opção pra abrir as variações — sem precisar fechar a foto e procurar o
+              botão lá embaixo do card. */}
+          {lightbox.productId && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const productId = lightbox.productId!;
+                setLightbox(null);
+                setOpenProducts(prev => ({ ...prev, [productId]: true }));
+              }}
+              className="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2.5 rounded-full bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+            >
+              Clique Aqui Para Ver Variações
+            </button>
           )}
         </div>
       )}

@@ -81,10 +81,22 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
   // primeiro Mapa finalizado até hoje, pra dar uma noção de ritmo médio "de sempre" por mês e
   // por ano, complementando a média por dia do período selecionado.
   const allTimeAverages = useMemo(() => {
-    const finished = productionLots.filter(l => l.finishedAt);
-    if (finished.length === 0) return { avgPerMonth: 0, avgPerYear: 0 };
-    const total = finished.reduce((acc, l) => acc + (l.quantity || 0), 0);
-    const earliest = Math.min(...finished.map(l => l.finishedAt!));
+    // Mesmo critério de computeProducedPairs (completionEvents quando existem, senão
+    // finishedAt+quantity do lote inteiro) — sem isso, lotes com baixa parcial ficavam de fora
+    // da média histórica mesmo já tendo entrado em estoque.
+    const total = productionLots.reduce((acc, l) => {
+      if (l.completionEvents && l.completionEvents.length > 0) {
+        return acc + l.completionEvents.reduce((s, e) => s + (e.quantity || 0), 0);
+      }
+      if (l.finishedAt) return acc + (l.quantity || 0);
+      return acc;
+    }, 0);
+    const timestamps = productionLots.flatMap(l => {
+      if (l.completionEvents && l.completionEvents.length > 0) return l.completionEvents.map(e => e.timestamp);
+      return l.finishedAt ? [l.finishedAt] : [];
+    });
+    if (timestamps.length === 0) return { avgPerMonth: 0, avgPerYear: 0 };
+    const earliest = Math.min(...timestamps);
     const monthsSpan = Math.max(1, (Date.now() - earliest) / (1000 * 60 * 60 * 24 * 30.44));
     const avgPerMonth = total / monthsSpan;
     return { avgPerMonth, avgPerYear: avgPerMonth * 12 };

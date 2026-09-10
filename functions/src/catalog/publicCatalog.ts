@@ -164,10 +164,17 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
     if (variations.length === 0) return; // produto sem nada disponível — não mostra
 
     // costPrice/salePrice são sempre por CAIXA; unitCostPrice/unitSalePrice são por PAR, só
-    // preenchidos quando o produto vende no par (Varejo puro ou Híbrido) — ver ProductFormView
-    // (profitPerBox usa salePrice, profitPerPair usa unitSalePrice).
+    // preenchidos quando o produto vende no par (Varejo puro ou Híbrido) — ver ProductFormView.
+    // unitSalePrice só é confiável quando o produto AINDA vende em Atacado (é aí que o campo
+    // continua editável) — num produto que já foi híbrido e virou Varejo puro, esse campo fica
+    // com um resíduo do tempo em que era híbrido e o formulário nem mostra mais pra corrigir;
+    // usar "unitSalePrice > 0" sozinho pegava esse valor velho em vez do salePrice atual (bug
+    // real encontrado — corrigido junto com o mesmo padrão em SaleFormView, ver resolveUnitSalePrice).
+    const productSellsWholesale = productHasSaleType(productLike, "WHOLESALE");
     const pricePerBox = hasWholesale ? (p.salePrice || 0) : undefined;
-    const pricePerPair = hasRetail ? (p.unitSalePrice > 0 ? p.unitSalePrice : p.salePrice || 0) : undefined;
+    const pricePerPair = hasRetail
+      ? (productSellsWholesale && p.unitSalePrice > 0 ? p.unitSalePrice : p.salePrice || 0)
+      : undefined;
 
     products.push({
       productId: doc.id,
