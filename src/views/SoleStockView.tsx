@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { ProductionConfigItem, ColorValue, SoleStockEntry, ProductionLot, Product, Person, PurchaseRequest, Purchase } from '../types';
 import {
   ArrowLeft, Package, Palette, Clock, Plus, Trash2, Save,
   ChevronDown, ChevronUp, Search, Edit2, CheckCircle2, X, Calculator, Tag,
-  Share2, FileText, Image, Info, ClipboardList, ShoppingCart, SlidersHorizontal
+  Share2, FileText, Image, Info, ClipboardList, ShoppingCart, SlidersHorizontal,
+  Weight, GripVertical, Maximize2, Minimize2
 } from 'lucide-react';
 import { firebaseService } from '../services/firebaseService';
 import Modal from '../components/Modal';
@@ -83,6 +84,98 @@ export default function SoleStockView({
   const [orderQuantities, setOrderQuantities] = useState<Record<string, Record<string, string>>>({});
   const [orderCalculatorTarget, setOrderCalculatorTarget] = useState<{ itemKey: string; size: string; currentVal: number } | null>(null);
   const [showSupplierPicker, setShowSupplierPicker] = useState(false);
+
+  // Calculadora flutuante de matéria-prima (Parte B) — pop-up pequeno, arrastável, que mostra
+  // quanto material ainda resta enquanto o usuário preenche a grade de quantidade a pedir.
+  // 'yield' = rendimento médio digitado (pares por kg); 'registered' = peso por par já
+  // cadastrado em cada numeração do molde (ProductionConfigItem.metadata.sizeWeights, em
+  // gramas) — cada tamanho consome o material de acordo com o próprio peso real.
+  const [showMaterialCalc, setShowMaterialCalc] = useState(false);
+  const [materialCalcExpanded, setMaterialCalcExpanded] = useState(true);
+  const [materialKg, setMaterialKg] = useState('');
+  const [materialMode, setMaterialMode] = useState<'yield' | 'registered'>('yield');
+  const [materialYield, setMaterialYield] = useState('');
+  const [showMaterialYieldCalc, setShowMaterialYieldCalc] = useState(false);
+  const [materialCalcPos, setMaterialCalcPos] = useState<{ x: number; y: number } | null>(null);
+  const materialDragState = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const materialCalcRef = useRef<HTMLDivElement | null>(null);
+
+  const handleMaterialDragStart = (e: React.PointerEvent) => {
+    const el = materialCalcRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    materialDragState.current = { startX: e.clientX, startY: e.clientY, originX: rect.left, originY: rect.top };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const handleMaterialDragMove = (e: React.PointerEvent) => {
+    const drag = materialDragState.current;
+    if (!drag) return;
+    const nextX = drag.originX + (e.clientX - drag.startX);
+    const nextY = drag.originY + (e.clientY - drag.startY);
+    const maxX = window.innerWidth - 40;
+    const maxY = window.innerHeight - 40;
+    setMaterialCalcPos({ x: Math.min(Math.max(0, nextX), maxX), y: Math.min(Math.max(0, nextY), maxY) });
+  };
+  const handleMaterialDragEnd = () => {
+    materialDragState.current = null;
+  };
+
+  // Alça de redimensionar (canto inferior direito) — só faz sentido com o painel expandido;
+  // ao encolher (botão de aumentar/diminuir) volta a mostrar só a cápsula compacta de sempre.
+  const [materialCalcSize, setMaterialCalcSize] = useState<{ width: number; height: number } | null>(null);
+  const materialResizeState = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number } | null>(null);
+  const handleMaterialResizeStart = (e: React.PointerEvent) => {
+    const el = materialCalcRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    materialResizeState.current = { startX: e.clientX, startY: e.clientY, startWidth: rect.width, startHeight: rect.height };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  };
+  const handleMaterialResizeMove = (e: React.PointerEvent) => {
+    const resize = materialResizeState.current;
+    if (!resize) return;
+    const nextWidth = resize.startWidth + (e.clientX - resize.startX);
+    const nextHeight = resize.startHeight + (e.clientY - resize.startY);
+    setMaterialCalcSize({
+      width: Math.min(Math.max(220, nextWidth), window.innerWidth - 24),
+      height: Math.min(Math.max(180, nextHeight), window.innerHeight - 24),
+    });
+    e.stopPropagation();
+  };
+  const handleMaterialResizeEnd = (e: React.PointerEvent) => {
+    materialResizeState.current = null;
+    e.stopPropagation();
+  };
+
+  // Peso (em gramas) de um par de determinada numeração/cor de um molde — mesma prioridade de
+  // resolução usada em ProductionConfigView (peso por cor+tamanho > peso por tamanho > peso
+  // médio da cor), pra ficar consistente com o que já está cadastrado no molde.
+  const resolvePairWeightGrams = (mold: ProductionConfigItem | undefined, colorId: string, size: string): number => {
+    if (!mold) return 0;
+    const meta: any = mold.metadata || {};
+    const colorSizeWeights = meta.colorSizeWeights?.[colorId] || {};
+    if (colorSizeWeights[size]) return Number(colorSizeWeights[size]) || 0;
+    if (meta.sizeWeights?.[size]) return Number(meta.sizeWeights[size]) || 0;
+    if (meta.colorWeights?.[colorId]) return Number(meta.colorWeights[colorId]) || 0;
+    return 0;
+  };
+
+  const resetMaterialCalc = () => {
+    setShowMaterialCalc(false);
+    setMaterialCalcExpanded(true);
+    setMaterialKg('');
+    setMaterialYield('');
+    setMaterialMode('yield');
+    setMaterialCalcPos(null);
+    setMaterialCalcSize(null);
+    setShowMaterialYieldCalc(false);
+  };
+
+  // Depois de escolher o fornecedor, pergunta se o pedido é "livre" (sem controle de material)
+  // ou "com quantidade de material definida" (mostra a calculadora flutuante) — só quem
+  // escolhe a segunda opção vê o popup de material.
+  const [showOrderTypeChoice, setShowOrderTypeChoice] = useState(false);
 
   const [showShareCenter, setShowShareCenter] = useState(false);
   const [shareFilterMoldId, setShareFilterMoldId] = useState('');
@@ -276,6 +369,41 @@ export default function SoleStockView({
     );
   }, [orderQuantities]);
 
+  // Soma, em toda a grade já preenchida, quantos pares foram pedidos e quanto material (kg)
+  // isso já consome — no modo 'registered' usa o peso real de cada numeração; no modo 'yield'
+  // usa o rendimento médio digitado (pares por kg) sobre o total de pares.
+  const materialConsumption = useMemo(() => {
+    let totalPairs = 0;
+    let totalGrams = 0;
+    formularStock.forEach(item => {
+      const itemKey = `${item.moldId}-${item.colorId}`;
+      const sizes = orderQuantities[itemKey];
+      if (!sizes) return;
+      const mold = molds.find(m => m.id === item.moldId);
+      Object.entries(sizes).forEach(([size, val]) => {
+        const qty = parseInt(val) || 0;
+        if (qty <= 0) return;
+        totalPairs += qty;
+        totalGrams += qty * resolvePairWeightGrams(mold, item.colorId, size);
+      });
+    });
+    return { totalPairs, totalGrams };
+  }, [formularStock, orderQuantities, molds]);
+
+  const materialTotalKg = parseFloat(materialKg.replace(',', '.')) || 0;
+  const materialYieldNum = parseFloat(materialYield.replace(',', '.')) || 0;
+  const materialConsumedKg = materialMode === 'yield'
+    ? (materialYieldNum > 0 ? materialConsumption.totalPairs / materialYieldNum : 0)
+    : materialConsumption.totalGrams / 1000;
+  const materialRemainingKg = materialTotalKg - materialConsumedKg;
+  // Estimativa de pares ainda possíveis com o material restante — no modo 'yield' é direto
+  // (rendimento fixo); no modo 'registered' usa o peso médio do que já foi digitado até agora
+  // como referência (não existe "um" peso único, cada numeração pesa diferente).
+  const materialAvgGramsPerPair = materialConsumption.totalPairs > 0 ? materialConsumption.totalGrams / materialConsumption.totalPairs : 0;
+  const materialPairsPossible = materialMode === 'yield'
+    ? Math.max(0, materialRemainingKg) * materialYieldNum
+    : (materialAvgGramsPerPair > 0 ? (Math.max(0, materialRemainingKg) * 1000) / materialAvgGramsPerPair : null);
+
   const startFormularPedido = () => {
     setShowSupplierPicker(true);
   };
@@ -285,12 +413,25 @@ export default function SoleStockView({
     setIsFormularPedidoMode(true);
     setShowSupplierPicker(false);
     setOrderQuantities({});
+    setShowOrderTypeChoice(true);
+  };
+
+  const chooseFreeOrder = () => {
+    setShowOrderTypeChoice(false);
+    setShowMaterialCalc(false);
+  };
+
+  const chooseDefinedMaterialOrder = () => {
+    setShowOrderTypeChoice(false);
+    setShowMaterialCalc(true);
   };
 
   const cancelFormularPedido = () => {
     setIsFormularPedidoMode(false);
     setFormularSupplierId('');
     setOrderQuantities({});
+    setShowOrderTypeChoice(false);
+    resetMaterialCalc();
   };
 
   const handleFazerCompra = () => {
@@ -710,6 +851,20 @@ export default function SoleStockView({
         />
       )}
 
+      {showMaterialYieldCalc && (
+        <CalculatorModal
+          isOpen={showMaterialYieldCalc}
+          onClose={() => setShowMaterialYieldCalc(false)}
+          onResult={(val: number) => {
+            setMaterialYield(val > 0 ? String(val) : '');
+            setShowMaterialYieldCalc(false);
+          }}
+          initialValue={materialYieldNum}
+          isDarkMode={isDarkMode}
+          zIndex={300}
+        />
+      )}
+
       {showDetailFilter && (
         <div className="fixed inset-0 z-[200] flex">
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowDetailFilter(false)} />
@@ -781,6 +936,205 @@ export default function SoleStockView({
               Cancelar
             </button>
           </div>
+        </div>
+      )}
+
+      {showOrderTypeChoice && (
+        <div className="fixed inset-0 z-[200] flex">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+          <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
+            <h3 className="font-black text-slate-800 dark:text-white text-base mb-1 uppercase tracking-tight">Tipo de Pedido</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Como você quer formular esse pedido?</p>
+            <div className="flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={chooseFreeOrder}
+                data-guide-anchor="soleStock.tipoPedidoLivre"
+                className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-emerald-400'}`}
+              >
+                <span className="block text-xs font-black uppercase tracking-tight">Pedido Livre</span>
+                <span className="block text-[9px] font-bold text-slate-400 mt-0.5 normal-case">Sem controle de quantidade de material — preenche a grade à vontade</span>
+              </button>
+              <button
+                type="button"
+                onClick={chooseDefinedMaterialOrder}
+                data-guide-anchor="soleStock.tipoPedidoMaterial"
+                className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:border-amber-500' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-amber-400'}`}
+              >
+                <span className="block text-xs font-black uppercase tracking-tight">Pedido com Quantidade de Material Definida</span>
+                <span className="block text-[9px] font-bold text-slate-400 mt-0.5 normal-case">Informa quantos kg de matéria-prima tem disponível e acompanha o restante enquanto formula</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={cancelFormularPedido}
+              data-guide-anchor="soleStock.tipoPedidoCancelar"
+              className="w-full mt-4 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Calculadora flutuante de matéria-prima — pequena/discreta, arrastável (alça no topo)
+          e com botão único de aumentar/diminuir (expande pra ver os campos, encolhe pra só
+          mostrar o restante). Fica por cima da grade de "Quantidade a pedir" pra acompanhar
+          o consumo em tempo real sem esconder a tela. */}
+      {showMaterialCalc && isFormularPedidoMode && (
+        <div
+          ref={materialCalcRef}
+          className={`fixed z-[250] border rounded-2xl shadow-2xl select-none ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
+          style={materialCalcPos ? { left: materialCalcPos.x, top: materialCalcPos.y } : { right: 12, top: 96 }}
+        >
+          <div
+            onPointerDown={handleMaterialDragStart}
+            onPointerMove={handleMaterialDragMove}
+            onPointerUp={handleMaterialDragEnd}
+            data-guide-anchor="soleStock.materialArrastar"
+            className={`flex items-center justify-between gap-2 px-2.5 py-1.5 cursor-grab active:cursor-grabbing ${materialCalcExpanded ? `border-b border-dashed ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}` : ''}`}
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <GripVertical size={13} className="text-slate-400 shrink-0" />
+              <Weight size={12} className="text-amber-500 shrink-0" />
+              <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 truncate">Material</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMaterialCalcExpanded(v => !v)}
+              data-guide-anchor="soleStock.materialExpandir"
+              title={materialCalcExpanded ? 'Diminuir' : 'Aumentar'}
+              className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500"
+            >
+              {materialCalcExpanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+            </button>
+          </div>
+
+          {!materialCalcExpanded ? (
+            <div className="px-3 py-2 flex flex-col gap-0.5">
+              <span className={`text-[10px] font-black whitespace-nowrap ${materialTotalKg === 0 ? 'text-slate-400' : materialRemainingKg < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {materialTotalKg > 0 ? `${materialRemainingKg.toFixed(2)} kg restante` : 'Definir material'}
+              </span>
+              {materialTotalKg > 0 && materialPairsPossible !== null && (
+                <span className="text-[9px] font-black text-amber-500 whitespace-nowrap">
+                  ≈ {Math.max(0, Math.floor(materialPairsPossible))} pares restantes
+                </span>
+              )}
+            </div>
+          ) : (
+            <div
+              className="relative p-3 pb-4 flex flex-col gap-2.5 w-64 overflow-auto"
+              style={materialCalcSize ? { width: materialCalcSize.width, height: materialCalcSize.height } : undefined}
+            >
+              <div>
+                <label className="text-[8px] font-black uppercase tracking-widest text-slate-400">Material Disponível (kg)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={materialKg}
+                  onChange={(e) => setMaterialKg(e.target.value)}
+                  placeholder="Ex: 500"
+                  data-guide-anchor="soleStock.materialKg"
+                  className={`w-full mt-1 px-3 py-2 rounded-xl text-sm font-black outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+                />
+              </div>
+
+              <div className={`flex gap-1.5 p-1 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                <button
+                  type="button"
+                  onClick={() => setMaterialMode('yield')}
+                  data-guide-anchor="soleStock.materialModoRendimento"
+                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${materialMode === 'yield' ? 'bg-amber-500 text-white' : 'text-slate-500'}`}
+                >
+                  Rendimento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMaterialMode('registered')}
+                  data-guide-anchor="soleStock.materialModoCadastrado"
+                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${materialMode === 'registered' ? 'bg-amber-500 text-white' : 'text-slate-500'}`}
+                >
+                  Peso Cadastrado
+                </button>
+              </div>
+
+              {materialMode === 'yield' ? (
+                <div>
+                  <label className="text-[8px] font-black uppercase tracking-widest text-slate-400">Rendimento (pares por kg)</label>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={materialYield}
+                      onChange={(e) => setMaterialYield(e.target.value)}
+                      placeholder="Ex: 2"
+                      data-guide-anchor="soleStock.materialRendimento"
+                      className={`flex-1 min-w-0 px-3 py-2 rounded-xl text-sm font-black outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowMaterialYieldCalc(true)}
+                      data-guide-anchor="soleStock.materialRendimentoCalc"
+                      title="Abrir calculadora"
+                      className="shrink-0 p-2 rounded-xl bg-amber-500 text-white shadow-sm shadow-amber-500/30 hover:bg-amber-600 active:scale-95 transition-all"
+                    >
+                      <Calculator size={14} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[8px] font-bold text-slate-400 leading-relaxed">
+                  Usa o peso por par já cadastrado em cada numeração do molde — cada tamanho consome o material de acordo com o próprio peso real.
+                </p>
+              )}
+
+              {materialTotalKg > 0 && (
+                <div className={`rounded-xl p-2.5 flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Já Formulado</span>
+                    <span className="text-[11px] font-black text-slate-600 dark:text-slate-300">{materialConsumption.totalPairs} pares</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Restante</span>
+                    <span className={`text-[13px] font-black ${materialRemainingKg < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                      {materialRemainingKg.toFixed(2)} kg
+                    </span>
+                  </div>
+                  {materialPairsPossible !== null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">≈ Pares Ainda Possíveis</span>
+                      <span className="text-[11px] font-black text-amber-500">{Math.max(0, Math.floor(materialPairsPossible))}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={cancelFormularPedido}
+                data-guide-anchor="soleStock.materialCancelarPedido"
+                className="w-full py-2 rounded-xl text-[9px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500 active:scale-95 transition-all"
+              >
+                Cancelar Pedido
+              </button>
+
+              {/* Alça de redimensionar — canto inferior direito, arrasta pra ajustar
+                  largura/altura do painel sem mexer na posição (isso é a alça de arrastar, no
+                  topo). touch-none evita o navegador tentar rolar a página junto no toque. */}
+              <div
+                onPointerDown={handleMaterialResizeStart}
+                onPointerMove={handleMaterialResizeMove}
+                onPointerUp={handleMaterialResizeEnd}
+                data-guide-anchor="soleStock.materialRedimensionar"
+                title="Arrastar para redimensionar"
+                className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize touch-none flex items-end justify-end p-0.5 text-slate-400"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M9 1L1 9M9 5L5 9M9 9L9 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
