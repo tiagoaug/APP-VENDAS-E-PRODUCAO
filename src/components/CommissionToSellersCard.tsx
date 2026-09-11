@@ -248,18 +248,23 @@ export default function CommissionToSellersCard({
   if (!hasSellerCollaborators) return null;
 
   return (
-    <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+    <div className={`rounded-[1.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
       <button
         type="button"
         onClick={() => setIsCommissionExpanded(v => !v)}
         data-guide-anchor="dash.commission.expandir"
         className="w-full flex items-center justify-between gap-3 p-6"
       >
-        <div className="text-left min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Folha de Pagamento</p>
-          <p className={`text-2xl font-black tracking-tighter mt-1 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
-            R$ {totalCommissionOwed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-50 text-amber-600'}`}>
+            <HandCoins size={20} />
+          </div>
+          <div className="text-left min-w-0">
+            <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Folha de Pagamento</p>
+            <p className={`text-sm font-bold tracking-tight mt-0.5 transition-all ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+              R$ {totalCommissionOwed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
         </div>
         <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isCommissionExpanded ? 'rotate-180' : ''}`} />
       </button>

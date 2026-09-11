@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator, CompanyProfile, ServiceOrder, GeneralPurchaseItem, CollaboratorLoan } from '../types';
-import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, ChevronRight, Tag, FileText, Repeat, Send, FileDown, Image as ImageIcon, Hammer, Factory, X, Layers, Download, Upload } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, ChevronRight, Tag, FileText, Repeat, Send, FileDown, Image as ImageIcon, Hammer, Factory, X, Layers, Download, Upload, MessageCircle, ArrowDownRight } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
@@ -77,6 +77,9 @@ interface FinancialViewProps {
    * sozinho pra cada Ordem de Serviço (ver onPartialPay em PurchasesView.tsx e o pagamento à
    * vista em App.tsx), fechando o saldo "em aberto" sem risco de pagar a mesma OS duas vezes. */
   onPayProviderServiceOrders?: (params: { supplierId?: string; initialGeneralItems: GeneralPurchaseItem[]; initialDescription: string }) => void;
+  /** Atalho pros relatórios de "Relacionamento com Cliente" e "Dívidas por Fornecedor" (ver
+   * ReportsView/ReportDetailedView) — abre direto, sem passar pela lista de relatórios. */
+  onNavigateToReport?: (reportId: string) => void;
 }
 
 export default function FinancialView({
@@ -105,6 +108,7 @@ export default function FinancialView({
   advancePercent,
   loans,
   onSaveLoan,
+  onNavigateToReport,
 }: FinancialViewProps) {
   const hidePrivacy = usePrivacyMode();
   const [filterType, setFilterType] = useState<TransactionType | 'ALL' | 'PAYABLE'>('ALL');
@@ -714,6 +718,30 @@ export default function FinancialView({
               embedded
             />
           </div>
+
+          {onNavigateToReport && (
+            <div className={`p-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Relacionamento com Cliente e Fornecedor</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => onNavigateToReport('relacionamento-cliente')}
+                  data-guide-anchor="financial.relacionamentoCliente"
+                  className={`flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all ${isDarkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-600'}`}
+                >
+                  <MessageCircle size={16} /> Cliente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateToReport('dividas-fornecedor')}
+                  data-guide-anchor="financial.relacionamentoFornecedor"
+                  className={`flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all ${isDarkMode ? 'bg-rose-900/30 text-rose-300' : 'bg-rose-50 text-rose-600'}`}
+                >
+                  <ArrowDownRight size={16} /> Fornecedor
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <ConfirmDialog

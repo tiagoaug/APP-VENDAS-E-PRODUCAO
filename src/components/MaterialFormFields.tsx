@@ -1,9 +1,13 @@
-import { useState } from 'react';
-import { Wand2, Calculator, Plus, Check, X, Settings } from 'lucide-react';
+import { useState, lazy, Suspense } from 'react';
+import { Wand2, Calculator, Plus, Check, X, Settings, Layers, ChevronDown } from 'lucide-react';
 import { ProductionConfigItem, Person, FlowTag, ColorValue, Category, CategoryType } from '../types';
 import ComboBox from './ComboBox';
 import Modal from './Modal';
 import CalculatorModal from './CalculatorModal';
+import { firebaseService } from '../services/firebaseService';
+
+// Lazy — só pesa quem realmente abre "Não encontrou? Cadastre aqui" em Cores.
+const ColorsView = lazy(() => import('../views/ColorsView'));
 
 interface MaterialFormFieldsProps {
   item: ProductionConfigItem;
@@ -62,9 +66,17 @@ export default function MaterialFormFields({
   const [creatingUnit, setCreatingUnit] = useState(false);
   const [newUnitName, setNewUnitName] = useState('');
   const [newUnitDesc, setNewUnitDesc] = useState('');
-  const [creatingColor, setCreatingColor] = useState(false);
-  const [newColorName, setNewColorName] = useState('');
-  const [newColorHex, setNewColorHex] = useState('#6366f1');
+  // Acordeão de "Cores Disponíveis" — fechado por padrão pra não empilhar dezenas de chips na
+  // cara assim que o formulário abre. Separado em Primárias/Compostas, mesmo padrão já usado
+  // no cadastro global de Cores (ver ColorsView.tsx) — não uma paleta RGB nova.
+  const [isColorsSectionOpen, setIsColorsSectionOpen] = useState(false);
+  const primaryColors = colors.filter(c => !c.isComposite);
+  const compositeColors = colors.filter(c => c.isComposite);
+  // "Não encontrou? Cadastre aqui" pra cor abre o cadastro completo de Cores (com Primárias/
+  // Compostas, editar, excluir, salvar como modelo) em vez de um formulário reduzido só com
+  // nome+hex — mesmo padrão do atalho de Facas/Insumos em EngineeringEditor.tsx.
+  const [isColorManagerOpen, setIsColorManagerOpen] = useState(false);
+  const [colorsBeforeManager, setColorsBeforeManager] = useState<string[]>([]);
 
   const handleCreateCategory = async () => {
     const name = newCategoryName.trim().toUpperCase();
@@ -107,14 +119,17 @@ export default function MaterialFormFields({
     setNewUnitDesc('');
     setCreatingUnit(false);
   };
-  const handleCreateColor = async () => {
-    const name = newColorName.trim();
-    if (!name || !onQuickAddColor) return;
-    const created = await onQuickAddColor({ name: name.toUpperCase(), hex: newColorHex });
-    const currentIds = item.metadata?.colorIds || [];
-    onChange({ ...item, metadata: { ...item.metadata, colorIds: [...currentIds, created.id] } });
-    setNewColorName('');
-    setCreatingColor(false);
+  const openColorManager = () => {
+    setColorsBeforeManager(colors.map(c => c.id));
+    setIsColorManagerOpen(true);
+  };
+  const closeColorManager = () => {
+    const created = colors.filter(c => !colorsBeforeManager.includes(c.id));
+    if (created.length > 0) {
+      const currentIds = item.metadata?.colorIds || [];
+      onChange({ ...item, metadata: { ...item.metadata, colorIds: [...currentIds, ...created.map(c => c.id)] } });
+    }
+    setIsColorManagerOpen(false);
   };
 
   const selectedUnitName = units.find(u => u.id === item.metadata?.unitId)?.name || '';
@@ -373,20 +388,80 @@ export default function MaterialFormFields({
           </p>
         ) : (
           <>
-            <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (item.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = item.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; onChange({ ...item, metadata: { ...item.metadata, colorIds: newIds } }); if (!wasSelected) openStockColorModal(newIds); }} data-guide-anchor="materialForm.corToggle" className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
-            {onQuickAddColor && (creatingColor ? (
-              <div className="flex items-center gap-2 mt-1">
-                <input type="color" value={newColorHex} onChange={(e) => setNewColorHex(e.target.value)} title="Cor" className="w-11 h-11 shrink-0 rounded-xl border-2 border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
-                <input type="text" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateColor())} placeholder="Nome da nova cor" autoFocus className={quickCreateInputCls} />
-                <button type="button" onClick={handleCreateColor} disabled={!newColorName.trim()} title="Criar" aria-label="Criar cor" className={quickCreateSaveCls}><Check size={14} strokeWidth={3} /></button>
-                <button type="button" onClick={() => { setCreatingColor(false); setNewColorName(''); }} title="Cancelar" aria-label="Cancelar" className={quickCreateCancelCls}><X size={14} /></button>
-              </div>
-            ) : (
-              <button type="button" onClick={() => setCreatingColor(true)} data-guide-anchor="materialForm.criarCor" className={quickCreateToggleCls}><Plus size={12} strokeWidth={3} /> Não encontrou? Crie uma aqui</button>
-            ))}
+            <div className={`rounded-2xl border-2 overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <button
+                type="button"
+                onClick={() => setIsColorsSectionOpen(v => !v)}
+                data-guide-anchor="materialForm.coresAcordeao"
+                className={`w-full flex items-center justify-between gap-2 px-4 py-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}
+              >
+                <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {(item.metadata?.colorIds?.length || 0) > 0 ? `${item.metadata?.colorIds?.length} cor(es) selecionada(s)` : 'Nenhuma cor selecionada'}
+                </span>
+                <ChevronDown size={14} className={`text-slate-400 transition-transform ${isColorsSectionOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isColorsSectionOpen && (
+                <div className={`p-4 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
+                  {([
+                    { label: 'Cores Primárias', list: primaryColors },
+                    { label: 'Cores Compostas', list: compositeColors },
+                  ] as const).map(({ label, list }) => (
+                    <div key={label} className="flex flex-col gap-2">
+                      <div className="flex items-center gap-1.5 px-1">
+                        <Layers size={13} className="text-slate-400" />
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{label}</span>
+                      </div>
+                      {list.length === 0 ? (
+                        <p className={`text-[10px] font-bold px-1 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>Nenhuma cor {label === 'Cores Compostas' ? 'composta' : 'primária'} cadastrada ainda.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {list.map(color => {
+                            const isSelected = (item.metadata?.colorIds || []).includes(color.id);
+                            return (
+                              <button
+                                key={color.id}
+                                type="button"
+                                onClick={() => {
+                                  const currentIds = item.metadata?.colorIds || [];
+                                  const wasSelected = isSelected;
+                                  const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id];
+                                  onChange({ ...item, metadata: { ...item.metadata, colorIds: newIds } });
+                                  if (!wasSelected) openStockColorModal(newIds);
+                                }}
+                                data-guide-anchor="materialForm.corToggle"
+                                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}
+                              >
+                                {color.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {onQuickAddColor && (
+              <button type="button" onClick={openColorManager} data-guide-anchor="materialForm.criarCor" className={quickCreateToggleCls}><Plus size={12} strokeWidth={3} /> Não encontrou? Cadastre aqui</button>
+            )}
           </>
         )}
       </div>
+
+      {isColorManagerOpen && (
+        <Suspense fallback={null}>
+          <Modal isOpen={isColorManagerOpen} onClose={closeColorManager} title="Cores" zIndex={95000}>
+            <ColorsView
+              colors={colors}
+              isDarkMode={isDarkMode}
+              onAdd={(color) => { onQuickAddColor?.(color); }}
+              onEdit={(id, updated) => { firebaseService.updateDocument('colors', id, updated); }}
+              onDelete={(id) => { firebaseService.deleteDocument('colors', id); }}
+            />
+          </Modal>
+        </Suspense>
+      )}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 ml-2">

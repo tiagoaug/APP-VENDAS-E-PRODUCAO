@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ServiceOrder, Transaction, Person, Product, GeneralPurchaseItem } from '../types';
-import { ArrowLeft, Factory, ChevronRight, CheckCircle2, Clock, Hammer, CheckSquare, Square, Download, X, FileText, Send } from 'lucide-react';
+import { Factory, ChevronRight, ChevronDown, CheckCircle2, Clock, Hammer, CheckSquare, Square, Download, X, FileText, Send, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { generateId } from '../utils/id';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
@@ -40,7 +40,7 @@ type FornecedorGroup = {
 };
 
 export default function FornecedoresView({
-  isDarkMode, serviceOrders, transactions, people, products, embedded = false, onBack, onPayProviderServiceOrders,
+  isDarkMode, serviceOrders, transactions, people, products, embedded = false, onPayProviderServiceOrders,
 }: FornecedoresViewProps) {
   const hidePrivacy = usePrivacyMode();
 
@@ -86,6 +86,11 @@ export default function FornecedoresView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceOrders, transactions, people]);
 
+  // Acordeão do card embutido (Financeiro) — fica fechado por padrão, já que a lista completa
+  // de fornecedores ocupava boa parte da tela assim que Financeiro abria. Na tela cheia
+  // (embedded=false) o conteúdo é sempre mostrado, sem acordeão.
+  const [isFornecedoresOpen, setIsFornecedoresOpen] = useState(false);
+  const [supplierSearch, setSupplierSearch] = useState('');
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [tab, setTab] = useState<'completed' | 'pending'>('completed');
   // Filtro por status de pagamento dentro da aba atual — sem isso, a lista misturava OS pagas
@@ -149,7 +154,7 @@ export default function FornecedoresView({
     onPayProviderServiceOrders({
       supplierId: group.providerId,
       initialGeneralItems: buildGeneralItems(group.completedUnpaidOrders),
-      initialDescription: `Pagamento a Fornecedor — ${group.providerName} (${group.completedUnpaidOrders.length} OS)`,
+      initialDescription: `Pagamento a Prestador — ${group.providerName} (${group.completedUnpaidOrders.length} OS)`,
     });
   };
 
@@ -171,9 +176,15 @@ export default function FornecedoresView({
     onPayProviderServiceOrders({
       supplierId: group.providerId,
       initialGeneralItems: buildGeneralItems(selectedOrders),
-      initialDescription: `Pagamento a Fornecedor — ${group.providerName} (${selectedOrders.length} OS${pendingCount > 0 ? `, ${pendingCount} ainda a concluir` : ''})`,
+      initialDescription: `Pagamento a Prestador — ${group.providerName} (${selectedOrders.length} OS${pendingCount > 0 ? `, ${pendingCount} ainda a concluir` : ''})`,
     });
   };
+
+  const visibleGroups = useMemo(() => {
+    const term = supplierSearch.trim().toLowerCase();
+    if (!term) return groups;
+    return groups.filter(g => g.providerName.toLowerCase().includes(term));
+  }, [groups, supplierSearch]);
 
   const selectedGroup = groups.find(g => g.key === expandedKey) || null;
   const tabOrders = selectedGroup ? (tab === 'completed' ? selectedGroup.completedOrders : selectedGroup.pendingOrders) : [];
@@ -350,28 +361,57 @@ export default function FornecedoresView({
   return (
     <div className={embedded ? 'flex flex-col gap-6' : 'flex flex-col gap-6 pb-32'}>
       {embedded ? (
-        <div>
-          <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fornecedores</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Ordens de Serviço por fornecedor</p>
-        </div>
-      ) : (
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} data-guide-anchor="fornecedores.voltar" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-400" title="Voltar" aria-label="Voltar">
-            <ArrowLeft size={24} />
-          </button>
-          <div>
-            <h2 className="text-xl font-black uppercase tracking-tight text-slate-800 dark:text-white">Fornecedores</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ordens de Serviço por fornecedor</p>
+        <button
+          type="button"
+          onClick={() => setIsFornecedoresOpen(v => !v)}
+          data-guide-anchor="fornecedores.acordeaoToggle"
+          className="w-full flex items-center justify-between gap-3 text-left"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-500/15 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+              <Factory size={20} />
+            </div>
+            <div className="min-w-0">
+              <h2 className={`text-base font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Prestadores de Serviços Terceirizados</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Ordens de Serviço por prestador</p>
+            </div>
           </div>
+          <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isFornecedoresOpen ? 'rotate-180' : ''}`} />
+        </button>
+      ) : (
+        // Título/voltar já vêm do cabeçalho padrão do app (ver App.tsx, viewTitle/headerTitle
+        // pra ViewType.FORNECEDORES) — sem repetir aqui, só o subtítulo com o detalhe que falta lá.
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordens de Serviço por prestador</p>
+      )}
+
+      {(!embedded || isFornecedoresOpen) && (
+      <>
+      {groups.length === 0 && (
+        <p className="text-center text-xs font-bold text-slate-400 py-10">Nenhuma Ordem de Serviço a Prestador ainda.</p>
+      )}
+
+      {groups.length > 0 && (
+        <div className="relative">
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            value={supplierSearch}
+            onChange={(e) => setSupplierSearch(e.target.value)}
+            placeholder="Buscar prestador..."
+            title="Buscar prestador"
+            aria-label="Buscar prestador"
+            data-guide-anchor="fornecedores.buscar"
+            className={`w-full pl-11 pr-4 py-3 rounded-2xl border text-xs font-bold outline-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-500' : 'bg-white border-slate-100 text-slate-800 placeholder:text-slate-300 shadow-sm'}`}
+          />
         </div>
       )}
 
-      {groups.length === 0 && (
-        <p className="text-center text-xs font-bold text-slate-400 py-10">Nenhuma Ordem de Serviço a Fornecedor ainda.</p>
+      {groups.length > 0 && visibleGroups.length === 0 && (
+        <p className="text-center text-xs font-bold text-slate-400 py-6">Nenhum prestador encontrado.</p>
       )}
 
       <div className="flex flex-col gap-4">
-        {groups.map((group) => (
+        {visibleGroups.map((group) => (
           <button
             key={group.key}
             type="button"
@@ -408,6 +448,8 @@ export default function FornecedoresView({
           </button>
         ))}
       </div>
+      </>
+      )}
 
       <Modal isOpen={!!expandedKey} onClose={closeModal} title={selectedGroup?.providerName || ''} icon={<Factory size={20} />} maxWidth="max-w-lg" zIndex={96500}>
         {selectedGroup && (
@@ -575,7 +617,7 @@ export default function FornecedoresView({
                 data-guide-anchor="fornecedores.pagar"
                 className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
               >
-                <Hammer size={12} /> Pagar Fornecedor
+                <Hammer size={12} /> Pagar Prestador
               </button>
             )}
             {onPayProviderServiceOrders && selectMode && (

@@ -103,7 +103,7 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
   }, [productionLots]);
 
   return (
-    <div className={`rounded-[2.5rem] border shadow-sm p-6 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+    <div className={`rounded-[1.5rem] border shadow-sm p-6 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
       <button
         type="button"
         onClick={() => setIsExpanded(v => !v)}
@@ -116,10 +116,10 @@ export default function ProducedPairsCard({ isDarkMode, productionLots }: Produc
             <Factory size={20} />
           </div>
           <div className="text-left min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Análise de Produção</p>
-            <p className={`text-2xl font-black tracking-tighter mt-0.5 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
-              {produced.total} <span className="text-xs font-bold text-slate-400 uppercase">pares</span>
-            </p>
+            <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Análise de Produção</p>
+            <span className={`inline-flex items-baseline gap-1 mt-1 px-2.5 py-1 rounded-full text-sm font-bold tracking-tight transition-all ${isDarkMode ? 'bg-teal-500/15 text-teal-300' : 'bg-teal-50 text-teal-700'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+              {produced.total} <span className="text-[10px] font-bold uppercase opacity-70">pares</span>
+            </span>
           </div>
         </div>
         <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />

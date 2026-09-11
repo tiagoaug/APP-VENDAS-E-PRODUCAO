@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { X, Calculator, Share2 } from "lucide-react";
 import { ComponentConsumption, ProductionConfigItem, Sector } from "../types";
 import { shareImage } from "../utils/pdfExport";
@@ -30,6 +31,10 @@ interface ProductCostSummaryModalProps {
    * cálculo dos itens de Impostos/Fretes/Comissões em %, mesmo valor usado no card "Custo Total
    * do Produto". */
   costBeforeTaxes?: number;
+  /** Quando true, dispara "Exportar JPG" sozinho assim que o modal abre — usado pelo atalho de
+   * compartilhar direto do card "Custo Total do Produto", sem precisar abrir aqui e clicar de
+   * novo no botão. */
+  autoExport?: boolean;
 }
 
 const fmt = (n: number) => `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -50,7 +55,18 @@ export default function ProductCostSummaryModal({
   estimatedPairsPerDay = 0,
   workDaysPerMonth = 26,
   costBeforeTaxes = 0,
+  autoExport = false,
 }: ProductCostSummaryModalProps) {
+  const autoExportedRef = useRef(false);
+  useEffect(() => {
+    if (isOpen && autoExport && !autoExportedRef.current) {
+      autoExportedRef.current = true;
+      handleExportJpg();
+    }
+    if (!isOpen) autoExportedRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, autoExport]);
+
   if (!isOpen) return null;
 
   // Itens de categoria Custo Fixo representam um valor MENSAL — diluído em custo por par

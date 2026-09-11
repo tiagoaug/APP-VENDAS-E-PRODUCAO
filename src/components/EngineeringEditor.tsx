@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   X, Scissors, Box, Calculator, Sparkles, Plus,
   ArrowUpDown, Trash2, Info, ChevronLeft, Save,
@@ -8,11 +8,15 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ProductionConfigItem, ComponentConsumption, Sector,
-  ColorValue, Grid, SectorNote
+  ColorValue, Grid, SectorNote, Person, Category, Product, FlowTag
 } from '../types';
 import Modal from './Modal';
 import CalculatorModal from './CalculatorModal';
 import EngineeringPickerModal from './EngineeringPickerModal';
+
+// Lazy — só pesa quem realmente abre "Cadastre uma faca completa aqui" (ver campo Faca/Molde
+// Técnica abaixo); a Ficha Técnica normal nunca toca nesse import.
+const ProductionConfigView = lazy(() => import('../views/ProductionConfigView'));
 
 // Categorias que usam o cadastro financeiro simples (Nome + % ou R$ fixo, com base de
 // cálculo quando %) em vez do formulário de Peça/Material ou Genérico — Impostos, Fretes e
@@ -59,6 +63,25 @@ interface EngineeringEditorProps {
   costBeforeThisItem?: number;
   productPairsDay?: number;
   productWorkDays?: number;
+  /** Usados só pelo atalho "Não encontrou? Cadastre uma faca completa aqui" (campo Faca/Molde
+   * Técnica) — abre o formulário de Facas de Corte de verdade (com categoria/grade e criação
+   * inline), reaproveitando ProductionConfigView em vez de duplicar esse formulário aqui. */
+  onDeleteConfigItem?: (id: string) => Promise<void>;
+  people?: Person[];
+  categories?: Category[];
+  onQuickAddCategory?: (category: Omit<Category, 'id'>) => Promise<Category>;
+  onCreateGrid?: (grid: Omit<Grid, 'id'>) => Promise<void>;
+  onUpdateGrid?: (id: string, grid: Omit<Grid, 'id'>) => Promise<void>;
+  onDeleteGrid?: (id: string) => Promise<void>;
+  products?: Product[];
+  // Completam o cadastro completo de Insumo embutido (ver "Não encontrou o material? Cadastre
+  // um material aqui" acima) — sem eles, os campos Flow Tag/Fornecedor/Unidade/Cor lá dentro
+  // ficam sem a opção "Não encontrou? Crie um aqui".
+  flowTagsList?: FlowTag[];
+  onQuickAddFlowTag?: (tag: Omit<FlowTag, 'id'>) => Promise<FlowTag>;
+  onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
+  onQuickAddMaterial?: (item: Omit<ProductionConfigItem, 'id'>) => Promise<ProductionConfigItem>;
+  onQuickAddColor?: (color: Omit<ColorValue, 'id'>) => Promise<ColorValue>;
 }
 
 export default function EngineeringEditor({
@@ -82,8 +105,23 @@ export default function EngineeringEditor({
   categoryCostType,
   costBeforeThisItem = 0,
   productPairsDay = 0,
-  productWorkDays = 26
+  productWorkDays = 26,
+  onDeleteConfigItem,
+  people = [],
+  categories = [],
+  onQuickAddCategory,
+  onCreateGrid,
+  onUpdateGrid,
+  onDeleteGrid,
+  products = [],
+  flowTagsList = [],
+  onQuickAddFlowTag,
+  onQuickAddPerson,
+  onQuickAddMaterial,
+  onQuickAddColor
 }: EngineeringEditorProps) {
+  const [showFacaManager, setShowFacaManager] = useState(false);
+  const [toolsBeforeManager, setToolsBeforeManager] = useState<string[]>([]);
   const [editing, setEditing] = useState<ComponentConsumption>({ ...consumption });
   const [newServiceId, setNewServiceId] = useState('');
   const [newServiceCost, setNewServiceCost] = useState<number | string>(0);
@@ -121,15 +159,11 @@ export default function EngineeringEditor({
   const [pieceSearch, setPieceSearch] = useState(consumption.name || '');
   const [materialSearch, setMaterialSearch] = useState(material?.name || '');
   const [toolSearch, setToolSearch] = useState(productionConfigs.find(t => t.id === editing.toolId)?.name || '');
-  const [showQuickAddMaterial, setShowQuickAddMaterial] = useState(false);
-  const [quickAddMaterialName, setQuickAddMaterialName] = useState('');
-  const [quickAddCategory, setQuickAddCategory] = useState('');
-  const [quickAddUnitId, setQuickAddUnitId] = useState('');
-  const [quickAddBaseCost, setQuickAddBaseCost] = useState('');
-  const [quickAddObservacao, setQuickAddObservacao] = useState('');
-  const [isSavingQuickMaterial, setIsSavingQuickMaterial] = useState(false);
-  const [showQuickCostCalc, setShowQuickCostCalc] = useState(false);
+  const [showMaterialManager, setShowMaterialManager] = useState(false);
+  const [materialsBeforeManager, setMaterialsBeforeManager] = useState<string[]>([]);
   const [showPiecePicker, setShowPiecePicker] = useState(false);
+  const [showQuickAddPiece, setShowQuickAddPiece] = useState(false);
+  const [quickAddPieceName, setQuickAddPieceName] = useState('');
   const [showToolPicker, setShowToolPicker] = useState(false);
   const [showMaterialPicker, setShowMaterialPicker] = useState(false);
   const [showUnitPicker, setShowUnitPicker] = useState(false);
@@ -148,7 +182,10 @@ export default function EngineeringEditor({
   const masterCategory = material?.metadata?.masterCategory?.toUpperCase() || '';
   const isCuttingPiece = editing.category === 'CUTTING_PIECE';
   const noToolCategories = ['AVIAMENTOS', 'QUIMICOS', 'EMBALAGENS', 'LINHAS', 'MATERIAL DE CONSUMO', 'ADESIVOS', 'COLA', 'METAIS'];
-  const needsTool = editing.toolId ? true : (isCuttingPiece && (!noToolCategories.some(cat => masterCategory.includes(cat)) || masterCategory === ''));
+  // "Só Quantidade de Material" (editing.skipTool) sobrepõe tudo — o usuário escolheu
+  // explicitamente não rastrear essa peça por Faca, mesmo que o material selecionado normalmente
+  // exigisse uma (ver escolha logo abaixo do Nome do Componente e Peça).
+  const needsTool = editing.skipTool ? false : (editing.toolId ? true : (isCuttingPiece && (!noToolCategories.some(cat => masterCategory.includes(cat)) || masterCategory === '')));
 
   const evaluate = (expr: string) => {
     try {
@@ -361,47 +398,13 @@ export default function EngineeringEditor({
     }
   };
 
-  const openQuickAddMaterial = (nameOverride?: string) => {
+  // Abre o cadastro completo de Insumos (com categoria/cor/fornecedor etc.) em vez de um
+  // formulário genérico só com nome/categoria/unidade/custo — reaproveita ProductionConfigView
+  // de verdade, mesmo padrão do atalho de Facas acima.
+  const openMaterialManager = () => {
     setShowMaterialPicker(false);
-    setQuickAddMaterialName((nameOverride ?? materialSearch).trim());
-    setQuickAddCategory('');
-    setQuickAddUnitId('');
-    setQuickAddBaseCost('');
-    setQuickAddObservacao('');
-    setShowQuickAddMaterial(true);
-  };
-
-  const handleSaveQuickMaterial = async () => {
-    if (!quickAddMaterialName.trim() || !onSaveConfigItem || isSavingQuickMaterial) return;
-    setIsSavingQuickMaterial(true);
-    try {
-      const newId = `m-${Date.now()}`;
-      const newMaterial: ProductionConfigItem = {
-        id: newId,
-        name: quickAddMaterialName.trim().toUpperCase(),
-        description: quickAddObservacao.trim() || quickAddCategory,
-        type: 'MATERIAL',
-        createdAt: Date.now(),
-        metadata: {
-          masterCategory: quickAddCategory,
-          reference: '',
-          unitId: quickAddUnitId,
-          baseCost: parseFloat(quickAddBaseCost.replace(',', '.')) || 0,
-          width: 0,
-          colorIds: [],
-          flowTagId: '',
-          supplierId: ''
-        }
-      };
-      await onSaveConfigItem(newMaterial);
-      setEditing(prev => ({ ...prev, materialId: newId }));
-      setMaterialSearch(newMaterial.name);
-      setShowQuickAddMaterial(false);
-    } catch (err) {
-      console.error('Erro ao cadastrar insumo:', err);
-    } finally {
-      setIsSavingQuickMaterial(false);
-    }
+    setMaterialsBeforeManager(materials.map(m => m.id));
+    setShowMaterialManager(true);
   };
 
   const handleQuickAddPiece = async (nameOverride?: string) => {
@@ -757,7 +760,7 @@ export default function EngineeringEditor({
         {/* NOME DA PEÇA */}
         <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/50' : 'bg-indigo-50/50 border-indigo-100'}`}>
           <div className="flex flex-col gap-3">
-            <label className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 px-1">Nome do Componente / Peça</label>
+            <label className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 px-1">Nome do Componente e Peça</label>
             <button
               type="button"
               onClick={() => setShowPiecePicker(true)}
@@ -769,13 +772,61 @@ export default function EngineeringEditor({
               </span>
               <ChevronDown size={18} className="text-slate-400 shrink-0" />
             </button>
+
+            {/* Atalho visível direto na tela — evita depender do usuário abrir o picker
+                acima e digitar um termo pra descobrir a opção de cadastro rápido lá dentro. */}
+            {onSaveConfigItem && !showQuickAddPiece && (
+              <button
+                type="button"
+                onClick={() => { setQuickAddPieceName(''); setShowQuickAddPiece(true); }}
+                data-guide-anchor="engineeringEditor.pecaCriarAtalho"
+                className="text-[11px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 self-start px-1 hover:underline"
+              >
+                Não encontrou? Crie uma peça ou componente aqui
+              </button>
+            )}
+
+            {showQuickAddPiece && (
+              <div className={`flex flex-col gap-2 p-3 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-indigo-100'}`}>
+                <input
+                  type="text"
+                  autoFocus
+                  value={quickAddPieceName}
+                  onChange={(e) => setQuickAddPieceName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { handleQuickAddPiece(quickAddPieceName); setShowQuickAddPiece(false); } }}
+                  placeholder="Nome do novo componente/peça..."
+                  title="Nome do novo componente/peça"
+                  aria-label="Nome do novo componente/peça"
+                  className={`w-full px-4 py-3 rounded-xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickAddPiece(false)}
+                    data-guide-anchor="engineeringEditor.pecaCriarCancelar"
+                    className={`flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { handleQuickAddPiece(quickAddPieceName); setShowQuickAddPiece(false); }}
+                    data-guide-anchor="engineeringEditor.pecaCriarSalvar"
+                    disabled={!quickAddPieceName.trim()}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-black text-xs uppercase tracking-widest disabled:opacity-50 disabled:grayscale transition-all active:scale-[0.98]"
+                  >
+                    Cadastrar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         <EngineeringPickerModal
           isOpen={showPiecePicker}
           onClose={() => setShowPiecePicker(false)}
-          title="Nome do Componente / Peça"
+          title="Nome do Componente e Peça"
           icon={<Database size={18} />}
           options={pieces.map(p => ({ id: p.id, name: p.name }))}
           selectedId={pieces.find(p => p.name === editing.name)?.id}
@@ -791,6 +842,29 @@ export default function EngineeringEditor({
           onCreateNew={onSaveConfigItem ? (term) => handleQuickAddPiece(term) : undefined}
           createLabel={(term) => `Criar nova peça: "${term}"`}
         />
+
+        {isCuttingPiece && (
+          <div className={`p-2 rounded-[2rem] border-2 grid grid-cols-2 gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setEditing({ ...editing, skipTool: false })}
+              data-guide-anchor="engineeringEditor.pecaModoFaca"
+              className={`flex flex-col items-center gap-1.5 px-3 py-3 rounded-3xl transition-all ${!editing.skipTool ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+            >
+              <Scissors size={18} />
+              <span className="text-[9px] font-black uppercase tracking-widest text-center leading-tight">Rastreado por Faca</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing({ ...editing, skipTool: true, toolId: undefined })}
+              data-guide-anchor="engineeringEditor.pecaModoQuantidade"
+              className={`flex flex-col items-center gap-1.5 px-3 py-3 rounded-3xl transition-all ${editing.skipTool ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+            >
+              <Package size={18} />
+              <span className="text-[9px] font-black uppercase tracking-widest text-center leading-tight">Só Quantidade de Material</span>
+            </button>
+          </div>
+        )}
 
         {needsTool && (
           <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-xl space-y-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
@@ -811,6 +885,16 @@ export default function EngineeringEditor({
                   </span>
                   <ChevronDown size={18} className="text-slate-400 shrink-0" />
                 </button>
+                {onSaveConfigItem && onDeleteConfigItem && (
+                  <button
+                    type="button"
+                    onClick={() => { setToolsBeforeManager(tools.map(t => t.id)); setShowFacaManager(true); }}
+                    data-guide-anchor="engineeringEditor.facaCriarAtalho"
+                    className="text-[11px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 self-start hover:underline"
+                  >
+                    Não encontrou? Cadastre uma faca completa aqui
+                  </button>
+                )}
               </div>
             </div>
 
@@ -828,8 +912,49 @@ export default function EngineeringEditor({
               }}
               isDarkMode={isDarkMode}
               searchPlaceholder="Pesquisar faca..."
-              emptyHint="Nenhuma faca cadastrada ainda — cadastre em Configurações de Produção"
+              emptyHint="Nenhuma faca cadastrada ainda"
             />
+
+            {/* Cadastro completo de Faca (categoria/grade com criação inline) direto daqui —
+                reaproveita ProductionConfigView de verdade em vez de duplicar esse formulário
+                grande só pra Ficha Técnica. Ao fechar, seleciona sozinho a faca nova (se só uma
+                surgiu desde que abriu), pra não obrigar reabrir o picker acima pra escolhê-la. */}
+            {showFacaManager && onSaveConfigItem && onDeleteConfigItem && (
+              <Suspense fallback={null}>
+                <ProductionConfigView
+                  initialScreen="FACAS"
+                  restrictToFacas
+                  isDarkMode={isDarkMode}
+                  productionConfigs={productionConfigs}
+                  onSaveConfigItem={onSaveConfigItem}
+                  onDeleteConfigItem={onDeleteConfigItem}
+                  onSaveFlowTag={async () => {}}
+                  onDeleteFlowTag={async () => {}}
+                  onSaveSector={async () => {}}
+                  onDeleteSector={async () => {}}
+                  onUpdateSectorsOrder={() => {}}
+                  sectors={sectors}
+                  people={people}
+                  colors={colors}
+                  grids={grids}
+                  onCreateGrid={onCreateGrid}
+                  onUpdateGrid={onUpdateGrid}
+                  onDeleteGrid={onDeleteGrid}
+                  categories={categories}
+                  onQuickAddCategory={onQuickAddCategory}
+                  products={products}
+                  onBack={() => {
+                    const created = tools.filter(t => !toolsBeforeManager.includes(t.id));
+                    if (created.length > 0) {
+                      const newest = created.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+                      handleToolChange(newest.id);
+                      setToolSearch(newest.name);
+                    }
+                    setShowFacaManager(false);
+                  }}
+                />
+              </Suspense>
+            )}
 
             {/* RESUMO TÉCNICO E FINANCEIRO (CORTADOS) */}
             {editing.materialId && editing.toolId && (
@@ -1576,6 +1701,17 @@ export default function EngineeringEditor({
               </button>
             )}
 
+            {(needsTool || !material) && onSaveConfigItem && onDeleteConfigItem && (
+              <button
+                type="button"
+                onClick={openMaterialManager}
+                data-guide-anchor="engineeringEditor.materialCriarAtalho"
+                className="text-[11px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 self-start hover:underline"
+              >
+                Não encontrou o material? Clique aqui e cadastre um material
+              </button>
+            )}
+
             <EngineeringPickerModal
               isOpen={showMaterialPicker}
               onClose={() => setShowMaterialPicker(false)}
@@ -1591,9 +1727,54 @@ export default function EngineeringEditor({
               isDarkMode={isDarkMode}
               searchPlaceholder="Pesquisar material..."
               emptyHint="Nenhum insumo cadastrado ainda"
-              onCreateNew={onSaveConfigItem ? (term) => openQuickAddMaterial(term) : undefined}
-              createLabel={(term) => `Cadastrar como novo insumo: "${term}"`}
+              onCreateNew={onSaveConfigItem && onDeleteConfigItem ? () => openMaterialManager() : undefined}
+              createLabel={(term) => `Cadastrar "${term}" como novo insumo...`}
             />
+
+            {/* Cadastro completo de Insumo (categoria/cor/fornecedor com criação inline) direto
+                daqui — mesmo padrão do atalho de Facas acima: reaproveita ProductionConfigView
+                de verdade em vez de um formulário genérico simplificado. */}
+            {showMaterialManager && onSaveConfigItem && onDeleteConfigItem && (
+              <Suspense fallback={null}>
+                <ProductionConfigView
+                  initialScreen="INSUMOS"
+                  restrictToInsumos
+                  isDarkMode={isDarkMode}
+                  productionConfigs={productionConfigs}
+                  onSaveConfigItem={onSaveConfigItem}
+                  onDeleteConfigItem={onDeleteConfigItem}
+                  onSaveFlowTag={async () => {}}
+                  onDeleteFlowTag={async () => {}}
+                  onSaveSector={async () => {}}
+                  onDeleteSector={async () => {}}
+                  onUpdateSectorsOrder={() => {}}
+                  sectors={sectors}
+                  people={people}
+                  colors={colors}
+                  grids={grids}
+                  onCreateGrid={onCreateGrid}
+                  onUpdateGrid={onUpdateGrid}
+                  onDeleteGrid={onDeleteGrid}
+                  categories={categories}
+                  onQuickAddCategory={onQuickAddCategory}
+                  products={products}
+                  flowTags={flowTagsList}
+                  onQuickAddFlowTag={onQuickAddFlowTag}
+                  onQuickAddPerson={onQuickAddPerson}
+                  onQuickAddMaterial={onQuickAddMaterial}
+                  onQuickAddColor={onQuickAddColor}
+                  onBack={() => {
+                    const created = materials.filter(m => !materialsBeforeManager.includes(m.id));
+                    if (created.length > 0) {
+                      const newest = created.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+                      handleMaterialChange(newest.id);
+                      setMaterialSearch(newest.name);
+                    }
+                    setShowMaterialManager(false);
+                  }}
+                />
+              </Suspense>
+            )}
           </div>
 
           {material && (
@@ -1897,131 +2078,6 @@ export default function EngineeringEditor({
 
       </div>
 
-      {/* Modal de Cadastro Rápido de Insumo */}
-      <Modal
-        isOpen={showQuickAddMaterial}
-        onClose={() => setShowQuickAddMaterial(false)}
-        title="Cadastrar Novo Insumo"
-        maxWidth="max-w-md"
-        zIndex={100000}
-      >
-        <div className="flex flex-col gap-5 p-6">
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Nome do Insumo *</label>
-            <input
-              type="text"
-              value={quickAddMaterialName}
-              onChange={(e) => setQuickAddMaterialName(e.target.value.toUpperCase())}
-              placeholder="NOME DO MATERIAL"
-              autoFocus
-              className={`w-full px-4 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-emerald-500'}`}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Categoria</label>
-            <select
-              value={quickAddCategory}
-              onChange={(e) => setQuickAddCategory(e.target.value)}
-              title="Categoria do Insumo"
-              className={`w-full px-4 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
-            >
-              <option value="">SELECIONAR...</option>
-              {[...new Set([
-                ...materials.map(m => m.metadata?.masterCategory).filter(Boolean) as string[],
-                'SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'
-              ])].sort().map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Unidade</label>
-              <select
-                value={quickAddUnitId}
-                onChange={(e) => setQuickAddUnitId(e.target.value)}
-                title="Unidade de Medida"
-                className={`w-full px-4 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
-              >
-                <option value="">UN</option>
-                {productionConfigs.filter(c => c.type === 'UNIT').map(u => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Custo Base</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={quickAddBaseCost}
-                  onChange={(e) => setQuickAddBaseCost(e.target.value)}
-                  placeholder="0,00"
-                  className={`w-full pl-4 pr-11 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowQuickCostCalc(true)}
-                  data-guide-anchor="engineeringEditor.quickAddCustoCalc"
-                  title="Abrir Calculadora"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                >
-                  <Calculator size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Observação</label>
-            <textarea
-              value={quickAddObservacao}
-              onChange={(e) => setQuickAddObservacao(e.target.value)}
-              placeholder="Anotações para conferência posterior..."
-              title="Observação sobre o insumo"
-              rows={3}
-              className={`w-full px-4 py-3 rounded-2xl border-2 font-medium text-sm outline-none transition-all resize-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder-slate-600 focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:border-emerald-500'}`}
-            />
-          </div>
-
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-            * Outros detalhes podem ser completados no Catálogo de Insumos
-          </p>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setShowQuickAddMaterial(false)}
-              data-guide-anchor="engineeringEditor.quickAddCancelar"
-              className={`flex-1 py-3 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveQuickMaterial}
-              data-guide-anchor="engineeringEditor.quickAddSalvar"
-              disabled={!quickAddMaterialName.trim() || isSavingQuickMaterial}
-              className="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:grayscale transition-all active:scale-[0.98]"
-            >
-              {isSavingQuickMaterial ? 'Salvando...' : 'Cadastrar'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <CalculatorModal
-        isOpen={showQuickCostCalc}
-        onClose={() => setShowQuickCostCalc(false)}
-        isDarkMode={isDarkMode}
-        initialValue={parseFloat(quickAddBaseCost.replace(',', '.')) || 0}
-        zIndex={110000}
-        onResult={(val) => {
-          setQuickAddBaseCost(val.toString().replace('.', ','));
-          setShowQuickCostCalc(false);
-        }}
-      />
     </motion.div>
   );
 }

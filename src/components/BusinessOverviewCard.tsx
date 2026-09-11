@@ -388,20 +388,24 @@ export default function BusinessOverviewCard({
   }, [transactions]);
 
   return (
-    <div className={embedded ? 'flex flex-col gap-5' : `rounded-[2.5rem] border shadow-sm p-6 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+    <div className={embedded ? 'flex flex-col gap-5' : `rounded-[1.5rem] border shadow-sm p-6 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
       <button
         type="button"
         onClick={() => setIsOverviewExpanded((v) => !v)}
         data-guide-anchor="dash.overview.expandir"
-        className="flex items-center justify-center gap-2 w-full"
+        className="flex items-center justify-between gap-3 w-full"
         aria-expanded={isOverviewExpanded}
       >
-        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-[11px] font-black uppercase tracking-tight text-indigo-600 dark:text-indigo-400">
-          <TrendingUp size={13} /> Análise Detalhada
-        </span>
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
-          <ChevronDown size={16} className={`transition-transform ${isOverviewExpanded ? 'rotate-180' : ''}`} />
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-500/15 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+            <TrendingUp size={20} />
+          </div>
+          <div className="text-left min-w-0">
+            <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Análise Detalhada</p>
+            <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Receitas, Despesas e Comparativos</p>
+          </div>
         </div>
+        <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isOverviewExpanded ? 'rotate-180' : ''}`} />
       </button>
 
       <AnimatePresence initial={false}>

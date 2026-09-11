@@ -448,17 +448,17 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     view: ViewType.FORNECEDORES,
-    title: 'Fornecedores',
-    summary: 'Um card por fornecedor/prestador com o total de Ordens de Serviço concluídas a pagar e a concluir — abra o card pra ver a lista detalhada e pagar.',
+    title: 'Prestadores de Serviços Terceirizados',
+    summary: 'Um card por prestador terceirizado com o total de Ordens de Serviço concluídas a pagar e a concluir — abra o card pra ver a lista detalhada e pagar.',
     productionOnly: true,
     sections: [
-      { heading: 'O que os cards mostram', body: 'Quantas OS estão concluídas e quantas ainda estão a concluir pra esse fornecedor, com o valor total a pagar de cada grupo.' },
-      { heading: 'Detalhe do fornecedor', body: 'Toque no card pra abrir o popup com as abas "OS Concluídas" e "OS a Concluir", listando referência, cor, valor e data de cada uma.' },
+      { heading: 'O que os cards mostram', body: 'Quantas OS estão concluídas e quantas ainda estão a concluir pra esse prestador, com o valor total a pagar de cada grupo.' },
+      { heading: 'Detalhe do prestador', body: 'Toque no card pra abrir o popup com as abas "OS Concluídas" e "OS a Concluir", listando referência, cor, valor e data de cada uma.' },
       { heading: 'Filtro A Pagar / Pagas / Todas', body: 'Dentro de cada aba, filtra a lista por status de pagamento — o total mostrado em cima sempre soma exatamente o que está filtrado na lista abaixo, então nunca aparece um total "a pagar" com a lista cheia de itens já pagos.' },
-      { heading: 'Pagar Fornecedor', body: 'Paga de uma vez todas as OS concluídas ainda em aberto — abre uma Compra já preenchida, pronta pra confirmar.' },
+      { heading: 'Pagar Prestador', body: 'Paga de uma vez todas as OS concluídas ainda em aberto — abre uma Compra já preenchida, pronta pra confirmar.' },
       { heading: 'Selecionar OS para pagamento', body: 'Ligue esse toggle pra marcar manualmente quais OS entram no pagamento, inclusive as que ainda não foram concluídas (pagamento adiantado). Uma OS paga assim fica marcada como paga pra sempre, mesmo depois que o PCP concluir ela — não gera cobrança duplicada.' },
     ],
-    keywords: ['fornecedores', 'fornecedor', 'prestador', 'ordem de servico', 'os', 'pagar fornecedor', 'pagamento adiantado'],
+    keywords: ['fornecedores', 'fornecedor', 'prestador', 'prestadores', 'terceirizado', 'terceirizados', 'ordem de servico', 'os', 'pagar prestador', 'pagamento adiantado'],
     relatedViews: [ViewType.PRODUCTION_SERVICE_ORDER_FORM, ViewType.FINANCIAL, ViewType.DASHBOARD],
   },
   {

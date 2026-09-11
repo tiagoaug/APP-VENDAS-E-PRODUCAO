@@ -1,9 +1,9 @@
 import { Reorder, useDragControls } from 'motion/react';
 import {
   X, ShoppingCart, ShoppingBag, Factory, Building2, Truck, DollarSign, User as UserIcon, UserCog,
-  Eye, EyeOff, ChevronUp, ChevronDown, LayoutDashboard, Settings, GripVertical,
+  Eye, EyeOff, ChevronUp, ChevronDown, LayoutDashboard, Settings, GripVertical, Pin, PinOff,
   GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
-  Inbox, Link2, Handshake,
+  Inbox, Link2, Handshake, Package, CreditCard, ScanText, Sparkles, Scissors,
 } from 'lucide-react';
 import { AppModulesConfig, BottomNavConfig, BottomNavItemId } from '../types';
 
@@ -16,7 +16,7 @@ interface BottomNavConfigModalProps {
   isDarkMode: boolean;
 }
 
-type NavCandidate = { id: BottomNavItemId; label: string; icon: React.ReactNode; requiredModule: keyof AppModulesConfig; requiredModuleLabel: string };
+type NavCandidate = { id: BottomNavItemId; label: string; icon: React.ReactNode; requiredModule: keyof AppModulesConfig | 'any'; requiredModuleLabel: string };
 
 const CANDIDATES: NavCandidate[] = [
   { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
@@ -38,7 +38,12 @@ const CANDIDATES: NavCandidate[] = [
   { id: 'labelPrintStudio', label: 'Ajustes de PDF e JPG', icon: <Printer size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
   { id: 'catalogRequests', label: 'Pedidos de Catálogo', icon: <Inbox size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
   { id: 'sendCatalog', label: 'Enviar Catálogo', icon: <Link2 size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
-  { id: 'fornecedores', label: 'Fornecedores', icon: <Handshake size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
+  { id: 'fornecedores', label: 'Prestadores Terceirizados', icon: <Handshake size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
+  { id: 'products', label: 'Produtos Cadastrados', icon: <Package size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
+  { id: 'paymentMethods', label: 'Meios de Recebimento', icon: <CreditCard size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
+  { id: 'ocr', label: 'Extrator de Texto (OCR)', icon: <ScanText size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
+  { id: 'aiAssistant', label: 'Assistente de IA', icon: <Sparkles size={18} />, requiredModule: 'ai', requiredModuleLabel: 'IA' },
+  { id: 'cuttingKnives', label: 'Facas de Corte', icon: <Scissors size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
 ];
 
 interface NavRowProps {
@@ -46,16 +51,18 @@ interface NavRowProps {
   index: number;
   total: number;
   isHidden: boolean;
+  isPinned: boolean;
   isDarkMode: boolean;
   onMove: (index: number, direction: -1 | 1) => void;
   onToggleHidden: (id: BottomNavItemId) => void;
+  onTogglePinned: (id: BottomNavItemId) => void;
 }
 
 // Item arrastável — useDragControls precisa viver num componente próprio por linha (não dá pra
 // chamar o hook direto dentro do .map do pai), mesmo padrão já usado em DashboardConfigView e
 // DeliveryRouteBuilderView/DeliveryRouteDetailView (Reorder.Item + alça própria via onPointerDown,
 // já testado em touch Android — nada de drag nativo HTML5, que não funciona em toque).
-function NavRow({ item, index, total, isHidden, isDarkMode, onMove, onToggleHidden }: NavRowProps) {
+function NavRow({ item, index, total, isHidden, isPinned, isDarkMode, onMove, onToggleHidden, onTogglePinned }: NavRowProps) {
   const controls = useDragControls();
 
   return (
@@ -109,6 +116,17 @@ function NavRow({ item, index, total, isHidden, isDarkMode, onMove, onToggleHidd
         >
           {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
+        {!isHidden && (
+          <button
+            type="button"
+            onClick={() => onTogglePinned(item.id)}
+            title={isPinned ? 'Fixo na barra — tocar pra deixar só na expansão' : 'Só aparece expandindo — tocar pra fixar na barra'}
+            aria-label={isPinned ? `Desafixar ${item.label} da barra` : `Fixar ${item.label} na barra`}
+            className={`p-1.5 rounded-lg transition-all ${isPinned ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-300 shadow-sm')}`}
+          >
+            {isPinned ? <Pin size={14} /> : <PinOff size={14} />}
+          </button>
+        )}
       </div>
     </Reorder.Item>
   );
@@ -137,7 +155,7 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
   // Bling e RH também dependem de Vendas estar ativo (mesma regra do ModuleConfigView) — não
   // fazem sentido soltos junto do módulo Pessoal, por exemplo.
   const visibleItems = items.filter(item =>
-    modulesConfig[item.requiredModule] &&
+    (item.requiredModule === 'any' || modulesConfig[item.requiredModule]) &&
     ((item.requiredModule !== 'bling' && item.requiredModule !== 'rh') || modulesConfig.sales)
   );
   const visibleIds = visibleItems.map(i => i.id);
@@ -153,6 +171,26 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
     onSave({
       ...config,
       hidden: isHidden ? config.hidden.filter(h => h !== id) : [...config.hidden, id],
+    });
+  };
+
+  // Sem nada fixado ainda (conta que nunca abriu essa tela), assume os primeiros visíveis como
+  // fixos — mesmo padrão automático usado em App.tsx enquanto `pinned` não existir/estiver vazio,
+  // só que aqui precisa de um número concreto pra já mostrar o estado real na tela (usa 6, que é
+  // o tamanho de página típico da barra: 3 colunas x 2 linhas).
+  const pinnedIds = new Set(config.pinned && config.pinned.length > 0 ? config.pinned : visibleIds.slice(0, 6));
+
+  // Pra pré-visualização — segue a MESMA ordem/lista que aparece na barra real (visibleItems,
+  // já na ordem configurada), só separada em fixado vs. resto.
+  const previewPinnedItems = visibleItems.filter(item => pinnedIds.has(item.id));
+  const previewExpandableItems = visibleItems.filter(item => !pinnedIds.has(item.id));
+
+  const togglePinned = (id: BottomNavItemId) => {
+    const current = config.pinned && config.pinned.length > 0 ? config.pinned : visibleIds.slice(0, 6);
+    const isPinned = current.includes(id);
+    onSave({
+      ...config,
+      pinned: isPinned ? current.filter(p => p !== id) : [...current, id],
     });
   };
 
@@ -186,13 +224,58 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
           </button>
         </div>
 
-        <div className="px-6 pb-3 shrink-0">
+        <div className="px-6 pb-3 shrink-0 flex flex-col gap-2">
           <div className={`flex items-center gap-2 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
             <LayoutDashboard size={14} className="shrink-0" />
             Home fica sempre primeiro
             <span className="mx-1">·</span>
             <Settings size={14} className="shrink-0" />
             Mais fica sempre por último
+          </div>
+          <div className={`flex items-center gap-2 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-amber-900/20 border-amber-800/40 text-amber-300' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+            <Pin size={14} className="shrink-0" />
+            Fixado aparece sempre na barra — o resto só ao expandir (seta pra cima)
+          </div>
+
+          {/* Pré-visualização — não é a barra de verdade (que ajusta colunas pela largura real
+              da tela), só uma maquete pra dar uma ideia de como fica: fixados aparecem direto,
+              o resto vira "+N ícones" que só aparecem expandindo. */}
+          <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+            <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2">Pré-visualização da barra</p>
+            <div className={`flex items-stretch gap-1 p-1.5 rounded-[1.5rem] ${isDarkMode ? 'bg-slate-900' : 'bg-white shadow-sm'}`}>
+              <div className="flex flex-col items-center justify-center gap-0.5 px-2.5 py-2 rounded-xl bg-indigo-600 text-white shrink-0">
+                <LayoutDashboard size={14} />
+                <span className="text-[6px] font-black uppercase tracking-wide">Home</span>
+              </div>
+              <div className="flex-1 min-w-0 grid grid-cols-3 gap-0.5">
+                {previewPinnedItems.length === 0 ? (
+                  <div className="col-span-3 flex items-center justify-center text-center text-[7px] font-bold text-slate-400 uppercase tracking-wide py-2 px-1">
+                    Nada fixado — tudo vai pra expansão
+                  </div>
+                ) : previewPinnedItems.map(item => (
+                  <div key={item.id} className={`flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                    {item.icon}
+                    <span className="text-[6px] font-bold uppercase tracking-wide truncate max-w-full">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-col gap-0.5 shrink-0 w-10">
+                {previewExpandableItems.length > 0 && (
+                  <div className={`flex-1 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-white/10 text-indigo-400' : 'bg-black/5 text-indigo-600'}`}>
+                    <ChevronUp size={12} strokeWidth={3} />
+                  </div>
+                )}
+                <div className={`flex-1 flex flex-col items-center justify-center gap-0.5 rounded-xl ${isDarkMode ? 'bg-white/10' : 'bg-black/5'}`}>
+                  <Settings size={12} className={isDarkMode ? 'text-slate-300' : 'text-slate-600'} />
+                  <span className={`text-[6px] font-black uppercase tracking-wide ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Mais</span>
+                </div>
+              </div>
+            </div>
+            {previewExpandableItems.length > 0 && (
+              <p className="text-[7px] font-bold text-slate-400 mt-2 leading-relaxed">
+                Ao expandir: {previewExpandableItems.map(i => i.label).join(', ')}
+              </p>
+            )}
           </div>
         </div>
 
@@ -209,9 +292,11 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
               index={index}
               total={visibleItems.length}
               isHidden={config.hidden.includes(item.id)}
+              isPinned={pinnedIds.has(item.id)}
               isDarkMode={isDarkMode}
               onMove={move}
               onToggleHidden={toggleHidden}
+              onTogglePinned={togglePinned}
             />
           ))}
         </Reorder.Group>

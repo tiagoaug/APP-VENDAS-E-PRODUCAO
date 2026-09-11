@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Product, Grid, ProductionLot, AppModulesConfig, ProductionConfigItem } from '../types';
+import { Product, Grid, ProductionLot, AppModulesConfig, ProductionConfigItem, Person, Brand, ProductModel } from '../types';
 import { SaleType } from '../types';
-import { ArrowLeft, Search, Boxes, Package, Filter, X, MessageSquare, MessageSquarePlus, Settings2, Grid3X3, CheckCircle2, Trash2, ClipboardList, Factory } from 'lucide-react';
+import { Search, Boxes, Package, Filter, X, MessageSquare, MessageSquarePlus, Settings2, Grid3X3, CheckCircle2, Trash2, ClipboardList, Factory, ChevronDown, ChevronRight } from 'lucide-react';
 import { getWholesaleBoxes, getRetailPairs, productHasSaleType } from '../utils/stockPools';
 import { getOrderEffectiveSector, ORDER_FINALIZED } from '../utils/productionRoute';
 import { toast } from '../utils/toast';
 import { getBadgeColorClasses } from '../utils/badgeColors';
+import EngineeringPickerModal from '../components/EngineeringPickerModal';
 
 // Preferência local (por aparelho) de mostrar ou não o badge de pares-por-caixa (ex.: "12P")
 // nas linhas de Atacado — fica em "Filtrar Produtos", junto dos outros filtros da tela.
@@ -65,6 +66,11 @@ interface StockGlanceViewProps {
   /** Preferência global "Miniaturas dos Modelos" (Acessibilidade) — desligada, vence o toggle
    * local "Miniaturas" desta tela (esconde a foto mesmo que ele esteja marcado). */
   showThumbnails?: boolean;
+  /** Usados só pra resolver nome de Marca/Modelo/Fornecedor (Product.brandId/modelId/supplierId)
+   * na busca e nos filtros — igual StockView/CategoriesView já fazem noutras telas. */
+  people?: Person[];
+  brands?: Brand[];
+  models?: ProductModel[];
 }
 
 type RetailSizeRow = { size: string; ready: number };
@@ -95,10 +101,58 @@ function persistQuickMessages(list: string[]) {
   try { localStorage.setItem(QUICK_MESSAGES_KEY, JSON.stringify(list)); } catch { /* ignore */ }
 }
 
+// Campo do popup "Filtrar Produtos" — mesmo botão usado pra Cor/Marca/Modelo/Fornecedor, abrindo
+// um popup de busca dedicado (EngineeringPickerModal) em vez de expandir uma lista de chips
+// embutida, pra não empilhar dezenas de botões na tela do filtro.
+function FilterPickerField({
+  label, allLabel, options, selectedId, onSelect, isOpen, onOpen, onClose, isDarkMode, guideKey,
+}: {
+  label: string;
+  allLabel: string;
+  options: { id: string; name: string }[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  isOpen: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  isDarkMode: boolean;
+  guideKey: string;
+}) {
+  const selectedName = selectedId ? options.find(o => o.id === selectedId)?.name : undefined;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onOpen}
+        data-guide-anchor={`${guideKey}Abrir`}
+        className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} ${selectedId ? 'border-indigo-500' : ''}`}
+      >
+        <span className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 truncate">
+          {label}{selectedName ? `: ${selectedName}` : ''}
+        </span>
+        <ChevronDown size={14} className="text-slate-400 shrink-0" />
+      </button>
+      <EngineeringPickerModal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={label}
+        options={[{ id: '', name: allLabel }, ...options]}
+        selectedId={selectedId ?? ''}
+        onSelect={(id) => onSelect(id || null)}
+        isDarkMode={isDarkMode}
+        searchPlaceholder={`Pesquisar ${label.toLowerCase()}...`}
+      />
+    </>
+  );
+}
+
 /** Visão de estoque 100% somente leitura — sem opção de editar/balanço em nenhum lugar
  * desta tela, e sem informação de produção: mostra só o estoque real (Variation.stock).
  * Única exceção: observação livre por cor (não altera estoque, só anotação). */
-export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [], modulesConfig, productionConfigs = [], showThumbnails: globalShowThumbnails = true }: StockGlanceViewProps) {
+export default function StockGlanceView({ products, isDarkMode, onUpdateVariationNote, grids = [], lots = [], modulesConfig, productionConfigs = [], showThumbnails: globalShowThumbnails = true, people = [], brands = [], models = [] }: StockGlanceViewProps) {
+  const supplierName = (id?: string) => (id ? people.find(p => p.id === id)?.name : undefined);
+  const brandName = (id?: string) => (id ? brands.find(b => b.id === id)?.name : undefined);
+  const modelName = (id?: string) => (id ? models.find(m => m.id === id)?.name : undefined);
   const packagingItems = useMemo(() => productionConfigs.filter(c => c.type === 'PACKAGING'), [productionConfigs]);
   const [activeTab, setActiveTab] = useState<GlanceTab>(SaleType.WHOLESALE);
   const showReposicaoTab = !modulesConfig || modulesConfig.production;
@@ -108,7 +162,18 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
   const effectiveSaleType: SaleType = isReposicao ? SaleType.WHOLESALE : activeTab;
   const [search, setSearch] = useState('');
   const [colorFilter, setColorFilter] = useState<string | null>(null);
+  const [brandFilter, setBrandFilter] = useState<string | null>(null);
+  const [modelFilter, setModelFilter] = useState<string | null>(null);
+  const [supplierFilter, setSupplierFilter] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  // Ampliar a miniatura do produto/cor — clicar de novo na mesma foto fecha (toggle).
+  const [expandedPhoto, setExpandedPhoto] = useState<{ url: string; label: string } | null>(null);
+  // Popups de seleção do filtro (Cor/Marca/Modelo/Fornecedor) — cada um abre seu próprio
+  // EngineeringPickerModal, em vez de expandir uma lista de chips embutida na tela do filtro.
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const [isBrandPickerOpen, setIsBrandPickerOpen] = useState(false);
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
+  const [isSupplierPickerOpen, setIsSupplierPickerOpen] = useState(false);
   const [showPkgBadge, setShowPkgBadge] = useState(() => loadShowPkgBadge());
   const [showThumbnails, setShowThumbnails] = useState(() => loadShowThumbnails());
   const effectiveShowThumbnails = globalShowThumbnails && showThumbnails;
@@ -128,6 +193,33 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [products, effectiveSaleType]);
+
+  // Marca/Modelo/Fornecedor — só as que estão em uso por algum produto desta aba
+  // (Atacado/Varejo/Reposição), igual Cor acima, em vez da lista cadastrada inteira.
+  const productsInTab = useMemo(
+    () => (isReposicao
+      ? products.filter(p => productHasSaleType(p, SaleType.WHOLESALE) || productHasSaleType(p, SaleType.RETAIL))
+      : products.filter(p => productHasSaleType(p, effectiveSaleType))),
+    [products, effectiveSaleType, isReposicao]
+  );
+  const brandOptions = useMemo(() => {
+    const ids = new Set(productsInTab.map(p => p.brandId).filter((id): id is string => !!id));
+    return Array.from(ids)
+      .map(id => ({ id, name: brandName(id) || id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [productsInTab, brands]);
+  const modelOptions = useMemo(() => {
+    const ids = new Set(productsInTab.map(p => p.modelId).filter((id): id is string => !!id));
+    return Array.from(ids)
+      .map(id => ({ id, name: modelName(id) || id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [productsInTab, models]);
+  const supplierOptions = useMemo(() => {
+    const ids = new Set(productsInTab.map(p => p.supplierId).filter((id): id is string => !!id));
+    return Array.from(ids)
+      .map(id => ({ id, name: supplierName(id) || id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [productsInTab, people]);
 
   // Soma pares ainda em produção (sourceItems cujo item ainda não foi finalizado/creditado
   // ao estoque) por produto+cor, sem quebrar por setor — só o total, pra planejamento de
@@ -159,13 +251,16 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
 
   const cards = useMemo((): ProductCard[] => {
     const term = search.trim().toLowerCase();
-    return products
-      // Reposição junta Atacado e Varejo — mostra qualquer produto que venda em um dos dois,
-      // em vez de restringir a um tipo só como as outras abas.
-      .filter(p => isReposicao
-        ? (productHasSaleType(p, SaleType.WHOLESALE) || productHasSaleType(p, SaleType.RETAIL))
-        : productHasSaleType(p, effectiveSaleType))
-      .filter(p => !term || p.reference.toLowerCase().includes(term) || p.name.toLowerCase().includes(term))
+    return productsInTab
+      .filter(p => !term
+        || p.reference.toLowerCase().includes(term)
+        || p.name.toLowerCase().includes(term)
+        || (brandName(p.brandId) || '').toLowerCase().includes(term)
+        || (modelName(p.modelId) || '').toLowerCase().includes(term)
+        || (supplierName(p.supplierId) || '').toLowerCase().includes(term))
+      .filter(p => !brandFilter || p.brandId === brandFilter)
+      .filter(p => !modelFilter || p.modelId === modelFilter)
+      .filter(p => !supplierFilter || p.supplierId === supplierFilter)
       .map((product): ProductCard => {
         const includeWholesale = isReposicao ? productHasSaleType(product, SaleType.WHOLESALE) : effectiveSaleType === SaleType.WHOLESALE;
         const includeRetail = isReposicao ? productHasSaleType(product, SaleType.RETAIL) : effectiveSaleType === SaleType.RETAIL;
@@ -224,8 +319,8 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
       })
       .filter(card => card.rows.length > 0)
       .sort((a, b) => (a.product.reference || a.product.name).localeCompare(b.product.reference || b.product.name));
-  }, [products, effectiveSaleType, isReposicao, search, colorFilter, producingByVariation]);
-  const activeFilterCount = (search.trim() ? 1 : 0) + (colorFilter ? 1 : 0);
+  }, [productsInTab, search, colorFilter, brandFilter, modelFilter, supplierFilter, producingByVariation, brands, models, people]);
+  const activeFilterCount = (search.trim() ? 1 : 0) + (colorFilter ? 1 : 0) + (brandFilter ? 1 : 0) + (modelFilter ? 1 : 0) + (supplierFilter ? 1 : 0);
 
   const notesCard = useMemo(
     () => (notesProductId ? cards.find(c => c.product.id === notesProductId) || null : null),
@@ -288,6 +383,16 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
     persistQuickMessages(next);
   };
 
+  // Cor/Marca/Modelo/Fornecedor são escopados pela aba (Atacado/Varejo/Reposição, ver
+  // productsInTab) — uma seleção antiga pode não existir mais na aba nova e esconder tudo, por
+  // isso zera junto ao trocar de aba.
+  const resetTabScopedFilters = () => {
+    setColorFilter(null);
+    setBrandFilter(null);
+    setModelFilter(null);
+    setSupplierFilter(null);
+  };
+
   const handleCloseNotesModal = async () => {
     if (notesCard && onUpdateVariationNote) {
       for (const row of notesCard.rows) {
@@ -316,44 +421,38 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
 
   return (
     <div className="flex flex-col gap-4 pb-10">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          data-guide-anchor="stock.disponivelVoltar"
-          className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 shadow-sm'}`}
-          title="Voltar"
-          aria-label="Voltar"
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h2 className={`text-base font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Disponível em Estoque</h2>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Somente visualização — estoque real</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowFilterModal(true)}
-          title="Filtrar"
-          aria-label="Filtrar"
-          data-guide-anchor="stock.disponivelFiltro"
-          className="relative w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-rose-500 text-white shadow-sm"
-        >
-          <Filter size={16} className="relative" />
+      {/* Card de filtro — título/voltar já vêm do cabeçalho padrão do app (ver App.tsx,
+          viewTitle/headerTitle pra ViewType.STOCK_GLANCE), sem repetir aqui. */}
+      <button
+        type="button"
+        onClick={() => setShowFilterModal(true)}
+        title="Filtrar"
+        aria-label="Filtrar"
+        data-guide-anchor="stock.disponivelFiltro"
+        className={`relative w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}
+      >
+        <div className="relative w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-rose-500 text-white">
+          <Filter size={16} />
           {activeFilterCount > 0 && (
             <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
               {activeFilterCount}
             </span>
           )}
-        </button>
-      </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className={`text-[13px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Clique para buscar por modelo, marca...</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">
+            Somente visualização — estoque real{activeFilterCount > 0 ? ` · ${activeFilterCount} filtro${activeFilterCount > 1 ? 's' : ''}` : ''}
+          </p>
+        </div>
+        <ChevronRight size={18} className="text-slate-300 dark:text-slate-600 shrink-0" />
+      </button>
 
       {/* Abas Atacado / Varejo / Reposição */}
       <div className={`flex p-1.5 rounded-2xl border gap-1 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
         <button
           type="button"
-          onClick={() => { setActiveTab(SaleType.WHOLESALE); setColorFilter(null); }}
+          onClick={() => { setActiveTab(SaleType.WHOLESALE); resetTabScopedFilters(); }}
           data-guide-anchor="stock.disponivelAtacado"
           className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === SaleType.WHOLESALE ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
         >
@@ -361,7 +460,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
         </button>
         <button
           type="button"
-          onClick={() => { setActiveTab(SaleType.RETAIL); setColorFilter(null); }}
+          onClick={() => { setActiveTab(SaleType.RETAIL); resetTabScopedFilters(); }}
           data-guide-anchor="stock.disponivelVarejo"
           className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === SaleType.RETAIL ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
         >
@@ -370,7 +469,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
         {showReposicaoTab && (
           <button
             type="button"
-            onClick={() => { setActiveTab(REPOSICAO_TAB); setColorFilter(null); }}
+            onClick={() => { setActiveTab(REPOSICAO_TAB); resetTabScopedFilters(); }}
             title="Planejamento de Reposição de Estoque"
             data-guide-anchor="stock.disponivelReposicao"
             className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isReposicao ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
@@ -432,9 +531,18 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                     <div className="flex items-center gap-2 min-w-0">
                       {effectiveShowThumbnails && (
                         row.photoUrl ? (
-                          <img src={row.photoUrl} alt={row.colorName} className="w-8 h-8 rounded-lg object-cover shrink-0 border border-black/5" />
+                          <button
+                            type="button"
+                            onClick={() => setExpandedPhoto(prev => prev?.url === row.photoUrl ? null : { url: row.photoUrl!, label: row.colorName })}
+                            data-guide-anchor="stock.disponivelFotoAmpliar"
+                            title="Ampliar foto"
+                            aria-label={`Ampliar foto de ${row.colorName}`}
+                            className="shrink-0"
+                          >
+                            <img src={row.photoUrl} alt={row.colorName} className="w-11 h-11 rounded-lg object-cover border border-black/5" />
+                          </button>
                         ) : (
-                          <div className={`w-8 h-8 rounded-lg shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                          <div className={`w-11 h-11 rounded-lg shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
                         )
                       )}
                       <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{row.ready} {row.unit}</span>
@@ -535,54 +643,86 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
 
             <div className="p-5 flex flex-col gap-4 overflow-y-auto">
               <div>
-                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Referência</label>
+                <label className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-2 block">Referência, Nome, Marca, Modelo ou Fornecedor</label>
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input
                     type="text"
-                    placeholder="Buscar por referência..."
+                    placeholder="Buscar..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    title="Buscar por referência"
-                    aria-label="Buscar por referência"
-                    autoFocus
+                    title="Buscar por referência, nome, marca, modelo ou fornecedor"
+                    aria-label="Buscar por referência, nome, marca, modelo ou fornecedor"
                     className={`w-full py-3 pl-11 pr-4 rounded-2xl border text-[11px] font-bold uppercase tracking-tight outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-800 placeholder:text-slate-300'}`}
                   />
                 </div>
               </div>
 
               {colorOptions.length > 0 && (
-                <div>
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Cor</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setColorFilter(null)}
-                      data-guide-anchor="stock.disponivelFiltroCor"
-                      className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${!colorFilter ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
-                    >
-                      Todas as cores
-                    </button>
-                    {colorOptions.map(color => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setColorFilter(prev => prev === color ? null : color)}
-                        data-guide-anchor="stock.disponivelFiltroCor"
-                        className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${colorFilter === color ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
-                      >
-                        {color}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <FilterPickerField
+                  label="Cor"
+                  allLabel="Todas as Cores"
+                  options={colorOptions.map(c => ({ id: c, name: c }))}
+                  selectedId={colorFilter}
+                  onSelect={setColorFilter}
+                  isOpen={isColorPickerOpen}
+                  onOpen={() => setIsColorPickerOpen(true)}
+                  onClose={() => setIsColorPickerOpen(false)}
+                  isDarkMode={isDarkMode}
+                  guideKey="stock.disponivelFiltroCor"
+                />
+              )}
+
+              {brandOptions.length > 0 && (
+                <FilterPickerField
+                  label="Marca"
+                  allLabel="Todas as Marcas"
+                  options={brandOptions}
+                  selectedId={brandFilter}
+                  onSelect={setBrandFilter}
+                  isOpen={isBrandPickerOpen}
+                  onOpen={() => setIsBrandPickerOpen(true)}
+                  onClose={() => setIsBrandPickerOpen(false)}
+                  isDarkMode={isDarkMode}
+                  guideKey="stock.disponivelFiltroMarca"
+                />
+              )}
+
+              {modelOptions.length > 0 && (
+                <FilterPickerField
+                  label="Modelo"
+                  allLabel="Todos os Modelos"
+                  options={modelOptions}
+                  selectedId={modelFilter}
+                  onSelect={setModelFilter}
+                  isOpen={isModelPickerOpen}
+                  onOpen={() => setIsModelPickerOpen(true)}
+                  onClose={() => setIsModelPickerOpen(false)}
+                  isDarkMode={isDarkMode}
+                  guideKey="stock.disponivelFiltroModelo"
+                />
+              )}
+
+              {supplierOptions.length > 0 && (
+                <FilterPickerField
+                  label="Fornecedor"
+                  allLabel="Todos os Fornecedores"
+                  options={supplierOptions}
+                  selectedId={supplierFilter}
+                  onSelect={setSupplierFilter}
+                  isOpen={isSupplierPickerOpen}
+                  onOpen={() => setIsSupplierPickerOpen(true)}
+                  onClose={() => setIsSupplierPickerOpen(false)}
+                  isDarkMode={isDarkMode}
+                  guideKey="stock.disponivelFiltroFornecedor"
+                />
               )}
 
               {/* Mostrar/ocultar o badge de pares-por-caixa (ex.: "12P") nas linhas de Atacado
                   — preferência do aparelho, persistida local. */}
               <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
                 <div className="min-w-0">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Badge de Pares por Caixa</label>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 block">Badge de Pares por Caixa</label>
                   <p className="text-[9px] font-bold text-slate-400 mt-0.5">Ex.: "12P" — cor definida no padrão de embalagem</p>
                 </div>
                 <button
@@ -603,7 +743,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               {globalShowThumbnails && (
                 <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
                   <div className="min-w-0">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Miniaturas</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 block">Miniaturas</label>
                     <p className="text-[9px] font-bold text-slate-400 mt-0.5">Foto do produto/cor em cada linha</p>
                   </div>
                   <button
@@ -623,7 +763,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
             <div className="p-5 pt-2 shrink-0 flex gap-2">
               <button
                 type="button"
-                onClick={() => { setSearch(''); setColorFilter(null); }}
+                onClick={() => { setSearch(''); resetTabScopedFilters(); }}
                 data-guide-anchor="stock.disponivelFiltroLimpar"
                 className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
               >
@@ -903,6 +1043,28 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                 <CheckCircle2 size={14} /> Concluído
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Foto ampliada — clicar de novo na mesma miniatura fecha (toggle, ver onClick lá em cima) */}
+      {expandedPhoto && (
+        <div
+          className="fixed inset-0 z-[230] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setExpandedPhoto(null)}
+        >
+          <div className="relative max-w-sm w-full flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
+            <img src={expandedPhoto.url} alt={expandedPhoto.label} className="w-full max-h-[70vh] object-contain rounded-[2rem] shadow-2xl" />
+            <p className="text-sm font-black uppercase tracking-wider text-white">{expandedPhoto.label}</p>
+            <button
+              type="button"
+              onClick={() => setExpandedPhoto(null)}
+              data-guide-anchor="stock.disponivelFotoAmpliarFechar"
+              className="absolute -top-3 -right-3 w-9 h-9 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-md hover:bg-slate-100 transition-all"
+              aria-label="Fechar" title="Fechar"
+            >
+              <X size={18} strokeWidth={2.5} />
+            </button>
           </div>
         </div>
       )}

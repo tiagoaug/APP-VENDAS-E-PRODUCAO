@@ -517,7 +517,7 @@ export default function PersonalFinancialView({
       {!isConfigMode ? (
         <>
           {/* Dashboard View */}
-          <div className={`p-8 rounded-[2.5rem] border shadow-xl relative overflow-hidden transition-all ${
+          <div className={`p-8 pb-9 rounded-[2.5rem] border shadow-xl relative overflow-hidden transition-all ${
             isDarkMode
               ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-slate-800'
               : 'bg-gradient-to-br from-sky-100 via-blue-100 to-sky-200 border-sky-200 text-sky-900'
@@ -563,6 +563,25 @@ export default function PersonalFinancialView({
                     R$ {stats.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => handleAddTx(TransactionType.INCOME)}
+                  data-guide-anchor="pessoal.novaReceita"
+                  className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100/70 text-emerald-700'}`}
+                >
+                  <TrendingUp size={14} strokeWidth={3} /> Nova Receita
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddTx(TransactionType.EXPENSE)}
+                  data-guide-anchor="pessoal.novaDespesaCard"
+                  className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/15 text-rose-400' : 'bg-rose-100/70 text-rose-700'}`}
+                >
+                  <TrendingDown size={14} strokeWidth={3} /> Nova Despesa
+                </button>
               </div>
             </div>
           </div>

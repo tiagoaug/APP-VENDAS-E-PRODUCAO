@@ -744,6 +744,7 @@ export default function PurchaseFormView({
         id: generateId(),
         description: "",
         value: 0,
+        kind: 'general',
       },
     ]);
   };

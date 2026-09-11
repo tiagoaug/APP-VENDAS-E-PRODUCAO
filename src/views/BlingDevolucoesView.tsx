@@ -9,6 +9,7 @@ import { toast } from '../utils/toast';
 interface BlingDevolucoesViewProps {
   isDarkMode: boolean;
   products: Product[];
+  onBack?: () => void;
 }
 
 type ReturnChoice = 'somente_nota' | 'produto_e_nota';
@@ -26,10 +27,10 @@ function Thumb({ src, isDarkMode }: { src?: string; isDarkMode: boolean }) {
 
 /** Popup centralizado — primeira coisa que aparece ao entrar na tela, pra decidir se a
  * devolução envolve produto (vai pro estoque) ou é só a nota voltando pro saldo do talão. */
-function ChoicePopup({ isDarkMode, onChoose }: { isDarkMode: boolean; onChoose: (choice: ReturnChoice) => void }) {
+function ChoicePopup({ isDarkMode, onChoose, onCancel }: { isDarkMode: boolean; onChoose: (choice: ReturnChoice) => void; onCancel?: () => void }) {
   return (
     <div className="fixed inset-0 z-[90000] flex items-center justify-center px-4 bg-black/50 backdrop-blur-sm">
-      <div className={`w-full max-w-sm rounded-[2rem] p-5 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+      <div className={`w-full max-w-sm rounded-[1.5rem] p-5 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
         <p className="px-1 text-sm font-black uppercase tracking-widest">O que vai devolver?</p>
 
         <button onClick={() => onChoose('produto_e_nota')} data-guide-anchor="blingDevolucao.produtoENota" className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
@@ -53,6 +54,17 @@ function ChoicePopup({ isDarkMode, onChoose }: { isDarkMode: boolean; onChoose: 
           </div>
           <ChevronRight size={16} className="text-slate-400 shrink-0" />
         </button>
+
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            data-guide-anchor="blingDevolucao.cancelar"
+            className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-500'}`}
+          >
+            Cancelar
+          </button>
+        )}
       </div>
     </div>
   );
@@ -125,7 +137,7 @@ function NotesOnlyForm({ isDarkMode, onBack }: { isDarkMode: boolean; onBack: ()
   );
 }
 
-export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevolucoesViewProps) {
+export default function BlingDevolucoesView({ isDarkMode, products, onBack }: BlingDevolucoesViewProps) {
   const [mappings, setMappings] = useState<BlingProductMapping[]>([]);
   const [devolucoes, setDevolucoes] = useState<BlingDevolucao[]>([]);
   const [choice, setChoice] = useState<ReturnChoice | null>(null);
@@ -210,7 +222,7 @@ export default function BlingDevolucoesView({ isDarkMode, products }: BlingDevol
   if (choice === null) {
     return (
       <div className="flex flex-col gap-6 pb-32">
-        <ChoicePopup isDarkMode={isDarkMode} onChoose={setChoice} />
+        <ChoicePopup isDarkMode={isDarkMode} onChoose={setChoice} onCancel={onBack} />
         {recentList}
       </div>
     );

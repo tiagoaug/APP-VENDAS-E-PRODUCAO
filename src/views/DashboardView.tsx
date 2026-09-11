@@ -124,6 +124,7 @@ export default function DashboardView({
   const [reminderFilter, setReminderFilter] = useState<'ALL' | 'debt' | 'sale' | 'os' | 'order'>('ALL');
   const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
   const [isRecentActivityExpanded, setIsRecentActivityExpanded] = useState(false);
+  const [isChecksSectionOpen, setIsChecksSectionOpen] = useState(false);
   const [topProductsRankMode, setTopProductsRankMode] = useState<'model' | 'color'>('model');
   // Período do card "Rankings de Performance" — antes os Top Clientes/Produtos somavam TODAS as
   // vendas de sempre, sem filtro nenhum (dado "travado"); agora segue o mesmo seletor
@@ -766,7 +767,7 @@ export default function DashboardView({
 
           case "provider_service_orders":
             return (
-              <div key="provider_service_orders" className={`p-6 rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <div key="provider_service_orders" className={`p-6 rounded-[1.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 <FornecedoresView
                   embedded
                   isDarkMode={isDarkMode}
@@ -781,7 +782,7 @@ export default function DashboardView({
 
           case "sales_products":
             return (
-              <div key="sales_products" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="sales_products" className={`p-6 rounded-[1.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div>
                   <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-sm font-black uppercase tracking-tight text-slate-600 dark:text-slate-300">Produtos e Catálogo</span>
                   <p className="text-xs font-bold text-slate-600 dark:text-slate-400 tracking-[0.15em] mt-1.5">Gestão de Vendas</p>
@@ -860,7 +861,7 @@ export default function DashboardView({
 
           case "manual_entries":
             return (
-              <div key="manual_entries" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="manual_entries" className={`p-6 rounded-[1.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
                   <div>
                     <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-sm font-black uppercase tracking-tight text-slate-600 dark:text-slate-300">Lançamentos Manuais</span>
@@ -903,7 +904,7 @@ export default function DashboardView({
 
           case "quick_reports":
             return (
-              <div key="quick_reports" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="quick_reports" className={`p-6 rounded-[1.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
                   <div>
                     <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-sm font-black uppercase tracking-tight text-slate-600 dark:text-slate-300">Relatórios Rápidos</span>
@@ -1016,7 +1017,7 @@ export default function DashboardView({
 
           case "report_center":
             return (
-              <div key="report_center" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="report_center" className={`p-6 rounded-[1.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
                   <div>
                     <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-sm font-black uppercase tracking-tight text-slate-600 dark:text-slate-300">Central de Relatórios</span>
@@ -1065,7 +1066,7 @@ export default function DashboardView({
 
           case "dashboard_rankings":
             return (
-              <div key="dashboard_rankings" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="dashboard_rankings" className={`p-6 rounded-[1.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
                   <div>
                     <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-amber-50 dark:bg-amber-900/30 text-sm font-black uppercase tracking-tight text-amber-600 dark:text-amber-400">Rankings de Performance</span>
@@ -1199,18 +1200,18 @@ export default function DashboardView({
                 key="cash_flow"
                 onClick={() => onNavigate(ViewType.FINANCIAL)}
                 data-guide-anchor="dash.cashFlow.card"
-                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex items-center gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
-                <div>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${stats.monthlyIncome - stats.monthlyExpenses >= 0 ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500'}`}>
+                  <TrendingUp size={24} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
                   <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">
                     Balanço Mensal (Liquidados)
                   </p>
                   <p className={`text-2xl font-black tracking-tight leading-none ${stats.monthlyIncome - stats.monthlyExpenses >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                     R$ {(stats.monthlyIncome - stats.monthlyExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                </div>
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${stats.monthlyIncome - stats.monthlyExpenses >= 0 ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500'}`}>
-                  <TrendingUp size={24} strokeWidth={2.5} />
                 </div>
               </div>
             );
@@ -1221,18 +1222,18 @@ export default function DashboardView({
                 key="receivables"
                 onClick={() => onNavigate(ViewType.FINANCIAL)}
                 data-guide-anchor="dash.receivables.card"
-                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex items-center gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
-                <div>
+                <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-500 shrink-0">
+                  <DollarSign size={24} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
                   <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">
                     A Receber (Pendente)
                   </p>
                   <p className={`text-2xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                     R$ {stats.pendingReceivables.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                </div>
-                <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-500">
-                  <DollarSign size={24} strokeWidth={2.5} />
                 </div>
               </div>
             );
@@ -1243,17 +1244,20 @@ export default function DashboardView({
                 key="pix_payment_access"
                 onClick={() => onNavigate(ViewType.PAYMENT_METHODS)}
                 data-guide-anchor="dash.pixPaymentAccess.card"
-                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-sm flex items-center justify-between gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
-                <div>
-                  <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">Pix</p>
-                  <p className={`text-sm font-black tracking-tight leading-snug ${isDarkMode ? "text-white" : "text-slate-900"}`}>
-                    Meios de Recebimento
-                  </p>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 bg-teal-50 dark:bg-teal-900/20 rounded-2xl flex items-center justify-center shrink-0">
+                    <PixIcon size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Pix</p>
+                    <p className={`text-base font-black tracking-tight leading-snug ${isDarkMode ? "text-white" : "text-slate-800"}`}>
+                      Meios de Recebimento
+                    </p>
+                  </div>
                 </div>
-                <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-2xl flex items-center justify-center">
-                  <PixIcon size={26} />
-                </div>
+                <ChevronDown size={18} className="text-slate-400 shrink-0" />
               </div>
             );
 
@@ -1396,7 +1400,7 @@ export default function DashboardView({
                       Créditos {customersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{customersWithCredits.length}</span></span>}
                     </button>
                   </div>
-                  <button onClick={() => onNavigate(ViewType.SALES)} data-guide-anchor="dash.customers.vertudo" className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
+                  <button onClick={() => onNavigate(ViewType.REPORT_DETAILED, "relacionamento-cliente")} data-guide-anchor="dash.customers.vertudo" className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={14} />
@@ -1406,7 +1410,7 @@ export default function DashboardView({
                   {customerDashboardTab === 'DEBITS' ? (
                     <>
                       {customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).map((item, idx) => (
-                        <div key={`cust-debt-${item.person.id}-${idx}`} onClick={() => onNavigate(ViewType.SALES, null, item.person.name)} data-guide-anchor="dash.customers.itemDebito" className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                        <div key={`cust-debt-${item.person.id}-${idx}`} onClick={() => onNavigate(ViewType.REPORT_DETAILED, "relacionamento-cliente", item.person.id)} data-guide-anchor="dash.customers.itemDebito" className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{item.person.name}</p>
                             <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {item.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -1647,7 +1651,7 @@ export default function DashboardView({
 
           case "debt_management":
             return (
-              <div key="debt_management" className={`p-6 rounded-[2rem] border shadow-[0_8px_30px_-10px_rgba(244,63,94,0.15)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="debt_management" className={`p-6 rounded-[1.5rem] border shadow-[0_8px_30px_-10px_rgba(244,63,94,0.15)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-rose-50 dark:bg-rose-900/20 rounded-2xl flex items-center justify-center text-rose-500">
@@ -1755,7 +1759,7 @@ export default function DashboardView({
                 key="stock_value"
                 onClick={() => onNavigate(ViewType.STOCK)}
                 data-guide-anchor="dash.stockValue.card"
-                className={`cursor-pointer p-6 rounded-[2rem] border shadow-[0_4px_20px_-6px_rgba(0,0,0,0.1)] flex flex-col justify-center min-h-[140px] ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_4px_20px_-6px_rgba(0,0,0,0.1)] flex flex-col justify-center min-h-[140px] ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div className="flex justify-between items-center">
                   <div>
@@ -1770,7 +1774,7 @@ export default function DashboardView({
 
           case "estimated_profit":
             return (
-              <div key="estimated_profit" className={`p-6 rounded-[2rem] border shadow-[0_8px_30px_-10px_rgba(79,70,229,0.15)] flex flex-col gap-5 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="estimated_profit" className={`p-6 rounded-[1.5rem] border shadow-[0_8px_30px_-10px_rgba(79,70,229,0.15)] flex flex-col gap-5 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-start">
                   <div><p className="text-[10px] font-black text-indigo-500 tracking-[0.2em] mb-1">Lucro Total Estimado</p><h4 className={`text-3xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {(stats.estimatedStockProfit + stats.pendingReceivables + stats.consolidatedBalance).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4><p className="text-[9px] font-bold text-slate-400 tracking-widest mt-1 italic">* Estimativa baseada no estoque e pendências</p></div>
                   <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30"><TrendingUp size={24} strokeWidth={3} /></div>
@@ -1891,11 +1895,11 @@ export default function DashboardView({
 
             return (
               <section key="reminders" className="mt-2">
-                <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className={`rounded-[1.5rem] border shadow-sm overflow-hidden flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                   <div className="p-6 pb-4">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h2 className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Lembretes e Vencimentos</h2>
+                        <h2 className={`text-base font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Lembretes e Vencimentos</h2>
                         <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Dívidas, vendas, OS e pedidos</p>
                       </div>
                       <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-rose-900/20 text-rose-500' : 'bg-rose-50 text-rose-600'}`}>
@@ -1966,20 +1970,29 @@ export default function DashboardView({
           case "checks":
             return (
               <section key="checks" className="mt-2">
-                <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className={`rounded-[1.5rem] border shadow-sm overflow-hidden flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                   <div className="p-6 pb-2">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h2 className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Relatório de Cheques</h2>
-                        <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Gestão Unificada de Documentos</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-amber-900/20 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setIsChecksSectionOpen(v => !v)}
+                      data-guide-anchor="dash.checks.expandir"
+                      title={isChecksSectionOpen ? "Recolher Relatório de Cheques" : "Expandir Relatório de Cheques"}
+                      aria-label={isChecksSectionOpen ? "Recolher Relatório de Cheques" : "Expandir Relatório de Cheques"}
+                      className="flex items-center justify-between gap-3 w-full mb-6"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-900/20 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
                           <CreditCard size={20} strokeWidth={2.5} />
                         </div>
+                        <div className="text-left min-w-0">
+                          <h2 className={`text-base font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Relatório de Cheques</h2>
+                          <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Gestão Unificada de Documentos</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-4">
+                      <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isChecksSectionOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {isChecksSectionOpen && (
+                    <div className="flex flex-col gap-4 animate-in slide-in-from-top-2 duration-200">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <Clipboard size={14} className="text-indigo-500" />
@@ -2013,7 +2026,9 @@ export default function DashboardView({
                       <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={16} /><input type="text" placeholder="Buscar por número ou fornecedor..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-2xl pl-12 pr-4 py-3.5 text-[11px] font-black tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-800 focus:ring-4 focus:ring-indigo-500/5 transition-all text-slate-800 dark:text-white" value={checksSearch} onChange={(e) => setChecksSearch(e.target.value)} />{checksSearch && (<button onClick={() => setChecksSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" title="Limpar busca"><X size={14} /></button>)}</div>
                       <div className="grid grid-cols-2 gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">{(['PENDING', 'OVERDUE', 'CLEARED', 'ALL'] as const).map((status) => (<button key={status} onClick={() => setChecksStatusFilter(status)} data-guide-anchor="dash.checks.filtroStatus" className={`py-2 px-3 rounded-xl text-[9px] font-black tracking-widest transition-all whitespace-nowrap ${checksStatusFilter === status ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-700'}`}>{status === 'PENDING' ? 'A Vencer' : status === 'CLEARED' ? 'Compensados' : status === 'OVERDUE' ? 'Vencidos' : 'Todos'}</button>))}</div>
                     </div>
+                    )}
                   </div>
+                  {isChecksSectionOpen && (
                   <div className="p-4 flex flex-col gap-3">
                     {filteredChecks.length > 0 ? (
                       filteredChecks.map((check) => {
@@ -2103,13 +2118,14 @@ export default function DashboardView({
                       <div className="py-12 bg-slate-50/50 dark:bg-slate-950/50 rounded-3xl border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center gap-3"><Filter className="text-slate-200 dark:text-slate-800" size={32} strokeWidth={1.5} /><p className="text-[10px] font-black text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Nenhum cheque encontrado</p></div>
                     )}
                   </div>
+                  )}
                 </div>
               </section>
             );
 
           case "monthly_profit_detailed":
             return (
-              <div key="monthly_profit_detailed" className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="monthly_profit_detailed" className={`p-6 rounded-[1.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 {/* Title area */}
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
                   <div className="flex flex-col gap-1">
@@ -2377,7 +2393,7 @@ export default function DashboardView({
                     {recentActivity.map((activity: any) => (
                       <div key={activity.id} className={`flex items-center gap-4 p-3 border rounded-2xl shadow-sm dark:shadow-none hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}><div className={`flex items-center justify-center p-2 rounded-xl ${activity.activityType === "sale" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : activity.activityType === "purchase" ? "bg-slate-50 text-slate-400 dark:bg-slate-800" : (activity.type === TransactionType.INCOME) ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30" : "bg-rose-50 text-rose-600 dark:bg-rose-900/30"}`}>{activity.activityType === "sale" ? (<ShoppingBag size={20} strokeWidth={2.5} />) : activity.activityType === "purchase" ? (<TrendingDown size={20} strokeWidth={2.5} />) : activity.type === TransactionType.INCOME ? (<TrendingUp size={20} strokeWidth={2.5} />) : (<TrendingDown size={20} strokeWidth={2.5} />)}</div><div className="flex-1 min-w-0"><p className={`text-[12px] font-black truncate tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{activity.activityType === "sale" ? "Venda" : activity.activityType === "purchase" ? "Compra" : (activity.description || "Lançamento")}</p><p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold tracking-widest mt-1.5 ">{format(activity.date || Date.now(), "dd MMM, HH:mm", { locale: ptBR })}</p></div><div className="text-right"><p className={`text-[13px] font-black tracking-tight ${activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME) ? "text-emerald-500" : "text-rose-500"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>{(activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME)) ? "+" : "-"} R$ {Number(activity.total || activity.amount || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p><div className="flex items-center gap-1 justify-end mt-1"><span className={`text-[7px] px-1.5 py-0.5 rounded-lg font-black tracking-widest ${(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "bg-amber-100 text-amber-600" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>{(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "Pendente" : "OK"}</span></div></div></div>
                     ))}
-                    {recentActivity.length === 0 && (<div className="text-center py-20 bg-slate-50/50 dark:bg-slate-900/50 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2.5rem] flex flex-col items-center"><History size={40} className="text-slate-200 dark:text-slate-800 mb-2" strokeWidth={1} /><p className="text-[10px] font-black text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Vazio histórico</p></div>)}
+                    {recentActivity.length === 0 && (<div className="text-center py-20 bg-slate-50/50 dark:bg-slate-900/50 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[1.5rem] flex flex-col items-center"><History size={40} className="text-slate-200 dark:text-slate-800 mb-2" strokeWidth={1} /><p className="text-[10px] font-black text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Vazio histórico</p></div>)}
                   </div>
                 )}
               </section>

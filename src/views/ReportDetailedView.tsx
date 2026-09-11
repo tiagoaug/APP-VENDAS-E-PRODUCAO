@@ -6,7 +6,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ComboBox from '../components/ComboBox';
 import ConsolidatedMessageModal from '../components/ConsolidatedMessageModal';
-import { sharePDF } from '../utils/pdfExport';
+import { sharePDF, shareImage } from '../utils/pdfExport';
+import { toJpeg } from 'html-to-image';
 import { toast } from '../utils/toast';
 import DatePicker from '../components/DatePicker';
 
@@ -23,6 +24,7 @@ interface ReportDetailedViewProps {
   categories: Category[];
   monthlySnapshots?: MonthlySnapshot[];
   collaborators?: Collaborator[];
+  initialPersonId?: string;
 }
 
 export default function ReportDetailedView({
@@ -37,6 +39,7 @@ export default function ReportDetailedView({
   categories,
   monthlySnapshots = [],
   collaborators = [],
+  initialPersonId = '',
 }: ReportDetailedViewProps) {
   // "Desempenho de Vendedores" já abre filtrado no mês atual por padrão — é a leitura mais
   // comum desse relatório ("mensalmente"); os outros continuam sem filtro de período (mostram
@@ -48,8 +51,11 @@ export default function ReportDetailedView({
   const [customerSearch, setCustomerSearch] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [accountingFilter, setAccountingFilter] = useState<'ALL' | 'ACCOUNTING' | 'NON_ACCOUNTING'>('ALL');
+  // Padrão 'PENDING' preserva o comportamento anterior (só dívidas em aberto) — "Quitadas"/
+  // "Ambos" são novos, pra também poder ver o que já foi pago.
+  const [supplierStatusFilter, setSupplierStatusFilter] = useState<'PENDING' | 'PAID' | 'BOTH'>('PENDING');
   const [modelSearch, setModelSearch] = useState('');
-  const [selectedPersonId, setSelectedPersonId] = useState('');
+  const [selectedPersonId, setSelectedPersonId] = useState(initialPersonId);
   const [messageFormat, setMessageFormat] = useState<'SUMMARY' | 'COMPLETE'>('COMPLETE');
   const [isConsolidatedModalOpen, setIsConsolidatedModalOpen] = useState(false);
   const [relationshipStatusFilter, setRelationshipStatusFilter] = useState<'BOTH' | 'PENDING' | 'COMPLETED'>('BOTH');
@@ -122,9 +128,10 @@ export default function ReportDetailedView({
     // Assumindo que purchase tem supplierId, total, id, status, paymentHistory/balance
     return purchases
        .filter((p: any) => {
+           const balance = p.balance || (p.total - (p.paymentHistory || []).reduce((acc: number, pay: any) => acc + pay.amount, 0));
            return (supplierId === '' || p.supplierId === supplierId) &&
            (accountingFilter === 'ALL' || (accountingFilter === 'ACCOUNTING' ? p.generateTransaction === true : p.generateTransaction !== true)) &&
-           (p.balance > 0 || (p.total - (p.paymentHistory || []).reduce((acc: number, pay: any) => acc + pay.amount, 0)) > 0)
+           (supplierStatusFilter === 'BOTH' || (supplierStatusFilter === 'PENDING' ? balance > 0 : balance <= 0))
        })
        .map((p: any) => ({
            id: p.id,
@@ -134,7 +141,12 @@ export default function ReportDetailedView({
            balance: p.balance || (p.total - (p.paymentHistory || []).reduce((acc: number, pay: any) => acc + pay.amount, 0)),
            isAccounting: !!p.generateTransaction
        }));
-  }, [purchases, reportId, supplierId, people, accountingFilter]);
+  }, [purchases, reportId, supplierId, people, accountingFilter, supplierStatusFilter]);
+
+  const dividasFornecedorTotal = useMemo(
+    () => dividasFornecedorData.reduce((acc, r) => acc + r.balance, 0),
+    [dividasFornecedorData]
+  );
 
   // Clientes que mais compram logic
   const topCustomersData = useMemo(() => {
@@ -307,6 +319,11 @@ export default function ReportDetailedView({
       .sort((a, b) => b.date - a.date);
   }, [sales, reportId, startDate, endDate, selectedPersonId, relationshipStatusFilter]);
 
+  const relationshipTotalBalance = useMemo(
+    () => relationshipData.reduce((acc, r) => acc + r.balance, 0),
+    [relationshipData]
+  );
+
   const getSaleMessage = (sale: any, formatType: 'SUMMARY' | 'COMPLETE') => {
     let msg = `*Venda #${sale.orderNumber || sale.id.substring(0, 4)}*\n`;
     msg += `Data: ${format(sale.date, 'dd/MM/yyyy')}\n`;
@@ -438,6 +455,7 @@ export default function ReportDetailedView({
         r.isAccounting ? 'Contábil' : 'Não Contábil',
         `R$ ${r.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       ]);
+      body.push(['', '', 'Total:', `R$ ${dividasFornecedorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`]);
       autoTable(doc, { startY: 40, head, body, theme: 'grid' });
     } else if (reportId === 'informacao-estoque') {
       const head = [['Referência', 'Cor', 'Qtd', 'V. Compra', 'Total']];
@@ -456,6 +474,59 @@ export default function ReportDetailedView({
     sharePDF(doc, `${reportId}_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf`);
   };
 
+  // Compartilhar "Dívidas por Fornecedor" em JPG — mesma técnica do extrato consolidado
+  // (ConsolidatedMessageModal): monta um HTML fora da tela, tira um "print" com toJpeg.
+  const exportSupplierDebtsJPG = async () => {
+    const rowsHtml = dividasFornecedorData.map(r => `
+      <tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:10px;font-weight:600;">${r.supplierName}</td>
+        <td style="padding:10px;color:#64748b;">${r.displayId}</td>
+        <td style="padding:10px;color:#64748b;">${r.isAccounting ? 'Contábil' : 'Não Contábil'}</td>
+        <td style="padding:10px;text-align:right;font-weight:700;color:${r.balance > 0 ? '#ef4444' : '#10b981'};">R$ ${r.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+      </tr>`).join('');
+
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.left = '0';
+    container.style.width = '600px';
+    container.style.zIndex = '999999';
+    container.style.backgroundColor = '#ffffff';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.pointerEvents = 'none';
+    container.innerHTML = `
+      <div style="font-family:Arial,sans-serif;color:#1e293b;background:#ffffff;">
+        <div style="background-color:#0f172a;padding:28px 30px;color:white;text-align:center;">
+          <h1 style="margin:0;font-size:22px;font-weight:800;">Dívidas por Fornecedor</h1>
+          <p style="margin:4px 0 0;font-size:11px;color:#64748b;">${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+        </div>
+        <div style="padding:24px 28px 0;background-color:#ffffff;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="background:#f8fafc;">
+              <th style="padding:10px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;">Fornecedor</th>
+              <th style="padding:10px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;">ID</th>
+              <th style="padding:10px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;">Status</th>
+              <th style="padding:10px;text-align:right;border-bottom:2px solid #e2e8f0;color:#64748b;">Saldo</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+          <div style="text-align:right;padding:14px 10px;font-size:18px;font-weight:800;color:${dividasFornecedorTotal > 0 ? '#ef4444' : '#10b981'};border-top:2px solid #e2e8f0;margin-top:4px;">
+            Total: R$ ${dividasFornecedorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div style="text-align:center;padding:16px;color:#94a3b8;font-size:10px;background-color:#ffffff;">App Vendas e Produção</div>
+      </div>
+    `;
+    document.body.appendChild(container);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const dataUrl = await toJpeg(container, { quality: 0.95, backgroundColor: '#ffffff' });
+      await shareImage(dataUrl, `dividas_fornecedor_${format(new Date(), 'yyyyMMdd_HHmmss')}`);
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
   return (
     <div className={`flex flex-col h-full bg-[#f8f9fa] dark:bg-slate-950 pb-32 ${isDarkMode ? 'text-white' : 'text-slate-900'} overflow-y-auto`}>
       <div className="flex justify-between items-center px-4 pt-6 pb-2 sticky top-0 bg-[#f8f9fa] dark:bg-slate-950 z-10 w-full">
@@ -469,15 +540,19 @@ export default function ReportDetailedView({
            <ArrowLeft size={20} />
          </button>
          <h1 className="text-xl font-black">{reportTitle}</h1>
-         <button
-           onClick={exportPDF}
-           title="Compartilhar PDF"
-           aria-label="Compartilhar relatório em PDF"
-           data-guide-anchor="reportDetail.exportarPdf"
-           className="p-2 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-600/30 active:scale-90 transition-transform"
-         >
-            <Share2 size={18} />
-         </button>
+         {reportId === 'relacionamento-cliente' ? (
+           <div className="w-9" />
+         ) : (
+           <button
+             onClick={exportPDF}
+             title="Compartilhar PDF"
+             aria-label="Compartilhar relatório em PDF"
+             data-guide-anchor="reportDetail.exportarPdf"
+             className="p-2 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-600/30 active:scale-90 transition-transform"
+           >
+              <Share2 size={18} />
+           </button>
+         )}
       </div>
       
       <div className="flex flex-col gap-4 px-4 mt-4 flex-grow">
@@ -605,27 +680,52 @@ export default function ReportDetailedView({
                     </div>
                 )}
                 {reportId === 'dividas-fornecedor' && (
-                    <>
-                    <div className="flex-[2] min-w-[200px]">
-                        <ComboBox 
-                            options={suppliers}
-                            value={supplierId}
-                            onChange={(id) => setSupplierId(id)}
-                            placeholder="Buscar fornecedor..."
-                            isDarkMode={isDarkMode}
-                        />
+                    <div className="flex flex-col gap-4 w-full mt-2">
+                        <div className={`flex gap-1 p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                          {([
+                            { id: 'PENDING' as const, label: 'Pendentes' },
+                            { id: 'PAID' as const, label: 'Quitadas' },
+                            { id: 'BOTH' as const, label: 'Ambos' },
+                          ]).map(opt => (
+                            <button
+                              type="button"
+                              key={opt.id}
+                              onClick={() => setSupplierStatusFilter(opt.id)}
+                              data-guide-anchor="reportDetail.statusFornecedorFiltro"
+                              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                supplierStatusFilter === opt.id
+                                  ? opt.id === 'PENDING' ? 'bg-rose-500 text-white shadow-md'
+                                    : opt.id === 'PAID' ? 'bg-emerald-500 text-white shadow-md'
+                                    : 'bg-indigo-600 text-white shadow-md'
+                                  : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <div className="flex-[2] min-w-[200px]">
+                              <ComboBox
+                                  options={suppliers}
+                                  value={supplierId}
+                                  onChange={(id) => setSupplierId(id)}
+                                  placeholder="Buscar fornecedor..."
+                                  isDarkMode={isDarkMode}
+                              />
+                          </div>
+                          <select
+                              value={accountingFilter}
+                              title="Filtrar por Tipo Contábil"
+                              onChange={(e) => setAccountingFilter(e.target.value as any)}
+                              className={`flex-1 min-w-[150px] p-3 rounded-2xl border text-xs font-bold ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
+                          >
+                              <option value="ALL">Contábil & Não Contábil</option>
+                              <option value="ACCOUNTING">Contábil</option>
+                              <option value="NON_ACCOUNTING">Não Contábil</option>
+                          </select>
+                        </div>
                     </div>
-                    <select 
-                        value={accountingFilter}
-                        title="Filtrar por Tipo Contábil"
-                        onChange={(e) => setAccountingFilter(e.target.value as any)}
-                        className={`flex-1 min-w-[150px] p-3 rounded-2xl border text-xs font-bold ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
-                    >
-                        <option value="ALL">Contábil & Não Contábil</option>
-                        <option value="ACCOUNTING">Contábil</option>
-                        <option value="NON_ACCOUNTING">Não Contábil</option>
-                    </select>
-                    </>
                 )}
             </div>
          </div>
@@ -692,16 +792,48 @@ export default function ReportDetailedView({
                                     <td className="p-3 text-xs font-bold">{r.supplierName}</td>
                                     <td className="p-3 text-[10px] font-bold text-slate-500">{r.displayId}</td>
                                     <td className="p-3 text-[10px] font-bold text-slate-500">{r.isAccounting ? 'Contábil' : 'Não Contábil'}</td>
-                                    <td className="p-3 text-xs text-right font-black text-rose-500">R$ {r.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td className={`p-3 text-xs text-right font-black ${r.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>R$ {r.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 </tr>
                             ))}
                             {dividasFornecedorData.length === 0 && (
                                 <tr>
-                                    <td colSpan={3} className="p-6 text-center text-xs text-slate-400 font-bold">Nenhum dado encontrado.</td>
+                                    <td colSpan={4} className="p-6 text-center text-xs text-slate-400 font-bold">Nenhum dado encontrado.</td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
+                    {dividasFornecedorData.length > 0 && (
+                        <div className={`flex items-center justify-between gap-3 p-4 mt-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</span>
+                                <span className={`text-sm font-black ${dividasFornecedorTotal > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                    R$ {dividasFornecedorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={exportPDF}
+                                    title="Exportar PDF"
+                                    aria-label="Exportar como PDF"
+                                    data-guide-anchor="reportDetail.exportarPdfFornecedor"
+                                    className="px-4 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-rose-500 text-white shadow-md shadow-rose-500/30 active:scale-90 transition-transform"
+                                >
+                                    PDF
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={exportSupplierDebtsJPG}
+                                    title="Exportar JPG"
+                                    aria-label="Exportar como JPG"
+                                    data-guide-anchor="reportDetail.exportarJpgFornecedor"
+                                    className="px-4 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-md shadow-indigo-600/30 active:scale-90 transition-transform"
+                                >
+                                    JPG
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
             {reportId === 'ventas-periodo' && (
@@ -925,6 +1057,26 @@ export default function ReportDetailedView({
                             )}
                         </tbody>
                     </table>
+                    {relationshipData.length > 0 && (
+                        <div className={`flex items-center justify-between gap-3 p-4 mt-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Pendente do Cliente</span>
+                                <span className={`text-sm font-black ${relationshipTotalBalance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                    R$ {relationshipTotalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsConsolidatedModalOpen(true)}
+                                title="Compartilhar extrato detalhado (PDF/JPG, com observações)"
+                                aria-label="Compartilhar extrato detalhado com observações, em PDF ou JPG"
+                                data-guide-anchor="reportDetail.compartilharDetalhado"
+                                className="p-2.5 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-600/30 active:scale-90 transition-transform shrink-0"
+                            >
+                                <Share2 size={16} />
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -106,10 +106,15 @@ export default function SoleStockView({
     const rect = el.getBoundingClientRect();
     materialDragState.current = { startX: e.clientX, startY: e.clientY, originX: rect.left, originY: rect.top };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    // Sem isso, o navegador (principalmente Android/WebView) interpreta o gesto como rolagem
+    // da página e só deixa passar uma fração minúscula do movimento pro pointermove — era essa
+    // "briga" com o scroll que fazia o popup só andar em passinhos de ~1mm.
+    e.preventDefault();
   };
   const handleMaterialDragMove = (e: React.PointerEvent) => {
     const drag = materialDragState.current;
     if (!drag) return;
+    e.preventDefault();
     const nextX = drag.originX + (e.clientX - drag.startX);
     const nextY = drag.originY + (e.clientY - drag.startY);
     const maxX = window.innerWidth - 40;
@@ -131,10 +136,12 @@ export default function SoleStockView({
     materialResizeState.current = { startX: e.clientX, startY: e.clientY, startWidth: rect.width, startHeight: rect.height };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     e.stopPropagation();
+    e.preventDefault();
   };
   const handleMaterialResizeMove = (e: React.PointerEvent) => {
     const resize = materialResizeState.current;
     if (!resize) return;
+    e.preventDefault();
     const nextWidth = resize.startWidth + (e.clientX - resize.startX);
     const nextHeight = resize.startHeight + (e.clientY - resize.startY);
     setMaterialCalcSize({
@@ -992,7 +999,7 @@ export default function SoleStockView({
             onPointerMove={handleMaterialDragMove}
             onPointerUp={handleMaterialDragEnd}
             data-guide-anchor="soleStock.materialArrastar"
-            className={`flex items-center justify-between gap-2 px-2.5 py-1.5 cursor-grab active:cursor-grabbing ${materialCalcExpanded ? `border-b border-dashed ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}` : ''}`}
+            className={`flex items-center justify-between gap-2 px-2.5 py-1.5 cursor-grab active:cursor-grabbing touch-none select-none ${materialCalcExpanded ? `border-b border-dashed ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}` : ''}`}
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <GripVertical size={13} className="text-slate-400 shrink-0" />

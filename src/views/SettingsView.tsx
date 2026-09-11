@@ -268,7 +268,7 @@ export default function SettingsView({
         { id: 'PROD_UNIDADES', label: "Unidades de Medida", icon: <GanttChartSquare size={22} />, color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'production' },
         { id: 'PROD_FACAS', label: "Facas de Corte", icon: <Scissors size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'production' },
         { id: 'PROD_INFESTO', label: "Camadas de Dobra Para Corte", icon: <Box size={22} />, color: "text-sky-600 dark:text-sky-400", bg: "bg-sky-50 dark:bg-sky-900/20", module: 'production' },
-        { id: 'PROD_PECAS', label: "Peças", icon: <Layers size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'production' },
+        { id: 'PROD_PECAS', label: "Nome do Componente e Peça", icon: <Layers size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'production' },
         { id: 'PROD_EMBALAGENS', label: "Padrão Embalagens", icon: <PackageOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'production' },
       ].filter(item => isModuleActive(item.module as keyof AppModulesConfig | 'any') && isItemAllowed(item.id))
     },

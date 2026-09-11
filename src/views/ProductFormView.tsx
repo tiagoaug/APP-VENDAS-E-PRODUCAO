@@ -7,7 +7,7 @@ import {
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
   Layers, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake, PenTool, Bookmark
+  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake, PenTool, Bookmark, Share2, Edit3
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
@@ -36,6 +36,18 @@ interface ProductFormViewProps {
   onCancel: () => void;
   onSaveConfigItem?: (item: ProductionConfigItem) => Promise<void>;
   onDeleteConfigItem?: (id: string) => void | Promise<void>;
+  /** Usados só pelo atalho "Não encontrou? Cadastre uma faca completa aqui" dentro da Ficha
+   * Técnica (ver EngineeringEditor) — reaproveita o formulário completo de Facas de Corte. */
+  onQuickAddCategory?: (category: Omit<Category, 'id'>) => Promise<Category>;
+  onCreateGrid?: (grid: Omit<Grid, 'id'>) => Promise<void>;
+  onUpdateGrid?: (id: string, grid: Omit<Grid, 'id'>) => Promise<void>;
+  onDeleteGrid?: (id: string) => Promise<void>;
+  // Completam o cadastro completo de Insumo embutido (mesmo atalho acima, campo Material de
+  // Insumo) — sem eles, os campos Flow Tag/Fornecedor/Unidade/Cor ficam sem "Crie um aqui".
+  onQuickAddFlowTag?: (tag: Omit<FlowTag, 'id'>) => Promise<FlowTag>;
+  onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
+  onQuickAddMaterial?: (item: Omit<ProductionConfigItem, 'id'>) => Promise<ProductionConfigItem>;
+  onQuickAddColor?: (color: Omit<ColorValue, 'id'>) => Promise<ColorValue>;
   isDarkMode: boolean;
   sectors: Sector[];
   modulesConfig: AppModulesConfig;
@@ -113,7 +125,7 @@ function syncAssemblySectorNotes(
   return cleaned;
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, brands = [], productModels = [], productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES', guided = false }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, brands = [], productModels = [], productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, onQuickAddCategory, onCreateGrid, onUpdateGrid, onDeleteGrid, onQuickAddFlowTag, onQuickAddPerson, onQuickAddMaterial, onQuickAddColor, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES', guided = false }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   // Fixa o id do produto no momento em que o formulário é aberto: ao criar um modelo novo
   // (productId nulo), o primeiro salvamento gera um id aleatório e os salvamentos
@@ -292,6 +304,15 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   // Cadastro Guiado — só faz sentido criando um modelo do zero (nunca editando um já
   // existente); "Encerrar assistente" na barra só sai do modo guiado, não do formulário.
   const [guidedDismissed, setGuidedDismissed] = useState(false);
+  // Dica de "Componentes do Cabedal" — some com o X e não volta mais neste aparelho (mesmo
+  // padrão de preferência local já usado noutras telas, ex.: StockGlanceView).
+  const [showCuttingPiecesHint, setShowCuttingPiecesHint] = useState(() => {
+    try { return localStorage.getItem('hint_cutting_pieces_dismissed') !== '1'; } catch { return true; }
+  });
+  const dismissCuttingPiecesHint = () => {
+    setShowCuttingPiecesHint(false);
+    try { localStorage.setItem('hint_cutting_pieces_dismissed', '1'); } catch { /* ignore */ }
+  };
   const [guidedStepIndex, setGuidedStepIndex] = useState(0);
   const isGuided = guided && !existingProduct && !guidedDismissed;
   const showSection = (key: GuidedSectionKey) => !isGuided || GUIDED_SECTIONS[guidedStepIndex] === key;
@@ -405,11 +426,22 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [calcTargetSectorId, setCalcTargetSectorId] = useState<string | null>(null);
   const [showCuttingPieces, setShowCuttingPieces] = useState(false);
   const [showCostSummary, setShowCostSummary] = useState(false);
+  const [autoExportCost, setAutoExportCost] = useState(false);
   const [openCategoryIds, setOpenCategoryIds] = useState<Set<string>>(new Set());
   const toggleCategoryOpen = (cat: string) => {
     setOpenCategoryIds(prev => {
       const next = new Set(prev);
       if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  };
+  // Acordeão dos detalhes de cada peça de corte (Peças/Pr, Faca, Mat. R$, Serv. R$) — fica
+  // fechado por padrão, mostrando só Consumo e Total R$ no resumo clicável.
+  const [openPecaStatsIds, setOpenPecaStatsIds] = useState<Set<string>>(new Set());
+  const togglePecaStatsOpen = (id: string) => {
+    setOpenPecaStatsIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
@@ -1244,16 +1276,28 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           </p>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowCostSummary(true)}
-                        data-guide-anchor="productForm.verResumoCusto"
-                        title="Ver resumo completo do custo"
-                        aria-label="Ver resumo completo do custo"
-                        className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 transition-all active:scale-90"
-                      >
-                        <Info size={20} />
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => { setAutoExportCost(true); setShowCostSummary(true); }}
+                          data-guide-anchor="productForm.compartilharResumoCusto"
+                          title="Compartilhar resumo do custo"
+                          aria-label="Compartilhar resumo do custo"
+                          className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 transition-all active:scale-90 animate-pulse-cyan-ring"
+                        >
+                          <Share2 size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCostSummary(true)}
+                          data-guide-anchor="productForm.verResumoCusto"
+                          title="Ver resumo completo do custo"
+                          aria-label="Ver resumo completo do custo"
+                          className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 transition-all active:scale-90"
+                        >
+                          <Info size={20} />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-3 pt-3 border-t border-white/10">
                       <div className="flex-1 flex flex-col gap-0.5">
@@ -1282,7 +1326,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
                       <p className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Diluição de Custos Fixo Variável</p>
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col justify-end gap-1 h-full">
                           <label htmlFor="estimated-pairs-day" className="text-[8px] font-black text-indigo-200 uppercase tracking-widest">Produção Estimada (Pares/Dia)</label>
                           <input
                             id="estimated-pairs-day"
@@ -1294,7 +1338,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             className="w-full px-3 py-2.5 rounded-xl bg-white/10 text-white text-xs font-black outline-none placeholder:text-indigo-300 focus:bg-white/20 transition-all"
                           />
                         </div>
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col justify-end gap-1 h-full">
                           <label htmlFor="work-days-month" className="text-[8px] font-black text-indigo-200 uppercase tracking-widest">Dias Trabalhados/Mês</label>
                           <input
                             id="work-days-month"
@@ -1326,7 +1370,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
                   <ProductCostSummaryModal
                     isOpen={showCostSummary}
-                    onClose={() => setShowCostSummary(false)}
+                    onClose={() => { setShowCostSummary(false); setAutoExportCost(false); }}
+                    autoExport={autoExportCost}
                     isDarkMode={isDarkMode}
                     productLabel={`${reference ? `${reference} — ` : ''}${name || 'Produto'} · ${v.colorName || ''}`}
                     consumptions={v.consumptions || []}
@@ -1376,12 +1421,24 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         </button>
                       </div>
 
-                      <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border mb-6 ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
-                        <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
-                        <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase tracking-widest leading-relaxed">
-                          Aqui você cadastra as peças cortadas por facas de corte já cadastradas para este modelo — cada peça consome uma faca/molde técnica e um material de insumo específicos.
-                        </p>
-                      </div>
+                      {showCuttingPiecesHint && (
+                        <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border mb-6 ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
+                          <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                          <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase tracking-widest leading-relaxed">
+                            Aqui você cadastra as peças cortadas por facas de corte já cadastradas para este modelo — cada peça consome uma faca/molde técnica e um material de insumo específicos.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={dismissCuttingPiecesHint}
+                            data-guide-anchor="productForm.fecharDicaPecasCorte"
+                            title="Minimizar esta dica"
+                            aria-label="Minimizar esta dica"
+                            className="shrink-0 p-1 -m-1 rounded-lg text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
 
                       <button
                         type="button"
@@ -1439,10 +1496,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                        setIsConsumptionModalOpen(true);
                                      }}
                                      data-guide-anchor="productForm.configPecaCorte"
-                                     title="Configurações"
+                                     title="Editar"
                                      className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-xl transition-colors"
                                    >
-                                     <Settings size={16} />
+                                     <Edit3 size={16} />
                                    </button>
                                   <button
                                      onClick={() => {
@@ -1459,55 +1516,67 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-3 gap-2 py-3 border-t border-slate-200/50 dark:border-slate-800/50">
-                                <div className={`flex flex-col gap-1 transition-opacity ${item.ignoreQuantity ? 'opacity-30' : ''}`}>
-                                  <span className="text-[10px] font-black text-slate-400 uppercase">Peças/Pr</span>
-                                  <span className="text-[14px] font-black">{item.ignoreQuantity ? '---' : (item.piecesPerPair || 2)}</span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] font-black text-slate-400 uppercase">Consumo</span>
-                                  <span className="text-[14px] font-black text-indigo-600 dark:text-indigo-400">
-                                    {item.quantity.toFixed(4).replace('.', ',')}
-                                    <span className="text-[10px] ml-1">
-                                      {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                              <div className="border-t border-slate-200/50 dark:border-slate-800/50">
+                                <button
+                                  type="button"
+                                  onClick={() => togglePecaStatsOpen(item.id)}
+                                  data-guide-anchor="productForm.alternarStatsPecaCorte"
+                                  title={openPecaStatsIds.has(item.id) ? "Recolher detalhes" : "Ver mais detalhes"}
+                                  aria-label={openPecaStatsIds.has(item.id) ? "Recolher detalhes da peça" : "Ver mais detalhes da peça"}
+                                  className="w-full grid grid-cols-2 gap-3 py-3 text-left"
+                                >
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase">Consumo</span>
+                                    <span className="text-[14px] font-black text-indigo-600 dark:text-indigo-400">
+                                      {item.quantity.toFixed(4).replace('.', ',')}
+                                      <span className="text-[10px] ml-1">
+                                        {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                                      </span>
                                     </span>
-                                  </span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] font-black text-slate-400 uppercase">Faca</span>
-                                  <span className="text-[12px] font-bold truncate max-w-[80px]">{tool?.name || '---'}</span>
-                                </div>
-                              </div>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-1">
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase">Total R$</span>
+                                      <span className="text-[14px] font-black text-indigo-600 dark:text-indigo-400">
+                                        {(() => {
+                                          const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material)?.metadata?.baseCost || 0);
+                                          const result = (item.quantity * unitVal) + (item.services || []).reduce((acc, s) => acc + s.cost, 0);
+                                          return result.toFixed(2).replace('.', ',');
+                                        })()}
+                                      </span>
+                                    </div>
+                                    <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${openPecaStatsIds.has(item.id) ? 'rotate-180' : ''}`} />
+                                  </div>
+                                </button>
 
-                                <div className="grid grid-cols-3 gap-2 py-3 border-t border-slate-200/50 dark:border-slate-800/50">
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] font-black text-slate-400 uppercase">Mat. R$</span>
-                                  <span className="text-[14px] font-black">
-                                    {(() => {
-                                      const matBaseCost = material?.metadata?.baseCost;
-                                      const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material)?.metadata?.baseCost || 0);
-                                      const result = item.quantity * unitVal;
-                                      return result.toFixed(2).replace('.', ',');
-                                    })()}
-                                  </span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] font-black text-slate-400 uppercase">Serv. R$</span>
-                                  <span className="text-[14px] font-black text-emerald-600">
-                                    {(item.services || []).reduce((acc, s) => acc + s.cost, 0).toFixed(2).replace('.', ',')}
-                                  </span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] font-black text-slate-400 uppercase">Total R$</span>
-                                  <span className="text-[14px] font-black text-indigo-600 dark:text-indigo-400">
-                                    {(() => {
-                                      const matBaseCost = material?.metadata?.baseCost;
-                                      const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material)?.metadata?.baseCost || 0);
-                                      const result = (item.quantity * unitVal) + (item.services || []).reduce((acc, s) => acc + s.cost, 0);
-                                      return result.toFixed(2).replace('.', ',');
-                                    })()}
-                                  </span>
-                                </div>
+                                {openPecaStatsIds.has(item.id) && (
+                                  <div className="grid grid-cols-2 gap-3 pb-3">
+                                    <div className={`flex flex-col gap-1 transition-opacity ${item.ignoreQuantity ? 'opacity-30' : ''}`}>
+                                      <span className="text-[10px] font-black text-slate-400 uppercase">Peças/Pr</span>
+                                      <span className="text-[14px] font-black">{item.ignoreQuantity ? '---' : (item.piecesPerPair || 2)}</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase">Faca</span>
+                                      <span className="text-[12px] font-bold truncate max-w-[120px]">{tool?.name || '---'}</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase">Mat. R$</span>
+                                      <span className="text-[14px] font-black">
+                                        {(() => {
+                                          const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material)?.metadata?.baseCost || 0);
+                                          const result = item.quantity * unitVal;
+                                          return result.toFixed(2).replace('.', ',');
+                                        })()}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase">Serv. R$</span>
+                                      <span className="text-[14px] font-black text-emerald-600">
+                                        {(item.services || []).reduce((acc, s) => acc + s.cost, 0).toFixed(2).replace('.', ',')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
 
                               {item.services && item.services.length > 0 && (
@@ -1535,6 +1604,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         Pagamento, Serviços do Conjunto + Categorias customizadas) */}
                     <div className="flex items-center justify-between px-2">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Outras Categorias</p>
+                    </div>
+                    <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
+                      <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                      <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 leading-relaxed">
+                        O botão "<span className="text-red-600 dark:text-red-400 font-black">Fixo</span>"/"<span className="text-red-600 dark:text-red-400 font-black">Fixo Variável</span>" de cada categoria define como o custo se comporta por par: "<span className="text-red-600 dark:text-red-400 font-black">Fixo</span>" é um valor imutável, sempre o mesmo independente da produção; "<span className="text-red-600 dark:text-red-400 font-black">Fixo Variável</span>" é um valor fixo mensal que é diluído pela produção estimada, então muda por par conforme a quantidade produzida.
+                      </p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                       {categoryGroups.map(group => {
@@ -1569,7 +1644,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                 </div>
                               </div>
                               <div className="flex items-center gap-3 shrink-0">
-                                <div className="flex flex-col items-end gap-1">
+                                <div className="flex flex-col items-end gap-1.5">
                                   <span className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(groupTotal)}
                                   </span>
@@ -1578,11 +1653,15 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                     onClick={(e) => { e.stopPropagation(); upsertCategoryCostType(group.cat, group.label, isFixedCost ? 'VARIABLE' : 'FIXED'); }}
                                     data-guide-anchor="productForm.alternarTipoCusto"
                                     title="Alternar entre Fixo Variável (valor fixo mensal, diluído por produção estimada — varia por par conforme o volume) e Fixo (valor imutável por par, sempre o mesmo independente da produção)"
-                                    className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${isFixedCost ? 'bg-orange-500 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                                    className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-2xl transition-all active:scale-95 ${isFixedCost ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                                   >
-                                    {isFixedCost ? 'Fixo Variável' : 'Fixo'}
+                                    <span className="text-[10px] font-black uppercase tracking-widest leading-none">
+                                      {isFixedCost ? 'Fixo Variável' : 'Fixo'}
+                                    </span>
+                                    <span className={`text-[7px] font-bold uppercase tracking-widest leading-none ${isFixedCost ? 'text-white/75' : 'text-slate-400'}`}>
+                                      Clique para mudar
+                                    </span>
                                   </button>
-                                  <span className="text-[7px] font-bold uppercase tracking-widest text-slate-400">Clique para mudar</span>
                                 </div>
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
                                   <ChevronDown size={16} strokeWidth={3} />
@@ -2046,6 +2125,19 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               productReference={reference}
               productName={name}
               onSaveConfigItem={onSaveConfigItem}
+              onDeleteConfigItem={onDeleteConfigItem ? async (id) => { await onDeleteConfigItem(id); } : undefined}
+              people={suppliers}
+              categories={categories}
+              onQuickAddCategory={onQuickAddCategory}
+              onCreateGrid={onCreateGrid}
+              onUpdateGrid={onUpdateGrid}
+              onDeleteGrid={onDeleteGrid}
+              products={products}
+              flowTagsList={flowTags}
+              onQuickAddFlowTag={onQuickAddFlowTag}
+              onQuickAddPerson={onQuickAddPerson}
+              onQuickAddMaterial={onQuickAddMaterial}
+              onQuickAddColor={onQuickAddColor}
               sectorNotes={activeVariationIndex !== null ? variations[activeVariationIndex].sectorNotes : undefined}
               productionRoute={productionRoute}
               categoryCostType={getCategoryCostType(consumptionCategory)}
@@ -2379,7 +2471,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Grade de Produção (Escalonamento)</label>
+                    <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 block">Grade de Produção (Escalonamento)</label>
+                    <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 leading-relaxed">
+                      As numerações em que este modelo é produzido — junto com a Matriz de Solado (base) ao lado, define quais formas de calçado existem pra cada numeração.
+                    </p>
                     <div className="relative group">
                       <select
                         className={`w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-3 py-3 text-[10px] font-bold text-slate-900 dark:text-slate-100 pr-10 transition-all outline-none group-hover:border-indigo-500/30`}
@@ -2428,7 +2523,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 </div>
 
                 {/* Mapeamento de Grade de Solados — Card dedicado */}
-                <div className={`mt-6 rounded-[2rem] border-2 overflow-hidden ${isDarkMode ? 'border-emerald-500/20' : 'border-emerald-100'}`}>
+                <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1 mt-4 leading-relaxed">
+                  Qual numeração da sola casa com cada numeração da forma (cabedal) — útil quando o número gravado na sola não é igual ao número do calçado pronto.
+                </p>
+                <div className={`mt-2 rounded-[2rem] border-2 overflow-hidden ${isDarkMode ? 'border-emerald-500/20' : 'border-emerald-100'}`}>
                   <button
                     type="button"
                     onClick={() => setShowSoleMapping(true)}
@@ -2853,16 +2951,18 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
 
 
-        {/* Roteiro de Produção — exclusivo para Engenharia */}
+        {/* Roteiro de Produção — exclusivo para Engenharia. Antes era um acordeão expandindo
+            inline; agora abre num popup (Modal), mesmo padrão do card "Mapeamento de Solados"
+            logo acima — showProductionRoute passou a controlar o popup, não mais um expand/collapse. */}
         {module === 'PRODUCTION' && (
-          <div className={`mt-8 p-5 rounded-[2.5rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <div className={`mt-8 rounded-[2.5rem] border-2 overflow-hidden ${isDarkMode ? 'border-indigo-500/20' : 'border-indigo-100'}`}>
             <button
               type="button"
-              onClick={() => setShowProductionRoute(prev => !prev)}
+              onClick={() => setShowProductionRoute(true)}
               data-guide-anchor="productForm.alternarRoteiroProducao"
-              title={showProductionRoute ? "Recolher Roteiro de Produção" : "Expandir Roteiro de Produção"}
-              aria-label={showProductionRoute ? "Recolher Roteiro de Produção" : "Expandir Roteiro de Produção"}
-              className={`w-full flex items-center gap-3 ${showProductionRoute ? 'mb-6' : ''}`}
+              title="Abrir Roteiro de Produção"
+              aria-label="Abrir Roteiro de Produção"
+              className={`w-full flex items-center gap-3 px-5 sm:px-6 py-4 text-left transition-colors ${isDarkMode ? 'bg-slate-800/20 hover:bg-indigo-900/20' : 'bg-indigo-50/30 hover:bg-indigo-50'}`}
             >
               <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
                 <Factory size={20} />
@@ -2873,13 +2973,24 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {productionRoute.length > 0 ? `${productionRoute.length} setor${productionRoute.length > 1 ? 'es' : ''} na sequência` : 'Sequência de setores para este modelo'}
                 </p>
               </div>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30 transition-transform ${showProductionRoute ? 'rotate-180' : ''}`}>
-                <ChevronDown size={18} strokeWidth={3} />
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30`}>
+                <ChevronRight size={18} strokeWidth={3} />
               </div>
             </button>
+          </div>
+        )}
 
-            {showProductionRoute && (
-              <>
+        <Modal
+          isOpen={showProductionRoute}
+          onClose={() => setShowProductionRoute(false)}
+          title="Roteiro de Produção"
+          icon={<Factory size={20} />}
+          maxWidth="max-w-lg"
+        >
+          <div className="flex flex-col gap-1">
+            <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1 mb-4">
+              Roteiro de produção são os setores de serviço aos quais esse modelo percorre.
+            </p>
             {/* Lista selecionável de setores */}
             <div className="flex flex-col gap-1 mb-6">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-2">Setores Disponíveis</label>
@@ -2981,10 +3092,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 })}
               </div>
             )}
-              </>
-            )}
           </div>
-        )}
+        </Modal>
 
         {/* Valores de Serviço por Setor — abaixo do Roteiro de Produção, só faz sentido com pelo
             menos 1 setor selecionado ali. Abre um popup com um campo de R$/par sugerido por

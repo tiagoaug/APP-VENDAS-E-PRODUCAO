@@ -261,6 +261,11 @@ export type ComponentConsumption = {
   // Cutting Piece specific
   toolId?: string; // Link to Faca (ProductionConfigItem type TOOL)
   piecesPerPair?: number; // Usually 2
+  // Marca que esta peça de corte (category === 'CUTTING_PIECE') não usa Faca/Molde Técnica —
+  // o consumo do material é digitado direto (quantidade manual por par), em vez de calculado
+  // pela área da faca/grade. Material continua obrigatório e entra normalmente em custo e
+  // Necessidade de Compra; só o cálculo automático por tamanho que não se aplica.
+  skipTool?: boolean;
   
   // Ignore flags for conditional requirements
   ignoreColor?: boolean;
@@ -1161,10 +1166,15 @@ export type AppModulesConfig = {
 // os itens do meio entram em `order`/`hidden`. Itens ausentes de `order` caem no fim, na ordem
 // padrão de sempre — assim adicionar um item novo (ex.: um módulo futuro) nunca quebra a config
 // salva de quem já personalizou antes.
-export type BottomNavItemId = 'purchases' | 'sales' | 'production' | 'bling' | 'entregas' | 'financial' | 'personal' | 'rh' | 'pcp' | 'stock' | 'people' | 'reports' | 'soleStock' | 'engineering' | 'purchaseNeeds' | 'ruleOfThree' | 'labelPrintStudio' | 'catalogRequests' | 'sendCatalog' | 'fornecedores';
+export type BottomNavItemId = 'purchases' | 'sales' | 'production' | 'bling' | 'entregas' | 'financial' | 'personal' | 'rh' | 'pcp' | 'stock' | 'people' | 'reports' | 'soleStock' | 'engineering' | 'purchaseNeeds' | 'ruleOfThree' | 'labelPrintStudio' | 'catalogRequests' | 'sendCatalog' | 'fornecedores' | 'products' | 'paymentMethods' | 'ocr' | 'aiAssistant' | 'cuttingKnives';
 export type BottomNavConfig = {
   order: BottomNavItemId[];
   hidden: BottomNavItemId[];
+  // Fica sempre visível na barra compacta (nunca precisa expandir pra ver) — o resto dos itens
+  // visíveis (não escondidos) só aparece quando o card é expandido (ver App.tsx middleNavItems/
+  // navExpanded). Ausente/vazio = ainda não configurado, App.tsx cai num padrão automático
+  // (os primeiros que couberem na barra).
+  pinned?: BottomNavItemId[];
 };
 
 // Configurações globais de RH — dia de pagamento e de adiantamento (quinzena) usados como

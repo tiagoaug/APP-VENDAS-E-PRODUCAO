@@ -96,6 +96,7 @@ import MaterialFormFields from '../components/MaterialFormFields';
 import ComboBox from '../components/ComboBox';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import CalculatorModal from '../components/CalculatorModal';
+import EngineeringPickerModal from '../components/EngineeringPickerModal';
 import { BADGE_COLOR_OPTIONS, BADGE_COLOR_CLASSES, DEFAULT_BADGE_COLOR } from '../utils/badgeColors';
 
 import ConsumptionCalculatorModal from '../components/ConsumptionCalculatorModal';
@@ -264,6 +265,28 @@ function PecasConfig({
   const entradas = pecas.filter(p => p.metadata?.pieceType === 'ENTRADA');
   const pecasLista = pecas.filter(p => p.metadata?.pieceType === 'PECA');
 
+  const handleSeedPecas = async () => {
+    for (const def of DEFAULT_PECAS) {
+      const nova: ProductionConfigItem = {
+        id: `p-${Date.now()}-${def.name}`,
+        name: def.name,
+        description: def.pieceType,
+        type: 'PIECE',
+        createdAt: Date.now(),
+        metadata: { pieceType: def.pieceType }
+      };
+      await onSave(nova);
+    }
+    setPecas([...pecas, ...DEFAULT_PECAS.map(def => ({
+      id: `p-${Date.now()}-${def.name}`,
+      name: def.name,
+      description: def.pieceType,
+      type: 'PIECE' as const,
+      createdAt: Date.now(),
+      metadata: { pieceType: def.pieceType }
+    }))]);
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -275,6 +298,10 @@ function PecasConfig({
           <ArrowLeft size={18} /> Voltar
         </button>
       </div>
+
+      <p className={`text-xs font-bold -mt-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        Esses cadastros são usados dentro da Ficha Técnica, em Engenharia de Modelos, para nomear os componentes e peças do roteiro de produção.
+      </p>
 
       <div className={`rounded-2xl border-2 p-4 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
         <div className="flex flex-col gap-2 mb-4">
@@ -376,8 +403,16 @@ function PecasConfig({
       ))}
 
       {pecas.length === 0 && (
-        <div className={`text-center py-8 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-          <p className="text-sm font-bold tracking-wider">Nenhuma peça cadastrada</p>
+        <div className="flex flex-col items-center gap-4 py-8">
+          <p className={`text-sm font-bold tracking-wider ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Nenhuma peça cadastrada</p>
+          <button
+            type="button"
+            onClick={handleSeedPecas}
+            data-guide-anchor="peca.carregarPadrao"
+            className="px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest border border-indigo-100"
+          >
+            Carregar Peças Padrão
+          </button>
         </div>
       )}
     </div>
@@ -411,6 +446,17 @@ const DEFAULT_UNITS = [
   { name: 'GR', description: 'Grama' },
   { name: 'L', description: 'Litro' },
   { name: 'MIL', description: 'Milheiro' },
+];
+
+// Sugestão de nomes de Componente/Peça pro botão "Carregar Peças Padrão" — mesma ideia do
+// DEFAULT_UNITS acima, só aparece quando a conta ainda não tem nenhuma cadastrada.
+const DEFAULT_PECAS: { name: string; pieceType: 'ENTRADA' | 'PECA' }[] = [
+  { name: 'LATERAL', pieceType: 'PECA' },
+  { name: 'FRENTE', pieceType: 'PECA' },
+  { name: 'CAIXA COLETIVA', pieceType: 'PECA' },
+  { name: 'CAIXA UNITARIA', pieceType: 'PECA' },
+  { name: 'COLA PVC', pieceType: 'ENTRADA' },
+  { name: 'COLA SPRAY', pieceType: 'ENTRADA' },
 ];
 
 interface ProductionConfigViewProps {
@@ -464,6 +510,14 @@ interface ProductionConfigViewProps {
   // direto em vez de `setCurrentScreen('MENU')` — o menu com Facas/Matrizes/Fichas etc. (tudo
   // que só faz sentido com Produção) nunca chega a renderizar.
   restrictToPackaging?: boolean;
+  // true = acesso restrito só à tela Facas de Corte — usado pelo atalho "Não encontrou? Cadastre
+  // uma faca completa aqui" de dentro da Ficha Técnica (EngineeringEditor), pra reaproveitar o
+  // formulário completo (categoria/grade com criação inline) sem duplicar essa lógica. Mesmo
+  // padrão de restrictToPackaging acima: fechar chama `onBack` direto, sem passar pelo MENU.
+  restrictToFacas?: boolean;
+  // true = acesso restrito só à tela Catálogo de Insumos — mesmo uso do restrictToFacas acima,
+  // pro atalho "Não encontrou o material? Cadastre um material aqui" da Ficha Técnica.
+  restrictToInsumos?: boolean;
   onStartJourney?: (journeyId: string) => void;
   // Unidades de Medida sugeridas pro botão "Carregar Unidades Padrão" — vem do Firestore
   // (appDefaultUnits/units, ver defaultUnitsService.ts) quando a conta de desenvolvimento já
@@ -515,6 +569,8 @@ export default function ProductionConfigView({
   products = [],
   soleStock = [],
   restrictToPackaging = false,
+  restrictToFacas = false,
+  restrictToInsumos = false,
   onStartJourney,
   defaultUnits,
   onSaveDefaultUnits,
@@ -1098,7 +1154,7 @@ export default function ProductionConfigView({
 
       <Modal
         isOpen={currentScreen === 'FACAS'}
-        onClose={() => setCurrentScreen('MENU')}
+        onClose={restrictToFacas ? onBack : () => setCurrentScreen('MENU')}
         title="Facas de Corte"
         zIndex={60000}
       >
@@ -1111,16 +1167,20 @@ export default function ProductionConfigView({
           isDarkMode={isDarkMode}
           onSave={onSaveConfigItem}
           onDelete={onDeleteConfigItem}
-          onBack={() => setCurrentScreen('MENU')}
+          onBack={restrictToFacas ? onBack : () => setCurrentScreen('MENU')}
           placeholderLabel="Nenhuma faca cadastrada"
           productionConfigs={productionConfigs}
           people={people}
           colors={colors}
           grids={grids}
+          onCreateGrid={onCreateGrid}
+          onUpdateGrid={onUpdateGrid}
+          onDeleteGrid={onDeleteGrid}
           toolCategoryNames={toolCategoryNames}
+          onQuickAddCategory={onQuickAddCategory}
           products={products}
           sectors={sectors}
-          onNavigateToScreen={handleNavigateShortcut}
+          onNavigateToScreen={restrictToFacas ? undefined : handleNavigateShortcut}
         />
       </Modal>
 
@@ -1179,11 +1239,11 @@ export default function ProductionConfigView({
       <Modal
         isOpen={currentScreen === 'PECAS'}
         onClose={() => setCurrentScreen('MENU')}
-        title="Peças"
+        title="Nome do Componente e Peça"
         zIndex={60000}
       >
         <PecasConfig
-          title="Peças"
+          title="Nome do Componente e Peça"
           isDarkMode={isDarkMode}
           onBack={() => setCurrentScreen('MENU')}
           zIndex={60000}
@@ -1195,7 +1255,7 @@ export default function ProductionConfigView({
 
       <Modal
         isOpen={currentScreen === 'INSUMOS'}
-        onClose={() => setCurrentScreen('MENU')}
+        onClose={restrictToInsumos ? onBack : () => setCurrentScreen('MENU')}
         title="Catálogo de Insumos"
         icon={<Package size={20} />}
         zIndex={60000}
@@ -1209,7 +1269,7 @@ export default function ProductionConfigView({
           isDarkMode={isDarkMode}
           onSave={onSaveConfigItem}
           onDelete={onDeleteConfigItem}
-          onBack={() => setCurrentScreen('MENU')}
+          onBack={restrictToInsumos ? onBack : () => setCurrentScreen('MENU')}
           placeholderLabel="Nenhum insumo cadastrado"
           productionConfigs={productionConfigs}
           people={people}
@@ -1221,7 +1281,7 @@ export default function ProductionConfigView({
           onQuickAddPerson={onQuickAddPerson}
           onQuickAddMaterial={onQuickAddMaterial}
           onQuickAddColor={onQuickAddColor}
-          onNavigateToScreen={handleNavigateShortcut}
+          onNavigateToScreen={restrictToInsumos ? undefined : handleNavigateShortcut}
           zIndex={60000}
           purchaseNeeds={purchaseNeeds}
         />
@@ -1560,6 +1620,7 @@ function GenericConfigList({
   const [newSize, setNewSize] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedProductFilter, setSelectedProductFilter] = useState('');
+  const [isProductFilterPickerOpen, setIsProductFilterPickerOpen] = useState(false);
   const [isWeightsModalOpen, setIsWeightsModalOpen] = useState(false);
   const [isColorWeightsModalOpen, setIsColorWeightsModalOpen] = useState(false);
   const [gridSuccess, setGridSuccess] = useState(false);
@@ -1595,6 +1656,25 @@ function GenericConfigList({
   const [isCreatingCategoryInline, setIsCreatingCategoryInline] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryType, setNewCategoryType] = useState<CategoryType>(CategoryType.MOLD);
+  // Picker de Categoria da Faca — estado independente do picker de Categoria do Solado acima
+  // (isCategoryPickerOpen etc.), senão abrir um abriria os dois juntos (mesmo state
+  // compartilhado). Sempre CategoryType.CUTTING_TOOL, então não precisa das abas de tipo que o
+  // do Solado tem.
+  const [isToolCategoryPickerOpen, setIsToolCategoryPickerOpen] = useState(false);
+  const [toolCategorySearch, setToolCategorySearch] = useState('');
+  const [isCreatingToolCategoryInline, setIsCreatingToolCategoryInline] = useState(false);
+  const [newToolCategoryName, setNewToolCategoryName] = useState('');
+
+  // Picker de Grade da Faca — mesmo motivo acima: estado próprio, não reaproveita
+  // isGridSearchOpen/newGridName/etc. (aqueles são do Solado, tipo GridType.SOLADO).
+  const [isFacaGridSearchOpen, setIsFacaGridSearchOpen] = useState(false);
+  const [facaGridSearchTerm, setFacaGridSearchTerm] = useState('');
+  const [isCreatingFacaGridInline, setIsCreatingFacaGridInline] = useState(false);
+  const [editingFacaGridId, setEditingFacaGridId] = useState<string | null>(null);
+  const [newFacaGridName, setNewFacaGridName] = useState('');
+  const [newFacaGridSizes, setNewFacaGridSizes] = useState<string[]>([]);
+  const [newFacaGridSizeInput, setNewFacaGridSizeInput] = useState('');
+
   const [isSupplierPickerOpen, setIsSupplierPickerOpen] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
@@ -1982,6 +2062,78 @@ function GenericConfigList({
     }
   };
 
+  // Contraparte de applyGridToMold — a Faca guarda a grade escolhida em sizes/sizeAreas (não
+  // sizeWeights), mesmo campo já usado no <select> antigo (ver metadata.sizeAreas acima).
+  const applyGridToFaca = (grid: Grid, sizesOverride?: string[]) => {
+    const gridSizes = sizesOverride || (grid as any).sizes || (grid as any).items?.map((i: any) => i.size) || [];
+    setEditingItem(prev => {
+      if (!prev) return null;
+      const newSizeAreas = { ...(prev.metadata?.sizeAreas || {}) };
+      gridSizes.forEach((s: string) => {
+        if (newSizeAreas[s] === undefined) newSizeAreas[s] = 0;
+      });
+      return { ...prev, metadata: { ...prev.metadata, sizes: gridSizes, sizeAreas: newSizeAreas } };
+    });
+    setIsFacaGridSearchOpen(false);
+    setIsCreatingFacaGridInline(false);
+    setEditingFacaGridId(null);
+    setFacaGridSearchTerm('');
+    setNewFacaGridName('');
+    setNewFacaGridSizes([]);
+    setNewFacaGridSizeInput('');
+  };
+
+  const addNewFacaGridSize = () => {
+    const trimmed = newFacaGridSizeInput.trim();
+    if (trimmed !== '' && !newFacaGridSizes.includes(trimmed)) {
+      setNewFacaGridSizes(prev => [...prev, trimmed]);
+      setNewFacaGridSizeInput('');
+    }
+  };
+
+  const removeNewFacaGridSize = (size: string) => {
+    setNewFacaGridSizes(prev => prev.filter(s => s !== size));
+  };
+
+  const startCreateFacaGrid = () => {
+    setEditingFacaGridId(null);
+    setNewFacaGridName('');
+    setNewFacaGridSizes([]);
+    setIsCreatingFacaGridInline(true);
+  };
+
+  const startEditFacaGrid = (grid: Grid) => {
+    setEditingFacaGridId(grid.id);
+    setNewFacaGridName(grid.name);
+    setNewFacaGridSizes(grid.sizes || []);
+    setIsCreatingFacaGridInline(true);
+  };
+
+  const handleSaveInlineFacaGrid = async () => {
+    if (!newFacaGridName.trim() || newFacaGridSizes.length === 0) return;
+    if (editingFacaGridId) {
+      if (!onUpdateGrid) return;
+      const existing = grids.find(g => g.id === editingFacaGridId);
+      const updated = { name: newFacaGridName.trim(), type: GridType.FACA, sizes: newFacaGridSizes, configuration: existing?.configuration || {} };
+      await onUpdateGrid(editingFacaGridId, updated);
+      applyGridToFaca({ id: editingFacaGridId, ...updated });
+    } else {
+      if (!onCreateGrid) return;
+      await onCreateGrid({ name: newFacaGridName.trim(), type: GridType.FACA, sizes: newFacaGridSizes, configuration: {} });
+      applyGridToFaca({ id: '', name: newFacaGridName.trim(), type: GridType.FACA, sizes: newFacaGridSizes, configuration: {} });
+    }
+  };
+
+  const handleQuickCreateToolCategory = async () => {
+    if (!newToolCategoryName.trim() || !onQuickAddCategory) return;
+    const color = CATEGORY_TYPE_OPTIONS.find(o => o.type === CategoryType.CUTTING_TOOL)?.color || 'bg-orange-500';
+    const created = await onQuickAddCategory({ name: newToolCategoryName.trim().toUpperCase(), type: CategoryType.CUTTING_TOOL, color });
+    setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: created.name } } : null);
+    setIsToolCategoryPickerOpen(false);
+    setIsCreatingToolCategoryInline(false);
+    setNewToolCategoryName('');
+  };
+
   const applyGridToPack = (grid: Grid, sizesOverride?: string[]) => {
     const gridSizes = sizesOverride || grid.sizes || [];
     setEditingItem(prev => {
@@ -2194,16 +2346,16 @@ function GenericConfigList({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className={`p-6 rounded-[3rem] shadow-xl flex items-center gap-3 relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+      <div className={`p-3 rounded-[2rem] shadow-xl flex items-center gap-2.5 relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
         {onBack && (
           <button
             onClick={onBack}
             data-guide-anchor="prodcfg.listaVoltar"
             title="Voltar"
             aria-label="Voltar para a tela anterior"
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:text-slate-700'}`}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:text-slate-700'}`}
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft size={16} />
           </button>
         )}
         <button
@@ -2226,14 +2378,14 @@ function GenericConfigList({
           title={`Adicionar Novo Registro em ${label}`}
           aria-label={`Adicionar novo registro na categoria ${label}`}
           data-guide-anchor="prodcfg.addRegistro"
-          className={`flex-1 py-4 px-6 rounded-[2rem] flex items-center gap-4 transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-indigo-600 text-white shadow-indigo-200/80'}`}
+          className={`flex-1 py-2.5 px-4 rounded-2xl flex items-center gap-3 transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-indigo-600 text-white shadow-indigo-200/80'}`}
         >
-          <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-            <Plus size={20} strokeWidth={3} />
+          <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <Plus size={16} strokeWidth={3} />
           </div>
           <div className="flex flex-col items-start">
-            <span className="text-xs font-black uppercase tracking-[0.15em] leading-none">Adicionar Novo Registro</span>
-            <span className="text-[9px] font-bold uppercase tracking-widest opacity-70 mt-1">Cadastrar em {label}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.1em] leading-none">Adicionar Novo Registro</span>
+            <span className="text-[8px] font-bold uppercase tracking-widest opacity-70 mt-0.5">Cadastrar em {label}</span>
           </div>
         </button>
       </div>
@@ -2264,19 +2416,35 @@ function GenericConfigList({
       )}
 
       {type === 'TOOL' && products.length > 0 && (
-        <div className="relative">
-          <Package size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <select
-            value={selectedProductFilter}
-            onChange={(e) => setSelectedProductFilter(e.target.value)}
-            className={`w-full pl-12 pr-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest outline-none transition-all border-2 appearance-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-700'} ${selectedProductFilter ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : ''}`}
+        <>
+          <button
+            type="button"
+            onClick={() => setIsProductFilterPickerOpen(true)}
+            data-guide-anchor="prodcfg.facaFiltroModeloAbrir"
+            className={`relative w-full flex items-center justify-between gap-2 pl-12 pr-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border-2 text-left ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-700'} ${selectedProductFilter ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : ''}`}
           >
-            <option value="">TODOS OS MODELOS</option>
-            {products.map(p => (
-              <option key={p.id} value={p.id}>{p.name} ({p.reference})</option>
-            ))}
-          </select>
-        </div>
+            <Package size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <span className="truncate">
+              {selectedProductFilter ? products.find(p => p.id === selectedProductFilter)?.name : 'TODOS OS MODELOS'}
+            </span>
+            <ChevronDown size={16} className="text-slate-400 shrink-0" />
+          </button>
+          <EngineeringPickerModal
+            isOpen={isProductFilterPickerOpen}
+            onClose={() => setIsProductFilterPickerOpen(false)}
+            title="Filtrar por Modelo"
+            icon={<Package size={18} />}
+            options={[
+              { id: '', name: 'TODOS OS MODELOS' },
+              ...products.map(p => ({ id: p.id, name: p.name, subtitle: p.reference })),
+            ]}
+            selectedId={selectedProductFilter}
+            onSelect={(id) => setSelectedProductFilter(id)}
+            isDarkMode={isDarkMode}
+            searchPlaceholder="Pesquisar modelo..."
+            zIndex={70000}
+          />
+        </>
       )}
 
       <div className="flex flex-col gap-8">
@@ -3717,23 +3885,100 @@ function GenericConfigList({
                 />
               </div>
               <div className="flex flex-col gap-2">
-                {renderLabelWithShortcut('tool-category', 'Categoria da Faca', ViewType.CATEGORIES)}
-                <select
-                  id="tool-category"
-                  value={editingItem?.metadata?.category || ''}
-                  title="Categoria da Faca"
-                  onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)}
-                  className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Categoria da Faca</label>
+                <button
+                  type="button"
+                  onClick={() => { setIsToolCategoryPickerOpen(true); setIsCreatingToolCategoryInline(false); setToolCategorySearch(''); }}
+                  data-guide-anchor="tool.categoriaAbrir"
+                  className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
                 >
-                  <option value="">SEM CATEGORIA</option>
-                  {toolCategoryNames.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-                {toolCategoryNames.length === 0 && (
-                  <p className="text-[9px] text-amber-500 font-bold uppercase tracking-widest ml-2">
-                    Nenhuma categoria de faca cadastrada. Clique no ícone acima para criar.
-                  </p>
-                )}
+                  <span className={!editingItem?.metadata?.category ? 'opacity-40 normal-case' : ''}>
+                    {editingItem?.metadata?.category || 'Sem categoria'}
+                  </span>
+                  <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                </button>
               </div>
+
+              <Modal isOpen={isToolCategoryPickerOpen} onClose={() => { setIsToolCategoryPickerOpen(false); setIsCreatingToolCategoryInline(false); }} title="Categoria da Faca" maxWidth="max-w-sm" zIndex={80000}>
+                {!isCreatingToolCategoryInline ? (
+                  <div className="flex flex-col gap-4" data-guide-anchor="tool.categoriaLista">
+                    <button
+                      type="button"
+                      onClick={() => { setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: '' } } : null); setIsToolCategoryPickerOpen(false); }}
+                      className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                    >
+                      <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Sem categoria</span>
+                    </button>
+                    <div className="relative">
+                      <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text"
+                        value={toolCategorySearch}
+                        onChange={(e) => setToolCategorySearch(e.target.value)}
+                        placeholder="Buscar categoria..."
+                        className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                      {toolCategoryNames.filter(name => name.toLowerCase().includes(toolCategorySearch.toLowerCase())).map(name => (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => { setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: name } } : null); setIsToolCategoryPickerOpen(false); }}
+                          className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                        >
+                          <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{name}</span>
+                          <ChevronRight size={16} className="text-indigo-400" />
+                        </button>
+                      ))}
+                      {toolCategoryNames.filter(name => name.toLowerCase().includes(toolCategorySearch.toLowerCase())).length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma categoria encontrada.</p>
+                      )}
+                    </div>
+                    {onQuickAddCategory && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingToolCategoryInline(true)}
+                        data-guide-anchor="tool.categoriaCadastrar"
+                        className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Plus size={14} strokeWidth={3} /> Não encontrou? Cadastre uma categoria aqui
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                      Salvo direto em Categorias — fica disponível pra qualquer outro cadastro do sistema, sem sair de Facas.
+                    </p>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Categoria</label>
+                      <input
+                        type="text"
+                        value={newToolCategoryName}
+                        onChange={(e) => setNewToolCategoryName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleQuickCreateToolCategory())}
+                        placeholder="Ex: Lateral"
+                        className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button type="button" onClick={() => setIsCreatingToolCategoryInline(false)} data-guide-anchor="tool.categoriaInlineVoltar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleQuickCreateToolCategory}
+                        data-guide-anchor="tool.categoriaSalvarUsar"
+                        disabled={!newToolCategoryName.trim()}
+                        className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                      >
+                        Salvar e Usar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Modal>
               <div className="flex flex-col gap-2">
                 <input
                   type="number"
@@ -3752,26 +3997,122 @@ function GenericConfigList({
               <div className="flex flex-col gap-2 mb-2 ml-2">
                 <div className="flex items-center gap-2">
                   <div className="p-2 bg-rose-500/10 rounded-lg text-rose-500"><TableCellsMerge size={16} /></div>
-                  {renderLabelWithShortcut('tool-pull-grid', 'Puxar Grade', ViewType.GRIDS)}
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">Puxar Grade</label>
                 </div>
-                <select
-                  id="tool-pull-grid"
-                  title="Selecionar Grade"
-                  onChange={(e) => {
-                    const gridId = e.target.value;
-                    const grid = grids.find(g => g.id === gridId);
-                    if (grid) {
-                      const areas: Record<string, number> = {};
-                      grid.sizes.forEach(s => { areas[s] = editingItem?.metadata?.sizeAreas?.[s] || 0; });
-                      setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeAreas: areas, sizes: grid.sizes } } : null);
-                    }
-                  }}
-                  className={`w-full px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-600 focus:border-indigo-600'}`}
+                <button
+                  type="button"
+                  onClick={() => { setIsFacaGridSearchOpen(true); setFacaGridSearchTerm(''); setIsCreatingFacaGridInline(false); }}
+                  data-guide-anchor="tool.gradeAbrir"
+                  className={`w-full flex items-center justify-between px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}
                 >
-                  <option value="">Selecionar...</option>
-                  {grids.filter(g => g.type === GridType.FACA || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
+                  <span className={(editingItem?.metadata?.sizes || []).length === 0 ? 'opacity-40 normal-case' : ''}>
+                    {grids.find(g => g.type === GridType.FACA && JSON.stringify(g.sizes) === JSON.stringify(editingItem?.metadata?.sizes || []))?.name || 'Selecionar...'}
+                  </span>
+                  <ChevronRight size={16} className="text-slate-400 shrink-0" />
+                </button>
               </div>
+
+              <Modal isOpen={isFacaGridSearchOpen} onClose={() => { setIsFacaGridSearchOpen(false); setIsCreatingFacaGridInline(false); }} title="Grade da Faca" maxWidth="max-w-md" zIndex={80000}>
+                {!isCreatingFacaGridInline ? (
+                  <div className="flex flex-col gap-4" data-guide-anchor="tool.gradeLista">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text"
+                        value={facaGridSearchTerm}
+                        onChange={(e) => setFacaGridSearchTerm(e.target.value)}
+                        placeholder="Buscar grade de faca..."
+                        className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                      {grids.filter(g => g.type === GridType.FACA && g.name.toLowerCase().includes(facaGridSearchTerm.toLowerCase())).map(g => (
+                        <div key={g.id} className={`w-full flex items-center gap-2 p-4 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                          <div className="flex flex-col flex-1 min-w-0">
+                            <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                              {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
+                            </span>
+                          </div>
+                          <button type="button" title="Usar esta Grade" aria-label={`Usar a grade ${g.name}`} onClick={() => applyGridToFaca(g)} className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0">
+                            <Check size={14} strokeWidth={3} />
+                          </button>
+                          <button type="button" title="Editar Grade" aria-label={`Editar a grade ${g.name}`} onClick={() => startEditFacaGrid(g)} className={`p-2.5 rounded-xl transition-colors shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-700'}`}>
+                            <Edit3 size={14} />
+                          </button>
+                          <button type="button" title="Excluir Grade" aria-label={`Excluir a grade ${g.name}`} onClick={() => handleDeleteGrid(g)} className="p-2.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {grids.filter(g => g.type === GridType.FACA && g.name.toLowerCase().includes(facaGridSearchTerm.toLowerCase())).length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade de faca encontrada.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startCreateFacaGrid}
+                      data-guide-anchor="tool.gradeCriar"
+                      className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Plus size={14} strokeWidth={3} /> Não encontrou? Criar Nova Grade
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingFacaGridId ? 'Editando Grade' : 'Nova Grade'}</p>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Grade</label>
+                      <input
+                        type="text"
+                        value={newFacaGridName}
+                        onChange={(e) => setNewFacaGridName(e.target.value)}
+                        placeholder="Ex: 38 ao 43"
+                        className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newFacaGridSizeInput}
+                          onChange={(e) => setNewFacaGridSizeInput(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNewFacaGridSize())}
+                          placeholder="Ex: 38"
+                          className={`flex-1 px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                        />
+                        <button type="button" onClick={addNewFacaGridSize} data-guide-anchor="tool.gradeInlineAddSize" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black transition-colors">
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="min-h-[50px] flex flex-wrap gap-2 p-3 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
+                      {newFacaGridSizes.map(size => (
+                        <span key={size} className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
+                          {size}
+                          <button type="button" onClick={() => removeNewFacaGridSize(size)} data-guide-anchor="tool.gradeInlineRemoveSize" className="text-rose-400 hover:text-rose-600">×</button>
+                        </span>
+                      ))}
+                      {newFacaGridSizes.length === 0 && <span className="text-[10px] text-slate-300 dark:text-slate-700 font-bold italic self-center">Adicione numerações acima</span>}
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button type="button" onClick={() => { setIsCreatingFacaGridInline(false); setEditingFacaGridId(null); }} data-guide-anchor="tool.gradeInlineVoltar" className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveInlineFacaGrid}
+                        data-guide-anchor="tool.gradeInlineSalvar"
+                        disabled={!newFacaGridName.trim() || newFacaGridSizes.length === 0}
+                        className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                      >
+                        {editingFacaGridId ? 'Salvar Alterações e Usar' : 'Salvar e Usar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Modal>
 
               <div className="flex flex-col gap-4">
                 <label htmlFor="tool-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Configurar Numerações</label>

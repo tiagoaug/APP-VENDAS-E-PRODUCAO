@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback, ReactNode, lazy, Suspense } from "react";
 import {
   LayoutDashboard,
+  ScanText,
+  Scissors,
   Package,
   ShoppingCart,
   ShoppingBag,
@@ -27,6 +29,7 @@ import {
   PackageOpen,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   FileText,
   User as UserIcon,
   AlertCircle,
@@ -228,6 +231,7 @@ const DeliveryPrintConfigView = lazy(() => import("./views/DeliveryPrintConfigVi
 import StepWizardBar from "./components/StepWizardBar";
 import AccountModal from "./components/AccountModal";
 import ProductCreationChoiceModal from "./components/ProductCreationChoiceModal";
+import AIAssistantSettings from "./components/AIAssistantSettings";
 import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
 import TransactionModal from "./components/TransactionModal";
@@ -276,7 +280,6 @@ const MODAL_VIEWS = [
   ViewType.REPORTS,
   ViewType.PRODUCT_SHEET,
   ViewType.STOCK,
-  ViewType.STOCK_GLANCE,
   ViewType.SALE_FORM,
   ViewType.PURCHASE_FORM,
   ViewType.PRODUCT_DETAIL,
@@ -743,6 +746,9 @@ export default function App() {
   const [activeJourneyId, setActiveJourneyId] = useState<string | null>(null);
   const [journeyStepIndex, setJourneyStepIndex] = useState(0);
   const [aiEnabled, setAiEnabled] = useState(true);
+  // Atalho "Assistente de IA" na barra de navegação — mesmo modal já usado em Configurações
+  // (AIAssistantSettings), só que aberto direto sem passar pela tela de Configurações.
+  const [showAISettingsFromNav, setShowAISettingsFromNav] = useState(false);
   const [isHeaderScannerOpen, setIsHeaderScannerOpen] = useState(false);
   const [aiPersonPrefill, setAiPersonPrefill] = useState<Partial<Person> | null>(null);
   const [solePurchaseParams, setSolePurchaseParams] = useState<{
@@ -1158,6 +1164,10 @@ export default function App() {
     // escondidos — são adição nova, opt-in via Personalização, pra não mudar a barra de quem já
     // usava o app sem avisar.
     hidden: ['rh', 'pcp', 'stock', 'people', 'reports'],
+    // Primeiros 6 visíveis do `order` acima (purchases..financial — personal fica de fora,
+    // mesmo corte de 6 usado como fallback no modal) — fica fixo na barra compacta pra conta
+    // nova; o resto (incluindo os novos itens tipo Produtos/OCR/Facas) só aparece expandindo.
+    pinned: ['purchases', 'sales', 'production', 'bling', 'entregas', 'financial'],
   };
 
   const [bottomNavConfig, setBottomNavConfig] = useState<BottomNavConfig>(() => {
@@ -1178,6 +1188,12 @@ export default function App() {
         if (config) {
           const { id, ...rest } = config;
           setBottomNavConfig(rest as BottomNavConfig);
+        } else {
+          // Conta nova de verdade (nenhum config salvo ainda) — persiste o padrão (inclusive
+          // `pinned`) na hora, em vez de só usar em memória, pra ficar igual em qualquer
+          // aparelho/sessão desde o início, sem depender de o usuário abrir "Personalizar
+          // Navegação" pra "fixar" o padrão sozinho.
+          firebaseService.saveDocument("app_bottom_nav_config", { ...defaultBottomNavConfig, id: 'main_bottom_nav_config' });
         }
       }
     );
@@ -1616,7 +1632,7 @@ export default function App() {
 
           // Incluir cards que estão no Firestore mas não estão no default (suporte a IDs antigos ou customizados)
           // — exceto os removidos de propósito (features descontinuadas).
-          const discontinuedCardIds = new Set(['print_center', 'print_labels', 'qr_scanner']);
+          const discontinuedCardIds = new Set(['print_center', 'print_labels', 'qr_scanner', 'cash_flow', 'receivables', 'balance']);
           const defaultIds = new Set(defaultCards.map(c => c.id));
           const extraCards = currentCards.filter(c => !defaultIds.has(c.id) && !discontinuedCardIds.has(c.id));
           
@@ -5935,6 +5951,7 @@ export default function App() {
             categories={categories}
             monthlySnapshots={monthlySnapshots}
             collaborators={collaborators}
+            initialPersonId={searchContext}
             onBack={goBack}
           />
         );
@@ -6091,6 +6108,34 @@ export default function App() {
               }
             }}
             onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
+            onQuickAddCategory={async (cat) => {
+              const result = await firebaseService.saveDocument("categories", cat);
+              toast.show('Categoria cadastrada!');
+              return result as Category;
+            }}
+            onCreateGrid={handleCreateGrid}
+            onUpdateGrid={handleUpdateGrid}
+            onDeleteGrid={handleDeleteGrid}
+            onQuickAddFlowTag={async (tag) => {
+              const result = await firebaseService.saveDocument("flowTags", tag);
+              toast.show('Fluxo cadastrado!');
+              return result as FlowTag;
+            }}
+            onQuickAddPerson={async (person) => {
+              const result = await firebaseService.saveDocument("people", person);
+              toast.show('Fornecedor cadastrado!');
+              return result as Person;
+            }}
+            onQuickAddMaterial={async (item) => {
+              const result = await firebaseService.saveDocument("productionConfigs", item);
+              toast.show('Insumo cadastrado!');
+              return result as ProductionConfigItem;
+            }}
+            onQuickAddColor={async (color) => {
+              const result = await firebaseService.saveDocument("colors", color);
+              toast.show('Cor cadastrada!');
+              return result as ColorValue;
+            }}
             onCancel={goBack}
             isDarkMode={isDarkMode}
             sectors={sectors}
@@ -7067,6 +7112,7 @@ export default function App() {
             }}
             onOpenPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
             onOpenSale={(id) => navigateTo(ViewType.SALE_FORM, id)}
+            onNavigateToReport={(reportId) => navigateTo(ViewType.REPORT_DETAILED, reportId)}
             onPayCommission={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
             serviceOrders={serviceOrders}
             onPayProviderServiceOrders={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
@@ -7236,6 +7282,9 @@ export default function App() {
             modulesConfig={modulesConfig}
             productionConfigs={productionConfigs}
             showThumbnails={showEngineeringThumbnails}
+            people={people}
+            brands={brands}
+            models={productModels}
           />
         );
       case ViewType.SALE_FORM:
@@ -7868,6 +7917,7 @@ export default function App() {
           <BlingDevolucoesView
             isDarkMode={isDarkMode}
             products={products}
+            onBack={goBack}
           />
         );
       case ViewType.DELIVERY_MENU:
@@ -8657,7 +8707,10 @@ export default function App() {
       { id: 'personal', label: 'Pessoal', icon: <UserIcon size={20} />, view: ViewType.PERSONAL_FINANCIAL, allowed: modulesConfig.personal && isViewAllowed(activeCollaborator, ViewType.PERSONAL_FINANCIAL) },
       { id: 'rh', label: 'RH', icon: <UserCog size={20} />, view: ViewType.RH_MENU, allowed: modulesConfig.sales && modulesConfig.rh && isViewAllowed(activeCollaborator, ViewType.RH_MENU) },
       { id: 'pcp', label: 'PCP', icon: <GanttChartSquare size={20} />, view: ViewType.PRODUCTION_PCP, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_PCP) },
-      { id: 'stock', label: 'Estoque', icon: <Boxes size={20} />, view: ViewType.STOCK, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.STOCK) },
+      // Vai pra "Disponível em Estoque" (STOCK_GLANCE) — visão só de consulta do estoque real,
+      // não a tela tradicional de Estoque (STOCK, edição/expedição). Pedido explícito: esse
+      // atalho da nav é pra consulta rápida, não pra gerenciar.
+      { id: 'stock', label: 'Estoque', icon: <Boxes size={20} />, view: ViewType.STOCK_GLANCE, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.STOCK_GLANCE) },
       { id: 'people', label: 'Pessoas', icon: <Users size={20} />, view: ViewType.PEOPLE, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PEOPLE) },
       { id: 'reports', label: 'Relat.', icon: <BarChart3 size={20} />, view: ViewType.REPORTS, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.REPORTS) },
       { id: 'soleStock', label: 'Solados', icon: <Footprints size={20} />, view: ViewType.PRODUCTION_SOLE_STOCK, allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_SOLE_STOCK) },
@@ -8675,7 +8728,17 @@ export default function App() {
       // Clique tem tratamento especial (ver onClick abaixo) — vai pra Vendas já abrindo o
       // popup "Enviar Catálogo" direto, sem precisar passar pelo "+" de dentro da tela.
       { id: 'sendCatalog', label: 'Enviar Catálogo', icon: <Link2 size={20} />, view: ViewType.SALES, anchorKey: 'nav.enviarCatalogo', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
-      { id: 'fornecedores', label: 'Fornec.', icon: <Handshake size={20} />, view: ViewType.FORNECEDORES, anchorKey: 'nav.fornecedores', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.FORNECEDORES) },
+      { id: 'fornecedores', label: 'Terceir.', icon: <Handshake size={20} />, view: ViewType.FORNECEDORES, anchorKey: 'nav.fornecedores', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.FORNECEDORES) },
+      { id: 'products', label: 'Produtos', icon: <Package size={20} />, view: ViewType.PRODUCTS, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PRODUCTS) },
+      { id: 'paymentMethods', label: 'Recebim.', icon: <CreditCard size={20} />, view: ViewType.PAYMENT_METHODS, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PAYMENT_METHODS) },
+      { id: 'ocr', label: 'OCR', icon: <ScanText size={20} />, view: ViewType.OCR_TEXT_EXTRACTOR, allowed: isViewAllowed(activeCollaborator, ViewType.OCR_TEXT_EXTRACTOR) },
+      // Clique tem tratamento especial (ver onClick abaixo) — abre o modal de Assistente de IA
+      // (mesmo componente usado em Configurações), não navega pra lugar nenhum. `view` é só um
+      // valor de preenchimento, nunca chega a ser usado por causa da interceptação.
+      { id: 'aiAssistant', label: 'Assist. IA', icon: <Sparkles size={20} />, view: ViewType.SETTINGS, allowed: isTemplateAdmin() && modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) },
+      // Clique tem tratamento especial (ver onClick abaixo) — usa onNavigateProduction('FACAS')
+      // igual ao atalho de Configurações, não `resetTo(view)`.
+      { id: 'cuttingKnives', label: 'Facas', icon: <Scissors size={20} />, view: ViewType.PRODUCTION_ENGINEERING, allowed: modulesConfig.sales && modulesConfig.production },
     ];
 
     const visible = candidates.filter(c => c.allowed && !bottomNavConfig.hidden.includes(c.id));
@@ -8689,14 +8752,16 @@ export default function App() {
     // padrão de `candidates` pra ficar previsível.
     candidates.forEach(c => { if (byId.has(c.id)) ordered.push(byId.get(c.id)!); });
     return ordered;
-  }, [modulesConfig, activeCollaborator, bottomNavConfig, hasPendingCatalogRequests]);
+  }, [modulesConfig, activeCollaborator, bottomNavConfig, hasPendingCatalogRequests, aiEnabled]);
 
-  // Paginação do meio da nav — a barra em si é 100% fixa (nada desliza/anima de lado), Home e
-  // Mais ficam parados nas pontas; o meio mostra os ícones numa grade 3x2 (mínimo 3 colunas —
-  // cresce em telas largas, nunca cai abaixo de 3 — por 2 linhas), e clicar na seta troca a
-  // página inteira de uma vez (ver navPage/navPages abaixo), em vez de rolar aos poucos. As
-  // colunas usam fr (não px fixo) e os itens do meio são "fluid" (ver TabItem `fluid`) pra
-  // sempre caber exatamente no espaço disponível, sem estourar o container.
+  // Barra do meio — 100% fixa (nada desliza/anima de lado), Home e Mais ficam parados nas
+  // pontas; o meio mostra os ícones FIXADOS (ver BottomNavConfig.pinned/BottomNavConfigModal)
+  // numa grade (mínimo 3 colunas — cresce em telas largas — por 2 linhas). O resto dos itens
+  // visíveis (não fixados) só aparece no painel de expansão, aberto pela seta ao lado de "Mais"
+  // (ver navExpanded abaixo) — substituiu a paginação antiga (clicar pra trocar de página),
+  // que escondia itens sem nenhuma pista de que existiam. As colunas usam fr (não px fixo) e os
+  // itens do meio são "fluid" (ver TabItem `fluid`) pra sempre caber exatamente no espaço
+  // disponível, sem estourar o container.
   // Usa um CALLBACK REF (não useRef+useEffect) de propósito: um useEffect rodando só na
   // montagem acharia a ref nula (o <nav> ainda nem montou durante a tela de auth/loading) e
   // nunca mais teria motivo pra rodar de novo, deixando itemsPerRow travado no valor inicial
@@ -8704,7 +8769,8 @@ export default function App() {
   const middleNavContainerRef = useRef<HTMLDivElement | null>(null);
   const middleNavContainerCleanupRef = useRef<(() => void) | null>(null);
   const [middleNavItemsPerRow, setMiddleNavItemsPerRow] = useState(3);
-  const [navPage, setNavPage] = useState(0);
+  // Painel de expansão (itens não fixados) — substitui a paginação antiga.
+  const [navExpanded, setNavExpanded] = useState(false);
 
   const attachMiddleNavContainerRef = useCallback((el: HTMLDivElement | null) => {
     middleNavContainerCleanupRef.current?.();
@@ -8723,21 +8789,42 @@ export default function App() {
   const middleNavRowsPerPage = 2;
   const middleNavPageSize = middleNavItemsPerRow * middleNavRowsPerPage;
 
-  const navPages = useMemo(() => {
-    const pages: typeof middleNavItems[] = [];
-    for (let i = 0; i < middleNavItems.length; i += middleNavPageSize) {
-      pages.push(middleNavItems.slice(i, i + middleNavPageSize));
-    }
-    return pages.length > 0 ? pages : [[]];
-  }, [middleNavItems, middleNavPageSize]);
+  // Sem nada fixado ainda (conta que nunca abriu "Personalizar Navegação"), assume os primeiros
+  // como fixos — mesmo padrão automático usado no modal de config, só que aqui o "tamanho de
+  // página" é o de verdade (calculado pela largura real da barra), não um número fixo.
+  const pinnedNavIds = useMemo(() => {
+    const configured = bottomNavConfig.pinned;
+    if (configured && configured.length > 0) return new Set(configured);
+    return new Set(middleNavItems.slice(0, middleNavPageSize).map(i => i.id));
+  }, [bottomNavConfig.pinned, middleNavItems, middleNavPageSize]);
 
-  // Se a lista de itens/página mudar (permissão, personalização, rotação de tela) e a página
-  // atual deixar de existir, volta pra última válida em vez de ficar numa página vazia.
+  // Fixados primeiro (na ordem de sempre) truncados no que cabe na barra compacta — se alguém
+  // fixar mais do que cabe, o excedente cai pro painel de expansão junto com os não-fixados, em
+  // vez de estourar a altura da barra.
+  const pinnedNavItemsOrdered = useMemo(() => middleNavItems.filter(i => pinnedNavIds.has(i.id)), [middleNavItems, pinnedNavIds]);
+  const activeNavPageItems = pinnedNavItemsOrdered.slice(0, middleNavPageSize);
+  const compactShownIds = useMemo(() => new Set(activeNavPageItems.map(i => i.id)), [activeNavPageItems]);
+  const expandableNavItems = useMemo(() => middleNavItems.filter(i => !compactShownIds.has(i.id)), [middleNavItems, compactShownIds]);
+
+  // Se a lista de itens mudar (permissão, personalização) e o painel expandido ficar vazio,
+  // fecha sozinho em vez de deixar um painel aberto sem nada dentro.
   useEffect(() => {
-    if (navPage > navPages.length - 1) setNavPage(Math.max(0, navPages.length - 1));
-  }, [navPages, navPage]);
+    if (navExpanded && expandableNavItems.length === 0) setNavExpanded(false);
+  }, [navExpanded, expandableNavItems]);
 
-  const activeNavPageItems = navPages[navPage] || [];
+  // Compartilhado pela barra compacta e pelo painel de expansão — mesmo tratamento especial de
+  // sempre (Ajustes PDF passa pela checagem de Bluetooth, Enviar Catálogo abre o popup direto em
+  // Vendas, telas com Modal global usam navigateTo pra manter X/Voltar funcionando). Clicar num
+  // item do painel expandido também fecha o painel.
+  const handleMiddleNavItemClick = (item: (typeof middleNavItems)[number]) => {
+    setNavExpanded(false);
+    if (item.id === 'labelPrintStudio') { handleOpenLabelPrintStudio(); return; }
+    if (item.id === 'sendCatalog') { navigateTo(ViewType.SALES, { openCatalogSendNonce: Date.now() }); return; }
+    if (item.id === 'aiAssistant') { setShowAISettingsFromNav(true); return; }
+    if (item.id === 'cuttingKnives') { navigateToProduction('FACAS'); return; }
+    if (MODAL_VIEWS.includes(item.view)) { navigateTo(item.view); return; }
+    resetTo(item.view);
+  };
 
   const viewTitle = useMemo(() => {
     switch (currentView) {
@@ -8860,7 +8947,7 @@ export default function App() {
       case ViewType.CATALOG_REQUESTS:
         return "Pedidos Recebidos";
       case ViewType.FORNECEDORES:
-        return "Fornecedores";
+        return "Prestadores de Serviços Terceirizados";
       case ViewType.COMPANY_PROFILE:
         return "Personalizar Empresa";
       case ViewType.COLLABORATORS_CONFIG:
@@ -9203,8 +9290,8 @@ export default function App() {
         onClose={goBack}
         title={viewTitle}
         maxWidth={
-          (currentView === ViewType.PRODUCT_FORM || 
-           currentView === ViewType.PRODUCTION_PCP || 
+          (currentView === ViewType.PRODUCT_FORM ||
+           currentView === ViewType.PRODUCTION_PCP ||
            currentView === ViewType.PRODUCTION_PURCHASE_NEEDS ||
            currentView === ViewType.PRODUCTION_ENGINEERING) ? "max-w-5xl" : "max-w-2xl"
         }
@@ -9439,7 +9526,7 @@ export default function App() {
             <div ref={attachMiddleNavContainerRef} className="flex-1 self-stretch min-w-0 overflow-hidden">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
-                  key={navPage}
+                  key={activeNavPageItems.map(i => i.id).join('-') || 'empty'}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -9470,21 +9557,7 @@ export default function App() {
                           icon={item.icon}
                           label={item.label}
                           active={activeTab === item.id}
-                          // Estoque/Pessoas/Relatórios abrem dentro do Modal global (ver
-                          // MODAL_VIEWS) com X/"Voltar" que dependem do histórico pra funcionar —
-                          // resetTo() zera o histórico (correto pros itens que são tela cheia sem
-                          // botão de fechar, ex. Compras/Vendas), o que deixava esse X sem efeito
-                          // pra quem chegou neles direto pelo ícone da nav. navigateTo() empilha
-                          // normal, então fechar volta pra tela de onde o usuário veio.
-                          // "Ajustes PDF" foge da regra: precisa passar pela checagem de
-                          // Bluetooth da impressora Ablemark (handleOpenLabelPrintStudio) antes
-                          // de navegar, senão abre a tela sem o pareamento verificado.
-                          onClick={() => {
-                            if (item.id === 'labelPrintStudio') { handleOpenLabelPrintStudio(); return; }
-                            if (item.id === 'sendCatalog') { navigateTo(ViewType.SALES, { openCatalogSendNonce: Date.now() }); return; }
-                            if (MODAL_VIEWS.includes(item.view)) { navigateTo(item.view); return; }
-                            resetTo(item.view);
-                          }}
+                          onClick={() => handleMiddleNavItemClick(item)}
                           appTheme={appTheme}
                           iconMode={navIconMode}
                           tintColor={NAV_TAB_COLORS[item.id]}
@@ -9512,18 +9585,21 @@ export default function App() {
               const settingsPillStyle: React.CSSProperties | undefined = settingsActive
                 ? { backgroundColor: `${(isColored ? NAV_TAB_COLORS.settings : effectiveNavMonoColor)}1f` }
                 : undefined;
-              const hasPager = navPages.length > 1;
+              const hasExpand = expandableNavItems.length > 0;
               return (
                 <div className="flex flex-col gap-1.5 self-stretch shrink-0 w-24">
-                  {hasPager && (
+                  {hasExpand && (
                     <button
                       type="button"
-                      onClick={() => setNavPage(p => (p + 1) % navPages.length)}
-                      data-guide-anchor="nav.paginar"
-                      aria-label="Ver mais ícones"
+                      onClick={() => setNavExpanded(v => !v)}
+                      data-guide-anchor="nav.expandir"
+                      aria-label={navExpanded ? 'Fechar mais ícones' : 'Ver mais ícones'}
+                      aria-expanded={navExpanded}
                       className="flex-1 min-h-0 w-full flex items-center justify-center rounded-full bg-black/[0.035] dark:bg-white/[0.06] text-indigo-600 dark:text-indigo-400 active:scale-90 active:bg-indigo-50 dark:active:bg-slate-700/50 transition-all"
                     >
-                      <ChevronDown size={18} strokeWidth={3} className="animate-pulse" />
+                      {navExpanded
+                        ? <ChevronDown size={18} strokeWidth={3} />
+                        : <ChevronUp size={18} strokeWidth={3} className="animate-pulse" />}
                     </button>
                   )}
                   <button
@@ -9545,6 +9621,65 @@ export default function App() {
               );
             })()}
           </div>
+
+          {/* Painel de expansão — mostra TODOS os itens não fixados de uma vez (ver
+              pinnedNavItemsOrdered/expandableNavItems acima), aberto pela seta pra cima ao lado
+              de "Mais". Substitui a paginação antiga: em vez de trocar de página escondendo
+              itens sem pista nenhuma, agora fica explícito o que é fixo (sempre visível) e o
+              que só aparece expandindo. */}
+          <AnimatePresence>
+            {navExpanded && (
+              <>
+                <motion.div
+                  key="nav-expand-backdrop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setNavExpanded(false)}
+                  className="fixed inset-0 bg-black/20"
+                  aria-hidden="true"
+                />
+                <motion.div
+                  key="nav-expand-panel"
+                  initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 12, scale: 0.98 }}
+                  transition={{ duration: 0.15 }}
+                  data-guide-anchor="nav.painelExpandido"
+                  className={`absolute bottom-full left-0 right-0 mb-3 p-3 rounded-[2rem] shadow-2xl ${themeVisual.pillGradient}`}
+                >
+                  <div
+                    className="grid gap-x-0"
+                    style={{ gridTemplateColumns: `repeat(${middleNavItemsPerRow}, minmax(0, 1fr))` }}
+                  >
+                    {expandableNavItems.map((item, idx) => {
+                      const col = idx % middleNavItemsPerRow;
+                      const totalRows = Math.ceil(expandableNavItems.length / middleNavItemsPerRow);
+                      const row = Math.floor(idx / middleNavItemsPerRow);
+                      const gridLineClass = `${col < middleNavItemsPerRow - 1 ? 'border-r' : ''} ${row < totalRows - 1 ? 'border-b' : ''} ${isDarkMode ? 'border-slate-600' : 'border-slate-300'}`;
+                      return (
+                        <div key={item.id} className={`flex items-center justify-center py-2 ${gridLineClass}`}>
+                          <TabItem
+                            icon={item.icon}
+                            label={item.label}
+                            active={activeTab === item.id}
+                            onClick={() => handleMiddleNavItemClick(item)}
+                            appTheme={appTheme}
+                            iconMode={navIconMode}
+                            tintColor={NAV_TAB_COLORS[item.id]}
+                            monoColor={effectiveNavMonoColor}
+                            anchorKey={item.anchorKey}
+                            badge={(item as any).badge}
+                            fluid
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </div>
       </nav>
       )}
@@ -9553,6 +9688,11 @@ export default function App() {
         onClose={() => setShowProductCreationChoice(false)}
         onChooseGuided={handleChooseGuidedProductCreation}
         onChooseDirect={handleChooseDirectProductCreation}
+        isDarkMode={isDarkMode}
+      />
+      <AIAssistantSettings
+        isOpen={showAISettingsFromNav}
+        onClose={() => setShowAISettingsFromNav(false)}
         isDarkMode={isDarkMode}
       />
       <AccountModal
