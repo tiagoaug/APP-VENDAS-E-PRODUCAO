@@ -313,10 +313,13 @@ export default function DashboardView({
     const debtsByCustomer: Record<string, { person: Person, totalDebt: number, pendingCount: number }> = {};
 
     sales.forEach(sale => {
-      if (sale.status === SaleStatus.CANCELLED) return;
+      if (sale.status === SaleStatus.CANCELLED || sale.status === SaleStatus.QUOTE) return;
       if (sale.isAccounting === false) return; // Não incluir "Não Contábil"
-      if (sale.paymentStatus === PaymentStatus.PAID) return;
 
+      // Saldo calculado (total - pago), não o campo `paymentStatus` gravado — ele pode ficar
+      // desatualizado (ex.: total editado depois de marcado como pago, registros antigos sem o
+      // campo), deixando vendas com saldo real em aberto de fora do card. Mesmo critério já
+      // usado em SalesView.tsx (getSaleRemaining).
       const totalPaid = (sale.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
       const debt = sale.total - totalPaid;
       if (debt > 0.01) {
@@ -399,8 +402,10 @@ export default function DashboardView({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
+    // Saldo calculado, não o campo `paymentStatus` gravado (pode ficar desatualizado) — mesmo
+    // critério de customersWithDebts acima e de SalesView.tsx (getSaleRemaining).
     const pendingReceivables = sales
-      .filter(s => s.status !== SaleStatus.CANCELLED && s.isAccounting !== false && s.paymentStatus !== PaymentStatus.PAID)
+      .filter(s => s.status !== SaleStatus.CANCELLED && s.status !== SaleStatus.QUOTE && s.isAccounting !== false)
       .reduce((acc, sale) => {
         const totalPaid = (sale.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
         return acc + Math.max(0, sale.total - totalPaid);
