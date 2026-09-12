@@ -84,9 +84,9 @@ function elementIcon(el: LabelElement) {
 }
 
 // Usado só pro atalho "travar tudo/destravar tudo" do painel de camadas — o painel do
-// elemento selecionado sempre mostra os 5 cadeados por propriedade, independentes.
+// elemento selecionado sempre mostra os 7 cadeados por propriedade, independentes.
 function isElementLocked(el: LabelElement): boolean {
-  return !!(el.lockWidth || el.lockHeight || el.lockRotation || el.lockFontSize || el.lockPosition);
+  return !!(el.lockWidth || el.lockHeight || el.lockRotation || el.lockFontSize || el.lockLetterSpacing || el.lockLineHeight || el.lockPosition);
 }
 
 function elementLabel(el: LabelElement): string {
@@ -824,8 +824,8 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                       e.stopPropagation();
                       const anyLocked = isElementLocked(el);
                       updateElement(el.id, anyLocked
-                        ? { lockWidth: false, lockHeight: false, lockRotation: false, lockFontSize: false, lockPosition: false }
-                        : { lockWidth: true, lockHeight: true, lockRotation: true, lockFontSize: true, lockPosition: true });
+                        ? { lockWidth: false, lockHeight: false, lockRotation: false, lockFontSize: false, lockLetterSpacing: false, lockLineHeight: false, lockPosition: false }
+                        : { lockWidth: true, lockHeight: true, lockRotation: true, lockFontSize: true, lockLetterSpacing: true, lockLineHeight: true, lockPosition: true });
                     }}
                     title={isElementLocked(el) ? 'Destravar tudo' : 'Travar tudo'}
                     className="p-1.5 rounded-lg bg-black/10 hover:bg-black/20"
@@ -1230,15 +1230,25 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>Espaçamento entre letras</span><span>{(selected.letterSpacing || 0).toFixed(1)}px</span>
+                      <span className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>Espaçamento entre letras</span><span className={selected.lockLetterSpacing ? 'opacity-40' : ''}>{(selected.letterSpacing || 0).toFixed(1)}px</span>
                     </div>
-                    <input type="range" min={0} max={10} step={0.5} value={selected.letterSpacing || 0} onChange={e => updateElement(selected.id, { letterSpacing: parseFloat(e.target.value) })} className="w-full" />
+                    <div className="flex items-center gap-2">
+                      <button type="button" data-guide-anchor="labelEditor.travarEspacamentoLetras" onClick={() => updateElement(selected.id, { lockLetterSpacing: !selected.lockLetterSpacing })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockLetterSpacing ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                        {selected.lockLetterSpacing ? <Lock size={15} /> : <Unlock size={15} />}
+                      </button>
+                      <input type="range" min={0} max={10} step={0.5} value={selected.letterSpacing || 0} disabled={selected.lockLetterSpacing} onChange={e => updateElement(selected.id, { letterSpacing: parseFloat(e.target.value) })} className="flex-1" />
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>Espaçamento entre linhas</span><span>{(selected.lineHeight || 1).toFixed(1)}x</span>
+                      <span className={isDarkMode ? 'text-blue-400' : 'text-blue-600'}>Espaçamento entre linhas</span><span className={selected.lockLineHeight ? 'opacity-40' : ''}>{(selected.lineHeight || 1).toFixed(1)}x</span>
                     </div>
-                    <input type="range" min={0.8} max={2.5} step={0.1} value={selected.lineHeight || 1} onChange={e => updateElement(selected.id, { lineHeight: parseFloat(e.target.value) })} className="w-full" />
+                    <div className="flex items-center gap-2">
+                      <button type="button" data-guide-anchor="labelEditor.travarEspacamentoLinhas" onClick={() => updateElement(selected.id, { lockLineHeight: !selected.lockLineHeight })} className={`p-2.5 rounded-lg shrink-0 ${selected.lockLineHeight ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                        {selected.lockLineHeight ? <Lock size={15} /> : <Unlock size={15} />}
+                      </button>
+                      <input type="range" min={0.8} max={2.5} step={0.1} value={selected.lineHeight || 1} disabled={selected.lockLineHeight} onChange={e => updateElement(selected.id, { lineHeight: parseFloat(e.target.value) })} className="flex-1" />
+                    </div>
                   </div>
                 </div>
               )}

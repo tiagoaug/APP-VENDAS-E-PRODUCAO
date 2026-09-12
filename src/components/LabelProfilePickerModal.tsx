@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ShoppingBag, Factory, Plus, Tag, Maximize2, X, ChevronLeft, Ruler } from 'lucide-react';
+import { ShoppingBag, Factory, Plus, Tag, Maximize2, X, ChevronLeft, Ruler, Star, Download, Sparkles, Loader2 } from 'lucide-react';
 import Modal from './Modal';
-import { LabelFile, Sector } from '../types';
+import { LabelFile, LabelFileTemplate, Sector } from '../types';
 import { renderLabelElementsToCanvas } from '../utils/labelCanvasRenderer';
+import { firebaseService } from '../services/firebaseService';
+import { generateId } from '../utils/id';
+import { subscribeToLabelFileTemplates, saveLabelFileTemplate, deleteLabelFileTemplate } from '../services/labelFileTemplatesService';
+import { isTemplateAdmin } from '../utils/templateAdmin';
+import { toast } from '../utils/toast';
 
 interface LabelProfilePickerModalProps {
   isOpen: boolean;
@@ -57,9 +62,21 @@ export default function LabelProfilePickerModal({
   const [pickingSize, setPickingSize] = useState(false);
   const [customWidth, setCustomWidth] = useState('');
   const [customHeight, setCustomHeight] = useState('');
+  const isDevAccount = isTemplateAdmin();
+  const [globalTemplates, setGlobalTemplates] = useState<LabelFileTemplate[]>([]);
+  const [importingId, setImportingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) { setPickingSize(false); setCustomWidth(''); setCustomHeight(''); }
+  }, [isOpen]);
+
+  // "Modelos Prontos" — assina a coleção compartilhada `labelFileTemplates` (qualquer conta lê,
+  // só a conta de desenvolvimento escreve — ver firestore.rules) enquanto o modal está aberto.
+  useEffect(() => {
+    if (!isOpen) { setGlobalTemplates([]); return; }
+    const unsub = subscribeToLabelFileTemplates(setGlobalTemplates);
+    return unsub;
   }, [isOpen]);
 
   const customWidthNum = Number(customWidth.replace(',', '.'));
@@ -87,15 +104,70 @@ export default function LabelProfilePickerModal({
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    [...salesTemplates, ...productionTemplates].forEach(file => {
-      if (thumbnails[file.id]) return;
-      renderLabelElementsToCanvas(file.elements, file.widthMm, file.heightMm)
-        .then(canvas => { if (!cancelled) setThumbnails(prev => ({ ...prev, [file.id]: canvas.toDataURL('image/png') })); })
+    // Prefixo "g:" nos modelos prontos evita colisão com ids de modelos da própria conta —
+    // vêm de contas diferentes, ids poderiam coincidir por acaso.
+    const allFiles = [
+      ...salesTemplates.map(f => ({ key: f.id, f })),
+      ...productionTemplates.map(f => ({ key: f.id, f })),
+      ...globalTemplates.map(f => ({ key: `g:${f.id}`, f })),
+    ];
+    allFiles.forEach(({ key, f }) => {
+      if (thumbnails[key]) return;
+      renderLabelElementsToCanvas(f.elements, f.widthMm, f.heightMm)
+        .then(canvas => { if (!cancelled) setThumbnails(prev => ({ ...prev, [key]: canvas.toDataURL('image/png') })); })
         .catch(() => { /* miniatura opcional — se falhar, a linha só fica sem prévia */ });
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, labelFiles]);
+  }, [isOpen, labelFiles, globalTemplates]);
+
+  const isPublished = (fileId: string) => globalTemplates.some(t => t.id === fileId);
+
+  const toggleGlobalDefault = async (file: LabelFile) => {
+    setTogglingId(file.id);
+    try {
+      if (isPublished(file.id)) {
+        await deleteLabelFileTemplate(file.id);
+      } else {
+        await saveLabelFileTemplate(file.id, {
+          name: file.name,
+          paperSizeId: file.paperSizeId,
+          widthMm: file.widthMm,
+          heightMm: file.heightMm,
+          elements: file.elements,
+          isSalesTemplate: file.isSalesTemplate,
+          isProductionTemplate: file.isProductionTemplate,
+        });
+      }
+    } catch (e: any) {
+      toast.show('Erro ao atualizar: ' + (e.message || e));
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const importGlobalTemplate = async (template: LabelFileTemplate) => {
+    setImportingId(template.id);
+    try {
+      const newFile: LabelFile = {
+        id: generateId(),
+        name: template.name,
+        paperSizeId: template.paperSizeId,
+        widthMm: template.widthMm,
+        heightMm: template.heightMm,
+        elements: template.elements,
+        isSalesTemplate: template.isSalesTemplate,
+        isProductionTemplate: template.isProductionTemplate,
+        updatedAt: Date.now(),
+      };
+      await firebaseService.saveDocument('labelFiles', newFile);
+      toast.show(`"${template.name}" importado — já aparece na sua lista.`);
+    } catch (e: any) {
+      toast.show('Erro ao importar modelo: ' + (e.message || e));
+    } finally {
+      setImportingId(null);
+    }
+  };
 
   const rowCls = `w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800/60 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`;
 
@@ -127,6 +199,52 @@ export default function LabelProfilePickerModal({
         <button type="button" onClick={() => onSelectProfile(file)} data-guide-anchor="labelProfilePicker.selecionarPerfil" className="min-w-0 flex-1 text-left active:scale-[0.98] transition-transform">
           <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{file.name}</p>
           <p className="text-[9px] font-bold text-slate-400 mt-0.5">{file.widthMm} × {file.heightMm} mm</p>
+        </button>
+        {isDevAccount && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); toggleGlobalDefault(file); }}
+            disabled={togglingId === file.id}
+            data-guide-anchor="labelProfilePicker.marcarPadrao"
+            title={isPublished(file.id) ? 'Remover dos modelos prontos (outras contas)' : 'Marcar como modelo pronto pra outras contas importarem'}
+            aria-label="Marcar como modelo pronto pra outras contas"
+            className={`shrink-0 p-2 rounded-xl transition-all active:scale-90 ${isPublished(file.id) ? 'text-amber-400' : (isDarkMode ? 'text-slate-600 hover:text-amber-400' : 'text-slate-300 hover:text-amber-400')}`}
+          >
+            {togglingId === file.id ? <Loader2 size={16} className="animate-spin" /> : <Star size={16} fill={isPublished(file.id) ? 'currentColor' : 'none'} />}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderGlobalTemplateRow = (template: LabelFileTemplate) => {
+    const aspect = template.widthMm / template.heightMm;
+    const key = `g:${template.id}`;
+    return (
+      <div key={key} className={rowCls.replace('active:scale-[0.98]', '')}>
+        <div
+          className={`relative shrink-0 rounded-lg overflow-hidden border flex items-center justify-center ${isDarkMode ? 'border-slate-700 bg-white' : 'border-slate-200 bg-white'}`}
+          style={{ width: 64, height: Math.min(64, 64 / aspect) }}
+        >
+          {thumbnails[key] ? (
+            <img src={thumbnails[key]} alt="" className="w-full h-full object-contain" draggable={false} />
+          ) : (
+            <div className="w-full h-full animate-pulse bg-slate-100" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{template.name}</p>
+          <p className="text-[9px] font-bold text-slate-400 mt-0.5">{template.widthMm} × {template.heightMm} mm</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => importGlobalTemplate(template)}
+          disabled={importingId === template.id}
+          data-guide-anchor="labelProfilePicker.importarModeloPronto"
+          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all"
+        >
+          {importingId === template.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+          {importingId === template.id ? 'Importando...' : 'Importar'}
         </button>
       </div>
     );
@@ -204,6 +322,26 @@ export default function LabelProfilePickerModal({
         </div>
       ) : (
       <div className="flex flex-col gap-5">
+        {isDevAccount && (
+          <div className={`flex items-start gap-2.5 p-3 rounded-2xl border ${isDarkMode ? 'bg-amber-900/10 border-amber-900/30' : 'bg-amber-50 border-amber-100'}`}>
+            <Star size={14} className="text-amber-500 shrink-0 mt-0.5" />
+            <p className={`text-[10px] font-bold leading-relaxed ${isDarkMode ? 'text-amber-200' : 'text-amber-900'}`}>
+              Toque na estrela ao lado de um modelo pra marcá-lo como "pronto" — ele passa a aparecer com prévia na seção "Modelos Prontos" de QUALQUER outra conta, que pode importar com um toque. Toque de novo pra remover.
+            </p>
+          </div>
+        )}
+
+        {!isDevAccount && globalTemplates.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              <Sparkles size={13} className="text-amber-500" /> Modelos Prontos
+            </span>
+            <div className="flex flex-col gap-2">
+              {globalTemplates.map(renderGlobalTemplateRow)}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             <ShoppingBag size={13} className="text-sky-500" /> Vendas

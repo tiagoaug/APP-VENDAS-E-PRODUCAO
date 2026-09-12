@@ -6829,7 +6829,7 @@ export default function PCPView({
                                       type="button"
                                       onClick={() => setFloatingActionMenuOpen(v => !v)}
                                       data-guide-anchor="pcp.pedidosAcaoFlutuanteAbrir"
-                                      className="fixed bottom-24 right-4 z-[9000] w-14 h-14 rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-500/40 flex items-center justify-center active:scale-90 transition-all"
+                                      className="fixed bottom-40 right-4 z-[9000] w-14 h-14 rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-500/40 flex items-center justify-center active:scale-90 transition-all"
                                     >
                                       {floatingActionMenuOpen ? <X size={22} /> : <ListChecks size={22} />}
                                       <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
@@ -7385,7 +7385,7 @@ export default function PCPView({
                                               const pName = f.product?.reference || f.product?.name || f.orderItem?.productName || '—';
                                               const cName = f.variation?.colorName || f.orderItem?.variationName || '—';
                                               const qty: number = f.si?.qty ?? f.orderItem?.quantity ?? 0;
-                                              const cust: string = f.order?.customerName || 'Estoque';
+                                              const destino: string = f.order?.customerName || 'Estoque';
                                               const rawSizes: Record<string, any> = (f.si?.fractionLabel ? f.si?.sizes : (f.orderItem?.sizes || f.si?.sizes)) || {};
                                               const sizeEntries = Object.entries(rawSizes).filter(([, v]) => {
                                                 const q = typeof v === 'number' ? v : ((v as any)?.total ?? (v as any)?.toProduction ?? 0);
@@ -7395,8 +7395,8 @@ export default function PCPView({
                                                 <div key={fi} className={`flex flex-col px-2.5 py-1.5 ${fi > 0 ? `border-t ${isDarkMode ? 'border-slate-800/50' : 'border-slate-100'}` : ''}`}>
                                                   <div className="flex items-center justify-between gap-2">
                                                     <div className="flex flex-col min-w-0">
-                                                      <span className={`text-[9px] font-black truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{pName}</span>
-                                                      <span className={`text-[8px] truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{cName} · {cust}</span>
+                                                      <span className={`text-[13px] font-black truncate ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>{pName} · {cName}</span>
+                                                      <span className={`text-[9px] font-bold uppercase tracking-widest truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{destino}</span>
                                                     </div>
                                                     <span className={`text-[8px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>{qty} prs</span>
                                                   </div>

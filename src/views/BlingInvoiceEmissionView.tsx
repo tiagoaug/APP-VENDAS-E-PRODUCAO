@@ -3,7 +3,6 @@ import { RefreshCw, FileCheck2, AlertTriangle, ChevronDown, ChevronUp, Tags as T
 import { BlingOrder, BlingProductMapping, Product, ViewType } from '../types';
 import { subscribeToBlingOrders, subscribeToBlingMappings, syncBlingOrdersNow, emitBlingInvoice, emitBlingInvoicesBatch } from '../services/blingService';
 import { toast } from '../utils/toast';
-import { printShippingLabel } from '../utils/pdfExport';
 
 interface BlingInvoiceEmissionViewProps {
   isDarkMode: boolean;
@@ -322,22 +321,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                       <FileDown size={12} /> PDF Simplificado
                     </a>
                   )}
-                  {order.etiquetaTransporte && (
-                    <button
-                      onClick={() =>
-                        printShippingLabel({
-                          pedidoNumero: order.numero,
-                          notaNumero: order.notaNumero,
-                          etiqueta: order.etiquetaTransporte!,
-                        })
-                      }
-                      data-guide-anchor="blingInvoice.imprimirEtiqueta"
-                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
-                    >
-                      <FileDown size={12} /> Etiqueta de Transporte
-                    </button>
-                  )}
-                  {!order.danfeUrl && !order.pdfUrl && !order.etiquetaTransporte && (
+                  {!order.danfeUrl && !order.pdfUrl && (
                     <p className="text-[10px] font-bold text-slate-400 italic">Links ainda não disponíveis — sincronize novamente em instantes.</p>
                   )}
                 </div>
@@ -417,21 +401,6 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                     >
                       <ExternalLink size={12} /> DANFE
                     </a>
-                  )}
-                  {order.etiquetaTransporte && (
-                    <button
-                      onClick={() =>
-                        printShippingLabel({
-                          pedidoNumero: order.numero,
-                          notaNumero: order.notaNumero,
-                          etiqueta: order.etiquetaTransporte!,
-                        })
-                      }
-                      data-guide-anchor="blingInvoice.imprimirEtiqueta"
-                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
-                    >
-                      <FileDown size={12} /> Etiqueta de Transporte
-                    </button>
                   )}
                 </div>
               </div>

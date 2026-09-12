@@ -90,6 +90,11 @@ export default function GeneralReceiptsView({
         if (p.type !== PurchaseType.GENERAL) return false;
         // Must NOT be registered as received yet
         if (p.registerAsReceived === true) return false;
+        // Só faz sentido "receber estoque" de itens registrados como Material — itens de
+        // Fornecedor/Terceirizado (pagamento de serviço) e Gerais (despesa avulsa) não têm
+        // materialId e nunca entram em estoque (ver handleConfirmReceipt).
+        const hasMaterialItem = (p.generalItems || []).some((it) => (it.kind || 'material') === 'material');
+        if (!hasMaterialItem) return false;
 
         const supplier = suppliers.find((s) => s.id === p.supplierId);
         const lowerSearch = searchQuery.toLowerCase();
@@ -412,8 +417,8 @@ export default function GeneralReceiptsView({
   return (
     <div className={`flex flex-col min-h-screen pb-20 ${isDarkMode ? 'bg-[#0f172a] text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
 
-      {/* Premium Header */}
-      <header className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/40 backdrop-blur-md sticky top-0 z-30">
+      {/* Header */}
+      <header className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/40">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -811,7 +816,9 @@ export default function GeneralReceiptsView({
             pendingPurchases.map((purchase) => {
               const supplier = suppliers.find((s) => s.id === purchase.supplierId);
               const isExpanded = expandedPurchaseId === purchase.id;
-              const generalItemsList = purchase.generalItems || [];
+              // Só itens de Material entram em estoque — Fornecedor/Terceirizado e Gerais não
+              // têm materialId e ficam de fora da contagem/lista de recebimento.
+              const generalItemsList = (purchase.generalItems || []).filter((it) => (it.kind || 'material') === 'material');
               const hasItems = generalItemsList.length > 0;
               const formattedDate = purchase.date
                 ? format(new Date(purchase.date), 'dd/MM/yyyy', { locale: ptBR })
@@ -930,7 +937,7 @@ export default function GeneralReceiptsView({
 
                           {/* Items Grid */}
                           <div className="flex flex-col gap-3">
-                            {purchase.generalItems?.map((item, idx) => {
+                            {(purchase.generalItems || []).map((item, idx) => ({ item, idx })).filter(({ item }) => (item.kind || 'material') === 'material').map(({ item, idx }) => {
                               const configMaterial = productionConfigs.find((c) => c.id === item.materialId);
                               const key = `${purchase.id}-${idx}`;
                               const receivedQty = receivedQuantities[key] ?? (item.quantity || 0);

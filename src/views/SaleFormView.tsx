@@ -4,6 +4,7 @@ import { canEditTask } from '../utils/collaborators';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
 import ComboBox from '../components/ComboBox';
+import EngineeringPickerModal from '../components/EngineeringPickerModal';
 import ReminderPickerModal from '../components/ReminderPickerModal';
 import DeliveryAddressForm from '../components/DeliveryAddressForm';
 import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator, MapPin, PackageCheck } from 'lucide-react';
@@ -317,6 +318,8 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(PaymentStatus.PAID);
   const [paymentHistory, setPaymentHistory] = useState<SalePayment[]>([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [isPaymentMethodPickerOpen, setIsPaymentMethodPickerOpen] = useState(false);
+  const [isPaymentAccountPickerOpen, setIsPaymentAccountPickerOpen] = useState(false);
   const [partialPaymentAmount, setPartialPaymentAmount] = useState<number>(0);
   const [partialPaymentMethodId, setPartialPaymentMethodId] = useState('');
   const [partialPaymentAccountId, setPartialPaymentAccountId] = useState('');
@@ -335,6 +338,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
   // SalesView.handleOpenSaleLabels pra atribuir recipientName por caixa na impressão.
   const [boxRecipientsMap, setBoxRecipientsMap] = useState<Record<string, { name: string; quantity: number }[]>>({});
   const [showBoxSplitModal, setShowBoxSplitModal] = useState(false);
+  const [isBoxSplitInfoOpen, setIsBoxSplitInfoOpen] = useState(false);
 
   // Endereço(s) de entrega do pedido — cadastrados aqui na hora da venda em vez de só depois
   // de salva (SalesView já tinha esse fluxo pós-venda; isso só espelha os mesmos campos do
@@ -1510,6 +1514,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 onChange={setCustomerId}
                 placeholder="SELECIONE O CLIENTE"
                 isDarkMode={isDarkMode}
+                usePopupModal
               />
             </div>
             {people.filter(p => p.isCustomer).length === 0 && (
@@ -2575,15 +2580,18 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Payments Section */}
         <div className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-           <div className="flex justify-between items-center px-2">
-              <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">Recebimentos</h3>
+           <div className="flex justify-between items-center gap-3 px-2">
+              <div className="min-w-0">
+                <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">Recebimentos</h3>
+                <p className="text-[9px] font-bold text-slate-400 mt-1">Clique para adicionar recebimentos de valores do pedido</p>
+              </div>
               <button
+                type="button"
                 onClick={() => setShowPaymentModal(true)}
                 data-guide-anchor="saleForm.adicionarRecebimento"
-                className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
-                title="Adicionar Recebimento"
+                className="shrink-0 px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 active:scale-95 transition-all"
               >
-                <Plus size={16} strokeWidth={3} />
+                <Plus size={14} strokeWidth={3} /> Adicionar
               </button>
            </div>
 
@@ -2852,12 +2860,18 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             </div>
 
             <div className="overflow-y-auto flex-1 p-6 flex flex-col gap-4">
-              <div className={`rounded-2xl border p-4 flex gap-3 ${isDarkMode ? 'bg-pink-900/10 border-pink-900/30' : 'bg-pink-50 border-pink-100'}`}>
-                <Info size={16} className="text-pink-500 shrink-0 mt-0.5" />
-                <p className={`text-[11px] font-bold leading-relaxed ${isDarkMode ? 'text-pink-200' : 'text-pink-900'}`}>
-                  Para quando o cliente deste pedido é um <span className="font-black">revendedor/atacadista</span> que já sabe pra quem vai repassar cada caixa. Em vez de uma caixa fechada "genérica", você informa aqui os <span className="font-black">clientes finais dele</span> (nome + quantas caixas cada um leva) — a soma não pode passar da quantidade do item. Isso não muda o valor nem o cliente do pedido (continua sendo o revendedor); serve só pra deixar registrado quem recebe o quê, útil na etiqueta, no romaneio de entrega e se depois for preciso separar/entregar em endereços diferentes (ver "Endereços de Entrega", que reaproveita essa mesma divisão). Deixe em branco se não precisar dessa rastreabilidade — o pedido funciona normalmente sem isso.
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsBoxSplitInfoOpen(true)}
+                data-guide-anchor="saleForm.boxSplitInfoToggle"
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border ${isDarkMode ? 'bg-pink-900/10 border-pink-900/30' : 'bg-pink-50 border-pink-100'}`}
+              >
+                <Info size={16} className="text-pink-500 shrink-0" />
+                <span className={`flex-1 text-left text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-pink-200' : 'text-pink-900'}`}>
+                  Clique para ver explicação
+                </span>
+                <ChevronDown size={16} className="-rotate-90 text-pink-500 shrink-0" />
+              </button>
               {wholesaleBoxCartItems.length === 0 && (
                 <p className="text-center text-xs font-bold text-slate-400 py-8">Nenhum item de atacado (caixa fechada) no carrinho.</p>
               )}
@@ -2882,7 +2896,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 };
 
                 return (
-                  <div key={key} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
+                  <div key={key} className={`rounded-2xl border ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
                     <div className="flex items-center justify-between gap-2 px-4 py-3">
                       <div className="min-w-0">
                         <p className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -3077,9 +3091,9 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 type="button"
                 onClick={() => setAdditionalDeliveryAddresses(prev => [...prev, { address: {} }])}
                 data-guide-anchor="saleForm.adicionarPontoEntrega"
-                className="flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.98]"
+                className={`flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] border ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.5)]' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-100 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.9)]'}`}
               >
-                <Plus size={13} /> Adicionar Outro Ponto de Entrega
+                <Plus size={13} className="text-indigo-500" /> Adicionar Outro Ponto de Entrega
               </button>
 
               {additionalDeliveryAddresses.length > 0 && wholesaleBoxCartItems.length > 0 && (
@@ -3110,7 +3124,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                     };
 
                     return (
-                      <div key={key} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
+                      <div key={key} className={`rounded-2xl border ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
                         <div className="flex items-center justify-between gap-2 px-4 py-3">
                           <div className="min-w-0">
                             <p className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -3186,7 +3200,8 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             </div>
 
             <div className={`px-6 py-4 border-t shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-              <button type="button" onClick={() => setShowDeliveryModal(false)} data-guide-anchor="saleForm.entregaConcluir" className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+              <button type="button" onClick={() => setShowDeliveryModal(false)} data-guide-anchor="saleForm.entregaConcluir" className={`w-full py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 border ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.5)]' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-100 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.9)]'}`}>
+                <CheckCircle2 size={16} className="text-indigo-500" />
                 Concluir
               </button>
             </div>
@@ -3391,13 +3406,13 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                   <div className="flex items-center justify-between px-3 mb-2">
                     <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 block tracking-widest">Valor Recebido</label>
                     {remainingBalance > 0 && (
-                      <button 
+                      <button
                         type="button"
                         onClick={() => setPartialPaymentAmount(remainingBalance)}
                         data-guide-anchor="saleForm.recebimentoQuitarTotal"
-                        className="text-[8px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 flex items-center gap-1"
+                        className="px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 active:scale-95 transition-all flex items-center gap-1.5"
                       >
-                        <CheckCircle2 size={10} />
+                        <CheckCircle2 size={12} />
                         Quitar Total
                       </button>
                     )}
@@ -3418,32 +3433,55 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                   </div>
                </div>
 
-               <div className="grid grid-cols-2 gap-3">
+               <div className="flex flex-col gap-3">
                   <div>
                     <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest">Método</label>
-                    <select 
-                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3.5 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200"
-                      value={partialPaymentMethodId}
-                      title="Selecionar método de pagamento"
-                      onChange={(e) => setPartialPaymentMethodId(e.target.value)}
+                    <button
+                      type="button"
+                      onClick={() => setIsPaymentMethodPickerOpen(true)}
+                      data-guide-anchor="saleForm.recebimentoMetodo"
+                      className="w-full flex items-center justify-between bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3.5 text-[11px] font-black uppercase text-slate-700 dark:text-slate-200"
                     >
-                      <option value="">MESMO DO PEDIDO</option>
-                      {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
-                    </select>
+                      <span className="truncate">{partialPaymentMethodId ? (paymentMethods.find(pm => pm.id === partialPaymentMethodId)?.name || '') : 'MESMO DO PEDIDO'}</span>
+                      <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                    </button>
                   </div>
                   <div>
                     <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest">Conta</label>
-                    <select 
-                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3.5 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200"
-                      value={partialPaymentAccountId}
-                      title="Selecionar conta de destino"
-                      onChange={(e) => setPartialPaymentAccountId(e.target.value)}
+                    <button
+                      type="button"
+                      onClick={() => setIsPaymentAccountPickerOpen(true)}
+                      data-guide-anchor="saleForm.recebimentoConta"
+                      className="w-full flex items-center justify-between bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3.5 text-[11px] font-black uppercase text-slate-700 dark:text-slate-200"
                     >
-                      <option value="">MESMA DO PEDIDO</option>
-                      {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
-                    </select>
+                      <span className="truncate">{partialPaymentAccountId ? (accounts.find(acc => acc.id === partialPaymentAccountId)?.name || '') : 'MESMA DO PEDIDO'}</span>
+                      <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                    </button>
                   </div>
                </div>
+
+               <EngineeringPickerModal
+                 isOpen={isPaymentMethodPickerOpen}
+                 onClose={() => setIsPaymentMethodPickerOpen(false)}
+                 title="Método de Pagamento"
+                 icon={<CreditCard size={18} />}
+                 options={[{ id: '', name: 'Mesmo do Pedido' }, ...paymentMethods.map(pm => ({ id: pm.id, name: pm.name }))]}
+                 selectedId={partialPaymentMethodId || ''}
+                 onSelect={setPartialPaymentMethodId}
+                 isDarkMode={isDarkMode}
+                 searchPlaceholder="Pesquisar método..."
+               />
+               <EngineeringPickerModal
+                 isOpen={isPaymentAccountPickerOpen}
+                 onClose={() => setIsPaymentAccountPickerOpen(false)}
+                 title="Conta de Destino"
+                 icon={<Wallet size={18} />}
+                 options={[{ id: '', name: 'Mesma do Pedido' }, ...accounts.map(acc => ({ id: acc.id, name: acc.name }))]}
+                 selectedId={partialPaymentAccountId || ''}
+                 onSelect={setPartialPaymentAccountId}
+                 isDarkMode={isDarkMode}
+                 searchPlaceholder="Pesquisar conta..."
+               />
 
                <div>
                   <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest">Observação</label>
@@ -3531,6 +3569,40 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
             )}
          </div>
       </div>
+
+      {isBoxSplitInfoOpen && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsBoxSplitInfoOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-4"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-pink-50 dark:bg-pink-900/30 flex items-center justify-center text-pink-600 dark:text-pink-400 shrink-0">
+                  <Info size={20} />
+                </div>
+                <h3 className="text-sm font-black uppercase tracking-tight leading-none text-slate-900 dark:text-white">Dividir Caixas entre Clientes</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBoxSplitInfoOpen(false)}
+                aria-label="Fechar"
+                title="Fechar"
+                data-guide-anchor="saleForm.boxSplitInfoFechar"
+                className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-600 transition-all"
+              >
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+            <p className="text-[12px] font-bold leading-relaxed text-slate-600 dark:text-slate-300">
+              Para quando o cliente deste pedido é um <span className="font-black text-slate-900 dark:text-white">revendedor/atacadista</span> que já sabe pra quem vai repassar cada caixa. Em vez de uma caixa fechada "genérica", você informa aqui os <span className="font-black text-slate-900 dark:text-white">clientes finais dele</span> (nome + quantas caixas cada um leva) — a soma não pode passar da quantidade do item. Isso não muda o valor nem o cliente do pedido (continua sendo o revendedor); serve só pra deixar registrado quem recebe o quê, útil na etiqueta, no romaneio de entrega e se depois for preciso separar/entregar em endereços diferentes (ver "Endereços de Entrega", que reaproveita essa mesma divisão). Deixe em branco se não precisar dessa rastreabilidade — o pedido funciona normalmente sem isso.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* CONFIRMATION MODALS FOR CANCELLATION */}
       {showSaleModeInfo && (

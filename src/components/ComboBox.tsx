@@ -73,7 +73,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
             setSearch(e.target.value);
             setIsOpen(true);
           }}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { if (!usePopupModal) e.stopPropagation(); }}
         />
         {/* Área clicável generosa ao redor da seta */}
         <div className={`flex items-center justify-center ${compact ? 'w-9' : 'w-12'} h-full self-stretch shrink-0 ${arrowColor === 'red' ? 'text-red-500' : 'text-indigo-400'}`}>

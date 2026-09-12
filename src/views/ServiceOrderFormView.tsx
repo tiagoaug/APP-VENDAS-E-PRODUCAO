@@ -14,6 +14,7 @@ import { financeService } from '../services/financeService';
 import { seedServiceOrderSequence } from '../utils/sequenceSeeds';
 import { toast } from '../utils/toast';
 import ComboBox from '../components/ComboBox';
+import EngineeringPickerModal from '../components/EngineeringPickerModal';
 import DatePicker from '../components/DatePicker';
 import PrintOSModal from '../components/PrintOSModal';
 import { getOrderEffectiveSector, getSourceItemKey, resolveCorrectSectorForProduct } from '../utils/productionRoute';
@@ -84,8 +85,7 @@ export default function ServiceOrderFormView({
   const [sectorId, setSectorId] = useState('');
   const [providerId, setProviderId] = useState('');
   const [providerManualName, setProviderManualName] = useState('');
-  const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
-  const providerDropdownRef = useRef<HTMLDivElement>(null);
+  const [isProviderPickerOpen, setIsProviderPickerOpen] = useState(false);
   const [defaultValuePerPair, setDefaultValuePerPair] = useState<number>(0);
   const [notes, setNotes] = useState('');
 
@@ -105,16 +105,6 @@ export default function ServiceOrderFormView({
   const [isSaving, setIsSaving] = useState(false);
   const [savedOS, setSavedOS] = useState<ServiceOrder | null>(null);
   const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (providerDropdownRef.current && !providerDropdownRef.current.contains(event.target as Node)) {
-        setIsProviderDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Guarda contra o efeito de inicialização abaixo rodar de novo a cada snapshot do
   // Firestore (serviceOrders/lots/products etc. trocam de referência a cada atualização,
@@ -761,61 +751,42 @@ export default function ServiceOrderFormView({
                 />
               </div>
 
-              {/* Provider Selection — digite livremente (sugestão/filtro dos prestadores
-                  cadastrados) ou clique numa sugestão para selecionar um já existente */}
+              {/* Provider Selection — cartão inteiro clicável, abre popup de busca/seleção
+                  (EngineeringPickerModal). Nome digitado que não bate com nenhum cadastrado
+                  vira "criar novo" dentro do próprio popup (onCreateNew), salvo como digitado —
+                  mesma possibilidade que existia antes no campo de texto livre. */}
               <div className="flex flex-col gap-2">
                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-400 px-3 block">
                   Prestador do Serviço
                 </label>
-                <div className="relative" ref={providerDropdownRef}>
-                  <div className={`w-full flex items-center bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-800 rounded-2xl pl-12 pr-0 py-1 focus-within:border-indigo-500 transition-all ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
-                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-                      <ClipboardList size={18} />
-                    </div>
-                    <input
-                      type="text"
-                      value={providerId ? (people.find(p => p.id === providerId)?.name || '') : providerManualName}
-                      onChange={e => {
-                        setProviderId('');
-                        setProviderManualName(e.target.value);
-                        setIsProviderDropdownOpen(true);
-                      }}
-                      onFocus={() => setIsProviderDropdownOpen(true)}
-                      placeholder="Digite o nome do prestador..."
-                      className="flex-1 bg-transparent border-none outline-none text-[13px] font-black uppercase tracking-widest py-3 min-w-0"
-                    />
-                  </div>
-
-                  {isProviderDropdownOpen && (() => {
-                    const term = (providerId ? '' : providerManualName).toLowerCase();
-                    const suggestions = people
-                      .filter(p => p.isSupplier || p.isServiceProvider)
-                      .filter(p => p.name.toLowerCase().includes(term));
-                    return (
-                      <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
-                        {suggestions.length > 0 ? (
-                          suggestions.map(p => (
-                            <div
-                              key={p.id}
-                              className={`px-5 py-4 text-[13px] font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50 ${providerId === p.id ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200'}`}
-                              data-guide-anchor="serviceOrder.prestadorSelecionar"
-                              onClick={() => {
-                                setProviderId(p.id || '');
-                                setProviderManualName('');
-                                setIsProviderDropdownOpen(false);
-                              }}
-                            >
-                              {p.name}
-                            </div>
-                          ))
-                        ) : (
-                          <div className="px-5 py-3 text-[12px] text-slate-400 italic">Nenhum prestador cadastrado com esse nome — será salvo como digitado</div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsProviderPickerOpen(true)}
+                  data-guide-anchor="serviceOrder.prestadorAbrirPopup"
+                  className={`w-full flex items-center gap-3 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-800 rounded-2xl pl-5 pr-4 py-3 transition-all ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}
+                >
+                  <ClipboardList size={18} className="text-slate-400 shrink-0" />
+                  <span className="flex-1 text-left text-[13px] font-black uppercase tracking-widest truncate">
+                    {providerId ? (people.find(p => p.id === providerId)?.name || '') : (providerManualName || 'Digite ou escolha o prestador...')}
+                  </span>
+                  <Search size={16} className="text-slate-400 shrink-0" />
+                </button>
               </div>
+
+              <EngineeringPickerModal
+                isOpen={isProviderPickerOpen}
+                onClose={() => setIsProviderPickerOpen(false)}
+                title="Prestador do Serviço"
+                icon={<ClipboardList size={18} />}
+                options={people.filter(p => p.isSupplier || p.isServiceProvider).map(p => ({ id: p.id || '', name: p.name }))}
+                selectedId={providerId}
+                onSelect={(id) => { setProviderId(id); setProviderManualName(''); }}
+                onCreateNew={(term) => { setProviderId(''); setProviderManualName(term); setIsProviderPickerOpen(false); }}
+                createLabel={(term) => `Usar "${term}" (não cadastrado)`}
+                isDarkMode={isDarkMode}
+                searchPlaceholder="Pesquisar ou digitar nome do prestador..."
+                emptyHint="Nenhum prestador cadastrado"
+              />
 
               {/* Value per pair & Notes */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

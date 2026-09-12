@@ -1,7 +1,7 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '../lib/firebase';
 import { firebaseService } from './firebaseService';
-import { BlingConnection, BlingIgnoredProduct, BlingOrder, BlingProductMapping, BlingNotesCounter, BlingNoteAdjustment, BlingDevolucao, BlingSalesLedgerEntry } from '../types';
+import { BlingConnection, BlingIgnoredProduct, BlingOrder, BlingProductMapping, BlingNotesCounter, BlingNoteAdjustment, BlingDevolucao, BlingSalesLedgerEntry, CompanyProfile } from '../types';
 
 const functions = getFunctions(app, 'us-central1');
 
@@ -98,6 +98,36 @@ export async function emitBlingInvoicesBatch(pedidoIds: string[]): Promise<Bling
 export async function refreshBlingInvoiceDetails(pedidoId: string): Promise<BlingEmissionResult> {
   const fn = httpsCallable<{ pedidoId: string }, BlingEmissionResult>(functions, 'blingRefreshInvoice');
   const res = await fn({ pedidoId });
+  return res.data;
+}
+
+/** Busca a etiqueta REAL de envio (com QR code/rastreio da transportadora ou marketplace — ex.:
+ * Shopee) via módulo Logísticas do Bling — só existe se o pedido já tiver passado por uma
+ * integração de logística lá dentro. Diferente da "Etiqueta de Transporte" (que é só o endereço,
+ * remontada a partir da nota fiscal). */
+export async function fetchBlingShippingLabel(pedidoId: string): Promise<{ pedidoId: string; ok: boolean; etiquetaEnvioUrl?: string; motivo?: string }> {
+  const fn = httpsCallable<{ pedidoId: string }, { pedidoId: string; ok: boolean; etiquetaEnvioUrl?: string; motivo?: string }>(functions, 'blingFetchShippingLabel');
+  const res = await fn({ pedidoId });
+  return res.data;
+}
+
+/** Gera um PDF único com a etiqueta de envio (buscada de novo, sempre fresca) seguida do NOSSO
+ * PRÓPRIO "DANFE Simplificado" 100x150mm (o pdfUrl/danfeUrl que a API do Bling devolve é sempre
+ * um DANFE A4/A5 comum, nunca o formato de etiqueta térmica) — tudo desenhado e unido no
+ * servidor (evita CORS de um fetch direto do navegador nos links do Bling). Retorna o PDF
+ * combinado em base64. `companyProfile` vem do estado local (não fica salvo no Firestore). */
+export async function mergeBlingShippingDocuments(pedidoId: string, companyProfile: CompanyProfile | null): Promise<{ pedidoId: string; ok: boolean; base64?: string; motivo?: string }> {
+  const fn = httpsCallable<{ pedidoId: string; companyProfile: CompanyProfile | null }, { pedidoId: string; ok: boolean; base64?: string; motivo?: string }>(functions, 'blingMergeShippingDocs');
+  const res = await fn({ pedidoId, companyProfile });
+  return res.data;
+}
+
+/** Gera o PDF do "DANFE Simplificado" 100x150 sozinho (sem a etiqueta de envio) — montado no
+ * servidor (código de barras da chave de acesso via bwip-js, layout via pdf-lib), já que a API
+ * do Bling não expõe esse formato compacto pronto (só a interface web deles). */
+export async function fetchDanfeSimplificadoData(pedidoId: string, companyProfile: CompanyProfile | null): Promise<{ pedidoId: string; ok: boolean; base64?: string; motivo?: string }> {
+  const fn = httpsCallable<{ pedidoId: string; companyProfile: CompanyProfile | null }, { pedidoId: string; ok: boolean; base64?: string; motivo?: string }>(functions, 'blingFetchDanfeSimplificadoData');
+  const res = await fn({ pedidoId, companyProfile });
   return res.data;
 }
 

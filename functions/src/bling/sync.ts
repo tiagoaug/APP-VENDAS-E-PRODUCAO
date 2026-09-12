@@ -1,4 +1,6 @@
 import type { firestore } from "firebase-admin";
+import { PDFDocument } from "pdf-lib";
+import { buildDanfeSimplificadoPdfBytes, DanfeCompanyInfo } from "./danfeSimplificadoPdf";
 import { blingCall } from "./blingClient";
 import { getValidBlingAccessToken } from "./auth";
 import { consumeNotesForNewOrder } from "./notes";
@@ -465,17 +467,6 @@ export interface BlingEmissionResult {
 const NFE_SITUACAO_SUCESSO = new Set([5, 6]);
 const NFE_SITUACAO_FALHA = new Set([2, 4, 9]);
 
-interface NfeEtiqueta {
-  nome?: string;
-  endereco?: string;
-  numero?: string;
-  complemento?: string;
-  bairro?: string;
-  municipio?: string;
-  uf?: string;
-  cep?: string;
-}
-
 /** GET nfe/{id} — mesma consulta usada tanto ao emitir quanto ao só atualizar os dados de uma
  * nota já existente (ver `refreshBlingInvoiceDetails`), fatorada aqui pra não duplicar a lógica
  * de extração dos campos (ver comentário mais detalhado sobre `linkDanfe`/`linkPDF` abaixo). */
@@ -486,24 +477,18 @@ async function fetchNfeDetails(accessToken: string, notaFiscalId: string) {
       numero?: number;
       linkDanfe?: string;
       linkPDF?: string;
-      transporte?: { etiqueta?: NfeEtiqueta };
     };
   }>({ accessToken, path: `nfe/${notaFiscalId}` });
 
   const situacao = find?.data?.situacao;
   // `linkDanfe` e `linkPDF` são dois campos distintos na resposta do Bling (fonte:
   // AlexandreBellas/bling-erp-api-js, src/entities/nfes/interfaces/find.interface.ts) — na
-  // prática ambos costumam apontar pro mesmo DANFE completo hospedado pelo Bling. A API v3 não
-  // expõe um campo separado para o "DANFE Simplificado + Etiqueta de Transporte" que aparece no
-  // menu de impressão do site do Bling (isso é um recurso só da interface web deles); por isso
-  // guardamos os dois links que a API realmente devolve, e a etiqueta de transporte (endereço
-  // do destinatário) é montada no próprio app a partir de `transporte.etiqueta`.
+  // prática ambos costumam apontar pro mesmo DANFE completo hospedado pelo Bling.
   const danfeUrl = find?.data?.linkDanfe || find?.data?.linkPDF;
   const pdfUrl = find?.data?.linkPDF && find.data.linkPDF !== danfeUrl ? find.data.linkPDF : undefined;
   const notaNumero = find?.data?.numero ? String(find.data.numero) : undefined;
-  const etiquetaTransporte = find?.data?.transporte?.etiqueta;
 
-  return { situacao, danfeUrl, pdfUrl, notaNumero, etiquetaTransporte };
+  return { situacao, danfeUrl, pdfUrl, notaNumero };
 }
 
 /**
@@ -551,7 +536,7 @@ export async function emitBlingInvoice(db: firestore.Firestore, uid: string, ord
       console.warn(`Bling nfe/${notaFiscalId}/enviar falhou (pedido ${orderId}), verificando situação real antes de desistir:`, err?.message);
     }
 
-    const { situacao, danfeUrl, pdfUrl, notaNumero, etiquetaTransporte } = await fetchNfeDetails(accessToken, notaFiscalId);
+    const { situacao, danfeUrl, pdfUrl, notaNumero } = await fetchNfeDetails(accessToken, notaFiscalId);
 
     if (situacao !== undefined && NFE_SITUACAO_FALHA.has(situacao)) {
       await orderRef.set({ status: "REJEITADA", motivoRejeicao: `Situação da NF-e: ${situacao}`, updatedAt: Date.now() }, { merge: true });
@@ -575,7 +560,6 @@ export async function emitBlingInvoice(db: firestore.Firestore, uid: string, ord
         notaNumero: notaNumero || null,
         danfeUrl: danfeUrl || null,
         pdfUrl: pdfUrl || null,
-        etiquetaTransporte: etiquetaTransporte || null,
         updatedAt: Date.now(),
       },
       { merge: true }
@@ -614,7 +598,7 @@ export async function refreshBlingInvoiceDetails(db: firestore.Firestore, uid: s
 
   try {
     const accessToken = await getValidBlingAccessToken(db, uid);
-    const { situacao, danfeUrl, pdfUrl, notaNumero, etiquetaTransporte } = await fetchNfeDetails(accessToken, order.notaFiscalId);
+    const { situacao, danfeUrl, pdfUrl, notaNumero } = await fetchNfeDetails(accessToken, order.notaFiscalId);
     const emitida = situacao !== undefined && NFE_SITUACAO_SUCESSO.has(situacao);
     const falhou = situacao !== undefined && NFE_SITUACAO_FALHA.has(situacao);
 
@@ -625,7 +609,6 @@ export async function refreshBlingInvoiceDetails(db: firestore.Firestore, uid: s
         notaNumero: notaNumero || null,
         danfeUrl: danfeUrl || null,
         pdfUrl: pdfUrl || null,
-        etiquetaTransporte: etiquetaTransporte || null,
         updatedAt: Date.now(),
       },
       { merge: true }
@@ -640,5 +623,212 @@ export async function refreshBlingInvoiceDetails(db: firestore.Firestore, uid: s
     };
   } catch (err: any) {
     return { pedidoId: orderId, ok: false, motivo: err?.message || "Falha ao atualizar dados da nota fiscal." };
+  }
+}
+
+/**
+ * Busca a etiqueta REAL de envio (com QR code/código de rastreio da transportadora ou
+ * marketplace — ex.: Shopee) via GET logisticas/etiquetas, usando o `blingPedidoId` do pedido de
+ * venda. Não vem da nota fiscal — é a etiqueta que o próprio Bling já processou de uma
+ * integração de logística (Bling Envios, Melhor Envio, marketplace conectado etc.), e só existe
+ * se essa integração já tiver gerado/recebido a etiqueta pra esse pedido específico.
+ * Referência: github.com/AlexandreBellas/bling-erp-api-js, entidade `logisticasEtiquetas`
+ * (GET logisticas/etiquetas?formato=PDF&idsVendas[]=<id> → { data: [{ id, link, observacao }] }).
+ */
+export async function fetchBlingShippingLabel(db: firestore.Firestore, uid: string, orderId: string): Promise<{ pedidoId: string; ok: boolean; etiquetaEnvioUrl?: string; motivo?: string }> {
+  const orderRef = db.collection("users").doc(uid).collection("blingOrders").doc(orderId);
+  const orderSnap = await orderRef.get();
+  if (!orderSnap.exists) return { pedidoId: orderId, ok: false, motivo: "Pedido não encontrado." };
+  const order = orderSnap.data() as { blingPedidoId: string };
+
+  try {
+    const accessToken = await getValidBlingAccessToken(db, uid);
+    const idVenda = Number(order.blingPedidoId);
+    const res = await blingCall<{ data?: { id: number; link: string; observacao?: string }[] }>({
+      accessToken,
+      path: "logisticas/etiquetas",
+      query: { formato: "PDF", idsVendas: [idVenda] },
+    });
+
+    const etiqueta = res?.data?.[0];
+    if (!etiqueta?.link) {
+      return { pedidoId: orderId, ok: false, motivo: "Este pedido ainda não tem etiqueta de envio gerada por uma integração de logística no Bling." };
+    }
+
+    await orderRef.set(
+      { etiquetaEnvioUrl: etiqueta.link, etiquetaEnvioObservacao: etiqueta.observacao || null, updatedAt: Date.now() },
+      { merge: true }
+    );
+
+    return { pedidoId: orderId, ok: true, etiquetaEnvioUrl: etiqueta.link };
+  } catch (err: any) {
+    return { pedidoId: orderId, ok: false, motivo: err?.message || "Falha ao buscar etiqueta de envio." };
+  }
+}
+
+async function fetchPdfBytes(url: string): Promise<Uint8Array> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Falha ao baixar PDF (${res.status}): ${url}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+/**
+ * Gera um único PDF com a etiqueta REAL de envio seguida do NOSSO PRÓPRIO "DANFE Simplificado"
+ * 100x150mm (ver buildDanfeSimplificadoPdfBytes) — não usa mais o pdfUrl/danfeUrl que a API do
+ * Bling devolve, porque aquele link é sempre um DANFE A4/A5 comum, nunca o formato compacto de
+ * etiqueta térmica (confirmado testando em produção). As duas peças (etiqueta baixada + DANFE
+ * gerado aqui) são unidas com `pdf-lib`, tudo no servidor — evita o CORS que um fetch direto do
+ * navegador teria pro link assinado da AWS da etiqueta.
+ * O link da etiqueta é buscado DE NOVO aqui (não reaproveita `etiquetaEnvioUrl` salvo no
+ * Firestore por fetchBlingShippingLabel): é uma URL assinada da AWS S3 com `X-Amz-Expires=3600`
+ * (1h) — confirmado em produção que reaproveitar o link salvo dá 403 depois de expirado.
+ */
+export async function mergeBlingShippingDocuments(db: firestore.Firestore, uid: string, orderId: string, company: DanfeCompanyInfo | null): Promise<{ pedidoId: string; ok: boolean; base64?: string; motivo?: string }> {
+  const orderRef = db.collection("users").doc(uid).collection("blingOrders").doc(orderId);
+  const orderSnap = await orderRef.get();
+  if (!orderSnap.exists) return { pedidoId: orderId, ok: false, motivo: "Pedido não encontrado." };
+  const order = orderSnap.data() as { blingPedidoId: string };
+
+  const danfeDataRes = await fetchDanfeSimplificadoDataInternal(db, uid, orderId);
+  if (!danfeDataRes.ok) return { pedidoId: orderId, ok: false, motivo: danfeDataRes.motivo };
+
+  try {
+    const accessToken = await getValidBlingAccessToken(db, uid);
+    const idVenda = Number(order.blingPedidoId);
+    const etiquetaRes = await blingCall<{ data?: { id: number; link: string; observacao?: string }[] }>({
+      accessToken,
+      path: "logisticas/etiquetas",
+      query: { formato: "PDF", idsVendas: [idVenda] },
+    });
+    const etiquetaUrl = etiquetaRes?.data?.[0]?.link;
+    if (!etiquetaUrl) {
+      return { pedidoId: orderId, ok: false, motivo: "Este pedido ainda não tem etiqueta de envio gerada por uma integração de logística no Bling." };
+    }
+
+    const [etiquetaBytes, danfeBytes] = await Promise.all([
+      fetchPdfBytes(etiquetaUrl),
+      buildDanfeSimplificadoPdfBytes(danfeDataRes.data, company),
+    ]);
+
+    const merged = await PDFDocument.create();
+    const etiquetaDoc = await PDFDocument.load(etiquetaBytes);
+    const danfeDoc = await PDFDocument.load(danfeBytes);
+
+    for (const page of await merged.copyPages(etiquetaDoc, etiquetaDoc.getPageIndices())) merged.addPage(page);
+    for (const page of await merged.copyPages(danfeDoc, danfeDoc.getPageIndices())) merged.addPage(page);
+
+    const mergedBytes = await merged.save();
+    return { pedidoId: orderId, ok: true, base64: Buffer.from(mergedBytes).toString("base64") };
+  } catch (err: any) {
+    return { pedidoId: orderId, ok: false, motivo: err?.message || "Falha ao gerar o PDF combinado." };
+  }
+}
+
+export interface DanfeSimplificadoData {
+  numero?: string;
+  serie?: string;
+  dataEmissao?: string;
+  chaveAcesso?: string;
+  numeroProtocolo?: string;
+  dataAutorizacao?: string;
+  numeroPedidoLoja?: string;
+  destinatario?: {
+    nome: string;
+    numeroDocumento: string;
+    endereco?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    municipio?: string;
+    uf?: string;
+    cep?: string;
+  };
+  itens: { descricao: string; quantidade: number; valorUnitario: number }[];
+  valorTotal: number;
+}
+
+/**
+ * Busca os dados estruturados necessários pra montar nosso PRÓPRIO layout de "DANFE
+ * Simplificado + Etiqueta" 100x150mm (código de barras da chave de acesso, protocolo, itens,
+ * comprador) — a API v3 do Bling não expõe um link pronto pra esse formato específico (é
+ * recurso só da interface web deles, confirmado via busca: o `pdfUrl`/`danfeUrl` que a API
+ * devolve é sempre um DANFE A4/A5, nunca o formato de etiqueta térmica). Chave de
+ * acesso/protocolo/dados do comprador vêm do GET nfe/{id}; os itens já estão salvos em
+ * blingOrders (mesmos da venda). Fatorada como helper interno — usada tanto pelo endpoint
+ * standalone (fetchDanfeSimplificadoData) quanto pelo combinado (mergeBlingShippingDocuments),
+ * pra não duplicar a chamada à API do Bling.
+ */
+async function fetchDanfeSimplificadoDataInternal(db: firestore.Firestore, uid: string, orderId: string): Promise<{ ok: true; data: DanfeSimplificadoData } | { ok: false; motivo: string }> {
+  const orderRef = db.collection("users").doc(uid).collection("blingOrders").doc(orderId);
+  const orderSnap = await orderRef.get();
+  if (!orderSnap.exists) return { ok: false, motivo: "Pedido não encontrado." };
+  const order = orderSnap.data() as { notaFiscalId?: string; numero: string; valorTotal: number; itens: { descricao: string; quantidade: number; valorUnitario: number }[] };
+  if (!order.notaFiscalId) return { ok: false, motivo: "Pedido ainda não tem nota fiscal gerada." };
+
+  try {
+    const accessToken = await getValidBlingAccessToken(db, uid);
+    const find = await blingCall<{
+      data: {
+        numero?: string;
+        serie?: number;
+        dataEmissao?: string;
+        chaveAcesso?: string;
+        numeroPedidoLoja?: string;
+        numeroProtocolo?: string;
+        dataAutorizacao?: string;
+        contato?: {
+          nome: string;
+          numeroDocumento: string;
+          endereco?: { endereco: string; numero?: string; complemento?: string; bairro: string; cep?: string; municipio: string; uf?: string };
+        };
+      };
+    }>({ accessToken, path: `nfe/${order.notaFiscalId}` });
+
+    const d = find?.data;
+    if (!d) return { ok: false, motivo: "Não foi possível ler os dados da nota fiscal." };
+
+    return {
+      ok: true,
+      data: {
+        numero: d.numero,
+        serie: d.serie !== undefined ? String(d.serie) : undefined,
+        dataEmissao: d.dataEmissao,
+        chaveAcesso: d.chaveAcesso,
+        numeroProtocolo: d.numeroProtocolo,
+        dataAutorizacao: d.dataAutorizacao,
+        numeroPedidoLoja: d.numeroPedidoLoja || order.numero,
+        destinatario: d.contato
+          ? {
+              nome: d.contato.nome,
+              numeroDocumento: d.contato.numeroDocumento,
+              endereco: d.contato.endereco?.endereco,
+              numero: d.contato.endereco?.numero,
+              complemento: d.contato.endereco?.complemento,
+              bairro: d.contato.endereco?.bairro,
+              municipio: d.contato.endereco?.municipio,
+              uf: d.contato.endereco?.uf,
+              cep: d.contato.endereco?.cep,
+            }
+          : undefined,
+        itens: order.itens || [],
+        valorTotal: order.valorTotal || 0,
+      },
+    };
+  } catch (err: any) {
+    return { ok: false, motivo: err?.message || "Falha ao buscar dados da nota fiscal." };
+  }
+}
+
+/** Gera o PDF do "DANFE Simplificado" 100x150 sozinho (sem a etiqueta de envio junto) — mesmo
+ * gerador server-side (pdf-lib + bwip-js) usado por mergeBlingShippingDocuments, pra não manter
+ * duas implementações do mesmo layout (uma no servidor, outra no cliente) fora de sincronia. */
+export async function fetchDanfeSimplificadoData(db: firestore.Firestore, uid: string, orderId: string, company: DanfeCompanyInfo | null): Promise<{ pedidoId: string; ok: boolean; base64?: string; motivo?: string }> {
+  const res = await fetchDanfeSimplificadoDataInternal(db, uid, orderId);
+  if (!res.ok) return { pedidoId: orderId, ok: false, motivo: res.motivo };
+  try {
+    const bytes = await buildDanfeSimplificadoPdfBytes(res.data, company);
+    return { pedidoId: orderId, ok: true, base64: Buffer.from(bytes).toString("base64") };
+  } catch (err: any) {
+    return { pedidoId: orderId, ok: false, motivo: err?.message || "Falha ao gerar o PDF do DANFE Simplificado." };
   }
 }

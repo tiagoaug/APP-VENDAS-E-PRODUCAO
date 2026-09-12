@@ -7113,6 +7113,7 @@ export default function App() {
             onOpenPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
             onOpenSale={(id) => navigateTo(ViewType.SALE_FORM, id)}
             onNavigateToReport={(reportId) => navigateTo(ViewType.REPORT_DETAILED, reportId)}
+            initialFocusPurchaseId={searchContext}
             onPayCommission={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
             serviceOrders={serviceOrders}
             onPayProviderServiceOrders={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
@@ -7904,6 +7905,7 @@ export default function App() {
         return (
           <BlingInvoicesView
             isDarkMode={isDarkMode}
+            companyProfile={companyProfile}
           />
         );
       case ViewType.BLING_HEALTH:
@@ -9503,8 +9505,14 @@ export default function App() {
           (Boas-vindas/Roteiro/Conclusão) — sem isso dava pra pular a introdução inicial só
           tocando em qualquer ícone do menu, sem escolher um tipo de negócio nem apertar "Pular
           por agora". */}
+      {/* z-[40000] no <nav> abaixo (não mais z-40) — sendo `position: fixed`, ele cria sua
+          PRÓPRIA stacking context: dar z-index alto só no painel expandido (nav-expand-panel)
+          interno não adianta nada se o <nav> em si perde pra um FAB fixo de tela (ex.: "Nova
+          Compra" em PurchasesView, z-50; ou telas com FAB em z-[9000]/z-[30000]) na comparação
+          de fora — o valor que conta lá fora é o do próprio <nav>. Sobe acima do maior FAB
+          conhecido, mas continua abaixo dos modais de verdade (65000+/97000). */}
       {![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
-      <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
+      <nav className={`fixed bottom-0 left-0 right-0 z-[40000] flex items-end justify-center pb-5 px-4 pointer-events-none`}>
         <div className="relative w-full max-w-md pointer-events-auto">
           <div className={`relative flex items-center w-full px-2 py-1.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
             {/* 3D top highlight streak */}
@@ -9630,13 +9638,17 @@ export default function App() {
           <AnimatePresence>
             {navExpanded && (
               <>
+                {/* z-[65000] — mesmo padrão já usado em outros popups por cima de botões fixos
+                    (ver SalesView.tsx, "Filter Popup"): sem isso, um FAB fixo de tela (ex.:
+                    "Nova Compra" em PurchasesView, z-50) ficava por cima desse painel em vez de
+                    atrás dele, já que nem o backdrop nem o painel tinham z-index explícito. */}
                 <motion.div
                   key="nav-expand-backdrop"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   onClick={() => setNavExpanded(false)}
-                  className="fixed inset-0 bg-black/20"
+                  className="fixed inset-0 z-[65000] bg-black/20"
                   aria-hidden="true"
                 />
                 <motion.div
@@ -9646,7 +9658,7 @@ export default function App() {
                   exit={{ opacity: 0, y: 12, scale: 0.98 }}
                   transition={{ duration: 0.15 }}
                   data-guide-anchor="nav.painelExpandido"
-                  className={`absolute bottom-full left-0 right-0 mb-3 p-3 rounded-[2rem] shadow-2xl ${themeVisual.pillGradient}`}
+                  className={`absolute bottom-full left-0 right-0 mb-3 p-3 rounded-[2rem] shadow-2xl z-[65000] ${themeVisual.pillGradient}`}
                 >
                   <div
                     className="grid gap-x-0"

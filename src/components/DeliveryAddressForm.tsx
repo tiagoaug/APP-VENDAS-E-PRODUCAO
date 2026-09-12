@@ -34,6 +34,16 @@ const textareaClass = (isDarkMode: boolean) =>
 
 const labelClass = 'text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1';
 
+// Botão-cartão branco com leve efeito 3D (sombra + friso claro no topo) — usado nas ações desse
+// formulário (Buscar Endereço Colado/Verificar Localização/Buscar Endereço) em vez do fundo
+// cinza chapado de antes, ícone colorido à esquerda do texto.
+const cardButtonClass = (isDarkMode: boolean) =>
+  `disabled:opacity-60 text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 border ${
+    isDarkMode
+      ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.5)]'
+      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-100 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.9)]'
+  }`;
+
 type AddressInputMode = 'manual' | 'paste_address' | 'paste_location' | 'map';
 const MODE_LABELS: Record<AddressInputMode, string> = {
   manual: 'Digitação Manual',
@@ -176,7 +186,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 data-guide-anchor="deliveryAddress.modoEntrada"
                 className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${
                   inputMode === mode
-                    ? 'bg-violet-600 text-white shadow-sm'
+                    ? (isDarkMode ? 'bg-slate-700 text-violet-400 shadow-sm' : 'bg-white text-violet-600 shadow-sm')
                     : isDarkMode ? 'text-slate-400' : 'text-slate-500'
                 }`}
               >
@@ -235,9 +245,9 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 onClick={handleSearchPastedAddress}
                 disabled={isSearchingPastedAddress}
                 data-guide-anchor="deliveryAddress.buscarEndereco"
-                className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                className={`w-full h-10 rounded-xl ${cardButtonClass(isDarkMode)}`}
               >
-                {isSearchingPastedAddress ? <Loader2 size={14} className="animate-spin" /> : <ClipboardPaste size={14} />}
+                {isSearchingPastedAddress ? <Loader2 size={14} className="animate-spin text-violet-500" /> : <ClipboardPaste size={14} className="text-violet-500" />}
                 Buscar Endereço Colado
               </button>
               {pastedAddressError && (
@@ -272,9 +282,9 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 onClick={handleVerifyPastedLocation}
                 disabled={isVerifyingLocation}
                 data-guide-anchor="deliveryAddress.verificarLocalizacao"
-                className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                className={`w-full h-10 rounded-xl ${cardButtonClass(isDarkMode)}`}
               >
-                {isVerifyingLocation ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                {isVerifyingLocation ? <Loader2 size={14} className="animate-spin text-violet-500" /> : <MapPin size={14} className="text-violet-500" />}
                 Verificar Localização
               </button>
               {pastedLocationError && (
@@ -332,9 +342,9 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
             onClick={handleSearch}
             disabled={isSearching}
             data-guide-anchor="deliveryAddress.buscar"
-            className="flex-1 h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+            className={`flex-1 h-10 rounded-xl ${cardButtonClass(isDarkMode)}`}
           >
-            {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            {isSearching ? <Loader2 size={14} className="animate-spin text-violet-500" /> : <Search size={14} className="text-violet-500" />}
             Buscar Endereço
           </button>
         )}
@@ -344,7 +354,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
               type="button"
               onClick={() => onPriorityChange('NORMAL')}
               data-guide-anchor="deliveryAddress.prioridade"
-              className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${(priority || 'NORMAL') === 'NORMAL' ? 'bg-slate-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
+              className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${(priority || 'NORMAL') === 'NORMAL' ? (isDarkMode ? 'bg-emerald-900/40 text-emerald-300' : 'bg-emerald-100 text-emerald-700') : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
             >
               Normal
             </button>
@@ -352,7 +362,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
               type="button"
               onClick={() => onPriorityChange('URGENT')}
               data-guide-anchor="deliveryAddress.prioridade"
-              className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${priority === 'URGENT' ? 'bg-rose-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
+              className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${priority === 'URGENT' ? (isDarkMode ? 'bg-rose-900/40 text-rose-300' : 'bg-rose-100 text-rose-700') : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
             >
               Urgente
             </button>

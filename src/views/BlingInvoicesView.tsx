@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format, startOfDay, startOfWeek, startOfMonth, endOfDay } from 'date-fns';
-import { CheckSquare, Square, Printer, Share2, ExternalLink, FileDown, RefreshCw, Loader2, FileText } from 'lucide-react';
-import { BlingOrder } from '../types';
-import { subscribeToBlingOrders, refreshBlingInvoiceDetails } from '../services/blingService';
+import { FileDown, RefreshCw, Loader2, FileText, QrCode, Layers, Barcode } from 'lucide-react';
+import { BlingOrder, CompanyProfile } from '../types';
+import { subscribeToBlingOrders, refreshBlingInvoiceDetails, fetchBlingShippingLabel, mergeBlingShippingDocuments, fetchDanfeSimplificadoData } from '../services/blingService';
 import { toast } from '../utils/toast';
-import { printShippingLabels, buildShippingLabelsPdf, sharePDF, PrintShippingLabelOptions } from '../utils/pdfExport';
+import { sharePdfBase64 } from '../utils/pdfExport';
 
 interface BlingInvoicesViewProps {
   isDarkMode: boolean;
+  companyProfile?: CompanyProfile | null;
 }
 
 type DateFilter = 'dia' | 'semana' | 'mes' | 'periodo';
@@ -21,14 +22,15 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 
 const SELECTABLE_STATUSES = new Set(['EMITIDA', 'CONCLUIDA']);
 
-export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps) {
+export default function BlingInvoicesView({ isDarkMode, companyProfile = null }: BlingInvoicesViewProps) {
   const [orders, setOrders] = useState<BlingOrder[]>([]);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [dateFilter, setDateFilter] = useState<DateFilter>('mes');
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
-  const [sharing, setSharing] = useState(false);
+  const [fetchingLabelId, setFetchingLabelId] = useState<string | null>(null);
+  const [mergingId, setMergingId] = useState<string | null>(null);
+  const [generatingDanfeId, setGeneratingDanfeId] = useState<string | null>(null);
 
   useEffect(() => subscribeToBlingOrders(setOrders), []);
 
@@ -58,50 +60,6 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
     });
   }, [invoices, dateFilter, periodoInicio, periodoFim]);
 
-  // Só notas autorizadas têm garantidamente o endereço do destinatário (etiquetaTransporte) —
-  // pedidos emitidos antes do campo existir no app também não têm até serem atualizados (botão
-  // de refresh por linha, ou reabrindo a Emissão de Notas e emitindo de novo).
-  const selectable = useMemo(() => filtered.filter((o) => SELECTABLE_STATUSES.has(o.status) && o.etiquetaTransporte), [filtered]);
-  const allChecked = selectable.length > 0 && selectable.every((o) => checked.has(o.id));
-
-  const toggleAll = () => {
-    setChecked(allChecked ? new Set() : new Set(selectable.map((o) => o.id)));
-  };
-
-  const toggleOne = (order: BlingOrder) => {
-    if (!SELECTABLE_STATUSES.has(order.status) || !order.etiquetaTransporte) return;
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(order.id)) next.delete(order.id); else next.add(order.id);
-      return next;
-    });
-  };
-
-  const selectedLabels = (): PrintShippingLabelOptions[] =>
-    filtered
-      .filter((o) => checked.has(o.id) && o.etiquetaTransporte)
-      .map((o) => ({ pedidoNumero: o.numero, notaNumero: o.notaNumero, etiqueta: o.etiquetaTransporte! }));
-
-  const handlePrint = () => {
-    const labels = selectedLabels();
-    if (labels.length === 0) return;
-    printShippingLabels(labels);
-  };
-
-  const handleSharePdf = async () => {
-    const labels = selectedLabels();
-    if (labels.length === 0) return;
-    setSharing(true);
-    try {
-      const doc = buildShippingLabelsPdf(labels);
-      await sharePDF(doc, `etiquetas-transporte-${format(new Date(), 'ddMMyyyy-HHmm')}.pdf`);
-    } catch (e: any) {
-      toast.show('Erro ao gerar PDF: ' + (e.message || e));
-    } finally {
-      setSharing(false);
-    }
-  };
-
   const handleRefresh = async (order: BlingOrder) => {
     setRefreshingId(order.id);
     try {
@@ -114,7 +72,53 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
     }
   };
 
-  const checkedCount = checked.size;
+  const handleFetchShippingLabel = async (order: BlingOrder) => {
+    setFetchingLabelId(order.id);
+    try {
+      const res = await fetchBlingShippingLabel(order.id);
+      if (res.ok && res.etiquetaEnvioUrl) {
+        window.open(res.etiquetaEnvioUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        toast.show(res.motivo || 'Não foi possível buscar a etiqueta de envio.');
+      }
+    } catch (e: any) {
+      toast.show('Erro ao buscar etiqueta de envio: ' + (e.message || e));
+    } finally {
+      setFetchingLabelId(null);
+    }
+  };
+
+  const handleMergeDocs = async (order: BlingOrder) => {
+    setMergingId(order.id);
+    try {
+      const res = await mergeBlingShippingDocuments(order.id, companyProfile);
+      if (res.ok && res.base64) {
+        await sharePdfBase64(res.base64, `etiqueta-danfe-pedido-${order.numero}.pdf`);
+      } else {
+        toast.show(res.motivo || 'Não foi possível gerar o PDF combinado.');
+      }
+    } catch (e: any) {
+      toast.show('Erro ao gerar PDF combinado: ' + (e.message || e));
+    } finally {
+      setMergingId(null);
+    }
+  };
+
+  const handleGenerateDanfeSimplificado = async (order: BlingOrder) => {
+    setGeneratingDanfeId(order.id);
+    try {
+      const res = await fetchDanfeSimplificadoData(order.id, companyProfile);
+      if (res.ok && res.base64) {
+        await sharePdfBase64(res.base64, `danfe-simplificado-pedido-${order.numero}.pdf`);
+      } else {
+        toast.show(res.motivo || 'Não foi possível gerar o DANFE Simplificado.');
+      }
+    } catch (e: any) {
+      toast.show('Erro ao gerar DANFE Simplificado: ' + (e.message || e));
+    } finally {
+      setGeneratingDanfeId(null);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6 pb-32">
@@ -154,41 +158,10 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
           </div>
         )}
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handlePrint}
-            disabled={checkedCount === 0}
-            data-guide-anchor="blingInvoices.imprimir"
-            className="flex-1 h-11 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
-          >
-            <Printer size={14} /> Imprimir ({checkedCount})
-          </button>
-          <button
-            onClick={handleSharePdf}
-            disabled={checkedCount === 0 || sharing}
-            data-guide-anchor="blingInvoices.compartilharPdf"
-            className="flex-1 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
-          >
-            {sharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-            {sharing ? 'Gerando...' : `Compartilhar PDF (${checkedCount})`}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={toggleAll}
-          disabled={selectable.length === 0}
-          data-guide-anchor="blingInvoices.selecionarTodos"
-          className={`flex-1 h-11 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-40 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-        >
-          {allChecked ? <CheckSquare size={15} /> : <Square size={15} />}
-          {allChecked ? 'Desmarcar Todos' : `Selecionar Todos (${selectable.length})`}
-        </button>
       </div>
 
       <p className="text-[10px] text-slate-400 font-bold leading-relaxed px-1">
-        Etiqueta de Transporte 100x150 montada com o endereço do destinatário retornado pela nota fiscal. O DANFE em si (documento oficial autorizado pela SEFAZ) só pode ser aberto individualmente pelo link do Bling — a API deles não permite gerar isso em lote fora do site.
+        DANFE e PDF Simplificado abrem direto pelo link do Bling. Pra pedidos de marketplace (Shopee, Mercado Livre etc.) com integração de logística, é possível buscar a etiqueta de envio real (com QR code/rastreio) e gerar um PDF único com ela + o DANFE Simplificado.
       </p>
 
       {filtered.length === 0 && (
@@ -200,26 +173,18 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
 
       <div className="flex flex-col gap-3">
         {filtered.map((order) => {
-          const isChecked = checked.has(order.id);
-          const isSelectable = SELECTABLE_STATUSES.has(order.status) && !!order.etiquetaTransporte;
           const statusCfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.EMITINDO;
           const isRefreshing = refreshingId === order.id;
-          const missingData = SELECTABLE_STATUSES.has(order.status) && (!order.danfeUrl || !order.etiquetaTransporte);
+          const missingData = SELECTABLE_STATUSES.has(order.status) && !order.danfeUrl;
+          const canMergeDocs = order.origem !== 'PROPRIO' && !!(order.pdfUrl || order.danfeUrl);
           const dateLabel = format(new Date(order.updatedAt || order.createdAt), 'dd/MM/yyyy HH:mm');
 
           return (
             <div
               key={order.id}
-              className={`p-4 rounded-[1.75rem] border-2 flex flex-col gap-3 transition-all ${
-                isChecked
-                  ? isDarkMode ? 'bg-emerald-900/20 border-emerald-700/50' : 'bg-emerald-50 border-emerald-300'
-                  : isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
-              }`}
+              className={`p-4 rounded-[1.75rem] border-2 flex flex-col gap-3 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
             >
               <div className="flex items-center gap-3">
-                <button onClick={() => toggleOne(order)} disabled={!isSelectable} data-guide-anchor="blingInvoices.pedidoSelecionar" className="shrink-0 disabled:opacity-20">
-                  {isChecked ? <CheckSquare size={20} className="text-emerald-500" /> : <Square size={20} className="text-slate-300" />}
-                </button>
                 <div className="min-w-0 flex-1">
                   <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     Pedido {order.numero}{order.notaNumero ? ` · NF-e ${order.notaNumero}` : ''}
@@ -232,16 +197,6 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
               </div>
 
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-slate-100 dark:border-slate-800">
-                {order.danfeUrl && (
-                  <a
-                    href={order.danfeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest"
-                  >
-                    <ExternalLink size={12} /> DANFE
-                  </a>
-                )}
                 {order.pdfUrl && (
                   <a
                     href={order.pdfUrl}
@@ -252,13 +207,49 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
                     <FileDown size={12} /> PDF Simplificado
                   </a>
                 )}
-                {order.etiquetaTransporte && (
+                {order.origem !== 'PROPRIO' && (
+                  order.etiquetaEnvioUrl ? (
+                    <a
+                      href={order.etiquetaEnvioUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-guide-anchor="blingInvoices.abrirEtiquetaEnvio"
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest"
+                    >
+                      <QrCode size={12} /> Etiqueta de Envio
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => handleFetchShippingLabel(order)}
+                      disabled={fetchingLabelId === order.id}
+                      data-guide-anchor="blingInvoices.buscarEtiquetaEnvio"
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
+                    >
+                      {fetchingLabelId === order.id ? <Loader2 size={12} className="animate-spin" /> : <QrCode size={12} />}
+                      {fetchingLabelId === order.id ? 'Buscando...' : 'Buscar Etiqueta de Envio'}
+                    </button>
+                  )
+                )}
+                {canMergeDocs && (
                   <button
-                    onClick={() => printShippingLabels([{ pedidoNumero: order.numero, notaNumero: order.notaNumero, etiqueta: order.etiquetaTransporte! }])}
-                    data-guide-anchor="blingInvoices.imprimirEtiqueta"
-                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
+                    onClick={() => handleMergeDocs(order)}
+                    disabled={mergingId === order.id}
+                    data-guide-anchor="blingInvoices.gerarEtiquetaMaisDanfe"
+                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-400 text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
                   >
-                    <Printer size={12} /> Etiqueta
+                    {mergingId === order.id ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
+                    {mergingId === order.id ? 'Gerando...' : 'DANFE Simplificado + Transporte'}
+                  </button>
+                )}
+                {SELECTABLE_STATUSES.has(order.status) && (
+                  <button
+                    onClick={() => handleGenerateDanfeSimplificado(order)}
+                    disabled={generatingDanfeId === order.id}
+                    data-guide-anchor="blingInvoices.gerarDanfeSimplificado100x150"
+                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
+                  >
+                    {generatingDanfeId === order.id ? <Loader2 size={12} className="animate-spin" /> : <Barcode size={12} />}
+                    {generatingDanfeId === order.id ? 'Gerando...' : 'DANFE Simplificado 100x150'}
                   </button>
                 )}
                 {missingData && (

@@ -258,6 +258,18 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
     }
 
+    // Modelos de etiqueta compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates
+    // acima. Id do documento = id do LabelFile de origem (na conta que publicou), pra dar pra
+    // checar "já publiquei essa etiqueta?" sem precisar de um campo extra no LabelFile.
+    match /labelFileTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow create: if isTemplateAdmin()
+        && incoming().createdBy == request.auth.uid
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
+        && incoming().createdAt is number;
+      allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+    }
+
     // Configuração padrão de Dashboard pra CONTAS NOVAS (perfis 'sales'/'production') — só a
     // conta de desenvolvimento publica; qualquer conta logada lê pra herdar o padrão a
     // primeira vez que abre o app (ver dashboardDefaultsService.ts).

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator, CompanyProfile, ServiceOrder, GeneralPurchaseItem, CollaboratorLoan } from '../types';
 import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, ChevronRight, Tag, FileText, Repeat, Send, FileDown, Image as ImageIcon, Hammer, Factory, X, Layers, Download, Upload, MessageCircle, ArrowDownRight } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
@@ -80,6 +80,10 @@ interface FinancialViewProps {
   /** Atalho pros relatórios de "Relacionamento com Cliente" e "Dívidas por Fornecedor" (ver
    * ReportsView/ReportDetailedView) — abre direto, sem passar pela lista de relatórios. */
   onNavigateToReport?: (reportId: string) => void;
+  /** ID de uma Compra específica pra abrir já em foco na aba "A Pagar" (ver card
+   * "Relacionamento Fornecedores" do Dashboard) — expande o card, rola até ele e destaca
+   * brevemente, pra o usuário só clicar em "Fazer Pagamento". */
+  initialFocusPurchaseId?: string;
 }
 
 export default function FinancialView({
@@ -109,10 +113,13 @@ export default function FinancialView({
   loans,
   onSaveLoan,
   onNavigateToReport,
+  initialFocusPurchaseId,
 }: FinancialViewProps) {
   const hidePrivacy = usePrivacyMode();
   const [filterType, setFilterType] = useState<TransactionType | 'ALL' | 'PAYABLE'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [focusedPurchaseId, setFocusedPurchaseId] = useState<string | null>(null);
+  const purchaseCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Período das métricas de Receitas/Despesas do card "Saldo Confirmado" — independente do
   // saldo em si (esse é sempre o valor atual das contas, não filtra por período).
@@ -151,6 +158,21 @@ export default function FinancialView({
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
+
+  // Vindo do card "Relacionamento Fornecedores" do Dashboard: abre já na aba "A Pagar",
+  // expande a compra em questão, rola até ela e destaca por alguns segundos — o usuário só
+  // precisa clicar em "Fazer Pagamento".
+  useEffect(() => {
+    if (!initialFocusPurchaseId) return;
+    setFilterType('PAYABLE');
+    setExpandedIds(prev => prev.includes(initialFocusPurchaseId) ? prev : [...prev, initialFocusPurchaseId]);
+    setFocusedPurchaseId(initialFocusPurchaseId);
+    const scrollTimer = setTimeout(() => {
+      purchaseCardRefs.current[initialFocusPurchaseId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    const clearTimer = setTimeout(() => setFocusedPurchaseId(null), 4000);
+    return () => { clearTimeout(scrollTimer); clearTimeout(clearTimer); };
+  }, [initialFocusPurchaseId]);
 
   // Renderiza uma linha de item do carrinho de uma compra (estoque/solados/geral)
   const renderPurchaseItemRow = (item: any, idx: number) => {
@@ -850,9 +872,14 @@ export default function FinancialView({
                   ? (purchase.soleItems?.length || 0)
                   : (purchase.items?.length || 0);
                 const hasDetails = !!purchase.notes || itemCount > 0;
+                const isFocused = focusedPurchaseId === purchase.id;
 
                 return (
-                  <div key={purchase.id} className={`p-4 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div
+                    key={purchase.id}
+                    ref={(el) => { purchaseCardRefs.current[purchase.id] = el; }}
+                    className={`p-4 rounded-[2rem] border shadow-sm flex flex-col gap-4 transition-all ${isFocused ? 'ring-4 ring-indigo-500/40 border-indigo-400' : ''} ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'}`}
+                  >
                     <div className="flex items-center">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 flex-wrap">

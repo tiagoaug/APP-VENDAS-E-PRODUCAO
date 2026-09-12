@@ -1613,7 +1613,7 @@ export default function DashboardView({
                   {supplierDashboardTab === 'DEBITS' ? (
                     <>
                       {pendingPurchases.map((purchase, idx) => (
-                        <div key={`sup-pending-${purchase.id}-${idx}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, purchase.id)} data-guide-anchor="dash.suppliers.itemPendente" className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                        <div key={`sup-pending-${purchase.id}-${idx}`} onClick={() => onNavigate(ViewType.FINANCIAL, null, purchase.id)} data-guide-anchor="dash.suppliers.itemPendente" className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{purchase.supplierName}</p>
                             <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {purchase.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>

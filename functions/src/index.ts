@@ -9,7 +9,7 @@ import { runGeminiChat } from "./providers/gemini";
 import { runHuggingFaceChat } from "./providers/huggingface";
 import { AIProviderMessage, RunChatFn } from "./providers/types";
 import { saveBlingCredentials, getBlingAuthUrl, handleBlingOAuthCallback, disconnectBling } from "./bling/auth";
-import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch, refreshBlingInvoiceDetails, runAutoSyncForDueUsers } from "./bling/sync";
+import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch, refreshBlingInvoiceDetails, fetchBlingShippingLabel, mergeBlingShippingDocuments, fetchDanfeSimplificadoData, runAutoSyncForDueUsers } from "./bling/sync";
 import { handleBlingWebhook } from "./bling/webhook";
 import { abaterEstoqueBling, AbaterEstoqueItem } from "./bling/picking";
 import { adjustThirdPartyNotes, registerBlingDevolucao, registerNotesOnlyReturn, RegisterDevolucaoInput } from "./bling/notes";
@@ -374,6 +374,33 @@ export const blingRefreshInvoice = onCall({ region: "us-central1", timeoutSecond
     throw new HttpsError("invalid-argument", "pedidoId é obrigatório.");
   }
   return await refreshBlingInvoiceDetails(db, request.auth.uid, pedidoId);
+});
+
+export const blingFetchShippingLabel = onCall({ region: "us-central1", timeoutSeconds: 60 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const pedidoId = request.data?.pedidoId;
+  if (!pedidoId || typeof pedidoId !== "string") {
+    throw new HttpsError("invalid-argument", "pedidoId é obrigatório.");
+  }
+  return await fetchBlingShippingLabel(db, request.auth.uid, pedidoId);
+});
+
+export const blingMergeShippingDocs = onCall({ region: "us-central1", timeoutSeconds: 60 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const pedidoId = request.data?.pedidoId;
+  if (!pedidoId || typeof pedidoId !== "string") {
+    throw new HttpsError("invalid-argument", "pedidoId é obrigatório.");
+  }
+  return await mergeBlingShippingDocuments(db, request.auth.uid, pedidoId, request.data?.companyProfile || null);
+});
+
+export const blingFetchDanfeSimplificadoData = onCall({ region: "us-central1", timeoutSeconds: 60 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const pedidoId = request.data?.pedidoId;
+  if (!pedidoId || typeof pedidoId !== "string") {
+    throw new HttpsError("invalid-argument", "pedidoId é obrigatório.");
+  }
+  return await fetchDanfeSimplificadoData(db, request.auth.uid, pedidoId, request.data?.companyProfile || null);
 });
 
 export const blingAbaterEstoque = onCall({ region: "us-central1", timeoutSeconds: 120 }, async (request) => {

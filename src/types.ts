@@ -132,6 +132,8 @@ export type LabelElement = {
   lockHeight?: boolean;
   lockRotation?: boolean;
   lockFontSize?: boolean; // relevante pros types 'text' e 'grade' (tamanho da fonte das células)
+  lockLetterSpacing?: boolean; // relevante só pro type 'text'
+  lockLineHeight?: boolean; // relevante só pro type 'text'
   lockPosition?: boolean; // trava arrastar (mover x/y) — vale pra todos os tipos, inclusive linha
   // Quando presente, o conteúdo do elemento (texto/imagem/qr/grade) vem de
   // `resolveLabelBinding` em vez do conteúdo estático abaixo — usado pelo modo de teste de
@@ -203,6 +205,23 @@ export type LabelFile = {
   // Setor (Sector.id) que este modelo foi criado pra atender — usado só pra agrupar na lista do
   // seletor de perfil. Ausente = cai no grupo "Sem Setor".
   sectorId?: string;
+};
+
+// Modelo de etiqueta compartilhado ENTRE CONTAS (coleção de topo `labelFileTemplates`, mesmo
+// desenho de CategoryTemplate/GridTemplate) — só a conta de desenvolvimento publica (toggle de
+// estrela em LabelProfilePickerModal.tsx, ver isTemplateAdmin()), qualquer conta lê e importa
+// (seção "Modelos Prontos", com prévia) pra dentro dos próprios labelFiles.
+export type LabelFileTemplate = {
+  id: string;
+  name: string;
+  paperSizeId: string;
+  widthMm: number;
+  heightMm: number;
+  elements: LabelElement[];
+  isSalesTemplate?: boolean;
+  isProductionTemplate?: boolean;
+  createdBy: string;
+  createdAt: number;
 };
 
 // Um item físico do lote de impressão de etiquetas de uma Venda (uma caixa/tamanho) — mesma
@@ -1307,16 +1326,11 @@ export type BlingOrder = {
   notaNumero?: string;
   danfeUrl?: string;
   pdfUrl?: string;
-  etiquetaTransporte?: {
-    nome?: string;
-    endereco?: string;
-    numero?: string;
-    complemento?: string;
-    bairro?: string;
-    municipio?: string;
-    uf?: string;
-    cep?: string;
-  };
+  // Etiqueta REAL de envio (com QR code/código de rastreio da transportadora ou marketplace,
+  // ex.: Shopee) — vem do módulo "Logísticas" do Bling (GET logisticas/etiquetas). Só existe se o
+  // pedido já tiver sido processado por uma integração de logística dentro do Bling.
+  etiquetaEnvioUrl?: string;
+  etiquetaEnvioObservacao?: string;
   motivoRejeicao?: string;
   createdAt: number;
   updatedAt?: number;

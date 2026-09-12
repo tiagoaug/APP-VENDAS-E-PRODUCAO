@@ -60,6 +60,7 @@ import { format, addMonths } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
 import Modal from '../components/Modal';
 import ComboBox from "../components/ComboBox";
+import EngineeringPickerModal from "../components/EngineeringPickerModal";
 import PersonModal from "../components/PersonModal";
 import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
@@ -544,6 +545,7 @@ export default function PurchaseFormView({
     () => productionConfigs.filter(c => c.type === 'MATERIAL' || c.type === 'PACKAGING'),
     [productionConfigs]
   );
+  const [materialPickerIndex, setMaterialPickerIndex] = useState<number | null>(null);
 
   const unitConfigs = useMemo(
     () => productionConfigs.filter(c => c.type === 'UNIT'),
@@ -1427,11 +1429,12 @@ export default function PurchaseFormView({
                 options={availableThirdParties.map(s => ({ id: s.id, name: s.name }))}
                 value={supplierId}
                 onChange={setSupplierId}
-                placeholder=""
+                placeholder="Selecione o fornecedor"
                 isDarkMode={isDarkMode}
                 compact
                 variant="outline"
                 arrowColor="red"
+                usePopupModal
               />
             </div>
             {availableThirdParties.length === 0 && (
@@ -1456,12 +1459,13 @@ export default function PurchaseFormView({
                 ]}
                 value={sellerId}
                 onChange={setSellerId}
-                placeholder=""
+                placeholder="Selecione o comprador"
                 isDarkMode={isDarkMode}
                 icon={<Users size={18} />}
                 compact
                 variant="outline"
                 arrowColor="red"
+                usePopupModal
               />
             </div>
 
@@ -1725,6 +1729,7 @@ export default function PurchaseFormView({
                             }}
                             placeholder="Pesquisar fornecedor ou terceirizado..."
                             isDarkMode={isDarkMode}
+                            usePopupModal
                           />
                           <input
                             type="text"
@@ -1747,21 +1752,16 @@ export default function PurchaseFormView({
                         />
                       ) : (
                         <div data-guide-anchor="purchaseForm.itemMaterial">
-                          <ComboBox
-                            options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
-                            value={item.materialId || ''}
-                            onChange={(val) => {
-                              const mat = availableMaterials.find(m => m.id === val);
-                              updateGeneralItem(index, {
-                                materialId: val || undefined,
-                                description: mat?.name || item.description,
-                                unit: mat ? getMaterialUnit(mat) : item.unit,
-                                value: mat?.metadata?.baseCost ?? item.value,
-                              });
-                            }}
-                            placeholder="Pesquisar material..."
-                            isDarkMode={isDarkMode}
-                          />
+                          <button
+                            type="button"
+                            onClick={() => setMaterialPickerIndex(index)}
+                            className={`w-full flex items-center justify-between gap-2 rounded-2xl px-4 py-2.5 text-left border ${isDarkMode ? 'bg-slate-800 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                          >
+                            <span className={`text-[12px] font-bold truncate ${selectedMat ? '' : 'text-slate-400 dark:text-slate-500'}`}>
+                              {selectedMat?.name || 'Pesquisar material...'}
+                            </span>
+                            <Search size={14} className="shrink-0 text-slate-400" />
+                          </button>
                           {!item.materialId && (
                             <input
                               type="text"
@@ -1907,6 +1907,28 @@ export default function PurchaseFormView({
           </div>
         </section>
       )}
+
+      <EngineeringPickerModal
+        isOpen={materialPickerIndex !== null}
+        onClose={() => setMaterialPickerIndex(null)}
+        title="Pesquisar Material"
+        icon={<Package size={18} />}
+        options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
+        selectedId={materialPickerIndex !== null ? (generalItems[materialPickerIndex]?.materialId || '') : ''}
+        onSelect={(val) => {
+          if (materialPickerIndex === null) return;
+          const mat = availableMaterials.find(m => m.id === val);
+          updateGeneralItem(materialPickerIndex, {
+            materialId: val || undefined,
+            description: mat?.name || generalItems[materialPickerIndex]?.description,
+            unit: mat ? getMaterialUnit(mat) : generalItems[materialPickerIndex]?.unit,
+            value: mat?.metadata?.baseCost ?? generalItems[materialPickerIndex]?.value,
+          });
+        }}
+        isDarkMode={isDarkMode}
+        searchPlaceholder="Pesquisar material..."
+        emptyHint="Nenhum material cadastrado"
+      />
 
       {/* SOLE ITEMS SECTION */}
       {type === PurchaseType.SOLE && (
