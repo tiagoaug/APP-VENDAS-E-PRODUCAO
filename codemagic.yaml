@@ -82,6 +82,7 @@ workflows:
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
+        BUNDLE_ID: "com.musgo.vendaseproducao"
     scripts:
       - name: Instalar dependências (npm)
         script: npm ci
@@ -94,8 +95,18 @@ workflows:
           if [ -f "ios/App/Podfile" ]; then
             cd ios/App && pod install
           fi
-      # Busca os certificados/perfis de provisionamento automaticamente via a integração App
-      # Store Connect conectada acima — não precisa gerenciar certificado manualmente.
+      # Primeira vez assinando este app — ainda não existe certificado de distribuição nem
+      # perfil de provisionamento pra esse Bundle ID na conta. `xcode-project use-profiles`
+      # sozinho só REAPROVEITA o que já existe (por isso deu "No matching profiles found" sem
+      # esse passo); `--create` cria os dois automaticamente na primeira vez, via a integração
+      # App Store Connect conectada acima. Nas próximas vezes ele só confirma que já existe.
+      - name: Buscar/criar certificado e perfil de distribuição
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Adicionar certificado ao keychain
+        script: keychain add-certificates
       - name: Assinatura automática de código
         script: xcode-project use-profiles
       - name: Build e assinatura do .ipa
