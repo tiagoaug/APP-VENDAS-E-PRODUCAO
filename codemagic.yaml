@@ -114,9 +114,12 @@ workflows:
       # isso "Publishing" dava "No artifacts were found" mesmo com o .ipa gerado com sucesso.
       - build/ios/ipa/*.ipa
     publishing:
-      # Envia direto pro TestFlight ao final do build — depois de processar (alguns minutos),
-      # instala no iPhone de verdade pelo próprio app TestFlight, sem precisar registrar o
-      # UDID do aparelho em lugar nenhum.
+      # Envia o .ipa pro App Store Connect/TestFlight ao final do build — sem
+      # `submit_to_testflight` de propósito: esse campo tenta submeter pra REVISÃO de teste
+      # EXTERNO, que exige preencher Feedback Email + dados de contato em App Store Connect >
+      # TestFlight > Test Information (ver erro real: "Complete test information is required").
+      # Testadores INTERNOS (equipe do App Store Connect, ex.: você mesmo) não passam por
+      # revisão nenhuma — o build já fica disponível pra eles assim que a Apple termina de
+      # processar, direto na aba TestFlight > Testes internos, sem precisar desse campo.
       app_store_connect:
         auth: integration
-        submit_to_testflight: true
