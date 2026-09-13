@@ -61,10 +61,9 @@ workflows:
   # que VOCÊ conecte a integração "App Store Connect" no Codemagic (Team settings →
   # Integrations → App Store Connect → gerar/colar a API Key do App Store Connect: Issuer ID,
   # Key ID e o arquivo .p8 — gerados em appstoreconnect.apple.com → Users and Access →
-  # Integrations → Keys). Dê um NOME pra essa integração ao conectar e troque o valor de
-  # `integrations.app_store_connect` abaixo pra bater com esse nome (deixei "codemagic" como
-  # sugestão — é o nome padrão que a maioria usa). Sem isso, tanto a assinatura automática
-  # quanto o envio pro TestFlight abaixo falham na hora de rodar.
+  # Integrations → Keys). Integração já conectada com o nome "APPE API TIAGO" (ver
+  # `integrations.app_store_connect` abaixo) — sem ela, tanto a assinatura automática quanto o
+  # envio pro TestFlight abaixo falham na hora de rodar.
   # Também precisa o app já existir no App Store Connect (My Apps → + → New App) com o Bundle ID
   # exato com.musgo.vendaseproducao, mesmo que só pra teste — o TestFlight não aceita build de
   # um app que não foi cadastrado lá antes.
@@ -73,7 +72,7 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: codemagic
+      app_store_connect: "APPE API TIAGO"
     environment:
       node: 22
       xcode: latest
