@@ -16,6 +16,7 @@ export default function LoginView() {
   const [showPassword, setShowPassword] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [recentAccounts, setRecentAccounts] = useState<RecentAccount[]>([]);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,7 +61,12 @@ export default function LoginView() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Evita reenvio: cliques repetidos enquanto a tela "parece travada" (sem loading visível
+    // antes) chegaram a estourar a cota do Firebase de verificação de senha
+    // (auth/quota-exceeded) — cada clique era uma nova tentativa de login somada às anteriores.
+    if (submitting) return;
     setError(null);
+    setSubmitting(true);
     try {
       let userCredential;
       if (isRegistering) {
@@ -71,11 +77,15 @@ export default function LoginView() {
       saveRecentAccount(userCredential.user);
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleGoogleLogin = async () => {
+    if (submitting) return;
     setError(null);
+    setSubmitting(true);
     try {
       // Assuming signInWithGoogle returns a UserCredential or User directly depending on implementation
       // Our lib/firebase.ts typically returns the user credential or handles it
@@ -92,11 +102,15 @@ export default function LoginView() {
       } else {
         setError(err.message);
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleAppleLogin = async () => {
+    if (submitting) return;
     setError(null);
+    setSubmitting(true);
     try {
       const result: any = await signInWithApple();
       if (result && result.user) {
@@ -110,6 +124,8 @@ export default function LoginView() {
       } else {
         setError(err.message);
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -211,9 +227,10 @@ export default function LoginView() {
 
             <button
               type="submit"
-              className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 hover:shadow-indigo-600/40 hover:-translate-y-0.5 transition-all duration-300 mt-2"
+              disabled={submitting}
+              className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 hover:shadow-indigo-600/40 hover:-translate-y-0.5 transition-all duration-300 mt-2 disabled:opacity-60 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
             >
-              {isRegistering ? "Confirmar Cadastro" : "Entrar no Sistema"}
+              {submitting ? "Entrando..." : (isRegistering ? "Confirmar Cadastro" : "Entrar no Sistema")}
             </button>
           </form>
 
@@ -226,7 +243,8 @@ export default function LoginView() {
           <button
             onClick={handleGoogleLogin}
             type="button"
-            className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-black py-4 rounded-2xl border-2 border-[#f8f9fc] hover:bg-[#f8f9fc] hover:border-slate-100 transition uppercase tracking-widest text-xs"
+            disabled={submitting}
+            className="w-full flex items-center justify-center gap-3 bg-white text-slate-700 font-black py-4 rounded-2xl border-2 border-[#f8f9fc] hover:bg-[#f8f9fc] hover:border-slate-100 transition uppercase tracking-widest text-xs disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -240,7 +258,8 @@ export default function LoginView() {
           <button
             onClick={handleAppleLogin}
             type="button"
-            className="w-full flex items-center justify-center gap-3 bg-black text-white font-black py-4 rounded-2xl border-2 border-black hover:bg-slate-800 hover:border-slate-800 transition uppercase tracking-widest text-xs mt-3"
+            disabled={submitting}
+            className="w-full flex items-center justify-center gap-3 bg-black text-white font-black py-4 rounded-2xl border-2 border-black hover:bg-slate-800 hover:border-slate-800 transition uppercase tracking-widest text-xs mt-3 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.256-1.75-2.264-4.36-2.264-6.85 0-4.03 2.64-6.16 5.23-6.16 1.35 0 2.47.9 3.32.9.81 0 2.06-.95 3.6-.95.586 0 2.69.05 4.08 2.02-.104.07-2.434 1.42-2.434 4.35 0 3.51 3.086 4.68 3.144 4.7z" />
