@@ -19,21 +19,31 @@ export const storage = getStorage(app);
 // que usa Chromium) — problema conhecido do SDK JS do Firebase Auth quando a inicialização do
 // IndexedDB não sai limpa nesse WebView. A ideia original era usar `initializeAuth` com uma
 // cadeia de fallback de persistência (IndexedDB → localStorage → sessionStorage → memória), mas
-// isso só funciona se o IndexedDB FALHAR de forma limpa (rejeita a Promise) — no WKWebView ele
-// não rejeita, só fica pendurado pra sempre, então a SDK nunca chega a tentar o próximo da
-// lista. Isso trava não só a checagem inicial de sessão, mas QUALQUER operação de auth que
-// dependa de persistência — inclusive um login ativo (e-mail/senha ou Google), travando o botão
-// sem erro nenhum. Por isso, no iOS/Android nativos, NEM TENTA IndexedDB — vai direto pro
-// primeiro que realmente funciona nesses WebViews.
-// `popupRedirectResolver` precisa ser passado explicitamente aqui — ao contrário de
-// `getAuth()` (que registra o resolver padrão do navegador sozinho), `initializeAuth()`
-// não registra nada por conta própria. Sem isso, `signInWithPopup` (usado no login com
-// Google na web) falha com "auth/argument-error" mesmo com tudo mais configurado certo.
+// isso só funciona se cada opção FALHAR de forma limpa (rejeita a Promise) — e no WKWebView
+// tanto o IndexedDB quanto (aparentemente) as checagens de localStorage/sessionStorage/
+// popupRedirectResolver não rejeitam, só ficam pendurados pra sempre, então a SDK nunca chega
+// a tentar a próxima opção. Isso trava não só a checagem inicial de sessão, mas QUALQUER
+// operação de auth que dependa de persistência — inclusive um login ativo (e-mail/senha ou
+// Google), travando o botão sem erro nenhum (ver [[project_ios_wkwebview_auth_hang]] na
+// memória). Por isso, no iOS especificamente, usamos só `inMemoryPersistence` — não depende de
+// nenhuma API de storage do WebView, então não tem como travar dessa forma. O custo é não
+// lembrar o login entre reinícios do app no iOS (o usuário loga de novo a cada abertura), mas
+// isso é bem melhor que não conseguir logar de jeito nenhum. Android usa Chromium (sem esse
+// bug) e mantém a cadeia normal de fallback.
+const platform = Capacitor.getPlatform();
 export const auth = initializeAuth(app, {
-  persistence: Capacitor.isNativePlatform()
-    ? [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence]
-    : [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
-  popupRedirectResolver: browserPopupRedirectResolver,
+  persistence: platform === 'ios'
+    ? [inMemoryPersistence]
+    : platform === 'android'
+      ? [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence]
+      : [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
+  // `popupRedirectResolver` precisa ser passado explicitamente aqui — ao contrário de
+  // `getAuth()` (que registra o resolver padrão do navegador sozinho), `initializeAuth()` não
+  // registra nada por conta própria. Sem isso, `signInWithPopup` (usado no login com Google na
+  // web) falha com "auth/argument-error". Só é necessário na web — nativo usa
+  // `signInWithCredential`, nunca popup — e evita mais uma inicialização baseada em storage do
+  // WebView no iOS.
+  ...(platform === 'web' ? { popupRedirectResolver: browserPopupRedirectResolver } : {}),
 });
 export const googleProvider = new GoogleAuthProvider();
 // 'apple.com' é tratado pelo SDK do Firebase como um OAuthProvider genérico (não tem uma classe
