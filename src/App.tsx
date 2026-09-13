@@ -1411,12 +1411,28 @@ export default function App() {
 
   // Firebase Subscriptions
   useEffect(() => {
+    // Rede de segurança contra o auth travar pra sempre sem nunca chamar o callback (visto no
+    // WKWebView do iOS mesmo com o fallback de persistência de initializeAuth — ver
+    // src/lib/firebase.ts — em certos ambientes o próprio indexedDB.open() nem resolve nem
+    // rejeita, então nenhuma configuração de fallback ajuda: o SDK trava esperando o primeiro
+    // passo). Sem isso, `loading` fica true pra sempre e a tela de login nunca aparece. 8s é
+    // tempo de sobra pro caso normal (Auth local, sem round-trip de rede) sem deixar quem cair
+    // nesse bug esperando indefinidamente — pior caso, a pessoa só loga de novo.
+    const timeoutId = setTimeout(() => {
+      console.warn('[App] onAuthStateChanged não respondeu em 8s — liberando a tela de login mesmo assim.');
+      setLoading(false);
+    }, 8000);
+
     const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+      clearTimeout(timeoutId);
       setUser(u);
       setLoading(false);
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      clearTimeout(timeoutId);
+      unsubscribeAuth();
+    };
   }, []);
 
   useEffect(() => {
