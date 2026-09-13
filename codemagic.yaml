@@ -74,19 +74,18 @@ workflows:
     instance_type: mac_mini_m2
     integrations:
       app_store_connect: "apple key 3 api"
-    environment:
-      node: 22
-      xcode: latest
-      # SEM `ios_signing:` aqui de propósito — esse campo faz o Codemagic checar, ANTES de
-      # rodar qualquer script abaixo, se já existe um perfil de provisionamento JÁ CARREGADO no
-      # Codemagic (não cria um novo sozinho, apesar do nome sugerir isso — ver
-      # help.codemagic.io "No matching profiles found"). Pra um app assinado pela primeira vez,
-      # essa checagem falha antes mesmo dos scripts começarem — por isso o build não mostrava
-      # nenhuma etapa, só o erro. A criação de verdade (via `--create` abaixo) já cobre tudo.
+      # Já existe um certificado de distribuição gerado (Team settings → Code signing
+      # identities → "codemagic certificate", válido até set/2027) — `ios_signing:` faz o
+      # Codemagic reaproveitar ESSE certificado (que já tem a chave privada guardada com
+      # segurança do lado dele) e criar só o PERFIL de provisionamento que falta pra esse
+      # Bundle ID, via a integração App Store Connect conectada acima. Perfil não tem o
+      # problema de "chave privada" que certificado tem, então cria de primeira sem erro.
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.musgo.vendaseproducao
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
-        BUNDLE_ID: "com.musgo.vendaseproducao"
     scripts:
       - name: Instalar dependências (npm)
         script: npm ci
@@ -99,18 +98,6 @@ workflows:
           if [ -f "ios/App/Podfile" ]; then
             cd ios/App && pod install
           fi
-      # Primeira vez assinando este app — ainda não existe certificado de distribuição nem
-      # perfil de provisionamento pra esse Bundle ID na conta. `xcode-project use-profiles`
-      # sozinho só REAPROVEITA o que já existe (por isso deu "No matching profiles found" sem
-      # esse passo); `--create` cria os dois automaticamente na primeira vez, via a integração
-      # App Store Connect conectada acima. Nas próximas vezes ele só confirma que já existe.
-      - name: Buscar/criar certificado e perfil de distribuição
-        script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-      - name: Adicionar certificado ao keychain
-        script: keychain add-certificates
       - name: Assinatura automática de código
         script: xcode-project use-profiles
       - name: Build e assinatura do .ipa
