@@ -77,18 +77,21 @@ workflows:
     environment:
       node: 22
       xcode: latest
-      # Já existe um certificado de distribuição gerado (Team settings → Code signing
-      # identities → "codemagic certificate", válido até set/2027) — `ios_signing:` faz o
-      # Codemagic reaproveitar ESSE certificado (que já tem a chave privada guardada com
-      # segurança do lado dele) e criar só o PERFIL de provisionamento que falta pra esse
-      # Bundle ID, via a integração App Store Connect conectada acima. Perfil não tem o
-      # problema de "chave privada" que certificado tem, então cria de primeira sem erro.
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.musgo.vendaseproducao
+      # SEM `ios_signing:` de novo — ele só CONFIRMA um perfil já existente, não cria. A
+      # criação de verdade é feita pelos scripts abaixo, na ordem certa dessa vez:
+      # 1) keychain initialize — prepara uma keychain vazia (faltava isso nas duas tentativas
+      #    anteriores; sem ela, o Codemagic não tem onde guardar a chave privada recém-gerada
+      #    e dá "Cannot save Signing Certificates without certificate private key" mesmo com
+      #    certificado já existente em Code signing identities).
+      # 2) fetch-signing-files --create — reaproveita o certificado já existente (ver Team
+      #    settings → Code signing identities → "codemagic certificate") e cria só o PERFIL de
+      #    provisionamento que falta pra esse Bundle ID.
+      # 3) keychain add-certificates — adiciona o certificado buscado à keychain preparada.
+      # 4) xcode-project use-profiles — aplica o perfil buscado nas configurações do projeto.
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
+        BUNDLE_ID: "com.musgo.vendaseproducao"
     scripts:
       - name: Instalar dependências (npm)
         script: npm ci
@@ -101,6 +104,15 @@ workflows:
           if [ -f "ios/App/Podfile" ]; then
             cd ios/App && pod install
           fi
+      - name: Preparar keychain
+        script: keychain initialize
+      - name: Buscar/criar certificado e perfil de distribuição
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Adicionar certificado ao keychain
+        script: keychain add-certificates
       - name: Assinatura automática de código
         script: xcode-project use-profiles
       - name: Build e assinatura do .ipa
