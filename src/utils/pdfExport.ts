@@ -309,10 +309,14 @@ export interface PrintPickingListOptions {
   mostrarModelo?: boolean;
   /** Coluna de pedidos vinculados — desliga quando a lista é só de conferência de estoque. */
   mostrarPedido?: boolean;
+  /** Coluna de referência (SKU) — desliga quando a lista já identifica o item só pelo nome/cor. */
+  mostrarReferencia?: boolean;
+  /** Coluna de cor/variação — desliga quando a lista não precisa diferenciar cor. */
+  mostrarCor?: boolean;
   orientation?: 'portrait' | 'landscape';
 }
 
-export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4', pretoBranco = false, mostrarModelo = true, mostrarPedido = true, orientation = 'portrait' }: PrintPickingListOptions) => {
+export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4', pretoBranco = false, mostrarModelo = true, mostrarPedido = true, mostrarReferencia = true, mostrarCor = true, orientation = 'portrait' }: PrintPickingListOptions) => {
   const container = document.getElementById('_lot_print_container');
   if (container) container.remove();
 
@@ -364,8 +368,8 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
         <tr>
           ${incluirCheckbox ? '<td style="width:36px;text-align:center;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #000;"></span></td>' : ''}
           ${mostrarMiniaturas ? `<td style="width:52px;">${r.photoUrl ? `<img src="${r.photoUrl}" style="width:40px;height:40px;object-fit:cover;border:1px solid #000;" />` : ''}</td>` : ''}
-          <td><strong>${r.reference}</strong>${mostrarModelo ? ` — ${r.productName}` : ''}</td>
-          <td>${r.variationName}</td>
+          ${(mostrarReferencia || mostrarModelo) ? `<td>${mostrarReferencia ? `<strong>${r.reference}</strong>` : ''}${mostrarModelo ? `${mostrarReferencia ? ' — ' : ''}${r.productName}` : ''}</td>` : ''}
+          ${mostrarCor ? `<td>${r.variationName}</td>` : ''}
           <td class="gc">${r.size || 'Atacado'}</td>
           <td class="gv">${r.quantidade}</td>
           ${mostrarPedido ? `<td>${r.pedidos}</td>` : ''}
@@ -390,8 +394,8 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
         <thead><tr>
           ${incluirCheckbox ? '<th></th>' : ''}
           ${mostrarMiniaturas ? '<th></th>' : ''}
-          <th>${mostrarModelo ? 'Referência / Produto' : 'Referência'}</th>
-          <th>Cor</th>
+          ${(mostrarReferencia || mostrarModelo) ? `<th>${mostrarReferencia && mostrarModelo ? 'Referência / Produto' : mostrarReferencia ? 'Referência' : 'Produto'}</th>` : ''}
+          ${mostrarCor ? '<th>Cor</th>' : ''}
           <th style="width:100px;">Tamanho</th>
           <th style="width:80px;">Qtd</th>
           ${mostrarPedido ? '<th>Pedidos</th>' : ''}

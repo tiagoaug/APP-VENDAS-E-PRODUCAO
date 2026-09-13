@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { auth, signInWithGoogle } from "../lib/firebase";
+import { auth, signInWithGoogle, signInWithApple } from "../lib/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { Eye, EyeOff, Mail, Lock, Fingerprint } from "lucide-react";
 
@@ -88,6 +88,24 @@ export default function LoginView() {
       }
     } catch (err: any) {
       if (err.code === 'auth/cancelled-popup-request') {
+        setError('Login cancelado.');
+      } else {
+        setError(err.message);
+      }
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    setError(null);
+    try {
+      const result: any = await signInWithApple();
+      if (result && result.user) {
+        saveRecentAccount(result.user);
+      } else if (auth.currentUser) {
+        saveRecentAccount(auth.currentUser);
+      }
+    } catch (err: any) {
+      if (err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-closed-by-user') {
         setError('Login cancelado.');
       } else {
         setError(err.message);
@@ -217,6 +235,17 @@ export default function LoginView() {
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
             </svg>
             Entrar com Google
+          </button>
+
+          <button
+            onClick={handleAppleLogin}
+            type="button"
+            className="w-full flex items-center justify-center gap-3 bg-black text-white font-black py-4 rounded-2xl border-2 border-black hover:bg-slate-800 hover:border-slate-800 transition uppercase tracking-widest text-xs mt-3"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.256-1.75-2.264-4.36-2.264-6.85 0-4.03 2.64-6.16 5.23-6.16 1.35 0 2.47.9 3.32.9.81 0 2.06-.95 3.6-.95.586 0 2.69.05 4.08 2.02-.104.07-2.434 1.42-2.434 4.35 0 3.51 3.086 4.68 3.144 4.7z" />
+            </svg>
+            Entrar com Apple
           </button>
 
           <div

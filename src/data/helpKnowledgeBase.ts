@@ -23,6 +23,11 @@ export interface HelpTopic {
   // Só produtos/fluxos exclusivos de quem fabrica — o mesmo gate já usado no resto do
   // app (modulesConfig.production), aplicado no momento de carregar/filtrar a KB.
   productionOnly?: boolean;
+  // Módulo Bling agora é exclusivo da conta de desenvolvimento (ver isTemplateAdmin() em
+  // App.tsx/ModuleConfigView.tsx) — mesmo gate aplicado aqui pros tópicos de Bling abaixo,
+  // filtrado em helpMatching.ts, pra não aparecerem nem na busca pra quem não pode abrir essas
+  // telas.
+  developerOnly?: boolean;
 }
 
 export interface HelpFaqEntry {
@@ -667,6 +672,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_CONNECTION,
     title: 'Conexão Bling',
     summary: 'Conecta sua conta do Bling (ERP de notas fiscais e marketplaces) ao sistema, pra sincronizar pedidos e produtos automaticamente.',
+    developerOnly: true,
     sections: [
       { heading: 'Antes de conectar', body: 'O Bling exige que você cadastre seu próprio "aplicativo" no portal de desenvolvedor dele (não existe um app compartilhado) — cole o Client ID e Client Secret gerados lá aqui, uma vez só.' },
       { heading: 'Conectar', body: 'Depois de salvar as credenciais, toque em Conectar — você é levado pro site do Bling pra autorizar, e volta automaticamente já conectado.' },
@@ -681,6 +687,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_PRODUCT_MAPPING,
     title: 'Vínculo de Produtos Bling',
     summary: 'Liga cada produto/variação do Bling ao produto/variação correspondente cadastrado aqui no sistema — passo necessário antes de emitir notas ou separar pedidos.',
+    developerOnly: true,
     sections: [
       { heading: 'Por que vincular', body: 'O Bling não sabe qual é "o mesmo produto" no seu cadastro daqui — sem o vínculo, o sistema não consegue saber o que baixar do estoque nem gerar a lista de separação certa.' },
       { heading: 'Sugestão automática', body: 'O sistema tenta adivinhar o vínculo certo comparando referência/nome — você só confirma (ou corrige) em vez de procurar item por item.' },
@@ -694,6 +701,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_INVOICE_EMISSION,
     title: 'Emissão de Notas Fiscais',
     summary: 'Emite a nota fiscal (pelo Bling) dos pedidos vindos de marketplaces (Mercado Livre, Shopee, loja virtual) ou da loja própria.',
+    developerOnly: true,
     sections: [
       { heading: 'Pré-requisito', body: 'Todo item do pedido precisa estar com o produto vinculado (ver Vínculo de Produtos) — pedidos com item não mapeado ficam sinalizados e não emitem.' },
       { heading: 'Abas', body: 'Pendentes (ainda não emitidas), Autorizadas, Rejeitadas (tentou emitir e falhou) e Concluídas — acompanhe o status de cada nota por aqui.' },
@@ -707,6 +715,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_PICKING_LIST,
     title: 'Lista de Separação (Picking)',
     summary: 'Junta os itens de vários pedidos do Bling numa lista única por produto/cor/tamanho, pra separar tudo de uma vez em vez de pedido por pedido.',
+    developerOnly: true,
     sections: [
       { heading: 'Por que agrupar', body: 'Se 5 pedidos pedem o mesmo tênis/cor/tamanho, é mais rápido separar "5 pares dessa referência" de uma vez só do que abrir pedido por pedido.' },
       { heading: 'Marcar como separado', body: 'Vá marcando os itens conforme vai pegando fisicamente — dá pra ver quanto falta separar a qualquer momento.' },
@@ -720,6 +729,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_STOCK,
     title: 'Estoque Bling',
     summary: 'Visualiza e ajusta manualmente o estoque dos produtos vinculados ao Bling — usa o MESMO estoque do resto do sistema, não é um saldo separado.',
+    developerOnly: true,
     sections: [
       { heading: 'Não é um estoque paralelo', body: 'Qualquer ajuste feito aqui grava no mesmo lugar que Vendas e Estoque já leem — é só uma visão focada nos produtos que vendem pelo Bling/marketplaces.' },
       { heading: 'Movimentação rápida', body: 'Toque numa quantidade pra abrir Entrada, Saída ou Ajustar (define o número final direto) daquela variação/tamanho específico.' },
@@ -732,6 +742,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_INVOICES,
     title: 'Notas Fiscais Emitidas',
     summary: 'Histórico de todas as tentativas de emissão de nota — autorizadas, rejeitadas ou ainda em processamento.',
+    developerOnly: true,
     sections: [
       { heading: 'Filtro por período', body: 'Dia, Semana, Mês ou um período customizado — pra achar rápido as notas de uma data específica.' },
       { heading: 'Atualizar status', body: 'O botão de atualizar consulta o Bling de novo pra ver se uma nota "Processando" já saiu (autorizada ou rejeitada).' },
@@ -744,6 +755,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_HEALTH,
     title: 'Saúde do Negócio (Bling)',
     summary: 'Indicadores de vendas/devoluções por período e controle do saldo do talão de Notas de Terceiros.',
+    developerOnly: true,
     sections: [
       { heading: 'Indicadores', body: 'Pares Vendidos, Pares Devolvidos e Taxa de Devolução no período escolhido (Dia/Semana/Mês/Ano) — pra acompanhar se as devoluções estão dentro do esperado.' },
       { heading: 'Notas de Terceiros', body: 'Quando outra empresa/CNPJ emite a nota fiscal por você (comum em alguns marketplaces), existe um "talão" com saldo de notas disponíveis — "Notas Consumidas" mostra quanto desse talão já foi usado.' },
@@ -756,6 +768,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     view: ViewType.BLING_DEVOLUCOES,
     title: 'Devoluções (Bling)',
     summary: 'Registra a devolução de um pedido — decidindo se o produto volta pro estoque, se só a nota volta pro saldo do talão, ou os dois.',
+    developerOnly: true,
     sections: [
       { heading: 'Produto e Nota', body: 'Usado quando o produto físico volta — credita o estoque de novo E devolve a nota ao saldo do talão de terceiros.' },
       { heading: 'Somente Nota', body: 'Usado quando só a nota fiscal é cancelada/estornada, sem o produto voltar fisicamente (ex.: nota emitida errada) — só ajusta o saldo do talão, sem mexer no estoque.' },
@@ -854,13 +867,14 @@ export const HELP_TOPICS: HelpTopic[] = [
   {
     view: ViewType.MODULES_CONFIG,
     title: 'Módulos do Sistema',
-    summary: 'Liga ou desliga áreas inteiras do sistema (Vendas, Produção, Pessoal, Entregas, Bling, IA) conforme o que seu negócio realmente usa.',
+    summary: 'Liga ou desliga áreas inteiras do sistema (Vendas, Produção, Pessoal, Entregas, IA) conforme o que seu negócio realmente usa.',
     sections: [
       { heading: 'Dependências entre módulos', body: 'Produção e Entregas exigem que Vendas esteja ligado — faz sentido, já que os dois dependem de pedidos de venda existirem. Desligar Vendas desliga os dois automaticamente junto.' },
       { heading: 'Desligar não apaga dados', body: 'Um módulo desligado só fica invisível no menu — nada é excluído. Religar de volta faz tudo reaparecer exatamente como estava.' },
+      { heading: 'Teste grátis', body: 'Vendas, Produção e Pessoal começam com um período de teste grátis — perto do fim do prazo, o ícone deste card mostra um aviso. Depois de vencido, o módulo pede assinatura pra continuar.' },
       { heading: 'Quando mexer aqui', body: 'Normalmente só uma vez, na Configuração Inicial — volte aqui depois só se o seu negócio mudar de perfil (ex.: passou a fabricar, ou parou de usar entregas próprias).' },
     ],
-    keywords: ['modulo', 'ativar', 'desativar', 'vendas', 'producao', 'entregas', 'bling'],
+    keywords: ['modulo', 'ativar', 'desativar', 'vendas', 'producao', 'entregas', 'teste gratis', 'assinatura'],
     relatedViews: [ViewType.ONBOARDING_WELCOME],
   },
   {

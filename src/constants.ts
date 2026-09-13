@@ -4,11 +4,20 @@ export const SIZES = ['34', '35', '36', '37', '38', '39', '40', '41', '42', '43'
 
 // Duração do teste grátis do Módulo Produção antes de exigir compra (ver ModuleConfigView.tsx
 // e o efeito de auto-expiração em App.tsx) — dias corridos a partir da primeira ativação.
-export const PRODUCTION_TRIAL_DAYS = 2;
+// Temporariamente 30 dias durante o período de teste fechado no Play Console, mesmo motivo do
+// SALES_TRIAL_DAYS abaixo — voltar pra 2 quando sair do teste fechado.
+export const PRODUCTION_TRIAL_DAYS = 30;
 
 // Duração do teste grátis do Módulo Vendas (módulo base, também assinado) antes de exigir
 // assinatura — dias corridos a partir da CRIAÇÃO da conta (ver App.tsx e ModuleConfigView.tsx).
-export const SALES_TRIAL_DAYS = 2;
+// Temporariamente 30 dias durante o período de teste fechado no Play Console, pra não travar o
+// módulo base no meio do teste dos testadores — voltar pra 2 quando sair do teste fechado.
+export const SALES_TRIAL_DAYS = 30;
+
+// Duração do teste grátis do Módulo Pessoal (finanças pessoais) antes de exigir assinatura —
+// mesmo padrão de SALES_TRIAL_DAYS (dias corridos a partir da CRIAÇÃO da conta, módulo já nasce
+// ativo). 30 dias fixo — não é um valor temporário de teste fechado como o de Vendas acima.
+export const PERSONAL_TRIAL_DAYS = 30;
 
 export const MOCK_PEOPLE: Person[] = [
   { id: 'c1', name: 'João Silva', email: 'joao@email.com', phone: '(11) 99999-9999', isCustomer: true, isSupplier: false },

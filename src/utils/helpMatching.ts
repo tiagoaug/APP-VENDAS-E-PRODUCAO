@@ -1,5 +1,6 @@
 import { ViewType } from '../types';
 import { HELP_FAQ, HELP_TOPICS, HelpFaqEntry, HelpTopic } from '../data/helpKnowledgeBase';
+import { isTemplateAdmin } from './templateAdmin';
 
 // Motor de busca da Central de Ajuda — determinístico, por palavras-chave (nada de IA/rede).
 // Mesma filosofia da spec original: nunca inventa resposta; sem match relevante, admite e
@@ -42,8 +43,11 @@ const MATCH_THRESHOLD = 0.34;
 
 // filterByProduction: mesmo gate já usado no resto do app (modulesConfig.production) — quem
 // não tem o módulo de Produção não vê tópicos/FAQ marcados productionOnly.
+// developerOnly (Bling, ver isTemplateAdmin()) não depende de nenhum parâmetro passado por quem
+// chama — lido direto aqui, mesmo padrão usado em ModuleConfigView.tsx/App.tsx pro módulo de IA.
 export function getTopicForView(view: ViewType, productionEnabled: boolean): HelpTopic | undefined {
-  return HELP_TOPICS.find(t => t.view === view && (!t.productionOnly || productionEnabled));
+  const isDev = isTemplateAdmin();
+  return HELP_TOPICS.find(t => t.view === view && (!t.productionOnly || productionEnabled) && (!t.developerOnly || isDev));
 }
 
 // Lista completa de FAQ (sem busca) — usada pra navegação/browse quando o campo de busca
@@ -54,8 +58,9 @@ export function getAllFaq(productionEnabled: boolean): HelpFaqEntry[] {
 }
 
 export function searchHelp(query: string, productionEnabled: boolean, currentView?: ViewType): HelpSearchResult {
+  const isDev = isTemplateAdmin();
   const queryTokens = tokenize(query);
-  const topics = HELP_TOPICS.filter(t => !t.productionOnly || productionEnabled);
+  const topics = HELP_TOPICS.filter(t => (!t.productionOnly || productionEnabled) && (!t.developerOnly || isDev));
   const faq = HELP_FAQ.filter(f => !f.productionOnly || productionEnabled);
 
   if (queryTokens.length === 0) {

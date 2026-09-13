@@ -4,7 +4,7 @@ import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import {
   initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence,
   browserPopupRedirectResolver,
-  GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut,
+  GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithCredential, signOut,
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
@@ -29,6 +29,9 @@ export const auth = initializeAuth(app, {
   popupRedirectResolver: browserPopupRedirectResolver,
 });
 export const googleProvider = new GoogleAuthProvider();
+// 'apple.com' é tratado pelo SDK do Firebase como um OAuthProvider genérico (não tem uma classe
+// própria tipo GoogleAuthProvider) — mesmo padrão usado pra qualquer provider OAuth custom.
+export const appleProvider = new OAuthProvider('apple.com');
 
 export const signInWithGoogle = async () => {
   if (Capacitor.isNativePlatform()) {
@@ -37,6 +40,22 @@ export const signInWithGoogle = async () => {
     return signInWithCredential(auth, credential);
   } else {
     return signInWithPopup(auth, googleProvider);
+  }
+};
+
+// Precisa do idToken E do rawNonce pra montar a credential do lado do Firebase JS SDK — sem o
+// nonce, o Firebase rejeita o credential da Apple com "auth/invalid-credential" mesmo com um
+// idToken válido (a Apple exige esse nonce pra provar que o token não foi reaproveitado).
+export const signInWithApple = async () => {
+  if (Capacitor.isNativePlatform()) {
+    const result = await FirebaseAuthentication.signInWithApple();
+    const credential = appleProvider.credential({
+      idToken: result.credential?.idToken,
+      rawNonce: result.credential?.nonce,
+    });
+    return signInWithCredential(auth, credential);
+  } else {
+    return signInWithPopup(auth, appleProvider);
   }
 };
 export const logout = () => signOut(auth);

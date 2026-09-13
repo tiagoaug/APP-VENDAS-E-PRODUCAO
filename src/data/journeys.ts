@@ -16,6 +16,10 @@ export type Journey = {
   id: string;
   title: string;
   productionOnly?: boolean;
+  // Módulo Bling agora é exclusivo da conta de desenvolvimento (ver isTemplateAdmin() em
+  // App.tsx/ModuleConfigView.tsx) — mesmo gate aplicado aqui pros 3 tours de Bling abaixo, pra
+  // não aparecerem na lista de "Guias" da Central de Ajuda pra quem não pode nem abrir as telas.
+  developerOnly?: boolean;
   entryScreen: ViewType;
   // Params extras pra navegação de entrada (ex.: { initialFilter: 'CUSTOMER' }, { guided: true })
   // — repassados direto pro navigateTo(entryScreen, entryParams) em handleStartJourney.
@@ -318,6 +322,7 @@ export const JOURNEYS: Journey[] = [
   {
     id: 'tour_conectar_bling',
     title: 'Como conectar a conta Bling',
+    developerOnly: true,
     entryScreen: ViewType.BLING_CONNECTION,
     steps: [
       { type: 'message', text: 'Cole o Client ID e o Client Secret do seu app cadastrado no portal de desenvolvedor do Bling.' },
@@ -329,6 +334,7 @@ export const JOURNEYS: Journey[] = [
   {
     id: 'tour_vincular_produto_bling',
     title: 'Como vincular um produto ao Bling',
+    developerOnly: true,
     entryScreen: ViewType.BLING_PRODUCT_MAPPING,
     steps: [
       { type: 'message', text: 'O sistema já sugere o produto/variação que combina com cada item do Bling — confira se a sugestão está certa (ou busque manualmente se não houver sugestão).' },
@@ -338,6 +344,7 @@ export const JOURNEYS: Journey[] = [
   {
     id: 'tour_registrar_devolucao_bling',
     title: 'Como registrar uma devolução (Bling)',
+    developerOnly: true,
     entryScreen: ViewType.BLING_DEVOLUCOES,
     steps: [
       { type: 'message', text: 'Escolha "Produto e Nota" se o item físico está voltando (credita estoque e devolve a nota), ou "Somente Nota" se é só a nota fiscal sendo cancelada, sem o produto voltar.' },

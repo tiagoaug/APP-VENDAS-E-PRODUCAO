@@ -4,6 +4,7 @@ import { ViewType } from '../types';
 import { HelpTopic } from '../data/helpKnowledgeBase';
 import { getTopicForView, searchHelp } from '../utils/helpMatching';
 import { JOURNEYS } from '../data/journeys';
+import { isTemplateAdmin } from '../utils/templateAdmin';
 import Modal from './Modal';
 
 // Central de Ajuda — assistente local, offline e determinístico (sem LLM, sem rede).
@@ -226,7 +227,7 @@ export default function HelpCenterModal({
             )}
 
             {(() => {
-              const journeys = JOURNEYS.filter(j => !j.productionOnly || productionEnabled);
+              const journeys = JOURNEYS.filter(j => (!j.productionOnly || productionEnabled) && (!j.developerOnly || isTemplateAdmin()));
               if (journeys.length === 0) return null;
               return (
                 <div className="flex flex-col gap-2">

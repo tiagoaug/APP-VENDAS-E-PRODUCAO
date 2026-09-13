@@ -1178,6 +1178,13 @@ export type AppModulesConfig = {
   // true quando a assinatura de Vendas (Play Billing, verificada no servidor) existir e for
   // confirmada — ainda não implementado; campo já reservado pra não precisar migrar depois.
   salesPurchased?: boolean;
+  // Teste grátis do Módulo Pessoal — mesmo padrão de salesTrialStartedAt (nasce ativo, carimbado
+  // sozinho na criação da conta, ver App.tsx). Ausente = conta criada antes dessa assinatura
+  // existir, nunca expira sozinha.
+  personalTrialStartedAt?: number | null;
+  // true quando a assinatura do Módulo Pessoal (Play Billing, verificada no servidor) existir e
+  // for confirmada — ainda não implementado; campo já reservado pra não precisar migrar depois.
+  personalPurchased?: boolean;
 };
 
 // Personalização da barra de navegação inferior (ver App.tsx, nav "carrossel deslizante") —

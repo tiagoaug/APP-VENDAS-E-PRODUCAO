@@ -6,6 +6,7 @@ import CalculatorPopover from './CalculatorPopover';
 import DatePicker from './DatePicker';
 import ComboBox from './ComboBox';
 import ReminderPickerModal from './ReminderPickerModal';
+import EngineeringPickerModal from './EngineeringPickerModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import { notificationService } from '../services/notificationService';
@@ -74,6 +75,7 @@ export default function TransactionModal({
   const [reminderAlarmMode, setReminderAlarmMode] = useState<boolean>(true);
   const [reminderCombineMode, setReminderCombineMode] = useState<boolean>(false);
   const [reminderSoundPattern, setReminderSoundPattern] = useState<ReminderTonePattern>('standard');
+  const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false);
   const calculatorRef = useRef<HTMLDivElement>(null);
   const prevTransactionIdRef = useRef<string | undefined>(undefined);
   const isInitialized = useRef(false);
@@ -412,6 +414,7 @@ export default function TransactionModal({
                 onChange={setContactId}
                 placeholder="Sem vínculo"
                 isDarkMode={isDarkMode}
+                usePopupModal
               />
             </div>
             {onRequestNewContact && (
@@ -593,19 +596,29 @@ export default function TransactionModal({
               </div>
               <label className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Categoria</label>
             </div>
-            <div className="relative">
-              <select
-                className="w-full bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-[1.3rem] py-3 pl-5 pr-9 text-[10px] font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 transition-all dark:text-white appearance-none outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.03)] focus:border-indigo-500/50"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-              >
-                <option value="">Selecione...</option>
-                {filteredCategories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" />
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsCategoryPickerOpen(true)}
+              data-guide-anchor="transacao.categoriaAbrirPopup"
+              className="w-full flex items-center justify-between gap-2 bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-[1.3rem] py-3 pl-5 pr-4 text-[10px] font-black uppercase tracking-widest transition-all dark:text-white outline-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.03)] text-left"
+            >
+              <span className={filteredCategories.find(c => c.id === categoryId) ? '' : 'text-slate-400 dark:text-slate-500 normal-case font-bold tracking-normal'}>
+                {filteredCategories.find(c => c.id === categoryId)?.name || 'Selecione...'}
+              </span>
+              <ChevronDown size={14} className="text-indigo-400 shrink-0" />
+            </button>
+            <EngineeringPickerModal
+              isOpen={isCategoryPickerOpen}
+              onClose={() => setIsCategoryPickerOpen(false)}
+              title="Categoria"
+              icon={<Tag size={18} />}
+              options={filteredCategories.map(c => ({ id: c.id, name: c.name }))}
+              selectedId={categoryId}
+              onSelect={setCategoryId}
+              isDarkMode={isDarkMode}
+              searchPlaceholder="Buscar categoria..."
+              emptyHint="Nenhuma categoria cadastrada"
+            />
             {onRequestNewCategory && (
               <button
                 type="button"

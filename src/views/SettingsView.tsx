@@ -47,11 +47,13 @@ import {
   GanttChartSquare,
   Box,
   PackageOpen,
-  ShieldCheck
+  ShieldCheck,
+  Info
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
+import { SALES_TRIAL_DAYS, PRODUCTION_TRIAL_DAYS, PERSONAL_TRIAL_DAYS } from '../constants';
 import AIAssistantSettings from '../components/AIAssistantSettings';
 import BottomNavConfigModal from '../components/BottomNavConfigModal';
 import CustomPinKeypad from '../components/CustomPinKeypad';
@@ -196,9 +198,32 @@ export default function SettingsView({
     // — só a conta de desenvolvimento vê essa opção, independente do que estiver salvo em
     // modulesConfig.ai (contas antigas podem ter isso true de antes dessa restrição existir).
     if (module === 'ai') return isTemplateAdmin();
-    if ((module === 'bling' || module === 'rh') && !modulesConfig.sales) return false;
+    // Bling agora também é exclusivo da conta de desenvolvimento (ver App.tsx, que já força
+    // modulesConfig.bling=false pra qualquer conta que não seja isTemplateAdmin()) — dupla
+    // checagem direto na UI, mesmo padrão da IA acima.
+    if (module === 'bling') return isTemplateAdmin() && modulesConfig.sales && !!modulesConfig.bling;
+    if (module === 'rh' && !modulesConfig.sales) return false;
     return !!modulesConfig[module];
   };
+
+  const [showModulesInfo, setShowModulesInfo] = useState(false);
+
+  // Feedback visual no ícone do card "Módulos do Sistema" (ver renderização mais abaixo) — avisa
+  // sem precisar abrir a tela quando algum teste grátis (Vendas/Produção/Pessoal, ver
+  // ModuleConfigView.tsx) está nas últimas 24h ou já venceu e pede assinatura.
+  const hasUrgentModuleTrial = (() => {
+    const now = Date.now();
+    const checks: [number | null | undefined, boolean | undefined, number][] = [
+      [modulesConfig.salesTrialStartedAt, modulesConfig.salesPurchased, SALES_TRIAL_DAYS],
+      [modulesConfig.productionTrialStartedAt, modulesConfig.productionPurchased, PRODUCTION_TRIAL_DAYS],
+      [modulesConfig.personalTrialStartedAt, modulesConfig.personalPurchased, PERSONAL_TRIAL_DAYS],
+    ];
+    return checks.some(([startedAt, purchased, days]) => {
+      if (!startedAt || purchased) return false;
+      const endsAt = startedAt + days * 24 * 60 * 60 * 1000;
+      return endsAt - now < 24 * 60 * 60 * 1000; // menos de 24h (inclui já vencido)
+    });
+  })();
 
   const isItemAllowed = (itemId: ViewType | string) => {
     if (itemId === 'SOLE_MATRIX_DIRECT') return isSectorAllowed(activeCollaborator, 'cadastro_insumos');
@@ -448,11 +473,57 @@ export default function SettingsView({
                 )}
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Quem está usando</p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">{activeCollaborator ? activeCollaborator.name : 'Acesso Completo'}</p>
+                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">{activeCollaborator ? activeCollaborator.name : 'Acesso Completo'}</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
             </button>
+          </div>
+        </div>
+
+        {/* ── MÓDULOS ── card próprio, fora de "Personalização" de propósito: é uma decisão de
+            NEGÓCIO (o que o app pode fazer) e tem avisos de teste grátis vencendo — não é sobre
+            gosto/aparência como o resto dali, então fica mais fácil de achar destacado sozinho. */}
+        <div className="flex flex-col gap-3">
+          <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Módulos</h3>
+          <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="w-full flex items-center gap-1 p-4">
+              <button
+                onClick={() => onNavigate(ViewType.MODULES_CONFIG)}
+                title="Módulos do Sistema"
+                aria-label="Configurar módulos do sistema"
+                data-guide-anchor="settings.modulosAbrir"
+                className="flex-1 min-w-0 flex items-center justify-between gap-4 text-left rounded-xl transition-colors active:bg-slate-100 dark:active:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 -m-1 p-1"
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="relative w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400">
+                    <Shield size={22} />
+                    {hasUrgentModuleTrial && (
+                      <span
+                        className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-rose-500 border-2 border-white dark:border-slate-900 animate-pulse"
+                        aria-hidden="true"
+                        title="Teste grátis de um módulo está vencendo"
+                      />
+                    )}
+                  </div>
+                  <div className="text-left min-w-0">
+                    <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Módulos do Sistema</p>
+                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5 truncate">Ativar ou desativar módulos</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className={`shrink-0 ${isDarkMode ? 'text-slate-700' : 'text-slate-300'}`} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowModulesInfo(true)}
+                title="O que são Módulos do Sistema?"
+                aria-label="O que são Módulos do Sistema?"
+                data-guide-anchor="settings.modulosInfo"
+                className={`p-2 rounded-xl shrink-0 transition-colors ${isDarkMode ? 'text-slate-600 hover:text-slate-400 hover:bg-slate-800' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-50'}`}
+              >
+                <Info size={18} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -475,27 +546,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Acessibilidade e Personalização</p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Tema, fonte e tamanho</p>
-                </div>
-              </div>
-              <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
-            </button>
-
-            {/* ── MÓDULOS DO SISTEMA ── */}
-            <button
-              onClick={() => onNavigate(ViewType.MODULES_CONFIG)}
-              title="Módulos do Sistema"
-              aria-label="Configurar módulos do sistema"
-              data-guide-anchor="settings.modulosAbrir"
-              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400">
-                  <Shield size={22} />
-                </div>
-                <div className="text-left">
-                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Módulos do Sistema</p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Ativar ou desativar módulos</p>
+                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Tema, fonte e tamanho</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -515,7 +566,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Organizar Dashboard</p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Layout e atalhos da tela inicial</p>
+                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Layout e atalhos da tela inicial</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -537,7 +588,7 @@ export default function SettingsView({
                   </div>
                   <div className="text-left">
                     <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Conta Desenvolvedora</p>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Só você vê isto</p>
+                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Só você vê isto</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -558,7 +609,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Escolha e ordene os ícones da barra</p>
+                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Escolha e ordene os ícones da barra</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -578,7 +629,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Limpeza e Arquivamento</p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Arquivar Vendas/Compras/Produção antigas</p>
+                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Arquivar Vendas/Compras/Produção antigas</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -603,7 +654,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-black tracking-tight text-rose-500">Encerrar Sessão</p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Sair da conta atual</p>
+                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Sair da conta atual</p>
                 </div>
               </div>
               <ChevronRight size={18} className="text-rose-300" />
@@ -613,7 +664,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.2.4</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.3.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1105,7 +1156,7 @@ export default function SettingsView({
 
       {/* ── LOGOUT CONFIRM MODAL ── */}
       {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[200] flex items-end justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[65000] flex items-end justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className={`w-full max-w-sm rounded-[2rem] p-6 shadow-2xl flex flex-col items-center gap-4 animate-in slide-in-from-bottom-4 duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
             {/* Icon */}
             <div className="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center">
@@ -1141,6 +1192,45 @@ export default function SettingsView({
                 Sair
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EXPLICAÇÃO "MÓDULOS DO SISTEMA" ── clique no ícone (i) do card acima, mesmo
+          padrão de popup de explicação usado em outras telas (ver "Dividir Caixas entre
+          Clientes" em SaleFormView.tsx). */}
+      {showModulesInfo && (
+        <div
+          className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setShowModulesInfo(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-[2rem] p-6 shadow-2xl animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400">
+                  <Shield size={20} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  Módulos do Sistema
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModulesInfo(false)}
+                title="Fechar"
+                aria-label="Fechar"
+                data-guide-anchor="settings.modulosInfoFechar"
+                className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
+              >
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed">
+              Liga ou desliga áreas do sistema conforme o que seu negócio usa.
+            </p>
           </div>
         </div>
       )}

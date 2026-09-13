@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, useCallback, ReactNode, lazy, Suspense } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, ReactNode, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import {
   LayoutDashboard,
   ScanText,
@@ -146,7 +147,7 @@ import {
   OnboardingStatus,
   BusinessType,
 } from "./types";
-import { PRODUCTION_TRIAL_DAYS, SALES_TRIAL_DAYS } from "./constants";
+import { PRODUCTION_TRIAL_DAYS, SALES_TRIAL_DAYS, PERSONAL_TRIAL_DAYS } from "./constants";
 import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable, isAblemarkPlatform } from "./lib/ablemarkPrinter";
 import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 
@@ -1082,9 +1083,9 @@ export default function App() {
           setModulesConfig(rest as AppModulesConfig);
         } else {
           // Conta nova (nunca gravou app_modules_config) — carimba o início do teste grátis de
-          // Vendas já na criação, já que Vendas nasce ativo (diferente de Produção, que só
-          // começa a contar quando o próprio usuário liga o módulo em ModuleConfigView).
-          const initialConfig: AppModulesConfig = { ...defaultModulesConfig, salesTrialStartedAt: Date.now() };
+          // Vendas e Pessoal já na criação, já que os dois nascem ativos (diferente de Produção,
+          // que só começa a contar quando o próprio usuário liga o módulo em ModuleConfigView).
+          const initialConfig: AppModulesConfig = { ...defaultModulesConfig, salesTrialStartedAt: Date.now(), personalTrialStartedAt: Date.now() };
           setModulesConfig(initialConfig);
           firebaseService.saveDocument("app_modules_config", { ...initialConfig, id: 'main_modules_config' });
         }
@@ -1153,21 +1154,52 @@ export default function App() {
     }
   }, [modulesConfig]);
 
+  // Mesma ideia acima, mas pro Módulo Pessoal (ver personalTrialStartedAt em types.ts) — nasce
+  // ativo igual Vendas, carimbado sozinho na criação da conta (subscription de
+  // app_modules_config acima). Não tem dependentes pra cascatear (módulo standalone).
+  useEffect(() => {
+    if (!modulesConfig.personal || modulesConfig.personalPurchased) return;
+    const trialStartedAt = modulesConfig.personalTrialStartedAt;
+    if (!trialStartedAt) return;
+    const trialEndsAt = trialStartedAt + PERSONAL_TRIAL_DAYS * 24 * 60 * 60 * 1000;
+    if (Date.now() >= trialEndsAt) {
+      saveModulesConfig({ ...modulesConfig, personal: false });
+    }
+  }, [modulesConfig]);
+
+  // Módulo Bling agora é exclusivo da conta de desenvolvimento (isTemplateAdmin(), mesma conta
+  // que já é a única com acesso ao Assistente de IA) — qualquer conta normal que tenha
+  // `bling: true` salvo (seja de antes dessa restrição existir, seja um valor manipulado direto
+  // no Firestore) é forçada de volta pra false aqui. Esse é o ÚNICO ponto de verdade: todo o
+  // resto do app (nav inferior, Personalizar Navegação, atalhos de Configurações) já decide se
+  // mostra Bling só olhando pra `modulesConfig.bling`, então bastou fechar a torneira aqui pra
+  // cascatear em todo canto sem precisar caçar cada tela uma por uma.
+  useEffect(() => {
+    if (modulesConfig.bling && !isTemplateAdmin()) {
+      saveModulesConfig({ ...modulesConfig, bling: false });
+    }
+  }, [modulesConfig]);
+
   // Personalização da barra de navegação (Configurações > Personalizar Navegação) — mesmo
   // padrão de persistência do app_modules_config acima. RH some por padrão (hidden) pra não
   // aparecer sozinho pra quem já tinha o app instalado antes desse módulo existir — quem quiser
   // liga em Personalização.
   const defaultBottomNavConfig: BottomNavConfig = {
-    order: ['purchases', 'sales', 'production', 'bling', 'entregas', 'financial', 'personal', 'rh', 'pcp', 'stock', 'people', 'reports'],
+    order: ['purchases', 'sales', 'production', 'entregas', 'financial', 'stock', 'bling', 'personal', 'rh', 'pcp', 'people', 'reports'],
     // Tudo que é módulo inteiro (já tinha ícone fixo antes do carrossel existir) some só o RH,
-    // que é novo. Os atalhos de tela específica (pcp/stock/people/reports) começam todos
-    // escondidos — são adição nova, opt-in via Personalização, pra não mudar a barra de quem já
-    // usava o app sem avisar.
-    hidden: ['rh', 'pcp', 'stock', 'people', 'reports'],
-    // Primeiros 6 visíveis do `order` acima (purchases..financial — personal fica de fora,
-    // mesmo corte de 6 usado como fallback no modal) — fica fixo na barra compacta pra conta
-    // nova; o resto (incluindo os novos itens tipo Produtos/OCR/Facas) só aparece expandindo.
-    pinned: ['purchases', 'sales', 'production', 'bling', 'entregas', 'financial'],
+    // que é novo. Os atalhos de tela específica (pcp/people/reports) começam todos escondidos —
+    // são adição nova, opt-in via Personalização, pra não mudar a barra de quem já usava o app
+    // sem avisar. `stock` (Estoque) NÃO fica escondido — ele é um dos 6 fixos por padrão logo
+    // abaixo, junto dos módulos inteiros.
+    hidden: ['rh', 'pcp', 'people', 'reports'],
+    // 6 fixos por padrão pra conta nova preencher a grade 3x2 inteira sempre que der (ver
+    // "caso tenha" — cada item só aparece de verdade se o módulo dele estiver ativo pra essa
+    // conta, ver visibleItems em BottomNavConfigModal.tsx/App.tsx). `bling` NÃO entra mais
+    // aqui: virou exclusivo da conta de desenvolvimento (ver isTemplateAdmin() acima) e, pra
+    // qualquer conta normal, é um módulo permanentemente inativo — deixá-lo fixo aqui garantia
+    // uma vaga sempre vazia na grade pra sempre. `stock` (Estoque) entra no lugar por só
+    // depender de Vendas (praticamente toda conta tem), preenchendo a vaga que sobrou.
+    pinned: ['purchases', 'sales', 'production', 'entregas', 'financial', 'stock'],
   };
 
   const [bottomNavConfig, setBottomNavConfig] = useState<BottomNavConfig>(() => {
@@ -2306,7 +2338,7 @@ export default function App() {
     // e nada a ver com "acabei de chegar numa tela pra aprender ela". Continua acessível na
     // hora que quiser, manualmente, pelos Guias.
     if (currentView === ViewType.DASHBOARD) return;
-    const journey = JOURNEYS.find(j => j.entryScreen === currentView && (!j.productionOnly || modulesConfig.production));
+    const journey = JOURNEYS.find(j => j.entryScreen === currentView && (!j.productionOnly || modulesConfig.production) && (!j.developerOnly || isTemplateAdmin()));
     if (journey && activeJourneyId !== journey.id) {
       setActiveJourneyId(journey.id);
       setJourneyStepIndex(0);
@@ -5402,7 +5434,7 @@ export default function App() {
     if (isProductionView && !isProductCatalogView && !isPackagingOnlyView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
     if (isDeliveryView && (!modulesConfig.sales || !modulesConfig.entregas)) return renderView(ViewType.DASHBOARD);
-    if (isBlingView && !modulesConfig.bling) return renderView(ViewType.DASHBOARD);
+    if (isBlingView && !(isTemplateAdmin() && modulesConfig.bling)) return renderView(ViewType.DASHBOARD);
     if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
     // Refinamento por função dentro do setor (ver taskPermissions em Collaborator e
     // VIEW_TASK_MAP em utils/collaborators.ts) — telas de uma função específica bloqueadas
@@ -8703,7 +8735,7 @@ export default function App() {
       { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={20} />, view: ViewType.PURCHASES, anchorKey: 'nav.compras', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PURCHASES) },
       { id: 'sales', label: 'Vendas', icon: <ShoppingBag size={20} />, view: ViewType.SALES, anchorKey: 'nav.vendas', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
       { id: 'production', label: 'Prod.', icon: <Factory size={20} />, view: ViewType.PRODUCTION_MENU, anchorKey: 'nav.producao', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) },
-      { id: 'bling', label: 'Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, allowed: modulesConfig.sales && modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) },
+      { id: 'bling', label: 'Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, allowed: isTemplateAdmin() && modulesConfig.sales && modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) },
       { id: 'entregas', label: 'Entregas', icon: <Truck size={20} />, view: ViewType.DELIVERY_MENU, allowed: modulesConfig.sales && modulesConfig.entregas && isViewAllowed(activeCollaborator, ViewType.DELIVERY_MENU) },
       { id: 'financial', label: 'Finan.', icon: <DollarSign size={20} />, view: ViewType.FINANCIAL, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.FINANCIAL) && isViewTaskAllowed(activeCollaborator, ViewType.FINANCIAL) },
       { id: 'personal', label: 'Pessoal', icon: <UserIcon size={20} />, view: ViewType.PERSONAL_FINANCIAL, allowed: modulesConfig.personal && isViewAllowed(activeCollaborator, ViewType.PERSONAL_FINANCIAL) },
@@ -8773,6 +8805,33 @@ export default function App() {
   const [middleNavItemsPerRow, setMiddleNavItemsPerRow] = useState(3);
   // Painel de expansão (itens não fixados) — substitui a paginação antiga.
   const [navExpanded, setNavExpanded] = useState(false);
+  // Painel + backdrop do "Mais" expandido são renderizados via createPortal em document.body
+  // (ver mais abaixo) — o <nav> em si é `position: fixed` e cria sua PRÓPRIA stacking context,
+  // então nenhum z-index dado a um filho dele consegue vencer um FAB fixo de outra tela (ex.:
+  // "Nova Compra" em PurchasesView, z-50) sem também subir o z-index do <nav> inteiro — o que
+  // derrubaria ~100 outros modais do app que hoje assumem que o <nav> nunca compete com eles
+  // (regressão real já vista: popup de "Encerrar Sessão"). O portal escapa dessa stacking
+  // context; esse ref mede a cápsula visível de verdade pra o painel portado saber onde "colar"
+  // por cima dela (a altura da cápsula varia: 1 ou 2 linhas, ícones grandes/pequenos etc.).
+  const navPillRef = useRef<HTMLDivElement>(null);
+  const [navPanelAnchor, setNavPanelAnchor] = useState<{ left: number; right: number; bottom: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!navExpanded) return;
+    const measure = () => {
+      const el = navPillRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setNavPanelAnchor({ left: rect.left, right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.top + 12 });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [navExpanded]);
+  // Válvula de escape pra qualquer tela que ainda tenha algo tampado pela barra (ex.: telas
+  // antigas que não sabiam que a barra existe, ou telas de terceiros/relatórios bem longos) —
+  // minimiza a barra inteira num botão pequeno, deixando a tela livre embaixo. Botão de
+  // minimizar/restaurar fica logo abaixo do Home, de propósito (ver JSX do <nav>).
+  const [navMinimized, setNavMinimized] = useState(false);
 
   const attachMiddleNavContainerRef = useCallback((el: HTMLDivElement | null) => {
     middleNavContainerCleanupRef.current?.();
@@ -8975,7 +9034,24 @@ export default function App() {
       case ViewType.ONBOARDING_WELCOME:
       case ViewType.ONBOARDING_ROADMAP:
       case ViewType.ONBOARDING_COMPLETE: return <Sparkles size={24} className="text-indigo-600 dark:text-indigo-400" />;
-      case ViewType.DASHBOARD: return <LayoutDashboard size={24} className="text-indigo-600 dark:text-indigo-400" />;
+      // Só o ícone da Dashboard segue a MESMA cor do ícone Home na barra de navegação (não o
+      // tema claro/escuro geral — ver Ícones do Menu em Acessibilidade e Personalização:
+      // Monocromático usa a cor escolhida em "Cor do Ícone Ativo", Colorido usa a cor fixa do
+      // item) e ganha um badge em pílula — mesmo tratamento visual do botão Home na barra
+      // (bg-black/[0.035] dark:bg-white/[0.06]), pra ficar visualmente "grudado" com a cápsula
+      // de navegação embaixo. Fórmula duplicada de effectiveNavMonoColor (App.tsx mais abaixo)
+      // de propósito — esse useMemo roda antes daquela declaração, TDZ não deixa referenciar
+      // direto. Os demais ícones de tela continuam com suas cores fixas de sempre.
+      case ViewType.DASHBOARD: {
+        const dashIconColor = navIconMode === 'colored'
+          ? NAV_TAB_COLORS.dashboard
+          : (isDarkMode ? '#ffffff' : navMonoColor);
+        return (
+          <div className="w-9 h-9 rounded-full flex items-center justify-center bg-black/[0.035] dark:bg-white/[0.06]">
+            <LayoutDashboard size={20} style={{ color: dashIconColor }} />
+          </div>
+        );
+      }
       case ViewType.PURCHASES:
       case ViewType.PURCHASE_FORM: return <ShoppingCart size={24} className="text-cyan-500 dark:text-cyan-400" />;
       case ViewType.SALES:
@@ -9035,7 +9111,7 @@ export default function App() {
 
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }
-  }, [currentView, lastNonModalView]);
+  }, [currentView, lastNonModalView, navIconMode, navMonoColor, isDarkMode]);
 
   const headerTitle = useMemo(() => {
     if (MODAL_VIEWS.includes(currentView)) {
@@ -9145,7 +9221,15 @@ export default function App() {
           <div className="flex items-center justify-center">
             {viewIcon}
           </div>
-          <h1 className={`text-xl font-bold tracking-tight ${headerTitle === 'LIM.O APP' ? 'text-indigo-800 dark:text-indigo-500' : 'text-slate-900 dark:text-white'}`}>
+          {/* "LIM.O APP" segue a MESMA cor do ícone Home na barra de navegação (Ícones do Menu
+              em Acessibilidade e Personalização — Monocromático usa effectiveNavMonoColor,
+              Colorido usa NAV_TAB_COLORS.dashboard), não o tema claro/escuro geral — pra ficar
+              visualmente "grudado" com a cápsula de navegação embaixo, em vez de indigo fixo
+              destoando num tema todo preto/branco. Os demais títulos de tela continuam neutros. */}
+          <h1
+            className={`text-xl font-bold tracking-tight ${headerTitle === 'LIM.O APP' ? '' : 'text-slate-900 dark:text-white'}`}
+            style={headerTitle === 'LIM.O APP' ? { color: navIconMode === 'colored' ? NAV_TAB_COLORS.dashboard : effectiveNavMonoColor } : undefined}
+          >
             {headerTitle}
           </h1>
         </div>
@@ -9505,16 +9589,32 @@ export default function App() {
           (Boas-vindas/Roteiro/Conclusão) — sem isso dava pra pular a introdução inicial só
           tocando em qualquer ícone do menu, sem escolher um tipo de negócio nem apertar "Pular
           por agora". */}
-      {/* z-[40000] no <nav> abaixo (não mais z-40) — sendo `position: fixed`, ele cria sua
-          PRÓPRIA stacking context: dar z-index alto só no painel expandido (nav-expand-panel)
-          interno não adianta nada se o <nav> em si perde pra um FAB fixo de tela (ex.: "Nova
-          Compra" em PurchasesView, z-50; ou telas com FAB em z-[9000]/z-[30000]) na comparação
-          de fora — o valor que conta lá fora é o do próprio <nav>. Sobe acima do maior FAB
-          conhecido, mas continua abaixo dos modais de verdade (65000+/97000). */}
+      {/* z-40 de propósito — quase toda a árvore de modais/popups do app (~100 telas, de z-50 a
+          z-9999) assume que o <nav> nunca compete com eles, então NÃO dá pra subir o z-index do
+          <nav> inteiro pra resolver o painel "Mais" (nav-expand-panel) ficar atrás de um FAB
+          fixo de tela (ex.: "Nova Compra" em PurchasesView, z-50) — isso derrubaria todos esses
+          modais pra trás do <nav> (regressão real já vista: popup de "Encerrar Sessão" sumindo
+          atrás da barra). Em vez disso, só o painel expandido em si sobe de verdade, via
+          createPortal (ver mais abaixo) — o <nav> como um todo continua no nível baixo de
+          sempre. */}
       {![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
-      <nav className={`fixed bottom-0 left-0 right-0 z-[40000] flex items-end justify-center pb-5 px-4 pointer-events-none`}>
+      <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
         <div className="relative w-full max-w-md pointer-events-auto">
-          <div className={`relative flex items-center w-full px-2 py-1.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
+          {navMinimized ? (
+            <button
+              type="button"
+              onClick={() => setNavMinimized(false)}
+              title="Mostrar menu de navegação"
+              aria-label="Mostrar menu de navegação"
+              data-guide-anchor="nav.restaurar"
+              className={`flex items-center gap-2 mx-auto px-4 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${themeVisual.pillGradient} active:scale-95 transition-all`}
+            >
+              <ChevronUp size={16} strokeWidth={3} className={isDarkMode ? 'text-white' : 'text-slate-700'} />
+              <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Menu</span>
+            </button>
+          ) : (
+          <>
+          <div ref={navPillRef} className={`relative flex items-center w-full px-2 py-1.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
             {/* 3D top highlight streak */}
             <div className="absolute top-0 left-4 right-4 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
             {/* 3D bottom shadow line */}
@@ -9629,71 +9729,84 @@ export default function App() {
               );
             })()}
           </div>
-
-          {/* Painel de expansão — mostra TODOS os itens não fixados de uma vez (ver
-              pinnedNavItemsOrdered/expandableNavItems acima), aberto pela seta pra cima ao lado
-              de "Mais". Substitui a paginação antiga: em vez de trocar de página escondendo
-              itens sem pista nenhuma, agora fica explícito o que é fixo (sempre visível) e o
-              que só aparece expandindo. */}
-          <AnimatePresence>
-            {navExpanded && (
-              <>
-                {/* z-[65000] — mesmo padrão já usado em outros popups por cima de botões fixos
-                    (ver SalesView.tsx, "Filter Popup"): sem isso, um FAB fixo de tela (ex.:
-                    "Nova Compra" em PurchasesView, z-50) ficava por cima desse painel em vez de
-                    atrás dele, já que nem o backdrop nem o painel tinham z-index explícito. */}
-                <motion.div
-                  key="nav-expand-backdrop"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setNavExpanded(false)}
-                  className="fixed inset-0 z-[65000] bg-black/20"
-                  aria-hidden="true"
-                />
-                <motion.div
-                  key="nav-expand-panel"
-                  initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 12, scale: 0.98 }}
-                  transition={{ duration: 0.15 }}
-                  data-guide-anchor="nav.painelExpandido"
-                  className={`absolute bottom-full left-0 right-0 mb-3 p-3 rounded-[2rem] shadow-2xl z-[65000] ${themeVisual.pillGradient}`}
-                >
-                  <div
-                    className="grid gap-x-0"
-                    style={{ gridTemplateColumns: `repeat(${middleNavItemsPerRow}, minmax(0, 1fr))` }}
-                  >
-                    {expandableNavItems.map((item, idx) => {
-                      const col = idx % middleNavItemsPerRow;
-                      const totalRows = Math.ceil(expandableNavItems.length / middleNavItemsPerRow);
-                      const row = Math.floor(idx / middleNavItemsPerRow);
-                      const gridLineClass = `${col < middleNavItemsPerRow - 1 ? 'border-r' : ''} ${row < totalRows - 1 ? 'border-b' : ''} ${isDarkMode ? 'border-slate-600' : 'border-slate-300'}`;
-                      return (
-                        <div key={item.id} className={`flex items-center justify-center py-2 ${gridLineClass}`}>
-                          <TabItem
-                            icon={item.icon}
-                            label={item.label}
-                            active={activeTab === item.id}
-                            onClick={() => handleMiddleNavItemClick(item)}
-                            appTheme={appTheme}
-                            iconMode={navIconMode}
-                            tintColor={NAV_TAB_COLORS[item.id]}
-                            monoColor={effectiveNavMonoColor}
-                            anchorKey={item.anchorKey}
-                            badge={(item as any).badge}
-                            fluid
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
+          {/* Botão de minimizar — fica logo abaixo do Home (canto esquerdo da cápsula) de
+              propósito: telas com algo tampado pela barra (ex.: um botão "Salvar" num modal
+              alto) ganham uma saída pra esconder a barra inteira e liberar a tela. */}
+          <button
+            type="button"
+            onClick={() => { setNavMinimized(true); setNavExpanded(false); }}
+            title="Minimizar menu de navegação"
+            aria-label="Minimizar menu de navegação"
+            data-guide-anchor="nav.minimizar"
+            className={`absolute -bottom-2.5 left-3 z-10 flex items-center justify-center w-7 h-7 rounded-full shadow-md active:scale-90 transition-all ${isDarkMode ? 'bg-slate-700 text-slate-200 border border-slate-600' : 'bg-white text-slate-500 border border-slate-200'}`}
+          >
+            <ChevronDown size={14} strokeWidth={3} />
+          </button>
+          </>
+          )}
         </div>
       </nav>
+      )}
+      {/* Painel de expansão do "Mais" — portado pra document.body (ver navPanelAnchor acima):
+          escapa da stacking context do <nav> pra conseguir ficar de verdade acima de um FAB
+          fixo de tela (ex.: "Nova Compra" em PurchasesView, z-50), sem precisar subir o
+          z-index do <nav> inteiro (o que derrubava ~100 outros modais do app pra trás dele). */}
+      {navPanelAnchor && createPortal(
+        <AnimatePresence>
+          {navExpanded && (
+            <>
+              <motion.div
+                key="nav-expand-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setNavExpanded(false)}
+                className="fixed inset-0 z-[65000] bg-black/20"
+                aria-hidden="true"
+              />
+              <motion.div
+                key="nav-expand-panel"
+                initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.98 }}
+                transition={{ duration: 0.15 }}
+                data-guide-anchor="nav.painelExpandido"
+                style={{ position: 'fixed', left: navPanelAnchor.left, right: navPanelAnchor.right, bottom: navPanelAnchor.bottom }}
+                className={`p-3 rounded-[2rem] shadow-2xl z-[65000] ${themeVisual.pillGradient}`}
+              >
+                <div
+                  className="grid gap-x-0"
+                  style={{ gridTemplateColumns: `repeat(${middleNavItemsPerRow}, minmax(0, 1fr))` }}
+                >
+                  {expandableNavItems.map((item, idx) => {
+                    const col = idx % middleNavItemsPerRow;
+                    const totalRows = Math.ceil(expandableNavItems.length / middleNavItemsPerRow);
+                    const row = Math.floor(idx / middleNavItemsPerRow);
+                    const gridLineClass = `${col < middleNavItemsPerRow - 1 ? 'border-r' : ''} ${row < totalRows - 1 ? 'border-b' : ''} ${isDarkMode ? 'border-slate-600' : 'border-slate-300'}`;
+                    return (
+                      <div key={item.id} className={`flex items-center justify-center py-2 ${gridLineClass}`}>
+                        <TabItem
+                          icon={item.icon}
+                          label={item.label}
+                          active={activeTab === item.id}
+                          onClick={() => handleMiddleNavItemClick(item)}
+                          appTheme={appTheme}
+                          iconMode={navIconMode}
+                          tintColor={NAV_TAB_COLORS[item.id]}
+                          monoColor={effectiveNavMonoColor}
+                          anchorKey={item.anchorKey}
+                          badge={(item as any).badge}
+                          fluid
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
       <ProductCreationChoiceModal
         isOpen={showProductCreationChoice}

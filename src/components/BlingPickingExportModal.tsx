@@ -127,11 +127,13 @@ interface ExportProfile {
   incluirCheckbox: boolean;
   mostrarPedido: boolean;
   mostrarModelo: boolean;
+  mostrarReferencia: boolean;
+  mostrarCor: boolean;
   pageSize: PageSize;
   orientation: Orientation;
 }
 
-const DEFAULT_PROFILE: ExportProfile = { agrupar: true, mostrarMiniaturas: true, incluirCheckbox: true, mostrarPedido: true, mostrarModelo: true, pageSize: 'a4', orientation: 'portrait' };
+const DEFAULT_PROFILE: ExportProfile = { agrupar: true, mostrarMiniaturas: true, incluirCheckbox: true, mostrarPedido: true, mostrarModelo: true, mostrarReferencia: true, mostrarCor: true, pageSize: 'a4', orientation: 'portrait' };
 
 // Miniatura da página no formato/orientação escolhidos — só a silhueta (cabeçalho preto +
 // linhas simulando as linhas da lista), pra dar uma ideia de proporção antes de mandar pra área

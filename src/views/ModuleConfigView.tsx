@@ -17,14 +17,51 @@ import {
   Sparkles,
   Truck,
   Building2,
-  UserCog
+  UserCog,
+  Clock
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppModulesConfig, ViewType } from '../types';
-import { PRODUCTION_TRIAL_DAYS, SALES_TRIAL_DAYS } from '../constants';
+import { PRODUCTION_TRIAL_DAYS, SALES_TRIAL_DAYS, PERSONAL_TRIAL_DAYS } from '../constants';
 import { isTemplateAdmin } from '../utils/templateAdmin';
 import ConfirmDialog from '../components/ConfirmDialog';
+
+// Contagem regressiva de verdade (dd:hh:mm:ss, atualizando a cada segundo) pro teste grátis de
+// um módulo — antes só mostrava "Xd restantes" estático, sem avisar de forma visível quando o
+// prazo está quase acabando. Fica vermelho/pulsante nas últimas 24h pra chamar atenção antes de
+// travar o módulo (ver efeito de auto-expiração em App.tsx).
+function TrialCountdownBadge({ endsAt, isDarkMode }: { endsAt: number; isDarkMode: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const remainingMs = Math.max(0, endsAt - now);
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const isUrgent = remainingMs < 24 * 60 * 60 * 1000;
+  const label = days > 0
+    ? `${days}d ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+    : `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+
+  return (
+    <span className={`self-start mb-2 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 tabular-nums ${
+      isUrgent
+        ? (isDarkMode ? 'bg-rose-500/20 text-rose-300 animate-pulse' : 'bg-rose-100 text-rose-600 animate-pulse')
+        : (isDarkMode ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-600')
+    }`}>
+      <Clock size={10} strokeWidth={2.5} />
+      Teste: {label}
+    </span>
+  );
+}
 
 interface ModuleConfigViewProps {
   config: AppModulesConfig;
@@ -37,7 +74,7 @@ interface ModuleConfigViewProps {
 // campos de controle dos testes grátis (productionTrialStartedAt/productionPurchased/
 // salesTrialStartedAt/salesPurchased), que não são módulos e nunca são atribuídos como
 // true/false direto por aqui.
-type ToggleableModule = Exclude<keyof AppModulesConfig, 'productionTrialStartedAt' | 'productionPurchased' | 'salesTrialStartedAt' | 'salesPurchased'>;
+type ToggleableModule = Exclude<keyof AppModulesConfig, 'productionTrialStartedAt' | 'productionPurchased' | 'salesTrialStartedAt' | 'salesPurchased' | 'personalTrialStartedAt' | 'personalPurchased'>;
 
 export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMode }: ModuleConfigViewProps) {
 
@@ -56,7 +93,6 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
   const isProductionPurchased = !!config.productionPurchased;
   const isProductionTrialActive = !isProductionPurchased && !!trialEndsAt && Date.now() < trialEndsAt;
   const isProductionTrialExpired = !isProductionPurchased && !!trialEndsAt && Date.now() >= trialEndsAt;
-  const productionTrialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / (24 * 60 * 60 * 1000))) : 0;
 
   // Vendas é o módulo base, também assinado — mas ao contrário de Produção, o teste começa
   // sozinho na criação da conta (ver App.tsx), não por um toggle manual aqui.
@@ -66,7 +102,15 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
   const isSalesPurchased = !!config.salesPurchased;
   const isSalesTrialActive = !isSalesPurchased && !!salesTrialEndsAt && Date.now() < salesTrialEndsAt;
   const isSalesTrialExpired = !isSalesPurchased && !!salesTrialEndsAt && Date.now() >= salesTrialEndsAt;
-  const salesTrialDaysLeft = salesTrialEndsAt ? Math.max(0, Math.ceil((salesTrialEndsAt - Date.now()) / (24 * 60 * 60 * 1000))) : 0;
+
+  // Pessoal nasce ativo igual Vendas (não é um toggle manual como Produção) — mesmo padrão de
+  // trial acima. personalTrialStartedAt ausente = conta criada antes dessa assinatura existir,
+  // nunca expira sozinha.
+  const personalTrialStartedAt = config.personalTrialStartedAt ?? null;
+  const personalTrialEndsAt = personalTrialStartedAt ? personalTrialStartedAt + PERSONAL_TRIAL_DAYS * 24 * 60 * 60 * 1000 : null;
+  const isPersonalPurchased = !!config.personalPurchased;
+  const isPersonalTrialActive = !isPersonalPurchased && !!personalTrialEndsAt && Date.now() < personalTrialEndsAt;
+  const isPersonalTrialExpired = !isPersonalPurchased && !!personalTrialEndsAt && Date.now() >= personalTrialEndsAt;
 
   const toggleModule = (module: ToggleableModule) => {
     const isActivating = !config[module];
@@ -75,6 +119,14 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       if (module === 'sales' && !isSalesPurchased && isSalesTrialExpired) {
         setConfirmTitle("Assinatura Necessária");
         setConfirmMessage(`Seu teste grátis de ${SALES_TRIAL_DAYS} dias do Módulo Vendas já acabou. A assinatura direto pelo app ainda está sendo implementada — em breve você poderá reativar aqui mesmo.`);
+        setPendingModule(null);
+        setPendingAction(null);
+        setIsConfirmOpen(true);
+        return;
+      }
+      if (module === 'personal' && !isPersonalPurchased && isPersonalTrialExpired) {
+        setConfirmTitle("Assinatura Necessária");
+        setConfirmMessage(`Seu teste grátis de ${PERSONAL_TRIAL_DAYS} dias do Módulo Pessoal já acabou. A assinatura direto pelo app ainda está sendo implementada — em breve você poderá reativar aqui mesmo.`);
         setPendingModule(null);
         setPendingAction(null);
         setIsConfirmOpen(true);
@@ -179,9 +231,14 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     {
       id: 'personal',
       name: 'Módulo Pessoal',
-      description: 'Pra controlar SUAS finanças fora do negócio — contas, cartões, gastos e receitas da família, separados do dinheiro da empresa. Funciona mesmo sem nenhum outro módulo ativo, pra quem só quer organizar a vida financeira pessoal.',
+      description: isPersonalPurchased || !personalTrialStartedAt
+        ? 'Pra controlar SUAS finanças fora do negócio — contas, cartões, gastos e receitas da família, separados do dinheiro da empresa. Funciona mesmo sem nenhum outro módulo ativo, pra quem só quer organizar a vida financeira pessoal.'
+        : `Pra controlar SUAS finanças fora do negócio — contas, cartões, gastos e receitas da família, separados do dinheiro da empresa. Teste grátis de ${PERSONAL_TRIAL_DAYS} dias antes de exigir assinatura.`,
       icon: <Users size={28} />,
       active: config.personal,
+      disabled: isPersonalTrialExpired && !isPersonalPurchased,
+      lockLabel: 'Assinatura Necessária',
+      trialEndsAt: isPersonalTrialActive ? personalTrialEndsAt! : undefined,
       color: 'bg-amber-500',
       features: ['Financeiro Pessoal', 'Membros da Família', 'Categorias Pessoais', 'Orçamentos']
     },
@@ -195,7 +252,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       active: config.sales,
       disabled: isSalesTrialExpired && !isSalesPurchased,
       lockLabel: 'Assinatura Necessária',
-      badge: isSalesTrialActive ? `Teste: ${salesTrialDaysLeft}d restantes` : undefined,
+      trialEndsAt: isSalesTrialActive ? salesTrialEndsAt! : undefined,
       color: 'bg-emerald-500',
       features: ['Vendas e Orçamentos', 'Compras de Mercadoria', 'Estoque de Produtos', 'Financeiro Empresarial']
     },
@@ -209,7 +266,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       active: config.production,
       disabled: !config.sales || (isProductionTrialExpired && !isProductionPurchased),
       lockLabel: !config.sales ? 'Requer Vendas' : 'Teste Expirado',
-      badge: isProductionTrialActive ? `Teste: ${productionTrialDaysLeft}d restantes` : undefined,
+      trialEndsAt: isProductionTrialActive ? trialEndsAt! : undefined,
       color: 'bg-indigo-600',
       features: ['Engenharia de Produto', 'Estoque de Insumos', 'Controle de PCP', 'Necessidade de Compras']
     },
@@ -235,7 +292,10 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       color: 'bg-teal-600',
       features: ['Mapa e Geocodificação', 'Rotas Otimizadas', 'Navegação Google/Apple Maps']
     },
-    {
+    // Bling agora é exclusivo da conta de desenvolvimento (mesmo motivo/mesmo padrão do card de
+    // IA acima) — App.tsx força config.bling de volta pra false pra qualquer conta que não seja
+    // isTemplateAdmin(), então nem faz sentido anunciar o card pra quem não pode manter ligado.
+    ...(isTemplateAdmin() ? [{
       id: 'bling',
       name: 'Módulo Bling',
       description: 'Integração com o ERP Bling — vinculação de produtos e emissão de notas fiscais.',
@@ -244,7 +304,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       disabled: !config.sales,
       color: 'bg-green-700',
       features: ['Vinculação de Produtos', 'Pedidos de Marketplaces', 'Emissão de NF-e']
-    },
+    }] : []),
     {
       id: 'rh',
       name: 'Módulo RH',
@@ -310,10 +370,8 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
               )}
             </div>
 
-            {'badge' in module && module.badge && (
-              <span className="self-start mb-2 px-2 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-[9px] font-black uppercase tracking-wider">
-                {module.badge}
-              </span>
+            {'trialEndsAt' in module && module.trialEndsAt && (
+              <TrialCountdownBadge endsAt={module.trialEndsAt} isDarkMode={isDarkMode} />
             )}
 
             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed mb-6 flex-1">

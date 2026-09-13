@@ -1,7 +1,7 @@
 ﻿import { useState } from 'react';
 import { Share } from '@capacitor/share';
 import { PaymentMethod } from '../types';
-import { Plus, Trash2, Edit, Copy, Eye, Share2 } from 'lucide-react';
+import { Plus, Trash2, Edit, Copy, Eye, Share2, Info } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
 import PaymentCardModal from '../components/PaymentCardModal';
 import PixIcon from '../components/icons/PixIcon';
@@ -63,6 +63,15 @@ export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, i
         isDanger={true}
       />
       <div className="flex flex-col gap-4">
+        {/* Explicação — essa tela confunde quem chega sem contexto (nome genérico "método de
+            pagamento" não deixa óbvio que é aqui que se cadastra a PRÓPRIA chave Pix/dados
+            bancários pra receber, não uma forma de pagar terceiros). */}
+        <div className={`p-4 rounded-2xl border flex items-start gap-3 ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
+          <Info size={16} className="text-indigo-500 dark:text-indigo-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 leading-relaxed">
+            Cadastre aqui sua chave Pix ou dados bancários pra receber de clientes — depois é só compartilhar o método certo na hora de cobrar ou fechar uma venda.
+          </p>
+        </div>
         {methods.map((method) => (
           <div key={method.id} className={`p-5 rounded-[2rem] border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center justify-between">
