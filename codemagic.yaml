@@ -57,20 +57,29 @@ workflows:
     artifacts:
       - DerivedData/Build/Products/*/*.app
 
-  # Fica pronto pra quando houver conta de desenvolvedor Apple (US$99/ano) — hoje incompleto
-  # de propósito: falta configurar a assinatura (ver comentários abaixo) antes de rodar.
+  # Ativado agora que existe conta de Desenvolvedor Apple ($99/ano). Ainda precisa, uma vez só,
+  # que VOCÊ conecte a integração "App Store Connect" no Codemagic (Team settings →
+  # Integrations → App Store Connect → gerar/colar a API Key do App Store Connect: Issuer ID,
+  # Key ID e o arquivo .p8 — gerados em appstoreconnect.apple.com → Users and Access →
+  # Integrations → Keys). Dê um NOME pra essa integração ao conectar e troque o valor de
+  # `integrations.app_store_connect` abaixo pra bater com esse nome (deixei "codemagic" como
+  # sugestão — é o nome padrão que a maioria usa). Sem isso, tanto a assinatura automática
+  # quanto o envio pro TestFlight abaixo falham na hora de rodar.
+  # Também precisa o app já existir no App Store Connect (My Apps → + → New App) com o Bundle ID
+  # exato com.musgo.vendaseproducao, mesmo que só pra teste — o TestFlight não aceita build de
+  # um app que não foi cadastrado lá antes.
   ios-device-build:
     name: iOS - Build assinado (dispositivo real / TestFlight)
     max_build_duration: 60
     instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: codemagic
     environment:
       node: 22
       xcode: latest
-      # ios_signing:
-      #   distribution_type: app_store
-      #   bundle_identifier: com.musgo.vendaseproducao
-      # Também exige conectar a integração "App Store Connect" nas configurações do
-      # Codemagic (Team settings → Integrations) antes de habilitar esse workflow.
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.musgo.vendaseproducao
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
@@ -86,12 +95,21 @@ workflows:
           if [ -f "ios/App/Podfile" ]; then
             cd ios/App && pod install
           fi
-      # - name: Assinatura automática de código
-      #   script: xcode-project use-profiles
-      # - name: Build e assinatura do .ipa
-      #   script: |
-      #     xcode-project build-ipa \
-      #       --project "$XCODE_PROJECT" \
-      #       --scheme "$XCODE_SCHEME"
+      # Busca os certificados/perfis de provisionamento automaticamente via a integração App
+      # Store Connect conectada acima — não precisa gerenciar certificado manualmente.
+      - name: Assinatura automática de código
+        script: xcode-project use-profiles
+      - name: Build e assinatura do .ipa
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
     artifacts:
       - ios/App/build/ios/ipa/*.ipa
+    publishing:
+      # Envia direto pro TestFlight ao final do build — depois de processar (alguns minutos),
+      # instala no iPhone de verdade pelo próprio app TestFlight, sem precisar registrar o
+      # UDID do aparelho em lugar nenhum.
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
