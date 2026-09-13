@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { auth, signInWithGoogle, signInWithApple } from "../lib/firebase";
+import { auth, signInWithGoogle, signInWithApple, resolveAuthCall } from "../lib/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { Eye, EyeOff, Mail, Lock, Fingerprint } from "lucide-react";
 
@@ -68,15 +68,13 @@ export default function LoginView() {
     setError(null);
     setSubmitting(true);
     try {
-      let userCredential;
-      if (isRegistering) {
-        userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
-      }
+      const authCall = isRegistering
+        ? createUserWithEmailAndPassword(auth, email, password)
+        : signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await resolveAuthCall(authCall);
       saveRecentAccount(userCredential.user);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || String(err));
     } finally {
       setSubmitting(false);
     }
@@ -90,7 +88,7 @@ export default function LoginView() {
       // Assuming signInWithGoogle returns a UserCredential or User directly depending on implementation
       // Our lib/firebase.ts typically returns the user credential or handles it
       // Let's ensure it catches the auth state
-      const result: any = await signInWithGoogle();
+      const result: any = await resolveAuthCall(signInWithGoogle());
       if (result && result.user) {
         saveRecentAccount(result.user);
       } else if (auth.currentUser) {
@@ -112,7 +110,7 @@ export default function LoginView() {
     setError(null);
     setSubmitting(true);
     try {
-      const result: any = await signInWithApple();
+      const result: any = await resolveAuthCall(signInWithApple());
       if (result && result.user) {
         saveRecentAccount(result.user);
       } else if (auth.currentUser) {

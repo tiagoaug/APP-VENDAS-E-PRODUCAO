@@ -67,6 +67,37 @@ export const signInWithApple = async () => {
 };
 export const logout = () => signOut(auth);
 
+const AUTH_CALL_TIMEOUT_MS = 15000;
+const AUTH_POLL_INTERVAL_MS = 400;
+
+// Bug conhecido do SDK JS do Firebase Auth dentro do WKWebView do iOS: a Promise de uma
+// chamada de login (signInWithEmailAndPassword, signInWithCredential etc.) às vezes nunca
+// resolve NEM rejeita, mesmo quando o login é concluído com sucesso no servidor e
+// `auth.currentUser` já foi atualizado — só o aviso pro código que chamou nunca chega. Por
+// isso, em vez de só aguardar a Promise, ficamos de olho em `auth.currentUser` em paralelo:
+// se ele populares antes da Promise resolver, tratamos como sucesso mesmo assim. Se nada
+// acontecer dentro do tempo limite, mostramos um erro em vez de travar pra sempre em "Entrando...".
+export async function resolveAuthCall<T extends { user: any }>(authCall: Promise<T>): Promise<T> {
+  let settled: { ok: true; value: T } | { ok: false; error: any } | null = null;
+  authCall.then(
+    (value) => { settled = { ok: true, value }; },
+    (error) => { settled = { ok: false, error }; },
+  );
+
+  const start = Date.now();
+  while (Date.now() - start < AUTH_CALL_TIMEOUT_MS) {
+    if (settled) {
+      if ((settled as any).ok) return (settled as any).value;
+      throw (settled as any).error;
+    }
+    if (auth.currentUser) {
+      return { user: auth.currentUser } as T;
+    }
+    await new Promise((r) => setTimeout(r, AUTH_POLL_INTERVAL_MS));
+  }
+  throw new Error('Tempo esgotado ao conectar. Verifique sua internet e tente novamente.');
+}
+
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
