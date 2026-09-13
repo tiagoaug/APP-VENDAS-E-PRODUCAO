@@ -3,6 +3,7 @@ import { X, ArrowUpCircle, ArrowDownCircle, Loader2, Lightbulb, ChevronDown, Che
 import { Product, Variation, BlingOrder, BlingProductMapping, SaleType } from '../types';
 import { subscribeToBlingOrders, subscribeToBlingMappings } from '../services/blingService';
 import { productHasSaleType } from '../utils/stockPools';
+import { getMappingComponents } from '../utils/blingMappingComponents';
 import { toast } from '../utils/toast';
 
 interface BlingStockViewProps {
@@ -216,8 +217,10 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
         if (item.separado) continue;
         const mapping = mappingByBlingId.get(item.blingProdutoId);
         if (!mapping) continue;
-        const key = `${mapping.productId}|${mapping.variationId}|${mapping.size || 'ATACADO'}`;
-        map.set(key, (map.get(key) || 0) + item.quantidade);
+        for (const component of getMappingComponents(mapping)) {
+          const key = `${component.productId}|${component.variationId}|${component.size || 'ATACADO'}`;
+          map.set(key, (map.get(key) || 0) + item.quantidade * component.quantidade);
+        }
       }
     }
     return map;
@@ -227,7 +230,7 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
   // mostra o estoque completo desses modelos (todas as cores/tamanhos), igual à aba "Varejo"
   // de "Disponível em Estoque", só que com a quantidade pendente de separação em azul.
   const linkedProducts = useMemo(() => {
-    const linkedIds = new Set(mappings.map((m) => m.productId));
+    const linkedIds = new Set(mappings.flatMap((m) => getMappingComponents(m).map((c) => c.productId)));
     return products
       .filter((p) => linkedIds.has(p.id) && productHasSaleType(p, SaleType.RETAIL))
       .sort((a, b) => a.reference.localeCompare(b.reference));

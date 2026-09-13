@@ -5,7 +5,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import {
   Share2, Printer, Image as ImageIcon, FileText, Layers, ImageOff, CheckSquare,
   Bluetooth, RefreshCw, CheckCircle2, XCircle, ChevronRight, ChevronDown, X, FileStack, Save, Gauge,
-  Hash, Tag, Crop,
+  Hash, Tag, Crop, Barcode, Palette,
 } from 'lucide-react';
 import Modal from './Modal';
 import { PickingGroup, PickingFlatRow } from '../views/BlingPickingListView';
@@ -222,7 +222,7 @@ function buildPickingLabelDataUrl(row: DisplayRow, incluirCheckbox: boolean, mos
   return canvas.toDataURL('image/png');
 }
 
-async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolean, incluirCheckbox: boolean, pageSize: PageSize, mostrarModelo: boolean, mostrarPedido: boolean): Promise<string> {
+async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolean, incluirCheckbox: boolean, pageSize: PageSize, mostrarModelo: boolean, mostrarPedido: boolean, mostrarReferencia: boolean, mostrarCor: boolean): Promise<string> {
   const compact = pageSize === '100x150';
   // Preto e branco sólido pra tudo que não seja a miniatura real do produto — tons de cinza
   // claro (zebra, cinza do subtítulo, linhas de grade) ficam abaixo do limiar de conversão
@@ -308,7 +308,12 @@ async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolea
 
     ctx.fillStyle = palette.text;
     ctx.font = fontName;
-    ctx.fillText(`${r.reference} · ${r.variationName}${r.size ? ` · ${r.size}` : ' · Atacado'}`, textX, y + rowH * 0.35);
+    const titleParts = [
+      ...(mostrarReferencia ? [r.reference] : []),
+      ...(mostrarCor ? [r.variationName] : []),
+      r.size || 'Atacado',
+    ];
+    ctx.fillText(titleParts.join(' · '), textX, y + rowH * 0.35);
     const subParts = [
       ...(mostrarModelo ? [r.productName] : []),
       ...(mostrarPedido ? [`Pedidos ${r.pedidos}`] : []),
@@ -336,6 +341,8 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const [incluirCheckbox, setIncluirCheckbox] = useState(savedProfile.incluirCheckbox);
   const [mostrarPedido, setMostrarPedido] = useState(savedProfile.mostrarPedido);
   const [mostrarModelo, setMostrarModelo] = useState(savedProfile.mostrarModelo);
+  const [mostrarReferencia, setMostrarReferencia] = useState(savedProfile.mostrarReferencia);
+  const [mostrarCor, setMostrarCor] = useState(savedProfile.mostrarCor);
   const [pageSize, setPageSize] = useState<PageSize>(savedProfile.pageSize);
   const [orientation, setOrientation] = useState<Orientation>(savedProfile.orientation);
   const [densidade, setDensidade] = useState<Densidade>(2);
@@ -354,7 +361,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const [showStudioBatchPreview, setShowStudioBatchPreview] = useState(false);
 
   const handleSaveProfile = () => {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify({ agrupar, mostrarMiniaturas, incluirCheckbox, mostrarPedido, mostrarModelo, pageSize, orientation }));
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ agrupar, mostrarMiniaturas, incluirCheckbox, mostrarPedido, mostrarModelo, mostrarReferencia, mostrarCor, pageSize, orientation }));
     toast.show('Perfil de exportação salvo — carrega automático da próxima vez.');
   };
 
@@ -391,7 +398,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const handleShareJpg = async () => {
     setBusy(true);
     try {
-      const dataUrl = await buildPickingListJpg(displayRows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido);
+      const dataUrl = await buildPickingListJpg(displayRows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido, mostrarReferencia, mostrarCor);
       await shareImage(dataUrl, `Lista_Separacao_${new Date().toISOString().slice(0, 10)}`);
     } catch (e: any) {
       toast.show('Erro ao gerar JPG: ' + (e.message || e));
@@ -423,18 +430,18 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
 
     const head = [[
       ...(incluirCheckbox ? [''] : []),
-      'Referência',
+      ...(mostrarReferencia ? ['Referência'] : []),
       ...(mostrarModelo ? ['Produto'] : []),
-      'Cor',
+      ...(mostrarCor ? ['Cor'] : []),
       'Tamanho',
       'Qtd',
       ...(mostrarPedido ? ['Pedidos'] : []),
     ]];
     const body = displayRows.map((r) => [
       ...(incluirCheckbox ? [''] : []),
-      r.reference,
+      ...(mostrarReferencia ? [r.reference] : []),
       ...(mostrarModelo ? [r.productName] : []),
-      r.variationName,
+      ...(mostrarCor ? [r.variationName] : []),
       r.size || 'Atacado',
       String(r.quantidade),
       ...(mostrarPedido ? [r.pedidos] : []),
@@ -469,7 +476,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const handleNativePrint = () => {
     setPrintChoiceOpen(false);
     const rows: PrintPickingListRow[] = displayRows.map((r) => ({ ...r }));
-    printPickingList({ rows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido, orientation });
+    printPickingList({ rows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido, mostrarReferencia, mostrarCor, orientation });
   };
 
   const openThermalFlow = async () => {
@@ -616,6 +623,8 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           <ToggleRow icon={<CheckSquare size={18} />} label="Incluir checkbox" sublabel={incluirCheckbox ? 'Caixinha pra marcar no papel' : 'Sem caixinha'} value={incluirCheckbox} onChange={() => setIncluirCheckbox((v) => !v)} />
           <ToggleRow icon={<Hash size={18} />} label="Mostrar número do pedido" sublabel={mostrarPedido ? 'Com os pedidos vinculados' : 'Sem os pedidos'} value={mostrarPedido} onChange={() => setMostrarPedido((v) => !v)} />
           <ToggleRow icon={<Tag size={18} />} label="Mostrar nome do modelo" sublabel={mostrarModelo ? 'Com o nome do produto' : 'Só a referência'} value={mostrarModelo} onChange={() => setMostrarModelo((v) => !v)} />
+          <ToggleRow icon={<Barcode size={18} />} label="Mostrar referência" sublabel={mostrarReferencia ? 'Código/SKU do produto' : 'Sem referência'} value={mostrarReferencia} onChange={() => setMostrarReferencia((v) => !v)} />
+          <ToggleRow icon={<Palette size={18} />} label="Mostrar cor" sublabel={mostrarCor ? 'Nome da cor/variação' : 'Sem cor'} value={mostrarCor} onChange={() => setMostrarCor((v) => !v)} />
 
           <button onClick={() => setPaperOpen((v) => !v)} data-guide-anchor="blingPicking.papelAbrir" className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
             <PagePreview pageSize={pageSize} orientation={orientation} isDarkMode={isDarkMode} />

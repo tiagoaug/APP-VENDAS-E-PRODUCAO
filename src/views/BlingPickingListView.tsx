@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Printer, PackageMinus, ImageOff, AlertTriangle, CheckSquare, Square, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Download, Printer, Share2, PackageMinus, ImageOff, AlertTriangle, CheckSquare, Square, Loader2, ChevronDown, ChevronUp, Footprints, X, ChevronRight } from 'lucide-react';
 import { Product, BlingOrder, BlingProductMapping, SaleType } from '../types';
-import { subscribeToBlingOrders, subscribeToBlingMappings, abaterEstoqueBling, BlingAbaterEstoqueItem } from '../services/blingService';
+import { subscribeToBlingOrders, subscribeToBlingMappings, abaterEstoqueBling, BlingAbaterEstoqueItem, saveBlingMapping, ignoreBlingProduct, subscribeToBlingIgnored, BlingRemoteProduct } from '../services/blingService';
+import { getMappingComponents } from '../utils/blingMappingComponents';
 import { toast } from '../utils/toast';
 import ConfirmDialog from '../components/ConfirmDialog';
 import BlingPickingExportModal from '../components/BlingPickingExportModal';
 import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
+// Reaproveita o MESMO card de busca/vínculo (com suporte a kit) usado em "Vincular Produtos" —
+// ver comentário em cima de PendingCard sobre por que um item pode ficar "sem vínculo" aqui sem
+// nunca aparecer como pendente lá (produto sumiu do catálogo do Bling, só o pedido ainda lembra).
+import { PendingCard } from './BlingProductMappingView';
 
 interface BlingPickingListViewProps {
   isDarkMode: boolean;
@@ -23,7 +28,14 @@ export interface PickingGroup {
   variationName: string;
   photoUrl?: string;
   totalQty: number;
-  contributions: { blingOrderId: string; blingProdutoId: string; quantidade: number; orderNumero: string; clienteNome: string }[];
+  // `quantidade` é a quantidade de PARES pra separar/mostrar (já multiplicada pela quantidade
+  // do componente do kit, ver getMappingComponents) — `quantidadeOriginalPedido` é a quantidade
+  // BRUTA do item do pedido no Bling, sem multiplicar, usada só na hora de montar o pedido de
+  // abater estoque (ver handleAbaterEstoque): um kit vira vários PickingGroup diferentes (um por
+  // produto do kit) que compartilham o MESMO (blingOrderId, blingProdutoId) — sem essa distinção,
+  // marcar mais de um desses grupos pra abater mandaria a MESMA linha do pedido mais de uma vez
+  // pro servidor, que já expande o kit inteiro sozinho a partir de um único envio.
+  contributions: { blingOrderId: string; blingProdutoId: string; quantidade: number; quantidadeOriginalPedido: number; orderNumero: string; clienteNome: string }[];
 }
 
 export interface PickingFlatRow {
@@ -56,62 +68,86 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [printDirectOpen, setPrintDirectOpen] = useState(false);
+  // Some da lista de "sem vínculo" na hora que o usuário toca em Ignorar, sem esperar a
+  // subscription do Firestore ecoar de volta — ver onIgnore do PendingCard mais abaixo.
+  const [locallyIgnoredIds, setLocallyIgnoredIds] = useState<Set<string>>(new Set());
+  // Escolha entre Imprimir e Compartilhar — o card único abaixo de "Abater Estoque" abre esse
+  // popup primeiro, em vez de já pular direto pro fluxo de impressão como fazia antes.
+  const [printOrShareOpen, setPrintOrShareOpen] = useState(false);
+  const [ignored, setIgnored] = useState<{ id: string }[]>([]);
 
   useEffect(() => subscribeToBlingOrders(setOrders), []);
   useEffect(() => subscribeToBlingMappings(setMappings), []);
+  useEffect(() => subscribeToBlingIgnored(setIgnored), []);
 
-  const { groups, flatRows, unmappedCount } = useMemo(() => {
+  const { groups, flatRows, unmappedCount, unmappedItems } = useMemo(() => {
     const mappingByBlingId = new Map(mappings.map((m) => [m.blingProdutoId, m]));
+    const ignoredIds = new Set(ignored.map((i) => i.id));
     const map = new Map<string, PickingGroup>();
     const flat: PickingFlatRow[] = [];
     let unmapped = 0;
+    // Deduplicado por blingProdutoId — pra oferecer "Vincular" direto aqui quando o produto já
+    // sumiu do catálogo do Bling (não aparece mais em fetchBlingProducts, logo nunca vira um
+    // card em "Vincular Produtos" > Pendentes), mas um pedido antigo ainda referencia ele.
+    const unmappedMap = new Map<string, { blingProdutoId: string; descricao: string }>();
 
     for (const order of orders) {
       if (order.status === 'REJEITADA') continue;
       for (const item of order.itens) {
         if (item.separado) continue;
+        if (ignoredIds.has(item.blingProdutoId)) continue;
         const mapping = mappingByBlingId.get(item.blingProdutoId);
         if (!mapping) {
           unmapped++;
+          if (!unmappedMap.has(item.blingProdutoId)) {
+            unmappedMap.set(item.blingProdutoId, { blingProdutoId: item.blingProdutoId, descricao: item.descricao });
+          }
           continue;
         }
-        const product = products.find((p) => p.id === mapping.productId);
-        const variation = product?.variations.find((v) => v.id === mapping.variationId);
-        const reference = product?.reference || '—';
-        const productName = product?.name || mapping.productName || '—';
-        const variationName = variation?.colorName || mapping.variationName || '—';
-        const photoUrl = variation?.photoUrl || product?.photoUrl;
+        // Vínculo simples = 1 componente (o próprio mapping); kit = vira vários, um por
+        // produto do kit — cada um gera sua PRÓPRIA linha/grupo de separação, multiplicando a
+        // quantidade do pedido pela quantidade daquele componente específico (ver
+        // BlingMappingComponent.quantidade).
+        for (const component of getMappingComponents(mapping)) {
+          const product = products.find((p) => p.id === component.productId);
+          const variation = product?.variations.find((v) => v.id === component.variationId);
+          const reference = product?.reference || '—';
+          const productName = product?.name || component.productName || '—';
+          const variationName = variation?.colorName || component.variationName || '—';
+          const photoUrl = variation?.photoUrl || product?.photoUrl;
+          const qty = item.quantidade * component.quantidade;
 
-        flat.push({
-          reference,
-          productName,
-          variationName,
-          size: mapping.size,
-          photoUrl,
-          quantidade: item.quantidade,
-          orderNumero: order.numero,
-        });
-
-        const key = `${mapping.productId}|${mapping.variationId}|${mapping.size || 'ATACADO'}`;
-        const contribution = { blingOrderId: order.id, blingProdutoId: item.blingProdutoId, quantidade: item.quantidade, orderNumero: order.numero, clienteNome: order.cliente };
-        const existing = map.get(key);
-        if (existing) {
-          existing.totalQty += item.quantidade;
-          existing.contributions.push(contribution);
-        } else {
-          map.set(key, {
-            key,
-            productId: mapping.productId,
-            variationId: mapping.variationId,
-            size: mapping.size,
-            saleType: mapping.saleType,
+          flat.push({
             reference,
             productName,
             variationName,
+            size: component.size,
             photoUrl,
-            totalQty: item.quantidade,
-            contributions: [contribution],
+            quantidade: qty,
+            orderNumero: order.numero,
           });
+
+          const key = `${component.productId}|${component.variationId}|${component.size || 'ATACADO'}`;
+          const contribution = { blingOrderId: order.id, blingProdutoId: item.blingProdutoId, quantidade: qty, quantidadeOriginalPedido: item.quantidade, orderNumero: order.numero, clienteNome: order.cliente };
+          const existing = map.get(key);
+          if (existing) {
+            existing.totalQty += qty;
+            existing.contributions.push(contribution);
+          } else {
+            map.set(key, {
+              key,
+              productId: component.productId,
+              variationId: component.variationId,
+              size: component.size,
+              saleType: mapping.saleType,
+              reference,
+              productName,
+              variationName,
+              photoUrl,
+              totalQty: qty,
+              contributions: [contribution],
+            });
+          }
         }
       }
     }
@@ -119,8 +155,12 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
     const list = Array.from(map.values()).sort(
       (a, b) => a.reference.localeCompare(b.reference) || a.variationName.localeCompare(b.variationName) || (a.size || '').localeCompare(b.size || '')
     );
-    return { groups: list, flatRows: flat, unmappedCount: unmapped };
-  }, [orders, mappings, products]);
+    return { groups: list, flatRows: flat, unmappedCount: unmapped, unmappedItems: Array.from(unmappedMap.values()) };
+  }, [orders, mappings, products, ignored]);
+
+  // Total de pares da lista inteira (soma de totalQty de todos os grupos, não só os marcados)
+  // — mostrado abaixo de "Abater Estoque" pra dar uma ideia do tamanho da separação de uma vez.
+  const totalPares = useMemo(() => groups.reduce((sum, g) => sum + g.totalQty, 0), [groups]);
 
   const allChecked = groups.length > 0 && groups.every((g) => checked.has(g.key));
 
@@ -146,9 +186,21 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
 
   const handleAbaterEstoque = async () => {
     setConfirmOpen(false);
-    const items: BlingAbaterEstoqueItem[] = groups
-      .filter((g) => checked.has(g.key))
-      .flatMap((g) => g.contributions.map((c) => ({ blingOrderId: c.blingOrderId, blingProdutoId: c.blingProdutoId, quantidade: c.quantidade })));
+    // Dedupe por (pedido, item do Bling): um kit vira vários PickingGroup (um por produto do
+    // kit) que compartilham a MESMA linha de pedido — se o usuário marcar mais de um desses
+    // grupos, sem isso a mesma linha seria enviada mais de uma vez, e o servidor (que já expande
+    // o kit inteiro sozinho a partir de UM envio, ver functions/src/bling/picking.ts) abateria
+    // em dobro. Usa quantidadeOriginalPedido (bruta, sem multiplicar pelo componente do kit).
+    const seen = new Set<string>();
+    const items: BlingAbaterEstoqueItem[] = [];
+    for (const g of groups.filter((gr) => checked.has(gr.key))) {
+      for (const c of g.contributions) {
+        const dedupeKey = `${c.blingOrderId}|${c.blingProdutoId}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        items.push({ blingOrderId: c.blingOrderId, blingProdutoId: c.blingProdutoId, quantidade: c.quantidadeOriginalPedido });
+      }
+    }
     if (items.length === 0) return;
 
     setAbating(true);
@@ -194,12 +246,56 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
         startInPrintChoice={printDirectOpen}
       />
 
-      {unmappedCount > 0 && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
-          <AlertTriangle size={15} className="shrink-0" />
-          <p className="text-[11px] font-bold leading-snug">{unmappedCount} item(ns) sem vínculo de produto não entraram na lista — vincule em "Vincular Produtos" primeiro.</p>
+      {unmappedCount > 0 && (() => {
+        const visibleUnmappedItems = unmappedItems.filter((u) => !locallyIgnoredIds.has(u.blingProdutoId));
+        return (
+        <div className="flex flex-col gap-2 p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20">
+          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+            <AlertTriangle size={15} className="shrink-0" />
+            <p className="text-[11px] font-bold leading-snug">
+              {unmappedCount} item(ns) sem vínculo de produto não entraram na lista.
+              {visibleUnmappedItems.length > 0 && ' Pode não aparecer em "Vincular Produtos" se o produto já saiu do catálogo do Bling — vincule direto aqui:'}
+            </p>
+          </div>
+          {visibleUnmappedItems.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {visibleUnmappedItems.map((u) => (
+                <PendingCard
+                  key={u.blingProdutoId}
+                  bp={{ id: u.blingProdutoId, nome: u.descricao } as BlingRemoteProduct}
+                  entry={null}
+                  origin="NENHUM"
+                  isDarkMode={isDarkMode}
+                  products={products}
+                  onConfirm={async (mapping) => {
+                    try {
+                      await saveBlingMapping(mapping);
+                      toast.show('Produto vinculado.');
+                    } catch (e: any) {
+                      toast.show('Erro ao salvar vínculo: ' + (e.message || e));
+                    }
+                  }}
+                  onIgnore={async () => {
+                    // Some da tela na hora, sem esperar a subscription do Firestore ecoar de
+                    // volta (evita a sensação de "não funcionou" se a rede demorar um pouco).
+                    setLocallyIgnoredIds((prev) => new Set(prev).add(u.blingProdutoId));
+                    try {
+                      await ignoreBlingProduct({ id: u.blingProdutoId, blingNome: u.descricao, ignoredAt: Date.now() });
+                      toast.show('Ignorado — só aparece de novo em "Vincular Produtos" se você desfizer lá.');
+                    } catch (e: any) {
+                      // Reverte o otimismo: já que a gravação falhou de verdade, mantém visível
+                      // pra não "sumir" um item que na prática continua sem vínculo nenhum.
+                      setLocallyIgnoredIds((prev) => { const next = new Set(prev); next.delete(u.blingProdutoId); return next; });
+                      toast.show('Erro ao ignorar: ' + (e.message || e));
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       <div className="flex items-center gap-2">
         <button
@@ -229,19 +325,70 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
         {abating ? 'Abatendo...' : `Abater Estoque (${checkedCount})`}
       </button>
 
+      {groups.length > 0 && (
+        <div className={`flex items-center justify-center gap-2 -mt-2 py-1 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          <Footprints size={13} />
+          {totalPares} {totalPares === 1 ? 'par' : 'pares'} no total da lista
+        </div>
+      )}
+
       <button
-        onClick={() => setPrintDirectOpen(true)}
+        onClick={() => setPrintOrShareOpen(true)}
         disabled={groups.length === 0}
+        data-guide-anchor="blingPicking.imprimirOuCompartilharAbrir"
         className={`w-full p-4 rounded-2xl flex items-center gap-3 text-left transition-all ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'} disabled:opacity-40`}
       >
         <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-slate-900 dark:bg-white text-white dark:text-slate-900">
           <Printer size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className={`text-xs font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Imprimir Lista de Separação</p>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{isAblemarkPlatform() ? 'Impressão nativa ou etiquetas na Ablemark' : 'Impressão nativa'}</p>
+          <p className={`text-xs font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Imprimir ou Compartilhar Lista de Separação</p>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{isAblemarkPlatform() ? 'Impressão nativa, Ablemark ou compartilhar' : 'Impressão nativa ou compartilhar'}</p>
         </div>
+        <ChevronRight size={16} className="text-slate-400 shrink-0" />
       </button>
+
+      {printOrShareOpen && (
+        <div className="fixed inset-0 z-[90000] flex items-center justify-center px-4 bg-black/50 backdrop-blur-sm" onClick={() => setPrintOrShareOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-[2rem] p-5 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+          >
+            <div className="flex items-center justify-between px-1">
+              <p className="text-sm font-black uppercase tracking-widest">Lista de Separação</p>
+              <button onClick={() => setPrintOrShareOpen(false)} aria-label="Fechar"><X size={18} className="text-slate-400" /></button>
+            </div>
+            <button
+              onClick={() => { setPrintOrShareOpen(false); setPrintDirectOpen(true); }}
+              data-guide-anchor="blingPicking.escolherImprimir"
+              className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+            >
+              <div className="flex items-center gap-3">
+                <Printer size={18} className="text-indigo-500" />
+                <div className="text-left">
+                  <p className="text-xs font-black">Imprimir</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Impressão nativa{isAblemarkPlatform() ? ' ou térmica Ablemark' : ''}</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-slate-400" />
+            </button>
+            <button
+              onClick={() => { setPrintOrShareOpen(false); setExportOpen(true); }}
+              data-guide-anchor="blingPicking.escolherCompartilhar"
+              className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+            >
+              <div className="flex items-center gap-3">
+                <Share2 size={18} className="text-indigo-500" />
+                <div className="text-left">
+                  <p className="text-xs font-black">Compartilhar</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">JPG ou PDF, com opções de atributos</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-slate-400" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {groups.length === 0 && (
         <div className={`p-10 rounded-[2.5rem] border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-300'}`}>

@@ -1267,16 +1267,39 @@ export type BlingConnection = {
 
 export type BlingMatchOrigin = 'AUTOMATICO_GTIN' | 'AUTOMATICO_SKU' | 'MANUAL';
 
-export type BlingProductMapping = {
-  id: string;
-  blingProdutoId: string;
-  blingSku?: string;
-  blingNome?: string; // denormalizado, só exibição
+// Um produto/cor/tamanho dentro de um vínculo "kit" (ver BlingProductMapping.components) — cada
+// unidade vendida do item do Bling abate `quantidade` unidades DESTE componente específico
+// (ex.: "Kit 02 Pares" com 1 par Preto/Dourado + 1 par Preto/Branco = dois componentes,
+// quantidade 1 cada; um kit de 3 pares do MESMO produto seria um componente só, quantidade 3).
+export type BlingMappingComponent = {
   productId: string;
   productName?: string; // denormalizado, só exibição
   variationId: string;
   variationName?: string; // denormalizado, só exibição
   size?: string; // ausente = mapeado como ATACADO (stock['WHOLESALE'])
+  quantidade: number;
+};
+
+export type BlingProductMapping = {
+  id: string;
+  blingProdutoId: string;
+  blingSku?: string;
+  blingNome?: string; // denormalizado, só exibição
+  // productId/variationId/size abaixo continuam sendo o vínculo "simples" (1 produto), usado
+  // sempre que `components` estiver ausente — mantém 100% de compatibilidade com todo vínculo
+  // já existente, sem precisar migrar dado nenhum. Quando o vínculo é um KIT (mais de um
+  // produto), `components` é a fonte de verdade e productId/variationId/size aqui viram só um
+  // espelho do PRIMEIRO componente (ver saveBlingMapping em blingService.ts), útil só pra
+  // qualquer tela antiga que ainda não tenha sido atualizada pra olhar `components`.
+  productId: string;
+  productName?: string; // denormalizado, só exibição
+  variationId: string;
+  variationName?: string; // denormalizado, só exibição
+  size?: string; // ausente = mapeado como ATACADO (stock['WHOLESALE'])
+  // Presente (2+ itens) = vínculo tipo "kit", ver BlingMappingComponent acima. Use sempre
+  // getMappingComponents(mapping) (src/utils/blingMappingComponents.ts) em vez de ler
+  // productId/variationId/size direto, pra já vir pronto pro caso de kit.
+  components?: BlingMappingComponent[];
   saleType: SaleType;
   origem: BlingMatchOrigin;
   createdAt: number;

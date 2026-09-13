@@ -4,6 +4,7 @@ import { Search, ImageOff, PackageX, Ticket, Boxes, Loader2, ChevronLeft, Chevro
 import { Product, Variation, SaleType, BlingDevolucao, BlingProductMapping } from '../types';
 import { subscribeToBlingDevolucoes, subscribeToBlingMappings, registerBlingDevolucao, registerNotesOnlyReturn } from '../services/blingService';
 import { productHasSaleType } from '../utils/stockPools';
+import { getMappingComponents } from '../utils/blingMappingComponents';
 import { toast } from '../utils/toast';
 
 interface BlingDevolucoesViewProps {
@@ -153,7 +154,7 @@ export default function BlingDevolucoesView({ isDarkMode, products, onBack }: Bl
 
   // Só modelos de varejo vinculados ao Bling — mesmo filtro já usado em Estoque Bling.
   const linkedRetailProducts = useMemo(() => {
-    const linkedIds = new Set(mappings.map((m) => m.productId));
+    const linkedIds = new Set(mappings.flatMap((m) => getMappingComponents(m).map((c) => c.productId)));
     return products.filter((p) => linkedIds.has(p.id) && productHasSaleType(p, SaleType.RETAIL));
   }, [products, mappings]);
 

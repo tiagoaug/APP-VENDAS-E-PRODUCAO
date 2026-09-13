@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, CheckCircle2, XCircle, Link2, Search, Unlink, Sparkles, ImageOff, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { RefreshCw, CheckCircle2, XCircle, Link2, Search, Unlink, Sparkles, ImageOff, ChevronDown, ChevronUp, AlertTriangle, Plus, Trash2, Package } from 'lucide-react';
 import { Product, SaleType } from '../types';
 import {
   fetchBlingProducts,
@@ -11,10 +11,12 @@ import {
   ignoreBlingProduct,
   unignoreBlingProduct,
 } from '../services/blingService';
-import { BlingProductMapping, BlingIgnoredProduct } from '../types';
+import { BlingProductMapping, BlingIgnoredProduct, BlingMappingComponent } from '../types';
+import { getMappingComponents, isKitMapping } from '../utils/blingMappingComponents';
 import { buildLocalSkuIndex, suggestMatch, LocalSkuEntry } from '../utils/blingReconciliation';
 import { generateId } from '../utils/id';
 import { toast } from '../utils/toast';
+import Modal from '../components/Modal';
 
 interface BlingProductMappingViewProps {
   isDarkMode: boolean;
@@ -56,7 +58,13 @@ function Thumb({ src, size = 44, isDarkMode }: { src?: string; size?: number; is
   );
 }
 
-function PendingCard({
+// Exportado pra ser reaproveitado fora desta tela — ver BlingPickingListView.tsx, que precisa
+// linkar um item "órfão": um blingProdutoId que aparece num PEDIDO já sincronizado mas sumiu (ou
+// nunca esteve) no catálogo retornado por fetchBlingProducts() (produto excluído/inativado no
+// Bling depois do pedido, por exemplo) — por isso nunca aparece em "Pendentes" aqui (que só lista
+// o catálogo atual), mas ainda fica "sem vínculo" na Lista de Separação pra sempre, sem essa
+// segunda porta de entrada. Só precisa de um BlingRemoteProduct sintético (id + nome bastam).
+export function PendingCard({
   bp,
   entry,
   origin,
@@ -65,7 +73,7 @@ function PendingCard({
   products,
   onConfirm,
   onIgnore,
-  defaultProductId,
+  defaultProductIds,
 }: {
   bp: BlingRemoteProduct;
   entry: LocalSkuEntry | null;
@@ -75,25 +83,37 @@ function PendingCard({
   products: Product[];
   onConfirm: (mapping: BlingProductMapping) => void;
   onIgnore: () => void;
-  defaultProductId?: string; // modelo já escolhido no "Produto Pai" do grupo — pré-preenche a variação
+  // Modelo(s) já escolhido(s) no "Produto Pai" do grupo. O primeiro pré-preenche a variação
+  // (com tentativa de casar cor/tamanho pelo nome do Bling, ver useEffect abaixo) — os demais
+  // (grupo tipo kit, 2+ modelos) viram um atalho de 1 toque logo acima da busca, já que o nome
+  // do Bling combinando "Cor:A e B" não dá pra separar automaticamente com segurança por produto.
+  defaultProductIds?: string[];
 }) {
-  const [searchOpen, setSearchOpen] = useState(!!defaultProductId);
+  // Não abre o popup sozinho mesmo com modelo padrão do grupo já definido — só pré-preenche o
+  // modelo (ver useEffect abaixo), o popup abre com um toque no card, igual todo o resto.
+  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [pickedProductId, setPickedProductId] = useState(defaultProductId || '');
+  const [pickedProductId, setPickedProductId] = useState(defaultProductIds?.[0] || '');
   const [pickedVariationId, setPickedVariationId] = useState('');
   const [pickedSaleType, setPickedSaleType] = useState<SaleType>(SaleType.RETAIL);
   const [pickedSize, setPickedSize] = useState('');
+  const [pickedQuantidade, setPickedQuantidade] = useState(1);
+  // Kit — mais de um produto vinculado ao MESMO item do Bling (ex.: "Kit 02 Pares" com cores
+  // diferentes). Cada "Adicionar Produto" empurra o slot atual pra cá e libera a busca de novo
+  // pro próximo produto; "Vincular"/"Confirmar Vínculo" junta isso tudo com o slot atual (se
+  // tiver algo preenchido nele) na hora de montar o mapping final.
+  const [addedComponents, setAddedComponents] = useState<BlingMappingComponent[]>([]);
 
   // O modelo do grupo pode ser escolhido DEPOIS que essa variação já montou (usuário abre o
   // "Produto Pai" antes de expandir as variações) — sincroniza sem sobrescrever uma escolha
   // manual que o usuário já tenha feito pra essa variação específica.
   useEffect(() => {
-    if (defaultProductId && !pickedProductId) {
-      setPickedProductId(defaultProductId);
-      setSearchOpen(true);
+    const first = defaultProductIds?.[0];
+    if (first && !pickedProductId) {
+      setPickedProductId(first);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultProductId]);
+  }, [defaultProductIds?.[0]]);
 
   const pickedProduct = useMemo(() => products.find((p) => p.id === pickedProductId) || null, [products, pickedProductId]);
   const pickedVariation = useMemo(() => pickedProduct?.variations.find((v) => v.id === pickedVariationId) || null, [pickedProduct, pickedVariationId]);
@@ -145,22 +165,65 @@ function PendingCard({
     onConfirm(mapping);
   };
 
+  // Slot atual (ainda não empurrado pra `addedComponents`), já como BlingMappingComponent — só
+  // não-null quando cor + (tamanho, se for varejo) já foram escolhidos.
+  const currentComponent: BlingMappingComponent | null = readyToConfirm && pickedProduct && pickedVariation
+    ? {
+        productId: pickedProduct.id,
+        productName: pickedProduct.name,
+        variationId: pickedVariation.id,
+        variationName: pickedVariation.colorName,
+        size: pickedSaleType === SaleType.RETAIL ? pickedSize : undefined,
+        quantidade: Math.max(1, Math.round(pickedQuantidade) || 1),
+      }
+    : null;
+
+  const resetSlot = () => {
+    setPickedProductId('');
+    setPickedVariationId('');
+    setPickedSaleType(SaleType.RETAIL);
+    setPickedSize('');
+    setPickedQuantidade(1);
+    setQuery('');
+  };
+
+  // "+ Adicionar Produto" — empurra o slot atual pra lista do kit e libera a busca de novo pro
+  // próximo produto (ex.: depois de escolher o par Preto/Dourado, escolher o Preto/Branco).
+  const handleAddComponent = () => {
+    if (!currentComponent) return;
+    setAddedComponents((prev) => [...prev, currentComponent]);
+    resetSlot();
+  };
+
+  const handleRemoveAddedComponent = (idx: number) => {
+    setAddedComponents((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const confirmManual = () => {
-    if (!pickedProduct || !pickedVariation) return;
-    if (pickedSaleType === SaleType.RETAIL && !pickedSize) {
-      toast.show('Selecione o tamanho.');
+    const allComponents = [...addedComponents, ...(currentComponent ? [currentComponent] : [])];
+    if (allComponents.length === 0) {
+      if (pickedProduct && pickedSaleType === SaleType.RETAIL && !pickedSize) {
+        toast.show('Selecione o tamanho.');
+      } else {
+        toast.show('Selecione ao menos um produto.');
+      }
       return;
     }
+    const first = allComponents[0];
     const mapping: BlingProductMapping = {
       id: generateId(),
       blingProdutoId: bp.id,
       blingSku: bp.codigo,
       blingNome: bp.nome,
-      productId: pickedProduct.id,
-      productName: pickedProduct.name,
-      variationId: pickedVariation.id,
-      variationName: pickedVariation.colorName,
-      size: pickedSaleType === SaleType.RETAIL ? pickedSize : undefined,
+      productId: first.productId,
+      productName: first.productName,
+      variationId: first.variationId,
+      variationName: first.variationName,
+      size: first.size,
+      // components só quando é kit de verdade (2+) — ausente aqui é o que faz o resto do app
+      // (Lista de Separação, Estoque Bling etc.) tratar como vínculo simples, sem precisar
+      // migrar nenhum mapping antigo.
+      components: allComponents.length > 1 ? allComponents : undefined,
       saleType: pickedSaleType,
       origem: 'MANUAL',
       createdAt: Date.now(),
@@ -169,12 +232,16 @@ function PendingCard({
   };
 
   return (
-    <div className={`p-5 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+    <>
+    <div
+      onClick={() => setSearchOpen(true)}
+      className={`p-5 rounded-[2rem] border shadow-sm flex flex-col gap-4 text-left transition-all cursor-pointer hover:border-sky-300 dark:hover:border-sky-700 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+    >
       <div className="flex items-center gap-3 min-w-0">
         {/* Prioriza a foto do PRÓPRIO cadastro (quando já existe sugestão de vínculo) sobre a
             foto que vem do Bling — é a mesma foto que o usuário já reconhece do seu catálogo. */}
         <Thumb src={(entry && (entry.variation.photoUrl || entry.product.photoUrl)) || bp.imagemUrl} isDarkMode={isDarkMode} />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className={`text-sm font-black tracking-tight break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{bp.nome}</p>
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">
             {bp.codigo ? `SKU ${bp.codigo}` : 'Sem SKU'}{bp.gtin ? ` · GTIN ${bp.gtin}` : ''}
@@ -183,7 +250,7 @@ function PendingCard({
       </div>
 
       {entry && origin !== 'NENHUM' && (
-        <div className={`p-3 rounded-2xl flex items-center gap-3 ${origin === 'AUTOMATICO_SKU' ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-amber-50 dark:bg-amber-900/20'}`}>
+        <div onClick={(e) => e.stopPropagation()} className={`p-3 rounded-2xl flex items-center gap-3 ${origin === 'AUTOMATICO_SKU' ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-amber-50 dark:bg-amber-900/20'}`}>
           <Thumb src={entry.variation.photoUrl || entry.product.photoUrl} size={36} isDarkMode={isDarkMode} />
           <div className="min-w-0 flex-1">
             <p className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${origin === 'AUTOMATICO_SKU' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
@@ -203,27 +270,93 @@ function PendingCard({
         </div>
       )}
 
-      {!searchOpen ? (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSearchOpen(true)}
-            data-guide-anchor="blingMapping.buscarAbrir"
-            className={`flex-1 h-10 rounded-xl border-2 border-dashed font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 ${isDarkMode ? 'bg-sky-900/20 border-sky-700/40 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600'}`}
-          >
-            <Search size={13} /> Buscar produto
-          </button>
-          <button
-            onClick={onIgnore}
-            title="Ignorar"
-            aria-label="Ignorar produto"
-            data-guide-anchor="blingMapping.ignorar"
-            className="h-10 w-10 rounded-xl flex items-center justify-center text-slate-300 hover:text-rose-500 shrink-0"
-          >
-            <XCircle size={18} />
-          </button>
+      <div className="flex items-center gap-2">
+        <div
+          data-guide-anchor="blingMapping.buscarAbrir"
+          className={`flex-1 h-10 rounded-xl border-2 border-dashed font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 ${isDarkMode ? 'bg-sky-900/20 border-sky-700/40 text-sky-400' : 'bg-sky-50 border-sky-200 text-sky-600'}`}
+        >
+          <Search size={13} /> Buscar produto
         </div>
-      ) : (
+        <button
+          onClick={(e) => { e.stopPropagation(); onIgnore(); }}
+          title="Ignorar"
+          aria-label="Ignorar produto"
+          data-guide-anchor="blingMapping.ignorar"
+          className={`h-10 px-3 rounded-xl flex items-center gap-1.5 font-black text-[10px] uppercase tracking-widest shrink-0 ${isDarkMode ? 'bg-rose-900/20 text-rose-400' : 'bg-rose-50 text-rose-600'}`}
+        >
+          <XCircle size={15} /> Ignorar
+        </button>
+      </div>
+    </div>
+
+    <Modal
+      isOpen={searchOpen}
+      onClose={() => { setSearchOpen(false); setQuery(''); resetSlot(); setAddedComponents([]); }}
+      title="Vincular Produto"
+      icon={<Search size={18} />}
+      maxWidth="max-w-lg"
+      zIndex={85000}
+    >
         <div className="flex flex-col gap-2">
+          {/* Nome/SKU do item do Bling sendo vinculado agora — fica fixo no topo do popup pra não
+              perder de vista QUAL item é esse enquanto rola pra preencher o resto do formulário
+              (o título do Modal é só "Vincular Produto", genérico demais sozinho). */}
+          <div className={`flex items-center gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
+            <Thumb src={(entry && (entry.variation.photoUrl || entry.product.photoUrl)) || bp.imagemUrl} size={36} isDarkMode={isDarkMode} />
+            <div className="min-w-0">
+              <p className={`text-xs font-black tracking-tight break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{bp.nome}</p>
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate">
+                {bp.codigo ? `SKU ${bp.codigo}` : 'Sem SKU'}{bp.gtin ? ` · GTIN ${bp.gtin}` : ''}
+              </p>
+            </div>
+          </div>
+
+          {/* Modelos extras vindos do "Produto Pai" (grupo tipo kit) que ainda não foram usados
+              nesta variação — 1 toque já seleciona o modelo, só falta escolher cor/tamanho. */}
+          {(() => {
+            const usedIds = new Set([pickedProductId, ...addedComponents.map((c) => c.productId)].filter(Boolean));
+            const extraDefaults = (defaultProductIds || []).slice(1).filter((id) => !usedIds.has(id));
+            if (extraDefaults.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1.5">
+                {extraDefaults.map((id) => {
+                  const p = products.find((pr) => pr.id === id);
+                  if (!p) return null;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => { setPickedProductId(id); setPickedVariationId(''); setPickedSize(''); setQuery(''); }}
+                      data-guide-anchor="blingMapping.usarModeloDoKit"
+                      className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isDarkMode ? 'bg-amber-900/30 text-amber-400' : 'bg-amber-50 text-amber-700'}`}
+                    >
+                      <Package size={11} /> Usar {p.reference}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Kit em montagem — produtos já adicionados a este mesmo item do Bling. Some do vínculo
+              final se ficar só com 1 (vira vínculo simples, sem "components"). */}
+          {addedComponents.length > 0 && (
+            <div className={`p-3 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-indigo-900/20 border border-indigo-800/40' : 'bg-indigo-50 border border-indigo-100'}`}>
+              <p className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                <Package size={12} /> Kit — {addedComponents.length} produto(s) adicionado(s)
+              </p>
+              {addedComponents.map((c, idx) => (
+                <div key={idx} className="flex items-center justify-between gap-2 px-1">
+                  <p className={`text-[11px] font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {c.quantidade}x {c.productName} · {c.variationName}{c.size ? ` · ${c.size}` : ' · Atacado'}
+                  </p>
+                  <button onClick={() => handleRemoveAddedComponent(idx)} data-guide-anchor="blingMapping.kitRemoverComponente" className="shrink-0 p-1 text-indigo-400 hover:text-rose-500">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <input
             autoFocus
             value={query}
@@ -305,15 +438,42 @@ function PendingCard({
           )}
 
           {readyToConfirm && (
+            <div className="flex items-center gap-3">
+              <label className={`text-[10px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Quantidade</label>
+              <input
+                type="number"
+                min={1}
+                value={pickedQuantidade}
+                onChange={(e) => setPickedQuantidade(Math.max(1, Math.round(Number(e.target.value)) || 1))}
+                data-guide-anchor="blingMapping.quantidadeComponente"
+                className={`w-20 h-10 px-3 rounded-xl text-sm font-black outline-none border ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+              />
+              <p className="text-[9px] text-slate-400 font-bold leading-snug flex-1">
+                {addedComponents.length > 0 || pickedQuantidade > 1 ? 'Unidades deste produto por item vendido no Bling' : 'Normalmente 1 — só muda se o item do Bling for um kit'}
+              </p>
+            </div>
+          )}
+
+          {readyToConfirm && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 animate-pulse">
               <Sparkles size={13} className="shrink-0" />
               <p className="text-[10px] font-black uppercase tracking-widest">Preenchido — confira e confirme pra salvar</p>
             </div>
           )}
 
+          {readyToConfirm && (
+            <button
+              onClick={handleAddComponent}
+              data-guide-anchor="blingMapping.adicionarProdutoAoKit"
+              className={`w-full h-10 rounded-xl border-2 border-dashed font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 ${isDarkMode ? 'bg-slate-950/40 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+            >
+              <Plus size={13} /> Adicionar mais um produto a este vínculo (kit)
+            </button>
+          )}
+
           <div className="flex items-center gap-2 mt-1">
             <button
-              onClick={() => { setSearchOpen(false); setQuery(''); setPickedProductId(''); }}
+              onClick={() => { setSearchOpen(false); setQuery(''); resetSlot(); setAddedComponents([]); }}
               data-guide-anchor="blingMapping.cancelar"
               className="flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400"
             >
@@ -321,16 +481,16 @@ function PendingCard({
             </button>
             <button
               onClick={confirmManual}
-              disabled={!pickedVariation}
+              disabled={!readyToConfirm && addedComponents.length === 0}
               data-guide-anchor="blingMapping.confirmarManual"
               className={`flex-1 h-10 rounded-xl bg-indigo-600 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${readyToConfirm ? 'ring-4 ring-amber-300/60 dark:ring-amber-500/40' : ''}`}
             >
-              <Link2 size={13} /> Vincular
+              <Link2 size={13} /> {addedComponents.length > 0 ? `Confirmar Vínculo (${addedComponents.length + (readyToConfirm ? 1 : 0)} itens)` : 'Vincular'}
             </button>
           </div>
         </div>
-      )}
-    </div>
+    </Modal>
+    </>
   );
 }
 
@@ -356,20 +516,65 @@ function LinkedRow({
   const linkedProduct = products.find((p) => p.id === mapping.productId);
   const linkedVariation = linkedProduct?.variations.find((v) => v.id === mapping.variationId);
   const thumb = linkedVariation?.photoUrl || linkedProduct?.photoUrl || imagemUrl;
+  const components = getMappingComponents(mapping);
+  const isKit = isKitMapping(mapping);
+  // Uma miniatura por produto do kit (em vez de só a do primeiro) — mesma resolução de foto já
+  // usada em LinkedRow/localThumbForMapping (variação > produto).
+  const kitThumbs = isKit
+    ? components.map((c) => {
+        const p = products.find((pr) => pr.id === c.productId);
+        const v = p?.variations.find((vr) => vr.id === c.variationId);
+        return v?.photoUrl || p?.photoUrl;
+      })
+    : [];
 
   return (
-    <div className={`p-4 rounded-[1.5rem] border-2 flex items-center gap-3 ${isDarkMode ? 'bg-emerald-900/10 border-emerald-800/40' : 'bg-emerald-50 border-emerald-200'}`}>
-      <div className="relative shrink-0">
-        <Thumb src={thumb} size={40} isDarkMode={isDarkMode} />
-        <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white dark:border-slate-900">
-          <CheckCircle2 size={11} />
+    <div className={`rounded-[1.5rem] border-2 flex items-center gap-3 ${isKit ? 'p-5' : 'p-4'} ${isDarkMode ? 'bg-emerald-900/10 border-emerald-800/40' : 'bg-emerald-50 border-emerald-200'}`}>
+      {isKit ? (
+        <div className="relative shrink-0">
+          <div className="flex flex-wrap gap-1.5 max-w-[104px]">
+            {kitThumbs.map((src, idx) => (
+              src ? (
+                <img key={idx} src={src} className="w-10 h-10 rounded-lg object-cover" alt="" />
+              ) : (
+                <div key={idx} className={`w-10 h-10 rounded-lg flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'}`}>
+                  <ImageOff size={16} />
+                </div>
+              )
+            ))}
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white dark:border-slate-900">
+            <CheckCircle2 size={11} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="relative shrink-0">
+          <Thumb src={thumb} size={40} isDarkMode={isDarkMode} />
+          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white dark:border-slate-900">
+            <CheckCircle2 size={11} />
+          </div>
+        </div>
+      )}
       <div className="min-w-0 flex-1">
-        <p className={`text-xs font-black tracking-tight break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
-        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider break-words">
-          → {mapping.productName} · {mapping.variationName}{mapping.size ? ` · ${mapping.size}` : ' · Atacado'}
+        <p className={`text-xs font-black tracking-tight break-words flex items-center gap-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          {label}
+          {isKit && (
+            <span title="Kit — mais de um produto" className="shrink-0 inline-flex">
+              <Package size={12} className="text-indigo-500" />
+            </span>
+          )}
         </p>
+        {isKit ? (
+          components.map((c, idx) => (
+            <p key={idx} className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider break-words">
+              → {c.quantidade}x {c.productName} · {c.variationName}{c.size ? ` · ${c.size}` : ' · Atacado'}
+            </p>
+          ))
+        ) : (
+          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider break-words">
+            → {mapping.productName} · {mapping.variationName}{mapping.size ? ` · ${mapping.size}` : ' · Atacado'}
+          </p>
+        )}
       </div>
       <button onClick={onUnlink} data-guide-anchor="blingMapping.desvincular" className="p-2 text-emerald-400 hover:text-rose-500 shrink-0" title="Desvincular" aria-label="Desvincular">
         <Unlink size={16} />
@@ -392,11 +597,15 @@ function ParentModelPicker({
   bp: BlingRemoteProduct;
   isDarkMode: boolean;
   products: Product[];
-  onLinkModel: (productId: string) => void;
+  onLinkModel: (productIds: string[]) => void;
   onIgnore: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [pickedProductId, setPickedProductId] = useState('');
+  // Mais de um modelo pra grupos que são KIT (ex.: "Kit 02 Pares" combinando dois produtos
+  // diferentes) — cada modelo aqui vira um `defaultProductIds` pra pré-selecionar nas variações
+  // abaixo, uma de cada vez (o usuário ainda escolhe cor/tamanho por variação).
+  const [pickedModels, setPickedModels] = useState<string[]>([]);
 
   const pickedProduct = useMemo(() => products.find((p) => p.id === pickedProductId) || null, [products, pickedProductId]);
   const filteredProducts = useMemo(() => {
@@ -404,6 +613,15 @@ function ParentModelPicker({
     const q = query.trim().toLowerCase();
     return products.filter((p) => p.reference.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)).slice(0, 8);
   }, [products, query]);
+
+  const addCurrentModel = () => {
+    if (!pickedProductId) return;
+    setPickedModels((prev) => (prev.includes(pickedProductId) ? prev : [...prev, pickedProductId]));
+    setPickedProductId('');
+    setQuery('');
+  };
+
+  const removeModel = (id: string) => setPickedModels((prev) => prev.filter((m) => m !== id));
 
   return (
     <div className={`p-5 rounded-[2rem] border-2 shadow-sm flex flex-col gap-4 ${isDarkMode ? 'bg-amber-900/20 border-amber-700/40' : 'bg-amber-50 border-amber-200'}`}>
@@ -416,6 +634,23 @@ function ParentModelPicker({
           </p>
         </div>
       </div>
+
+      {pickedModels.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[9px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
+            {pickedModels.length} modelo(s) — este grupo é um kit
+          </p>
+          {pickedModels.map((id) => {
+            const p = products.find((pr) => pr.id === id);
+            return (
+              <div key={id} className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-950/40' : 'bg-white'}`}>
+                <span className="text-xs font-bold truncate">{p ? `${p.reference} · ${p.name}` : id}</span>
+                <button onClick={() => removeModel(id)} className="shrink-0 p-1 text-amber-500 hover:text-rose-500"><Trash2 size={13} /></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <input
         value={query}
@@ -456,6 +691,16 @@ function ParentModelPicker({
         </div>
       )}
 
+      {pickedProductId && (
+        <button
+          onClick={addCurrentModel}
+          data-guide-anchor="blingMapping.adicionarModeloAoGrupo"
+          className={`w-full h-10 rounded-xl border-2 border-dashed font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 ${isDarkMode ? 'bg-slate-950/40 border-amber-700/40 text-amber-400' : 'bg-white border-amber-200 text-amber-600'}`}
+        >
+          <Plus size={13} /> Adicionar mais um modelo (kit)
+        </button>
+      )}
+
       <div className="flex items-center gap-2">
         <button
           onClick={onIgnore}
@@ -465,12 +710,15 @@ function ParentModelPicker({
           <XCircle size={14} /> Ignorar
         </button>
         <button
-          onClick={() => pickedProductId && onLinkModel(pickedProductId)}
-          disabled={!pickedProductId}
+          onClick={() => {
+            const all = pickedProductId ? [...pickedModels, pickedProductId] : pickedModels;
+            if (all.length > 0) onLinkModel(all);
+          }}
+          disabled={pickedModels.length === 0 && !pickedProductId}
           data-guide-anchor="blingMapping.vincularModelo"
           className="flex-1 h-10 rounded-xl bg-indigo-600 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5"
         >
-          <Link2 size={13} /> Vincular Modelo ao Grupo
+          <Link2 size={13} /> Vincular Modelo{(pickedModels.length + (pickedProductId ? 1 : 0)) > 1 ? 's' : ''} ao Grupo
         </button>
       </div>
     </div>
@@ -524,7 +772,7 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
 
   // Modelo local escolhido pra cada grupo (via "Produto Pai") — pré-preenche as variações do
   // grupo, mesmo depois que o produto pai some da lista (foi ignorado, ver ParentModelPicker).
-  const [groupModelId, setGroupModelId] = useState<Record<string, string>>({});
+  const [groupModelId, setGroupModelId] = useState<Record<string, string[]>>({});
 
   // Agrupa produtos (variação = mesmo produtoPaiId no Bling) ignorando só os já IGNORADOS —
   // itens já VINCULADOS continuam aparecendo dentro do grupo (com feedback verde, ver
@@ -733,8 +981,8 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
                             bp={group.parent}
                             isDarkMode={isDarkMode}
                             products={products}
-                            onLinkModel={(productId) => {
-                              setGroupModelId((prev) => ({ ...prev, [group.parentId]: productId }));
+                            onLinkModel={(productIds) => {
+                              setGroupModelId((prev) => ({ ...prev, [group.parentId]: productIds }));
                               handleIgnore(group.parent!);
                             }}
                             onIgnore={() => handleIgnore(group.parent!)}
@@ -744,7 +992,7 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
                     )}
                     <div className="pt-2">
                       <p className="px-1 pb-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400">Variações</p>
-                      {!groupModelId[group.parentId] && !allLinked && (
+                      {!groupModelId[group.parentId]?.length && !allLinked && (
                         <div className="mb-3 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
                           <AlertTriangle size={14} className="shrink-0" />
                           <p className="text-[10px] font-bold leading-snug">Preencha o modelo no <span className="font-black">Produto Pai</span> acima primeiro — as variações abaixo já vêm com cor/tamanho pré-preenchidos automaticamente.</p>
@@ -778,7 +1026,7 @@ export default function BlingProductMappingView({ isDarkMode, products }: BlingP
                               products={products}
                               onConfirm={handleConfirm}
                               onIgnore={() => handleIgnore(bp)}
-                              defaultProductId={groupModelId[group.parentId]}
+                              defaultProductIds={groupModelId[group.parentId]}
                             />
                           );
                         })}
