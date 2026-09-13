@@ -17,15 +17,22 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const storage = getStorage(app);
 // `getAuth()` puro trava indefinidamente dentro do WKWebView do iOS (não acontece no Android,
 // que usa Chromium) — problema conhecido do SDK JS do Firebase Auth quando a inicialização do
-// IndexedDB não sai limpa nesse WebView. `initializeAuth` com uma cadeia explícita de fallback
-// de persistência resolve: se IndexedDB falhar, cai pra localStorage, depois sessionStorage,
-// depois memória, em vez de ficar esperando pra sempre.
+// IndexedDB não sai limpa nesse WebView. A ideia original era usar `initializeAuth` com uma
+// cadeia de fallback de persistência (IndexedDB → localStorage → sessionStorage → memória), mas
+// isso só funciona se o IndexedDB FALHAR de forma limpa (rejeita a Promise) — no WKWebView ele
+// não rejeita, só fica pendurado pra sempre, então a SDK nunca chega a tentar o próximo da
+// lista. Isso trava não só a checagem inicial de sessão, mas QUALQUER operação de auth que
+// dependa de persistência — inclusive um login ativo (e-mail/senha ou Google), travando o botão
+// sem erro nenhum. Por isso, no iOS/Android nativos, NEM TENTA IndexedDB — vai direto pro
+// primeiro que realmente funciona nesses WebViews.
 // `popupRedirectResolver` precisa ser passado explicitamente aqui — ao contrário de
 // `getAuth()` (que registra o resolver padrão do navegador sozinho), `initializeAuth()`
 // não registra nada por conta própria. Sem isso, `signInWithPopup` (usado no login com
 // Google na web) falha com "auth/argument-error" mesmo com tudo mais configurado certo.
 export const auth = initializeAuth(app, {
-  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
+  persistence: Capacitor.isNativePlatform()
+    ? [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence]
+    : [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
   popupRedirectResolver: browserPopupRedirectResolver,
 });
 export const googleProvider = new GoogleAuthProvider();
