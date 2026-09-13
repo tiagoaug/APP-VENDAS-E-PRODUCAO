@@ -74,6 +74,9 @@ workflows:
     instance_type: mac_mini_m2
     integrations:
       app_store_connect: "apple key 3 api"
+    environment:
+      node: 22
+      xcode: latest
       # Já existe um certificado de distribuição gerado (Team settings → Code signing
       # identities → "codemagic certificate", válido até set/2027) — `ios_signing:` faz o
       # Codemagic reaproveitar ESSE certificado (que já tem a chave privada guardada com
