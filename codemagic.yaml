@@ -76,9 +76,12 @@ workflows:
     environment:
       node: 22
       xcode: latest
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.musgo.vendaseproducao
+      # SEM `ios_signing:` aqui de propósito — esse campo faz o Codemagic checar, ANTES de
+      # rodar qualquer script abaixo, se já existe um perfil de provisionamento JÁ CARREGADO no
+      # Codemagic (não cria um novo sozinho, apesar do nome sugerir isso — ver
+      # help.codemagic.io "No matching profiles found"). Pra um app assinado pela primeira vez,
+      # essa checagem falha antes mesmo dos scripts começarem — por isso o build não mostrava
+      # nenhuma etapa, só o erro. A criação de verdade (via `--create` abaixo) já cobre tudo.
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
