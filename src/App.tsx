@@ -9569,6 +9569,8 @@ export default function App() {
               onContinue={handleOnboardingAdvance}
               onSkipStep={handleOnboardingAdvance}
               onDismiss={handleOnboardingDismiss}
+              onBack={handleOnboardingBack}
+              canGoBack={onboardingStepIndex > 0}
             />
           )}
           {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
