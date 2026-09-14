@@ -20,6 +20,7 @@ export default function LoginView() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [recentAccounts, setRecentAccounts] = useState<RecentAccount[]>([]);
+  const [showRecentAccounts, setShowRecentAccounts] = useState(false);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   // Desbloqueio por Face ID/Touch ID — só faz sentido pra contas de e-mail/senha (Google/Apple
   // não têm senha pra guardar no Keychain, ver src/utils/biometricAuth.ts). O checkbox só
@@ -151,6 +152,7 @@ export default function LoginView() {
     setPassword("");
     setIsRegistering(false);
     setError(null);
+    setShowRecentAccounts(false);
     if (passwordInputRef.current) {
       passwordInputRef.current.focus();
     }
@@ -170,40 +172,30 @@ export default function LoginView() {
         <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter mb-1">Bem-Vindo</h1>
         <p className="text-[11px] font-bold text-slate-400 italic uppercase tracking-widest mb-10">Acesse sua central de gestão</p>
 
-        {/* Recent Accounts */}
+        {/* Contas Recentes — atalho compacto (a lista completa fica num popup, ver mais
+            abaixo). Antes ficava tudo aberto na tela, empurrando o formulário de login pra
+            baixo da dobra em telas menores. */}
         {recentAccounts.length > 0 && (
-          <div className="w-full flex flex-col items-start mb-6">
-            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 ml-2">Contas Recentes</span>
-
-            <div className="w-full space-y-3">
-              {recentAccounts.map((account) => (
-                <button
+          <button
+            type="button"
+            onClick={() => setShowRecentAccounts(true)}
+            className="w-full flex items-center gap-3 p-3 mb-6 bg-white rounded-2xl shadow-sm border border-slate-100 hover:border-indigo-300 hover:shadow-md transition group text-left"
+          >
+            <div className="flex -space-x-2 shrink-0">
+              {recentAccounts.slice(0, 3).map((account) => (
+                <div
                   key={account.email}
-                  type="button"
-                  onClick={() => selectRecentAccount(account)}
-                  className="w-full flex items-center p-4 bg-white rounded-2xl shadow-sm border border-slate-100 hover:border-indigo-300 hover:shadow-md transition group text-left"
+                  className={`w-9 h-9 rounded-full ${account.color} flex items-center justify-center text-white font-black text-xs shadow-inner ring-2 ring-white`}
                 >
-                  <div className={`w-12 h-12 rounded-full ${account.color} flex items-center justify-center text-white font-black shadow-inner flex-shrink-0 mr-4`}>
-                    {account.initial}
-                  </div>
-                  <div className="flex flex-col flex-1 overflow-hidden">
-                    <span className="text-sm font-black text-slate-800 uppercase tracking-tight truncate group-hover:text-indigo-600 transition">{account.name}</span>
-                    <span className="text-[11px] font-medium text-slate-400 truncate">{account.email}</span>
-                  </div>
-                </button>
+                  {account.initial}
+                </div>
               ))}
             </div>
-
-            <div className="w-full flex justify-center mt-6 mb-2">
-              <button
-                type="button"
-                className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600 transition"
-                onClick={() => { setEmail(""); setPassword(""); }}
-              >
-                Usar Outra Conta
-              </button>
-            </div>
-          </div>
+            <span className="flex-1 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest group-hover:text-indigo-600 transition">
+              Contas Recentes
+            </span>
+            <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Ver</span>
+          </button>
         )}
 
         {/* Form Card */}
@@ -307,6 +299,48 @@ export default function LoginView() {
         </div>
 
       </div>
+
+      {/* Popup de Contas Recentes */}
+      {showRecentAccounts && (
+        <div
+          className="fixed inset-0 z-[65000] flex items-end justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setShowRecentAccounts(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-[2rem] p-6 shadow-2xl flex flex-col gap-4 bg-white animate-in slide-in-from-bottom-4 duration-300 max-h-[80vh] overflow-y-auto"
+          >
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Contas Recentes</span>
+
+            <div className="w-full space-y-3">
+              {recentAccounts.map((account) => (
+                <button
+                  key={account.email}
+                  type="button"
+                  onClick={() => selectRecentAccount(account)}
+                  className="w-full flex items-center p-4 bg-[#f8f9fc] rounded-2xl hover:bg-indigo-50 transition group text-left"
+                >
+                  <div className={`w-12 h-12 rounded-full ${account.color} flex items-center justify-center text-white font-black shadow-inner flex-shrink-0 mr-4`}>
+                    {account.initial}
+                  </div>
+                  <div className="flex flex-col flex-1 overflow-hidden">
+                    <span className="text-sm font-black text-slate-800 uppercase tracking-tight truncate group-hover:text-indigo-600 transition">{account.name}</span>
+                    <span className="text-[11px] font-medium text-slate-400 truncate">{account.email}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600 transition py-2"
+              onClick={() => { setEmail(""); setPassword(""); setShowRecentAccounts(false); }}
+            >
+              Usar Outra Conta
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
