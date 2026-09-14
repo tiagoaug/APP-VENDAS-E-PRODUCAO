@@ -8948,6 +8948,11 @@ export default function App() {
     setOnboardingIntroOpen(true);
   }, [onboardingStepIndex]);
 
+  // Popup de confirmação ao tocar no "Menu" minimizado durante o Assistente de Configuração —
+  // pergunta se é pra continuar no formulário ou sair de vez, em vez de expandir o menu direto
+  // (ver <nav> mais abaixo) ou bloquear sem explicar nada.
+  const [showExitConfigConfirm, setShowExitConfigConfirm] = useState(false);
+
   const attachMiddleNavContainerRef = useCallback((el: HTMLDivElement | null) => {
     middleNavContainerCleanupRef.current?.();
     middleNavContainerCleanupRef.current = null;
@@ -9647,6 +9652,42 @@ export default function App() {
         </div>
       )}
 
+      {/* Popup de confirmação ao tocar no "Menu" minimizado durante o Assistente de
+          Configuração — ver showExitConfigConfirm acima e o <nav> minimizado mais acima. */}
+      {showExitConfigConfirm && (
+        <div
+          className="fixed inset-0 z-[97500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setShowExitConfigConfirm(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-[2rem] shadow-2xl p-6 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="flex flex-col gap-1">
+              <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Sair da Configuração Inicial?</h3>
+              <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Você pode continuar de onde parou quando quiser, em Mais Opções → Assistente de Configuração.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowExitConfigConfirm(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/30 active:scale-[0.98] transition-all"
+            >
+              Continuar no Formulário
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowExitConfigConfirm(false); setNavMinimized(false); handleOnboardingDismiss(); }}
+              className={`w-full py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+            >
+              Sair da Tela de Cadastros
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Aviso de exclusão de compra vinculada ao PCP */}
       <Modal
         isOpen={!!purchaseDeleteWarning}
@@ -9752,19 +9793,17 @@ export default function App() {
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
         <div className="relative w-full max-w-md pointer-events-auto">
           {navMinimized ? (
-            <div className="flex items-center gap-2 mx-auto">
-              {/* Bloqueado (sem onClick, opacidade reduzida) enquanto o Assistente de
-                  Configuração está ativo — evita sair da etapa atual sem querer pelo menu. A
-                  saída "de verdade" continua existindo: o "X" (Encerrar assistente) no
-                  StepWizardBar, que já zera onboardingActive e libera o menu de novo sozinho. */}
+            <div className="relative w-full flex items-center justify-center">
+              {/* Com o Assistente de Configuração ativo, tocar aqui NÃO expande o menu direto —
+                  abre uma confirmação (ver showExitConfigConfirm) perguntando se é pra continuar
+                  no formulário ou sair de vez, evitando sair da etapa atual sem querer. */}
               <button
                 type="button"
-                onClick={onboardingActive ? undefined : () => setNavMinimized(false)}
-                disabled={onboardingActive}
-                title={onboardingActive ? 'Menu bloqueado durante a configuração inicial' : 'Mostrar menu de navegação'}
-                aria-label={onboardingActive ? 'Menu bloqueado durante a configuração inicial' : 'Mostrar menu de navegação'}
+                onClick={() => { if (onboardingActive) setShowExitConfigConfirm(true); else setNavMinimized(false); }}
+                title="Mostrar menu de navegação"
+                aria-label="Mostrar menu de navegação"
                 data-guide-anchor="nav.restaurar"
-                className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${themeVisual.pillGradient} transition-all ${onboardingActive ? 'opacity-60 cursor-not-allowed' : 'active:scale-95'}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${themeVisual.pillGradient} active:scale-95 transition-all`}
               >
                 <ChevronUp size={16} strokeWidth={3} className={isDarkMode ? 'text-white' : 'text-slate-700'} />
                 <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Menu</span>
@@ -9775,10 +9814,10 @@ export default function App() {
                   onClick={() => setOnboardingIntroOpen(true)}
                   title="O que estou fazendo aqui?"
                   aria-label="O que estou fazendo aqui? Toque para ver a explicação desta etapa de novo."
-                  className="relative w-11 h-11 rounded-full bg-indigo-600 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border-2 border-white dark:border-slate-800 shrink-0"
+                  className="absolute right-0 w-9 h-9 rounded-full bg-indigo-600 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border-2 border-white dark:border-slate-800 shrink-0"
                 >
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" />
-                  <HelpCircle size={18} strokeWidth={2.5} className="relative" />
+                  <HelpCircle size={14} strokeWidth={2.5} className="relative" />
                 </button>
               )}
             </div>
