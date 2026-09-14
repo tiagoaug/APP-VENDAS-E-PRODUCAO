@@ -6,6 +6,9 @@ import ConfirmDialog from '../components/ConfirmDialog';
 interface AccountsViewProps {
   accounts: Account[];
   onAdd: () => void;
+  // Cria direto, sem passar pelo modal — nenhum campo de Conta exige algo que não dê pra
+  // assumir um padrão sensato (saldo 0, sem "conta padrão" marcada).
+  onQuickAdd: (type: AccountType, name: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onAdjust: (id: string) => void;
@@ -14,7 +17,7 @@ interface AccountsViewProps {
   modulesConfig: AppModulesConfig;
 }
 
-export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdjust, onTransfer, isDarkMode, modulesConfig }: AccountsViewProps) {
+export default function AccountsView({ accounts, onAdd, onQuickAdd, onEdit, onDelete, onAdjust, onTransfer, isDarkMode, modulesConfig }: AccountsViewProps) {
   const visibleAccounts = accounts.filter(a => {
     if (a.type === AccountType.PERSONAL && !modulesConfig?.personal) return false;
     return true;
@@ -85,6 +88,30 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
             <ArrowRightLeft size={16} /> Transferir
          </button>
       </div>
+
+      {/* Atalhos "zero digitação" — só aparecem antes da primeira conta existir; depois disso
+          a pessoa já entendeu o fluxo e prefere o botão normal (evita poluir a tela). */}
+      {accounts.length === 0 && (
+        <div data-guide-anchor="account.atalhos" className="flex flex-col gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Atalhos — sem digitar nada</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onQuickAdd(AccountType.CASH, 'Caixa')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/30' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+            >
+              + Caixa
+            </button>
+            <button
+              type="button"
+              onClick={() => onQuickAdd(AccountType.BANK, 'Banco')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 hover:bg-indigo-900/30' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+            >
+              + Banco
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="flex flex-col gap-3">

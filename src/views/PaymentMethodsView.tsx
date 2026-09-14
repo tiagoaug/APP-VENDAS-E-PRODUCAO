@@ -9,13 +9,18 @@ import { toast } from '../utils/toast';
 
 interface PaymentMethodsViewProps {
   methods: PaymentMethod[];
-  onAdd: () => void;
+  // Aceita um nome opcional pra pré-preencher o modal (ver atalho "Chave Pix" abaixo) — sem
+  // argumento, abre em branco como sempre.
+  onAdd: (initialName?: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  // Cria direto, sem passar pelo modal — só faz sentido pra métodos sem "chave" nenhuma
+  // (Dinheiro, Cartão); Pix sempre precisa da chave de verdade, então abre o modal (onAdd).
+  onQuickAdd: (name: string) => void;
   isDarkMode: boolean;
 }
 
-export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, isDarkMode }: PaymentMethodsViewProps) {
+export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, onQuickAdd, isDarkMode }: PaymentMethodsViewProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [viewingMethod, setViewingMethod] = useState<PaymentMethod | null>(null);
@@ -72,6 +77,34 @@ export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, i
             Cadastre aqui sua chave Pix ou dados bancários pra receber de clientes — depois é só compartilhar o método certo na hora de cobrar ou fechar uma venda.
           </p>
         </div>
+        {methods.length === 0 && (
+          <div data-guide-anchor="paymethod.atalhos" className="flex flex-col gap-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Atalhos — sem digitar nada</span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onQuickAdd('Dinheiro')}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/30' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+              >
+                + Dinheiro
+              </button>
+              <button
+                type="button"
+                onClick={() => onQuickAdd('Cartão')}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-blue-900/20 text-blue-400 hover:bg-blue-900/30' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+              >
+                + Cartão
+              </button>
+              <button
+                type="button"
+                onClick={() => onAdd('Chave Pix')}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-teal-900/20 text-teal-400 hover:bg-teal-900/30' : 'bg-teal-50 text-teal-600 hover:bg-teal-100'}`}
+              >
+                + Chave Pix
+              </button>
+            </div>
+          </div>
+        )}
         {methods.map((method) => (
           <div key={method.id} className={`p-5 rounded-[2rem] border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center justify-between">

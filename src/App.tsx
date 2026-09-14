@@ -742,6 +742,7 @@ export default function App() {
   const [editingAccount, setEditingAccount] = useState<Account | undefined>();
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [editingPaymentMethod, setEditingPaymentMethod] = useState<PaymentMethod | undefined>();
+  const [paymentMethodInitialName, setPaymentMethodInitialName] = useState<string | undefined>();
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
@@ -5979,9 +5980,14 @@ export default function App() {
         return (
           <PaymentMethodsView
             methods={paymentMethods}
-            onAdd={() => {
+            onAdd={(initialName) => {
               setEditingPaymentMethod(undefined);
+              setPaymentMethodInitialName(initialName);
               setIsPaymentMethodModalOpen(true);
+            }}
+            onQuickAdd={(name) => {
+              firebaseService.saveDocument("paymentMethods", { name, icon: 'CreditCard', value: '' });
+              toast.show(`"${name}" adicionado!`);
             }}
             onEdit={(id) => {
               const p = paymentMethods.find((x) => x.id === id);
@@ -7199,6 +7205,11 @@ export default function App() {
             onAdd={() => {
               setEditingAccount(undefined);
               setIsAccountModalOpen(true);
+            }}
+            onQuickAdd={(type, name) => {
+              const color = type === AccountType.CASH ? 'bg-emerald-500' : 'bg-indigo-500';
+              firebaseService.saveDocument("accounts", { name, balance: 0, color, type, isDefault: accounts.length === 0 });
+              toast.show(`"${name}" adicionada!`);
             }}
             onEdit={(id) => {
               const acc = accounts.find((a) => a.id === id);
@@ -9905,7 +9916,7 @@ export default function App() {
       
       <PaymentMethodModal
         isOpen={isPaymentMethodModalOpen}
-        onClose={() => setIsPaymentMethodModalOpen(false)}
+        onClose={() => { setIsPaymentMethodModalOpen(false); setPaymentMethodInitialName(undefined); }}
         onSave={(method) => {
           if (editingPaymentMethod) {
             firebaseService.updateDocument("paymentMethods", editingPaymentMethod.id, method);
@@ -9913,8 +9924,10 @@ export default function App() {
             firebaseService.saveDocument("paymentMethods", method);
           }
           setIsPaymentMethodModalOpen(false);
+          setPaymentMethodInitialName(undefined);
         }}
         method={editingPaymentMethod}
+        initialName={paymentMethodInitialName}
       />
       <TransactionModal
         isOpen={isTransactionModalOpen}

@@ -1541,6 +1541,7 @@ function GenericConfigList({
   onBack,
   placeholderLabel,
   seedDefaults,
+  seedButtonLabel,
   onSaveAsDefault,
   people = [],
   colors = [],
@@ -1575,7 +1576,12 @@ function GenericConfigList({
   onDelete: (id: string) => Promise<void>;
   onBack?: () => void;
   placeholderLabel: string;
-  seedDefaults?: { name: string; description: string }[];
+  // `metadata` é opcional — só usado por tipos que precisam de mais do que nome+descrição pra
+  // já nascer utilizável (ex.: PACKAGING, que sem `metadata.capacity` fica um registro vazio).
+  seedDefaults?: { name: string; description: string; metadata?: any }[];
+  // Texto do botão "Carregar Padrão" — cada tipo usa um rótulo próprio (Unidades, Embalagens
+  // etc.); sem isso o botão sempre dizia "Carregar Unidades Padrão" mesmo pra outros tipos.
+  seedButtonLabel?: string;
   // Só a conta de desenvolvimento vê o botão que chama isto — grava os itens ATUAIS deste tipo
   // como o novo `seedDefaults` que contas novas verão no botão "Carregar Padrão" (ver
   // defaultUnitsService.ts; hoje só passado pra type="UNIT").
@@ -1903,7 +1909,8 @@ function GenericConfigList({
         name: def.name,
         description: def.description,
         type,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        ...(def.metadata ? { metadata: def.metadata } : {}),
       });
     }
   };
@@ -2662,7 +2669,7 @@ function GenericConfigList({
         {filteredItems.length === 0 && search === '' && seedDefaults && (
           <div className="flex flex-col items-center gap-4 py-8">
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Lista vazia</p>
-            <button onClick={handleSeed} data-guide-anchor="prodcfg.carregarPadrao" className="px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest border border-indigo-100">Carregar Unidades Padrão</button>
+            <button onClick={handleSeed} data-guide-anchor="prodcfg.carregarPadrao" className="px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest border border-indigo-100">{seedButtonLabel ?? 'Carregar Padrões'}</button>
           </div>
         )}
 

@@ -6,18 +6,24 @@ interface PaymentMethodModalProps {
   onClose: () => void;
   onSave: (method: Omit<PaymentMethod, 'id'>) => void;
   method?: PaymentMethod;
+  // Pré-preenche o nome ao abrir pra CRIAR um novo (ex.: atalho "Chave Pix" na tela de
+  // listagem) — ignorado quando `method` já existe (edição usa o nome real dele).
+  initialName?: string;
 }
 
-export default function PaymentMethodModal({ isOpen, onClose, onSave, method }: PaymentMethodModalProps) {
-  const [name, setName] = useState(method?.name || '');
+export default function PaymentMethodModal({ isOpen, onClose, onSave, method, initialName }: PaymentMethodModalProps) {
+  const [name, setName] = useState(method?.name || initialName || '');
   const [value, setValue] = useState(method?.value || '');
 
   useEffect(() => {
     if (method) {
       setName(method.name);
       setValue(method.value || '');
+    } else {
+      setName(initialName || '');
+      setValue('');
     }
-  }, [method]);
+  }, [method, initialName]);
 
   if (!isOpen) return null;
 
