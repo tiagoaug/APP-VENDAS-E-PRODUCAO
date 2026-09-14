@@ -2021,12 +2021,21 @@ export default function App() {
       view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0,
       group: 'shared',
       why: 'Agrupa seus produtos (ex.: "Tênis", "Sandálias") pra facilitar filtros e relatórios depois. Dica: abra "Modelos Disponíveis" pra escolher uma categoria pronta com um toque, sem precisar digitar.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'cat.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
-        { type: 'message', text: 'Veja se tem uma categoria aqui que já serve — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
-        { type: 'highlight_tap', anchorKey: 'cat.novo', text: 'Toque aqui para cadastrar uma categoria nova.' },
-        { type: 'highlight_tap', anchorKey: 'cat.salvar', text: 'Digite o nome e toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Categorias agrupam seus produtos, despesas ou receitas (ex.: "Tênis", "Sandálias") pra facilitar filtros e relatórios depois.',
+          'Toque em cada ícone lá em cima pra ver as categorias de cada tipo, e abra "Modelos Disponíveis" pra ver se algum já pronto atende — é só tocar nele pra adicionar, sem digitar nada.',
+          'Se nenhum modelo atender, toque em "Nova" e crie uma categoria do seu jeito, do zero.',
+          'Só não esqueça: sempre que criar ou editar uma categoria, toque em Salvar no final pra confirmar.',
+        ],
+        fullParagraphs: [
+          'Categorias existem em vários tipos ao mesmo tempo — Produtos, Despesas, Receitas, Produção, Insumos, Facas, Solados, Gerais e Pessoais — e cada ícone no topo da tela filtra um tipo diferente. Uma categoria só existe dentro do tipo em que foi criada.',
+          '"Modelos Disponíveis" é uma lista compartilhada entre todas as contas do sistema. Toque no ícone pra abrir, veja se alguma categoria já pronta serve pro seu negócio, e toque nela pra adicionar direto — sem digitar nada.',
+          'Se nenhum modelo do tipo atual servir, toque em "Nova" e crie a categoria do seu jeito: dê um nome, escolha em quais módulos ela aparece (Vendas, Produção, Pessoal) e uma cor.',
+          'Categorias também podem ter subcategorias — toque em Editar numa já criada pra vincular outra como filha dela, útil pra organizar em níveis.',
+          'Sempre que criar ou editar uma categoria, toque em Salvar no final pra confirmar — sem isso a mudança não é gravada.',
+        ],
+      },
     },
     {
       view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0,
@@ -5893,6 +5902,7 @@ export default function App() {
             modulesConfig={modulesConfig}
             onNavigate={navigateTo}
             onStartJourney={handleStartJourney}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.CATEGORIES}
           />
         );
       case ViewType.CATEGORY_CONFIG:

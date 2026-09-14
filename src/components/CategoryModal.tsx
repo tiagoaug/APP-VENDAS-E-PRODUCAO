@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Category, CategoryType, AppModulesConfig } from '../types';
 import { getCategoryModules, CategoryModuleValue } from '../utils/categories';
+import GuidePulseDot from './GuidePulseDot';
 
 
 interface CategoryModalProps {
@@ -15,9 +16,11 @@ interface CategoryModalProps {
   // Só precisa quando este modal abre POR CIMA de outro já aberto (ex.: atalho "Cadastre uma
   // categoria aqui" dentro do TransactionModal) — sem isso ficaria atrás do modal de origem.
   zIndex?: number;
+  // Bolinha pulsante no Salvar, ver Etapa 3 do Assistente de Configuração (CategoriesView.tsx).
+  guideActive?: boolean;
 }
 
-export default function CategoryModal({ isOpen, onClose, onSave, category, categories, defaultType, modulesConfig, zIndex = 50 }: CategoryModalProps) {
+export default function CategoryModal({ isOpen, onClose, onSave, category, categories, defaultType, modulesConfig, zIndex = 50, guideActive }: CategoryModalProps) {
   const [name, setName] = useState(category?.name || '');
   const [type, setType] = useState<CategoryType>(category?.type || defaultType || CategoryType.PRODUCT);
   const [modules, setModules] = useState<CategoryModuleValue[]>(() => {
@@ -196,8 +199,9 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
           <button
             onClick={handleSave}
             data-guide-anchor="cat.salvar"
-            className="flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg shadow-indigo-200"
+            className="relative flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg shadow-indigo-200"
           >
+            {guideActive && <span className="absolute top-1.5 right-1.5"><GuidePulseDot show /></span>}
             Salvar
           </button>
         </div>

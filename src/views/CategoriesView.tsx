@@ -4,6 +4,7 @@ import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp
 
 import CategoryModal from '../components/CategoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import GuidePulseDot from '../components/GuidePulseDot';
 import { getCategoryModules, categoryModulesInclude } from '../utils/categories';
 import { subscribeToCategoryTemplates, saveCategoryTemplate } from '../services/categoryTemplatesService';
 import { isTemplateAdmin } from '../utils/templateAdmin';
@@ -17,9 +18,12 @@ interface CategoriesViewProps {
   modulesConfig: AppModulesConfig;
   onNavigate: (view: ViewType) => void;
   onStartJourney?: (journeyId: string) => void;
+  // Bolinha pulsante em "Modelos Disponíveis" + no Salvar do modal, ver Etapa 3 do Assistente
+  // de Configuração.
+  guideActive?: boolean;
 }
 
-export default function CategoriesView({ categories, onAdd, onEdit, onDelete, isDarkMode, modulesConfig, onNavigate, onStartJourney }: CategoriesViewProps) {
+export default function CategoriesView({ categories, onAdd, onEdit, onDelete, isDarkMode, modulesConfig, onNavigate, onStartJourney, guideActive }: CategoriesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -205,6 +209,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
         categories={categories}
         defaultType={activeTab}
         modulesConfig={modulesConfig}
+        guideActive={guideActive}
       />
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between px-1">
@@ -315,8 +320,9 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
             type="button"
             onClick={() => setTemplatesOpen(o => !o)}
             data-guide-anchor="cat.alternarModelos"
-            className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+            className="relative w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
           >
+            {guideActive && <span className="absolute top-2 right-9"><GuidePulseDot show /></span>}
             <div className="flex items-center gap-2">
               <Sparkles size={14} />
               <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
