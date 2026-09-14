@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Grid, GridType, GridTemplate } from '../types';
 import { Plus, TableCellsMerge, Trash2, Edit, Ruler, Target, Footprints, Scissors, Filter, Box, LayoutGrid, Zap, Bookmark, BookmarkCheck, Sparkles, ChevronDown } from 'lucide-react';
 import GradeModal from '../components/GradeModal';
+import GuidePulseDot from '../components/GuidePulseDot';
 import { subscribeToGridTemplates, saveGridTemplate, deleteGridTemplate } from '../services/gridTemplatesService';
 import { isTemplateAdmin } from '../utils/templateAdmin';
 
@@ -12,9 +13,12 @@ interface GradesViewProps {
   onDelete: (id: string) => void;
   isDarkMode: boolean;
   onStartJourney?: (journeyId: string) => void;
+  // Bolinha pulsante em "Modelos Disponíveis" + no Salvar do modal, ver Etapa 5 do Assistente
+  // de Configuração.
+  guideActive?: boolean;
 }
 
-export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode, onStartJourney }: GradesViewProps) {
+export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode, onStartJourney, guideActive }: GradesViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGrid, setEditingGrid] = useState<Grid | null>(null);
   const [activeFilter, setActiveFilter] = useState<GridType | 'ALL'>('ALL');
@@ -73,6 +77,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode,
           else onAdd(g);
         }}
         grid={editingGrid ? editingGrid : (activeFilter !== 'ALL' ? { type: activeFilter } as any : undefined)}
+        guideActive={guideActive}
       />
 
       <div className={`p-5 rounded-2xl border flex items-start gap-4 ${isDarkMode ? 'bg-cyan-900/10 border-cyan-900/30' : 'bg-cyan-50/50 border-cyan-100'}`}>
@@ -144,8 +149,9 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode,
             type="button"
             onClick={() => setTemplatesOpen(o => !o)}
             data-guide-anchor="grade.alternarModelos"
-            className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+            className="relative w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
           >
+            {guideActive && <span className="absolute top-2 right-9"><GuidePulseDot show /></span>}
             <div className="flex items-center gap-2">
               <Sparkles size={14} />
               <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>

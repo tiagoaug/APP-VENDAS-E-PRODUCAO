@@ -2062,13 +2062,23 @@ export default function App() {
           view: ViewType.GRIDS, label: 'Cadastre uma Grade/Unidade', isComplete: grids.length > 0,
           group: 'fabricacao' as const,
           why: 'Define os tamanhos que um produto vem (ex.: 34 ao 39) — usada na hora de cadastrar cada modelo.',
-          guideSteps: [
-            { type: 'highlight_tap' as const, anchorKey: 'grade.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
-            { type: 'message' as const, text: 'Veja se tem uma grade aqui com as numerações que você precisa — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
-            { type: 'highlight_tap' as const, anchorKey: 'grade.novo', text: 'Toque aqui para criar uma grade nova.' },
-            { type: 'message' as const, text: 'Dê um nome e adicione pelo menos um tamanho.' },
-            { type: 'highlight_tap' as const, anchorKey: 'grade.salvar', text: 'Toque aqui para salvar a grade.' },
-          ],
+          intro: {
+            paragraphs: [
+              'Grades definem quais numerações (tamanhos) existem — tudo que envolve tamanho na produção e nas vendas usa uma grade.',
+              'Existem 4 tipos: Formas (tamanho do produto final), Solados, Facas de corte e Embalagens — cada um com seu próprio uso.',
+              'Abra "Modelos Disponíveis" e veja se alguma grade pronta já serve — é só tocar pra adicionar, sem digitar nada.',
+              'Não esqueça de tocar em Salvar sempre que criar ou editar uma grade.',
+            ],
+            fullParagraphs: [
+              'Uma Grade é simplesmente uma lista de numerações (ex.: 34, 35, 36... ou P, M, G) — toda vez que o sistema precisa saber "quais tamanhos existem" pra alguma coisa, ele usa uma grade.',
+              'Formas: as numerações do PRODUTO FINAL, o que o cliente escolhe na hora de comprar (ex.: 34 ao 39) — é a grade usada no cadastro de Produtos e nas Vendas.',
+              'Solados: numerações específicas de solado — usada no cadastro/estoque de solados, já que um solado tem sua própria numeração, às vezes diferente do produto final.',
+              'Facas: numerações das facas de corte (ferramentas) — cada faca corta uma peça de um tamanho específico, então a grade organiza quais tamanhos de faca existem.',
+              'Embalagens: numerações usadas na composição de uma caixa por tamanho (ex.: quantos pares de cada numeração cabem numa caixa) — complementa o cadastro de Padrão de Embalagem.',
+              'Abra "Modelos Disponíveis" (filtrado pelo tipo escolhido nos filtros acima) e veja se alguma grade pronta já serve — é só tocar pra adicionar, sem digitar nada. Não achou? Toque em "Criar Nova Grade" e monte do seu jeito.',
+              'Sempre que criar ou editar uma grade, toque em Salvar no final pra confirmar.',
+            ],
+          },
         }]
       : []),
     ...(onboardingStatus?.businessType !== 'REVENDA'
@@ -5956,6 +5966,7 @@ export default function App() {
             }}
             isDarkMode={isDarkMode}
             onStartJourney={handleStartJourney}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.GRIDS}
           />
         );
       case ViewType.COLORS:

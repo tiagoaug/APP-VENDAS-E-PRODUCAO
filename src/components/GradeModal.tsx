@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Grid, GridType } from '../types';
 import { TableCellsMerge, X, Plus, Target, Footprints, Scissors, Box } from 'lucide-react';
+import GuidePulseDot from './GuidePulseDot';
 
 interface GradeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (grid: Omit<Grid, 'id'>) => void;
   grid?: Grid;
+  // Bolinha pulsante no Salvar, ver Etapa 5 do Assistente de Configuração (GradesView.tsx).
+  guideActive?: boolean;
 }
 
-export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModalProps) {
+export default function GradeModal({ isOpen, onClose, onSave, grid, guideActive }: GradeModalProps) {
   const [name, setName] = useState(grid?.name || '');
   const [type, setType] = useState<GridType>(grid?.type || GridType.FORMA);
   const [sizes, setSizes] = useState<string[]>(grid?.sizes || []);
@@ -188,8 +191,9 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
             onClick={handleSave}
             disabled={!name.trim() || sizes.length === 0}
             data-guide-anchor="grade.salvar"
-            className="flex-1 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+            className="relative flex-1 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
           >
+            {guideActive && <span className="absolute top-1.5 right-1.5"><GuidePulseDot show /></span>}
             Salvar Grade
           </button>
         </div>
