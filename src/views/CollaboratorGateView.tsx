@@ -28,6 +28,10 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  // Dica da senha (Collaborator.pinHint, ver CollaboratorsConfigView.tsx) — nunca mostra a
+  // senha em si, só o lembrete que o gestor cadastrou, pra quem esquecer não precisar chamar
+  // ninguém toda vez.
+  const [showHint, setShowHint] = useState(false);
   const [useManualPin, setUseManualPin] = useState(false);
   const [rememberBiometric, setRememberBiometric] = useState(false);
   const [biometricBusy, setBiometricBusy] = useState(false);
@@ -52,6 +56,7 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
     setPin("");
     setError(false);
     setShowPin(false);
+    setShowHint(false);
     setUseManualPin(false);
     setRememberBiometric(false);
     setBiometricError(false);
@@ -220,6 +225,23 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
                       </button>
                     </div>
                     {error && <p className="text-rose-500 text-[11px] text-center font-bold">PIN incorreto</p>}
+
+                    {collab.pinHint && (
+                      <div className="flex flex-col items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowHint(v => !v)}
+                          data-guide-anchor="collabGate.dicaToggle"
+                          className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600 transition py-1"
+                        >
+                          {showHint ? 'Ocultar dica' : 'Esqueceu? Ver dica'}
+                        </button>
+                        {showHint && (
+                          <p className="text-xs text-slate-500 font-bold text-center italic px-4">"{collab.pinHint}"</p>
+                        )}
+                      </div>
+                    )}
+
                     <CustomPinKeypad value={pin} onChange={(v) => { setPin(v); setError(false); }} onSubmit={handleConfirm} maxLength={PIN_LENGTH} />
 
                     {biometricLabel && !biometricEnabledForThis && (

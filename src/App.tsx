@@ -1977,7 +1977,7 @@ export default function App() {
   // GuidePulseDot.tsx) nos campos daquele passo específico — cada view interpreta as chaves à
   // sua maneira (CompanyProfileView usa 'name'/'phone'). Passos que ainda não foram convertidos
   // continuam em guideSteps (GuidedTourOverlay) normalmente.
-  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; intro?: { paragraphs: string[] }; guidePulseFields?: string[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas' }[] = [
+  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; intro?: { paragraphs: string[]; fullParagraphs?: string[] }; guidePulseFields?: string[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas' }[] = [
     {
       // Todos os campos do CompanyProfile são opcionais (até o CNPJ/CPF é marcado como tal na
       // tela) — completo assim que qualquer um deles for preenchido, sem exigir um campo
@@ -2000,11 +2000,22 @@ export default function App() {
       view: ViewType.COLLABORATORS_CONFIG, label: 'Cadastre sua Equipe', isComplete: collaborators.length > 0,
       group: 'shared',
       why: 'Cadastre quem vai usar o app com você — diretores, vendedores, produção — e defina o que cada um pode acessar. Cada colaborador entra com o próprio PIN, sem precisar da sua senha principal.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'collab.novo', text: 'Toque aqui para cadastrar um colaborador novo.' },
-        { type: 'message', text: 'Preencha o nome, defina um PIN de acesso e marque os setores/telas que essa pessoa pode usar.' },
-        { type: 'highlight_tap', anchorKey: 'collab.salvar', text: 'Toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Se só você trabalha no negócio, cadastre só você mesmo, como Diretor — isso já libera Acesso Total sem restrições, sem precisar mexer em setores.',
+          'Crie uma senha (PIN de 6 caracteres) pra ter mais segurança no acesso. Pode tirar um print dela num lugar seguro, ou escolher algo fácil de lembrar.',
+          'Dá pra cadastrar uma "Dica da Senha" também, pra você mesmo (ou quem for) lembrar depois sem precisar chamar ninguém.',
+          'As bolinhas vermelhas nos campos são só sugestões — nenhuma é obrigatória além do Nome.',
+        ],
+        fullParagraphs: [
+          'Aqui você cadastra quem usa o sistema com você e controla o que cada um pode ver ou fazer. Enquanto ninguém está cadastrado, todo mundo que abre o app tem acesso total — o controle só passa a valer a partir do primeiro colaborador.',
+          'O formulário tem 3 abas: Pessoal (nome, foto, contato), Financeira (admissão, salário, cargo) e Acessos (senha, setores liberados, permissões).',
+          'O Cargo muda o comportamento: Diretor usa Pró-labore em vez de salário e já libera Acesso Total sozinho; Representante Externo só recebe comissão e nem loga no app; Comprador aparece pra escolher nas Compras; e dá pra criar cargos próprios (ex: Estoquista) direto no seletor, se nenhum desses servir.',
+          'A Senha (PIN de 6 caracteres, dígitos/letras/símbolos) é o que a pessoa digita pra entrar. Pode gerar uma aleatória ou criar manualmente — se deixar em branco, o sistema gera uma sozinha ao salvar. A Dica da Senha é só um lembrete (nunca a senha em si), mostrada na tela de login atrás de um toque em "Dica".',
+          'Com Acesso Total desligado, você escolhe quais setores (Vendas, Compras, Produção, Financeiro etc.) o colaborador acessa, e dentro de cada um, se ele pode Visualizar, Editar ou não tem acesso a cada função específica daquele setor.',
+          'Só quem tem Acesso Total consegue ver ou trocar a senha de qualquer colaborador — é assim que se "reseta" uma senha esquecida: quem gerencia entra aqui, confirma quem é a pessoa e gera uma senha nova pra ela.',
+        ],
+      },
     },
     {
       view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0,
@@ -8628,6 +8639,7 @@ export default function App() {
             collaborators={collaborators}
             onSave={saveCollaborator}
             onDelete={deleteCollaborator}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.COLLABORATORS_CONFIG}
             isDarkMode={isDarkMode}
             dashboardCards={(dashboardConfig || effectiveDefaultDashboardConfig).cards}
             sales={sales}
@@ -9481,6 +9493,7 @@ export default function App() {
                   totalSteps={onboardingSteps.length}
                   title={onboardingSteps[onboardingStepIndex].label}
                   paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
+                  fullParagraphs={onboardingSteps[onboardingStepIndex].intro!.fullParagraphs}
                   isOpen={onboardingIntroOpen}
                   onClose={() => setOnboardingIntroOpen(false)}
                 />
@@ -9546,6 +9559,7 @@ export default function App() {
                 totalSteps={onboardingSteps.length}
                 title={onboardingSteps[onboardingStepIndex].label}
                 paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
+                  fullParagraphs={onboardingSteps[onboardingStepIndex].intro!.fullParagraphs}
                 isOpen={onboardingIntroOpen}
                 onClose={() => setOnboardingIntroOpen(false)}
               />

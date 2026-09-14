@@ -35,6 +35,7 @@ import {
   HandCoins,
 } from 'lucide-react';
 import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel, Sale, RhGlobalConfig, CollaboratorLoan, CollaboratorCargo } from '../types';
+import GuidePulseDot from '../components/GuidePulseDot';
 import { SECTORS, isDashboardCardAllowed, getTaskLevel, computeCollaboratorPayroll } from '../utils/collaborators';
 import { NAV_MONO_PALETTE } from '../utils/themes';
 import { generateId } from '../utils/id';
@@ -81,6 +82,9 @@ interface CollaboratorsConfigViewProps {
   customCargos?: CollaboratorCargo[];
   onSaveCustomCargo?: (cargo: CollaboratorCargo) => void | Promise<void>;
   onDeleteCustomCargo?: (id: string) => void | Promise<void>;
+  // Bolinhas vermelhas pulsantes da Etapa 2 do Assistente de Configuração (ver GuidePulseDot.tsx
+  // e App.tsx) — indicam campos/abas sugeridos, nenhum realmente obrigatório além do Nome.
+  guideActive?: boolean;
 }
 
 function emptyDraft(): Collaborator {
@@ -97,7 +101,7 @@ function emptyDraft(): Collaborator {
 
 type FormTab = 'personal' | 'financial' | 'access';
 
-export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode, dashboardCards, sales = [], rhConfig, loans = [], customCargos = [], onSaveCustomCargo, onDeleteCustomCargo }: CollaboratorsConfigViewProps) {
+export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode, dashboardCards, sales = [], rhConfig, loans = [], customCargos = [], onSaveCustomCargo, onDeleteCustomCargo, guideActive }: CollaboratorsConfigViewProps) {
   const [draft, setDraft] = useState<Collaborator | null>(null);
   const [formTab, setFormTab] = useState<FormTab>('personal');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -286,8 +290,9 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             type="button"
             onClick={() => setDraft({ ...emptyDraft(), name: 'Diretor', isUnrestricted: true, cargo: 'diretor' })}
             data-guide-anchor="collab.novo"
-            className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-95"
+            className="relative px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-95"
           >
+            {guideActive && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
             Criar primeiro membro da equipe
           </button>
         </div>
@@ -467,8 +472,9 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           type="button"
           onClick={startNew}
           data-guide-anchor="collab.novo"
-          className={`flex items-center justify-center gap-2 p-5 rounded-[2rem] border-2 border-dashed transition-all ${isDarkMode ? 'border-slate-800 text-slate-400 hover:border-indigo-500/40 hover:text-indigo-400' : 'border-slate-200 text-slate-500 hover:border-indigo-500/40 hover:text-indigo-600'}`}
+          className={`relative flex items-center justify-center gap-2 p-5 rounded-[2rem] border-2 border-dashed transition-all ${isDarkMode ? 'border-slate-800 text-slate-400 hover:border-indigo-500/40 hover:text-indigo-400' : 'border-slate-200 text-slate-500 hover:border-indigo-500/40 hover:text-indigo-600'}`}
         >
+          {guideActive && <span className="absolute top-2 right-2"><GuidePulseDot show /></span>}
           <Plus size={18} />
           <span className="text-[11px] font-black uppercase tracking-widest">Novo Colaborador</span>
         </button>
@@ -505,12 +511,13 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   type="button"
                   onClick={() => setFormTab(tab.id)}
                   data-guide-anchor={tab.anchor}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  className={`relative flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                     formTab === tab.id
                       ? 'bg-indigo-600 text-white shadow-md'
                       : isDarkMode ? 'text-slate-400' : 'text-slate-500'
                   }`}
                 >
+                  {guideActive && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
                   <TabIcon size={13} />
                   {tab.label}
                 </button>
@@ -581,7 +588,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Nome</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1.5">Nome <GuidePulseDot show={guideActive} /></label>
             <input
               type="text"
               value={draft.name}
@@ -626,7 +633,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><Phone size={11} /> Telefone</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><Phone size={11} /> Telefone <GuidePulseDot show={guideActive} /></label>
             <input
               type="tel"
               value={draft.phone || ''}
@@ -652,7 +659,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           {formTab === 'financial' && (
           <>
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><Calendar size={11} /> Data de Admissão</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><Calendar size={11} /> Data de Admissão <GuidePulseDot show={guideActive} /></label>
             <input
               type="date"
               value={draft.admissionDate ? format(draft.admissionDate, 'yyyy-MM-dd') : ''}
@@ -663,7 +670,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
 
           {draft.cargo !== 'diretor' && draft.cargo !== 'representante_externo' && (
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><DollarSign size={11} /> Salário Base (R$)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1"><DollarSign size={11} /> Salário Base (R$) <GuidePulseDot show={guideActive} /></label>
             <input
               type="number"
               inputMode="decimal"
@@ -775,11 +782,11 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           )}
 
           <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 ${draft.cargo === 'diretor' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : draft.cargo === 'gerente' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : draft.cargo === 'representante_externo' ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : draft.cargo === 'comprador' ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Cargo</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1.5">Cargo <GuidePulseDot show={guideActive} /></label>
             <div className={`flex flex-col gap-1 p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
               <button
                 type="button"
-                onClick={() => setDraft({ ...draft, cargo: 'diretor' })}
+                onClick={() => setDraft({ ...draft, cargo: 'diretor', isUnrestricted: true })}
                 data-guide-anchor="collab.cargoSelecionar"
                 className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${draft.cargo === 'diretor' ? 'bg-violet-600 text-white shadow-md' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
               >
@@ -855,7 +862,11 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 )
               ))}
               {onSaveCustomCargo && (
-                <div className="flex items-center gap-1.5 p-1">
+                <div className="flex flex-col gap-1.5 p-1">
+                  <p className="text-[9px] text-slate-400 font-medium leading-tight px-1">
+                    Não achou um cargo que combine? Cadastre um novo aqui embaixo — funciona como Colaborador normal.
+                  </p>
+                  <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     value={newCargoName}
@@ -876,6 +887,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                   >
                     <Plus size={16} strokeWidth={3} />
                   </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -969,7 +981,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           {formTab === 'access' && (
           <>
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Senha (opcional, 6 caracteres)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1.5">Senha (opcional, 6 caracteres) <GuidePulseDot show={guideActive} /></label>
             <div className="relative">
               {/* readOnly de propósito — abre o mesmo teclado personalizado que o colaborador
                   usa pra entrar (CustomPinKeypad), garantindo que a senha digitada aqui sempre
@@ -1040,6 +1052,21 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           </div>
 
           <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Dica da Senha (opcional)</label>
+            <input
+              type="text"
+              value={draft.pinHint || ''}
+              onChange={e => setDraft({ ...draft, pinHint: e.target.value })}
+              placeholder="Ex: aniversário da minha filha"
+              data-guide-anchor="collab.pinHint"
+              className={`px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+            />
+            <p className="text-[9px] text-slate-400 font-medium leading-tight px-1">
+              Nunca mostra a senha em si — só esse lembrete, pra quem esquecer não precisar chamar você toda vez. Aparece na tela de login atrás de um toque em "Dica".
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Cor</label>
             <div className="flex flex-wrap gap-2">
               {NAV_MONO_PALETTE.map(c => (
@@ -1099,7 +1126,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Setores liberados</label>
               <p className="text-[10px] text-slate-400 font-medium px-1 -mt-1 mb-1 leading-relaxed">
-                Toque num setor pra ligar/desligar e refinar o que o colaborador vê ou edita em cada função dele.
+                Um setor DESLIGADO trava o colaborador fora dele por completo — nem aparece no menu dele. Ligando, toque no card pra abrir as funções daquele setor e escolher, uma a uma: <strong>Sem Acesso</strong> (esconde só aquela função específica), <strong>Visualizar</strong> (vê mas não cria/edita nada ali) ou <strong>Editar</strong> (acesso completo àquela função).
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {SECTORS.map(sector => {

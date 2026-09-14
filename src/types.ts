@@ -1431,6 +1431,10 @@ export type Collaborator = {
   id: string;
   name: string;
   pin: string;
+  // Dica pra pessoa lembrar a própria senha (ex.: "aniversário da minha filha") — NUNCA a
+  // senha em si, só um lembrete. Mostrada na tela de login (CollaboratorGateView) atrás de um
+  // toque em "Dica", pra quem esqueceu não precisar chamar o gestor toda vez.
+  pinHint?: string;
   colorHex: string;
   // Foto do colaborador (base64), mesmo padrão de Product.photoUrl — usada no lugar do
   // círculo com a inicial nas telas de seleção/troca de colaborador. Ausente = mostra a
