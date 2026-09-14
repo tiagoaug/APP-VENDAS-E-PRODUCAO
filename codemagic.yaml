@@ -103,6 +103,22 @@ workflows:
           fi
       - name: Assinatura automática de código
         script: xcode-project use-profiles
+      # DIAGNÓSTICO temporário: xcode-project build-ipa (abaixo) esconde a saída real do
+      # xcodebuild mesmo com --verbose — só mostra "Failed to archive" sem o motivo. Rodando o
+      # MESMO comando de archive manualmente (visto no log: mesmos argumentos, DEVELOPMENT_TEAM
+      # etc.), sem passar pelo wrapper, a saída completa do xcodebuild (incluindo a linha
+      # "error: ...") aparece direto no log deste step. `|| true` pra não travar o build aqui —
+      # o resultado de verdade continua vindo do step de baixo.
+      - name: "[DIAGNÓSTICO] Archive manual com saída completa do xcodebuild"
+        script: |
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -archivePath "$CM_BUILD_DIR/diag.xcarchive" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            DEVELOPMENT_TEAM=T6L29W9Y53 \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_STYLE=Manual || true
       - name: Build e assinatura do .ipa
         script: |
           xcode-project build-ipa \
