@@ -125,11 +125,19 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); setPinKeypadOpen(false); setFormTab('personal'); };
 
   const isExistingDraft = !!draft && collaborators.some(c => c.id === draft.id);
-  // Colaborador novo exige PIN de 6 dígitos. Editando um já existente, só exige que
-  // o PIN não esteja vazio — assim um registro antigo com PIN fora do padrão atual
-  // não trava pra sempre o salvamento de outras mudanças (ex.: setores liberados).
-  // Representante Externo nunca loga no app — não exige PIN.
-  const pinValid = !!draft && (draft.cargo === 'representante_externo' || (isExistingDraft ? draft.pin.trim().length > 0 : draft.pin.length === 6));
+  // Único campo realmente obrigatório é o Nome — PIN vazio é permitido e vira um PIN gerado
+  // automaticamente na hora de salvar (ver handleSave), então quem só quer cadastrar o nome
+  // não fica travado esperando definir uma senha. Só bloqueia um PIN PARCIAL (ex.: parou de
+  // digitar no meio do teclado numérico) num colaborador NOVO — nesse caso pede pra terminar
+  // ou apagar tudo. Editando um já existente, qualquer PIN não-vazio serve (inclusive um
+  // registro antigo com PIN fora do padrão atual de 6 dígitos, que não deve travar o
+  // salvamento de outras mudanças, ex.: setores liberados). Representante Externo nunca loga
+  // no app — não usa PIN de jeito nenhum.
+  const pinValid = !!draft && (
+    draft.cargo === 'representante_externo'
+    || draft.pin.trim().length === 0
+    || (isExistingDraft ? draft.pin.trim().length > 0 : draft.pin.length === PIN_LENGTH)
+  );
 
   const toggleSector = (sectorId: typeof SECTORS[number]['id']) => {
     if (!draft) return;
@@ -190,10 +198,18 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   // que salvou, e mostra um toast nos dois casos.
   const handleSave = async () => {
     if (!draft || !draft.name.trim() || !pinValid || isSaving) return;
+    // PIN vazio (ninguém digitou/gerou um) vira um PIN gerado agora, na hora de salvar — sem
+    // isso um colaborador cadastrado só com o nome nunca conseguiria logar depois, e a
+    // intenção aqui é só o nome ser obrigatório, não deixar o colaborador quebrado.
+    let toSave = draft;
+    if (draft.cargo !== 'representante_externo' && !draft.pin.trim()) {
+      const existingPins = collaborators.filter(c => c.id !== draft.id).map(c => c.pin).filter(Boolean);
+      toSave = { ...draft, pin: generateUniquePin({ includeLetters: genIncludeLetters, includeSpecials: genIncludeSpecials }, existingPins) };
+    }
     setIsSaving(true);
     try {
-      await onSave(draft);
-      toast.show('Colaborador salvo com sucesso!');
+      await onSave(toSave);
+      toast.show(toSave.pin !== draft.pin ? `Colaborador salvo! PIN gerado automaticamente: ${toSave.pin}` : 'Colaborador salvo com sucesso!');
       setDraft(null);
     } catch (e: any) {
       console.error('Erro ao salvar colaborador:', e);
@@ -953,7 +969,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           {formTab === 'access' && (
           <>
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Senha (6 caracteres)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Senha (opcional, 6 caracteres)</label>
             <div className="relative">
               {/* readOnly de propósito — abre o mesmo teclado personalizado que o colaborador
                   usa pra entrar (CustomPinKeypad), garantindo que a senha digitada aqui sempre
@@ -962,7 +978,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 type="text"
                 readOnly
                 value={showPin ? draft.pin : '•'.repeat(draft.pin.length)}
-                placeholder="GERE OU CRIE MANUALMENTE ABAIXO"
+                placeholder="EM BRANCO, GERAMOS UMA AUTOMATICAMENTE"
                 className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors tracking-[0.3em] placeholder:text-[10px] placeholder:tracking-normal cursor-default ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
               />
               <button
