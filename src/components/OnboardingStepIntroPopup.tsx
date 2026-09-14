@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { HelpCircle, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 interface OnboardingStepIntroPopupProps {
   isDarkMode: boolean;
@@ -7,33 +6,18 @@ interface OnboardingStepIntroPopupProps {
   totalSteps: number;
   title: string;
   paragraphs: string[];
+  isOpen: boolean;
+  onClose: () => void;
 }
 
 // Substitui, passo a passo (a pedido do Tiago), o GuidedTourOverlay de tela cheia do
 // Assistente de Configuração por algo mais simples: um popup explicando a etapa que aparece
-// uma vez ao entrar na tela, fecha com "Entendi" e vira um "?" flutuante que reabre a mesma
-// explicação a qualquer momento — sem spotlight, sem tap-to-advance. Quem monta o componente
-// (App.tsx) usa `key={stepIndex}` pra remontar (reabrir o popup automaticamente) sempre que o
-// assistente avança pra uma etapa nova.
-export default function OnboardingStepIntroPopup({ isDarkMode, stepIndex, totalSteps, title, paragraphs }: OnboardingStepIntroPopupProps) {
-  const [open, setOpen] = useState(true);
-
-  if (!open) {
-    return (
-      <div className="fixed z-[64000]" style={{ right: 16, bottom: 104 }}>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          title="O que estou fazendo aqui?"
-          aria-label="O que estou fazendo aqui? Toque para ver a explicação desta etapa de novo."
-          className="relative w-14 h-14 rounded-full bg-indigo-600 text-white shadow-2xl flex items-center justify-center active:scale-95 transition-transform border-4 border-white dark:border-slate-800"
-        >
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" />
-          <HelpCircle size={24} strokeWidth={2.5} className="relative" />
-        </button>
-      </div>
-    );
-  }
+// uma vez ao entrar na tela e fecha com "Entendi" — sem spotlight, sem tap-to-advance. O
+// gatilho "?" que reabre essa mesma explicação depois de fechado NÃO mora aqui (fica dentro do
+// pill minimizado da navegação, ver App.tsx) — este componente só renderiza o popup em si,
+// controlado de fora via isOpen/onClose.
+export default function OnboardingStepIntroPopup({ isDarkMode, stepIndex, totalSteps, title, paragraphs, isOpen, onClose }: OnboardingStepIntroPopupProps) {
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[64000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -54,7 +38,7 @@ export default function OnboardingStepIntroPopup({ isDarkMode, stepIndex, totalS
 
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={onClose}
           className="mt-1 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/30 active:scale-[0.98] transition-all"
         >
           <Check size={16} strokeWidth={3} /> Entendi

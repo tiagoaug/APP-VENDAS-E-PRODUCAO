@@ -8928,6 +8928,26 @@ export default function App() {
   // minimizar/restaurar fica logo abaixo do Home, de propósito (ver JSX do <nav>).
   const [navMinimized, setNavMinimized] = useState(false);
 
+  // Assistente de Configuração ativo — colapsa a navegação pro estado minimizado (só o pill
+  // "Menu" pequeno, sem os ícones) automaticamente, deixando visual mais limpo e o usuário em
+  // foco na etapa atual, sem tanta tentação de sair pra outra tela no meio da configuração.
+  // Só reage à MUDANÇA de onboardingActive (dependência), não trava o usuário: tocando em
+  // "Menu" pra expandir de novo continua funcionando normalmente — é a própria forma de
+  // "decidir abandonar a configuração e sair" descrita pelo Tiago. Termina/abandona o
+  // assistente → onboardingActive vira false → volta a minimizar como estava antes sozinho.
+  useEffect(() => {
+    setNavMinimized(onboardingActive);
+  }, [onboardingActive]);
+
+  // Popup de introdução da etapa (OnboardingStepIntroPopup) — controlado aqui em vez de estado
+  // interno do componente, porque o gatilho "?" que reabre a explicação mora dentro do pill
+  // minimizado da navegação (ver <nav> mais abaixo), não no próprio popup. Reabre sozinho toda
+  // vez que o assistente avança pra uma etapa nova.
+  const [onboardingIntroOpen, setOnboardingIntroOpen] = useState(true);
+  useEffect(() => {
+    setOnboardingIntroOpen(true);
+  }, [onboardingStepIndex]);
+
   const attachMiddleNavContainerRef = useCallback((el: HTMLDivElement | null) => {
     middleNavContainerCleanupRef.current?.();
     middleNavContainerCleanupRef.current = null;
@@ -9451,12 +9471,13 @@ export default function App() {
             {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (
               onboardingSteps[onboardingStepIndex].intro ? (
                 <OnboardingStepIntroPopup
-                  key={onboardingStepIndex}
                   isDarkMode={isDarkMode}
                   stepIndex={onboardingStepIndex + 1}
                   totalSteps={onboardingSteps.length}
                   title={onboardingSteps[onboardingStepIndex].label}
                   paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
+                  isOpen={onboardingIntroOpen}
+                  onClose={() => setOnboardingIntroOpen(false)}
                 />
               ) : (
                 <>
@@ -9515,12 +9536,13 @@ export default function App() {
           {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
             onboardingSteps[onboardingStepIndex].intro ? (
               <OnboardingStepIntroPopup
-                key={onboardingStepIndex}
                 isDarkMode={isDarkMode}
                 stepIndex={onboardingStepIndex + 1}
                 totalSteps={onboardingSteps.length}
                 title={onboardingSteps[onboardingStepIndex].label}
                 paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
+                isOpen={onboardingIntroOpen}
+                onClose={() => setOnboardingIntroOpen(false)}
               />
             ) : (
               <>
@@ -9730,17 +9752,36 @@ export default function App() {
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
         <div className="relative w-full max-w-md pointer-events-auto">
           {navMinimized ? (
-            <button
-              type="button"
-              onClick={() => setNavMinimized(false)}
-              title="Mostrar menu de navegação"
-              aria-label="Mostrar menu de navegação"
-              data-guide-anchor="nav.restaurar"
-              className={`flex items-center gap-2 mx-auto px-4 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${themeVisual.pillGradient} active:scale-95 transition-all`}
-            >
-              <ChevronUp size={16} strokeWidth={3} className={isDarkMode ? 'text-white' : 'text-slate-700'} />
-              <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Menu</span>
-            </button>
+            <div className="flex items-center gap-2 mx-auto">
+              {/* Bloqueado (sem onClick, opacidade reduzida) enquanto o Assistente de
+                  Configuração está ativo — evita sair da etapa atual sem querer pelo menu. A
+                  saída "de verdade" continua existindo: o "X" (Encerrar assistente) no
+                  StepWizardBar, que já zera onboardingActive e libera o menu de novo sozinho. */}
+              <button
+                type="button"
+                onClick={onboardingActive ? undefined : () => setNavMinimized(false)}
+                disabled={onboardingActive}
+                title={onboardingActive ? 'Menu bloqueado durante a configuração inicial' : 'Mostrar menu de navegação'}
+                aria-label={onboardingActive ? 'Menu bloqueado durante a configuração inicial' : 'Mostrar menu de navegação'}
+                data-guide-anchor="nav.restaurar"
+                className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${themeVisual.pillGradient} transition-all ${onboardingActive ? 'opacity-60 cursor-not-allowed' : 'active:scale-95'}`}
+              >
+                <ChevronUp size={16} strokeWidth={3} className={isDarkMode ? 'text-white' : 'text-slate-700'} />
+                <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Menu</span>
+              </button>
+              {onboardingActive && onboardingSteps[onboardingStepIndex]?.intro && (
+                <button
+                  type="button"
+                  onClick={() => setOnboardingIntroOpen(true)}
+                  title="O que estou fazendo aqui?"
+                  aria-label="O que estou fazendo aqui? Toque para ver a explicação desta etapa de novo."
+                  className="relative w-11 h-11 rounded-full bg-indigo-600 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border-2 border-white dark:border-slate-800 shrink-0"
+                >
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" />
+                  <HelpCircle size={18} strokeWidth={2.5} className="relative" />
+                </button>
+              )}
+            </div>
           ) : (
           <>
           <div ref={navPillRef} className={`relative flex items-center w-full px-2 py-2.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
