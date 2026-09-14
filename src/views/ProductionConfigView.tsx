@@ -448,6 +448,14 @@ const DEFAULT_UNITS = [
   { name: 'MIL', description: 'Milheiro' },
 ];
 
+// Sugestão de Padrões de Embalagem pro botão "Carregar Padrões" — mesma ideia do DEFAULT_UNITS
+// acima, só que em modo 'FREE' (só "X pares", sem quebra por tamanho) porque a capacidade real
+// da caixa varia por negócio; são pontos de partida editáveis, não valores fixos.
+const DEFAULT_PACKAGING = [
+  { name: 'Caixa 6 Pares', description: 'Ponto de partida — ajuste a capacidade se sua caixa for diferente', metadata: { mode: 'FREE', capacity: 6, sizes: [], sizeQuantities: {} } },
+  { name: 'Caixa 12 Pares', description: 'Ponto de partida — ajuste a capacidade se sua caixa for diferente', metadata: { mode: 'FREE', capacity: 12, sizes: [], sizeQuantities: {} } },
+];
+
 // Sugestão de nomes de Componente/Peça pro botão "Carregar Peças Padrão" — mesma ideia do
 // DEFAULT_UNITS acima, só aparece quando a conta ainda não tem nenhuma cadastrada.
 const DEFAULT_PECAS: { name: string; pieceType: 'ENTRADA' | 'PECA' }[] = [
@@ -1145,6 +1153,7 @@ export default function ProductionConfigView({
           onBack={() => setCurrentScreen('MENU')}
           placeholderLabel="Nenhuma unidade cadastrada"
           seedDefaults={defaultUnits ?? DEFAULT_UNITS}
+          seedButtonLabel="Carregar Unidades Padrão"
           onSaveAsDefault={onSaveDefaultUnits}
           productionConfigs={productionConfigs}
           people={people}
@@ -1228,6 +1237,8 @@ export default function ProductionConfigView({
           onDelete={onDeleteConfigItem}
           onBack={restrictToPackaging ? onBack : () => setCurrentScreen('MENU')}
           placeholderLabel="Nenhum padrão de embalagem"
+          seedDefaults={DEFAULT_PACKAGING}
+          seedButtonLabel="Carregar Padrões de Embalagem"
           productionConfigs={productionConfigs}
           people={people}
           grids={grids}

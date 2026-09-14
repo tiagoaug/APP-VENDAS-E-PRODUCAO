@@ -70,7 +70,7 @@ export default function StepWizardBar({
             onClick={onSkipStep}
             className={`text-[11px] font-bold uppercase tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
           >
-            Pular etapa
+            Pular esta etapa
           </button>
           <button
             onClick={onContinue}

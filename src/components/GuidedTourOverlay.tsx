@@ -114,7 +114,7 @@ export default function GuidedTourOverlay({ title, steps, stepIndex, currentView
       onClick={onExit}
       className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-rose-500 ${isDarkMode ? 'hover:text-rose-400' : 'hover:text-rose-600'}`}
     >
-      <X size={12} strokeWidth={3} /> Sair do tour
+      <X size={12} strokeWidth={3} /> Pular explicação
     </button>
   );
 

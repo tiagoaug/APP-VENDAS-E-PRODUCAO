@@ -1967,22 +1967,27 @@ export default function App() {
   // botão de abrir o cadastro e o botão de salvar — ver render do overlay logo abaixo do
   // StepWizardBar. `productionSubScreen` força ProductionConfigView a abrir direto na aba certa
   // (mesmo mecanismo que os atalhos do menu já usam, App.tsx:1298/1544 — nada novo lá).
-  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; productionSubScreen?: ProductionScreenType }[] = [
+  // `group` alimenta as etiquetas 🏭/🛒 no Roteiro (OnboardingRoadmapView) — indica se o passo
+  // é específico de Fabricação, de Vendas, ou serve pros dois (a maioria dos cadastros de
+  // catálogo é usada tanto por quem fabrica quanto por quem revende).
+  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas' }[] = [
     {
       // Todos os campos do CompanyProfile são opcionais (até o CNPJ/CPF é marcado como tal na
       // tela) — completo assim que qualquer um deles for preenchido, sem exigir um campo
       // específico (ex.: só nome + logo já conta, não precisa ter endereço).
       view: ViewType.COMPANY_PROFILE, label: 'Personalize sua Empresa',
       isComplete: !!(companyProfile.name || companyProfile.address || companyProfile.phone || companyProfile.logoUrl),
-      why: 'O nome, telefone e endereço aparecem nos PDFs/JPGs que você manda pra clientes e fornecedores — deixa tudo com a cara do seu negócio desde o primeiro documento.',
+      why: 'O nome, telefone e endereço aparecem nos PDFs/JPGs que você manda pra clientes e fornecedores — deixa tudo com a cara do seu negócio desde o primeiro documento. Só o nome já é suficiente pra avançar; o resto você completa quando quiser.',
       guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'companyProfile.nome', text: 'Toque aqui e digite o nome da sua empresa.' },
-        { type: 'message', text: 'Preencha também telefone e endereço — o CNPJ/CPF é opcional.' },
+        { type: 'highlight_tap', anchorKey: 'companyProfile.nome', text: 'Toque aqui e digite o nome da sua empresa — só isso já basta pra avançar.' },
+        { type: 'message', text: 'Telefone e endereço são opcionais, dá pra completar depois. O CNPJ/CPF também.' },
         { type: 'highlight_tap', anchorKey: 'companyProfile.salvar', text: 'Toque aqui para salvar.' },
       ],
+      group: 'shared',
     },
     {
       view: ViewType.COLLABORATORS_CONFIG, label: 'Cadastre sua Equipe', isComplete: collaborators.length > 0,
+      group: 'shared',
       why: 'Cadastre quem vai usar o app com você — diretores, vendedores, produção — e defina o que cada um pode acessar. Cada colaborador entra com o próprio PIN, sem precisar da sua senha principal.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'collab.novo', text: 'Toque aqui para cadastrar um colaborador novo.' },
@@ -1992,6 +1997,7 @@ export default function App() {
     },
     {
       view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0,
+      group: 'shared',
       why: 'Agrupa seus produtos (ex.: "Tênis", "Sandálias") pra facilitar filtros e relatórios depois. Dica: abra "Modelos Disponíveis" pra escolher uma categoria pronta com um toque, sem precisar digitar.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'cat.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
@@ -2002,6 +2008,7 @@ export default function App() {
     },
     {
       view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0,
+      group: 'shared',
       why: 'A paleta de cores fica pronta pra usar em qualquer produto, sem digitar o nome toda vez.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'color.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
@@ -2013,6 +2020,7 @@ export default function App() {
     ...(onboardingStatus?.businessType !== 'REVENDA'
       ? [{
           view: ViewType.GRIDS, label: 'Cadastre uma Grade/Unidade', isComplete: grids.length > 0,
+          group: 'fabricacao' as const,
           why: 'Define os tamanhos que um produto vem (ex.: 34 ao 39) — usada na hora de cadastrar cada modelo.',
           guideSteps: [
             { type: 'highlight_tap' as const, anchorKey: 'grade.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
@@ -2026,10 +2034,13 @@ export default function App() {
     ...(onboardingStatus?.businessType !== 'REVENDA'
       ? [{
           view: ViewType.PRODUCTION_CONFIG, label: 'Cadastre um Padrão de Embalagem', isComplete: productionConfigs.some(c => c.type === 'PACKAGING'),
+          group: 'fabricacao' as const,
           why: 'Define quantos pares cabem em cada caixa — usado pra calcular a separação de estoque certinho.',
           productionSubScreen: 'EMBALAGENS' as ProductionScreenType,
           guideSteps: [
-            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar um padrão de embalagem.' },
+            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.carregarPadrao', text: 'Toque aqui pra carregar padrões prontos (6 e 12 pares) — são só um ponto de partida, dá pra ajustar a capacidade depois.' },
+            { type: 'message' as const, text: 'Se nenhum desses servir, toque em "Adicionar Novo Registro" e cadastre do seu jeito.' },
+            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar um padrão de embalagem do zero.' },
             { type: 'message' as const, text: 'Preencha o nome, a capacidade e a composição por tamanho.' },
             { type: 'highlight_tap' as const, anchorKey: 'prodcfg.salvarRegistro', text: 'Toque aqui para salvar.' },
           ],
@@ -2038,9 +2049,12 @@ export default function App() {
     ...(onboardingStatus?.businessType !== 'REVENDA'
       ? [{
           view: ViewType.PRODUCTION_CONFIG, label: 'Cadastre uma Unidade de Medida', isComplete: productionConfigs.some(c => c.type === 'UNIT'),
+          group: 'fabricacao' as const,
           why: 'Usada pra medir materiais na Ficha Técnica dos produtos (ex.: kg, metro, unidade).',
           productionSubScreen: 'UNIDADES' as ProductionScreenType,
           guideSteps: [
+            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.carregarPadrao', text: 'Toque aqui pra carregar as unidades mais usadas (UN, PR, KG, MT...) de uma vez, sem digitar nada.' },
+            { type: 'message' as const, text: 'Se faltar alguma, toque em "Adicionar Novo Registro" e cadastre a que precisar.' },
             { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar uma unidade de medida (ex.: kg, metro, unidade).' },
             { type: 'highlight_tap' as const, anchorKey: 'prodcfg.salvarRegistro', text: 'Digite a sigla e toque aqui para salvar.' },
           ],
@@ -2048,6 +2062,7 @@ export default function App() {
       : []),
     {
       view: ViewType.PEOPLE, params: { initialFilter: 'CUSTOMER' as const }, label: 'Cadastre um Cliente', isComplete: people.some(p => p.isCustomer),
+      group: 'vendas',
       why: 'Precisa de pelo menos um cliente cadastrado pra conseguir registrar sua primeira venda.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um cliente novo.' },
@@ -2057,6 +2072,7 @@ export default function App() {
     },
     {
       view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Cadastre um Fornecedor', isComplete: people.some(p => p.isSupplier),
+      group: 'shared',
       why: 'De quem você compra materiais ou produtos prontos — usado nas Compras e Ordens de Serviço.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um fornecedor novo.' },
@@ -2066,16 +2082,22 @@ export default function App() {
     },
     {
       view: ViewType.ACCOUNTS, label: 'Cadastre uma Conta de Movimentação', isComplete: accounts.length > 0,
+      group: 'vendas',
       why: 'Toda venda, compra ou pagamento precisa de uma conta (ex.: "Caixa", "Banco") pra entrar no financeiro.',
       guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'account.atalhos', text: 'Toque em "Caixa" ou "Banco" pra criar direto, sem digitar nada.' },
+        { type: 'message', text: 'Se preferir um nome diferente, toque em "Nova Conta" e cadastre do seu jeito.' },
         { type: 'highlight_tap', anchorKey: 'account.novo', text: 'Toque aqui para cadastrar uma conta nova.' },
         { type: 'highlight_tap', anchorKey: 'account.salvar', text: 'Digite o nome e toque aqui para salvar.' },
       ],
     },
     {
       view: ViewType.PAYMENT_METHODS, label: 'Cadastre um Meio de Recebimento', isComplete: paymentMethods.length > 0,
+      group: 'vendas',
       why: 'Como o cliente paga (Pix, Dinheiro, Cartão...) — escolhido na hora de fechar cada venda.',
       guideSteps: [
+        { type: 'highlight_tap', anchorKey: 'paymethod.atalhos', text: 'Toque em "Dinheiro" ou "Cartão" pra criar direto — pra "Chave Pix" só falta digitar sua chave de verdade.' },
+        { type: 'message', text: 'Se preferir outro nome, toque em "Adicionar Método" e cadastre do seu jeito.' },
         { type: 'highlight_tap', anchorKey: 'paymethod.novo', text: 'Toque aqui para cadastrar um meio de recebimento novo.' },
         { type: 'highlight_tap', anchorKey: 'paymethod.salvar', text: 'Digite o nome e toque aqui para salvar.' },
       ],
@@ -2084,10 +2106,12 @@ export default function App() {
     // só precisa ser ativado por este parâmetro, sem GuidedTourOverlay nenhum aqui.
     {
       view: ViewType.PRODUCT_FORM, params: { guided: true }, label: 'Crie seu primeiro Produto', isComplete: products.length > 0,
+      group: 'shared',
       why: 'O cadastro guiado te leva campo a campo — referência, nome, cor, tamanhos e preço.',
     },
     {
       view: ViewType.SALE_FORM, label: 'Cadastre uma Venda', isComplete: sales.length > 0,
+      group: 'vendas',
       why: 'A prova de que está tudo funcionando: escolher cliente, produto e forma de pagamento, do jeito que você vai fazer todo dia.',
       guideSteps: [
         { type: 'highlight_tap', anchorKey: 'saleForm.cliente', text: 'Selecione o cliente. Não tem nenhum ainda? Toque em "Cadastrar agora" logo abaixo do campo.' },
@@ -2137,6 +2161,13 @@ export default function App() {
       return;
     }
     goToOnboardingStep(next);
+  };
+
+  // "Voltar" no assistente principal — StepWizardBar já suporta onBack/canGoBack (usado hoje só
+  // no Cadastro Guiado de Modelo, ver handleProductWizardBack), só faltava conectar aqui.
+  const handleOnboardingBack = () => {
+    if (onboardingStepIndex <= 0) return;
+    goToOnboardingStep(onboardingStepIndex - 1);
   };
 
   const handleOnboardingDismiss = () => {
@@ -5493,7 +5524,7 @@ export default function App() {
         return (
           <OnboardingRoadmapView
             isDarkMode={isDarkMode}
-            steps={onboardingSteps.map(s => ({ label: s.label, why: s.why, isComplete: s.isComplete }))}
+            steps={onboardingSteps.map(s => ({ label: s.label, why: s.why, isComplete: s.isComplete, group: s.group }))}
             onStart={handleOnboardingStartFromRoadmap}
             onSkip={handleOnboardingWelcomeSkip}
           />
@@ -9397,6 +9428,8 @@ export default function App() {
                 onContinue={handleOnboardingAdvance}
                 onSkipStep={handleOnboardingAdvance}
                 onDismiss={handleOnboardingDismiss}
+                onBack={handleOnboardingBack}
+                canGoBack={onboardingStepIndex > 0}
               />
             )}
             {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (

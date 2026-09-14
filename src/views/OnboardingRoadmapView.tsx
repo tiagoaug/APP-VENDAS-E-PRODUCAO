@@ -1,11 +1,22 @@
 import { motion } from 'framer-motion';
-import { CheckCircle2, Circle, ArrowRight, ListChecks } from 'lucide-react';
+import { CheckCircle2, Circle, ArrowRight, ListChecks, Factory, ShoppingBag } from 'lucide-react';
 
 interface OnboardingRoadmapStep {
   label: string;
   why: string;
   isComplete: boolean;
+  // Etiqueta 🏭/🛒 — a maioria dos cadastros de catálogo (Empresa, Equipe, Categoria, Cor,
+  // Fornecedor, Produto) serve tanto pra quem fabrica quanto pra quem revende ('shared'); só
+  // Grade/Embalagem/Unidade são específicos de Fabricação, e Cliente/Conta/Pagamento/Venda são
+  // específicos de Vendas.
+  group: 'shared' | 'fabricacao' | 'vendas';
 }
+
+const GROUP_BADGES: Record<OnboardingRoadmapStep['group'], { label: string; icons: Array<'fabricacao' | 'vendas'> }> = {
+  fabricacao: { label: 'Fabricação', icons: ['fabricacao'] },
+  vendas: { label: 'Vendas', icons: ['vendas'] },
+  shared: { label: 'Vendas e Fabricação', icons: ['vendas', 'fabricacao'] },
+};
 
 interface OnboardingRoadmapViewProps {
   isDarkMode: boolean;
@@ -56,6 +67,20 @@ export default function OnboardingRoadmapView({ isDarkMode, steps, onStart, onSk
                 {step.label}
               </p>
               <p className={`text-[11px] mt-0.5 leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{step.why}</p>
+              <div className="flex items-center gap-1 mt-1.5">
+                {GROUP_BADGES[step.group].icons.map((icon) => {
+                  const Icon = icon === 'fabricacao' ? Factory : ShoppingBag;
+                  const colorCls = icon === 'fabricacao'
+                    ? (isDarkMode ? 'bg-violet-900/30 text-violet-400' : 'bg-violet-50 text-violet-600')
+                    : (isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-600');
+                  return (
+                    <span key={icon} className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${colorCls}`} title={GROUP_BADGES[step.group].label}>
+                      <Icon size={11} strokeWidth={2.5} />
+                    </span>
+                  );
+                })}
+                <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>{GROUP_BADGES[step.group].label}</span>
+              </div>
             </div>
           </motion.div>
         ))}
