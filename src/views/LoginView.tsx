@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
 import { auth, signInWithGoogle, signInWithApple, resolveAuthCall } from "../lib/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { Eye, EyeOff, Mail, Lock, Fingerprint } from "lucide-react";
+import { isNativeBiometricAvailable, getBiometryLabel, saveLoginUnlockCredentials } from "../utils/biometricAuth";
 
 interface RecentAccount {
   name: string;
@@ -19,6 +21,11 @@ export default function LoginView() {
   const [submitting, setSubmitting] = useState(false);
   const [recentAccounts, setRecentAccounts] = useState<RecentAccount[]>([]);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  // Desbloqueio por Face ID/Touch ID — só faz sentido pra contas de e-mail/senha (Google/Apple
+  // não têm senha pra guardar no Keychain, ver src/utils/biometricAuth.ts). O checkbox só
+  // aparece se o aparelho tem biometria disponível.
+  const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
+  const [enableFaceIdUnlock, setEnableFaceIdUnlock] = useState(true);
 
   useEffect(() => {
     const stored = localStorage.getItem('musgo_recent_accounts');
@@ -26,6 +33,13 @@ export default function LoginView() {
       try {
         setRecentAccounts(JSON.parse(stored));
       } catch (e) { }
+    }
+    if (Capacitor.isNativePlatform()) {
+      isNativeBiometricAvailable().then(async (available) => {
+        if (available) {
+          setBiometricLabel(await getBiometryLabel());
+        }
+      });
     }
   }, []);
 
@@ -73,6 +87,11 @@ export default function LoginView() {
         : signInWithEmailAndPassword(auth, email, password);
       const userCredential = await resolveAuthCall(authCall);
       saveRecentAccount(userCredential.user);
+      // Melhor esforço: se salvar no Keychain falhar por algum motivo, não deve derrubar um
+      // login que já deu certo — só o desbloqueio rápido na próxima vez que fica indisponível.
+      if (biometricLabel && enableFaceIdUnlock) {
+        try { await saveLoginUnlockCredentials(email, password); } catch { }
+      }
     } catch (err: any) {
       setError(err.message || String(err));
     } finally {
@@ -220,6 +239,20 @@ export default function LoginView() {
                 {showPassword ? <EyeOff size={18} strokeWidth={2.5} /> : <Eye size={18} strokeWidth={2.5} />}
               </button>
             </div>
+
+            {!isRegistering && biometricLabel && (
+              <label className="flex items-center gap-2.5 px-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={enableFaceIdUnlock}
+                  onChange={(e) => setEnableFaceIdUnlock(e.target.checked)}
+                  className="w-4 h-4 rounded accent-indigo-600"
+                />
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                  Ativar entrar com {biometricLabel} da próxima vez
+                </span>
+              </label>
+            )}
 
             {error && <p className="text-red-500 text-xs text-center font-bold">{error}</p>}
 

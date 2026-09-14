@@ -70,7 +70,8 @@ import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
 import { firebaseService, deepClean } from "./services/firebaseService";
 import { notificationService, ReminderNotification } from "./services/notificationService";
-import { getBiometryLabel, authenticateBiometric } from "./utils/biometricAuth";
+import { Capacitor } from "@capacitor/core";
+import { getBiometryLabel, authenticateBiometric, isLoginUnlockEnabled } from "./utils/biometricAuth";
 import { resolveSoleConsumption } from "./utils/soleNeeds";
 import { getSourceItemKey, saleProductionHasProgressed } from "./utils/productionRoute";
 import { pickWholesaleStockLots, pickRetailStockLots } from "./utils/stockLotPicker";
@@ -156,6 +157,7 @@ import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 // jogar o app inteiro num chunk só (eram >4MB minificados em um único arquivo).
 import DashboardView from "./views/DashboardView";
 import LoginView from "./views/LoginView";
+import AppUnlockView from "./views/AppUnlockView";
 const OnboardingWelcomeView = lazy(() => import("./views/OnboardingWelcomeView"));
 const OnboardingRoadmapView = lazy(() => import("./views/OnboardingRoadmapView"));
 const OnboardingCompleteView = lazy(() => import("./views/OnboardingCompleteView"));
@@ -421,6 +423,13 @@ function ViewLoadingFallback() {
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  // Desbloqueio por Face ID/Touch ID da TELA DE LOGIN (diferente do gate "Quem é você?" de
+  // colaborador, que já pressupõe sessão ativa) — como o iOS não persiste a sessão do Firebase
+  // entre aberturas do app (ver src/lib/firebase.ts), isso evita digitar e-mail/senha de novo
+  // toda vez. Checado uma vez, em paralelo ao onAuthStateChanged, pra já saber a resposta
+  // quando `loading` terminar e decidir entre AppUnlockView e LoginView sem piscar tela.
+  const [loginUnlockBiometricLabel, setLoginUnlockBiometricLabel] = useState<string | null>(null);
+  const [showManualLoginInstead, setShowManualLoginInstead] = useState(false);
   const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
   const [lastNonModalView, setLastNonModalView] = useState<ViewType>(ViewType.DASHBOARD);
   const [history, setHistory] = useState<ViewType[]>([ViewType.DASHBOARD]);
@@ -1433,6 +1442,18 @@ export default function App() {
       clearTimeout(timeoutId);
       unsubscribeAuth();
     };
+  }, []);
+
+  // Só precisa saber ANTES de `loading` terminar se existe um desbloqueio por biometria
+  // configurado neste aparelho — feito em paralelo (não depende do resultado do auth acima) pra
+  // já ter a resposta pronta e decidir entre AppUnlockView/LoginView sem piscar a tela errada
+  // primeiro.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    (async () => {
+      const [available, label] = await Promise.all([isLoginUnlockEnabled(), getBiometryLabel()]);
+      if (available && label) setLoginUnlockBiometricLabel(label);
+    })();
   }, []);
 
   useEffect(() => {
@@ -9159,6 +9180,14 @@ export default function App() {
   }
 
   if (!user) {
+    if (loginUnlockBiometricLabel && !showManualLoginInstead) {
+      return (
+        <AppUnlockView
+          biometricLabel={loginUnlockBiometricLabel}
+          onUseAnotherAccount={() => setShowManualLoginInstead(true)}
+        />
+      );
+    }
     return <LoginView />;
   }
 

@@ -1,4 +1,5 @@
 import { BiometricAuth, BiometryType } from '@aparajita/capacitor-biometric-auth';
+import { NativeBiometric, AccessControl } from '@capgo/capacitor-native-biometric';
 
 // Nome amigável do tipo de biometria disponível NESTE aparelho (Face ID no iPhone,
 // impressão digital/reconhecimento facial no Android) — null quando o aparelho não tem
@@ -41,4 +42,58 @@ export async function authenticateBiometric(reason: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// --- Desbloqueio da TELA DE LOGIN por Face ID/Touch ID (diferente da biometria por
+// colaborador acima, que já pressupõe uma sessão Firebase ativa) ---
+//
+// Guarda e-mail+senha no Keychain (iOS)/Keystore (Android) via @capgo/capacitor-native-biometric
+// — plugin separado do @aparajita usado acima porque só ele oferece armazenamento seguro
+// (setCredentials/getSecureCredentials); o @aparajita continua sendo o único usado pra
+// biometria de colaborador. `getSecureCredentials` já dispara o prompt nativo de biometria
+// sozinho (accessControl BIOMETRY_ANY exige isso pra ler o item do Keychain), então não
+// precisa chamar authenticateBiometric() antes — evita prompt duplicado.
+//
+// Existe só pra contas de e-mail/senha: contas Google/Apple não têm senha pra guardar, então
+// o checkbox de ativar não aparece pra esse fluxo (ver LoginView.tsx).
+const LOGIN_UNLOCK_SERVER = 'com.musgo.vendaseproducao.loginUnlock';
+
+export async function isNativeBiometricAvailable(): Promise<boolean> {
+  try {
+    const result = await NativeBiometric.isAvailable();
+    return result.isAvailable;
+  } catch {
+    return false;
+  }
+}
+
+export async function isLoginUnlockEnabled(): Promise<boolean> {
+  try {
+    const { isSaved } = await NativeBiometric.isCredentialsSaved({ server: LOGIN_UNLOCK_SERVER });
+    return isSaved;
+  } catch {
+    return false;
+  }
+}
+
+export async function saveLoginUnlockCredentials(email: string, password: string): Promise<void> {
+  await NativeBiometric.setCredentials({
+    username: email,
+    password,
+    server: LOGIN_UNLOCK_SERVER,
+    accessControl: AccessControl.BIOMETRY_ANY,
+  });
+}
+
+// Dispara o prompt nativo de biometria e retorna as credenciais salvas se confirmado.
+// Lança o erro original em caso de cancelamento/falha/nada salvo — quem chama decide a
+// mensagem (ver AppUnlockView.tsx).
+export async function getLoginUnlockCredentials(reason: string): Promise<{ username: string; password: string }> {
+  return NativeBiometric.getSecureCredentials({ server: LOGIN_UNLOCK_SERVER, reason });
+}
+
+export async function clearLoginUnlockCredentials(): Promise<void> {
+  try {
+    await NativeBiometric.deleteCredentials({ server: LOGIN_UNLOCK_SERVER });
+  } catch { }
 }

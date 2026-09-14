@@ -48,8 +48,11 @@ import {
   Box,
   PackageOpen,
   ShieldCheck,
-  Info
+  Info,
+  Fingerprint
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { isLoginUnlockEnabled, clearLoginUnlockCredentials } from '../utils/biometricAuth';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
@@ -178,6 +181,12 @@ export default function SettingsView({
   const [showA11y, setShowA11y] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [faceIdUnlockEnabled, setFaceIdUnlockEnabled] = useState(false);
+  const [showDisableFaceIdConfirm, setShowDisableFaceIdConfirm] = useState(false);
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    isLoginUnlockEnabled().then(setFaceIdUnlockEnabled);
+  }, []);
   const [showCollabSwitcher, setShowCollabSwitcher] = useState(false);
   const [switchTargetId, setSwitchTargetId] = useState<string | null>(null);
   const [pinInput, setPinInput] = useState('');
@@ -641,6 +650,25 @@ export default function SettingsView({
         <div className="flex flex-col gap-3">
           <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Conta</h3>
           <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            {faceIdUnlockEnabled && (
+              <button
+                onClick={() => setShowDisableFaceIdConfirm(true)}
+                title="Desativar Desbloqueio por Face ID"
+                aria-label="Desativar desbloqueio por Face ID/Touch ID"
+                className={`w-full flex items-center justify-between p-4 border-b transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/50' : 'border-slate-100 hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                    <Fingerprint size={22} />
+                  </div>
+                  <div className="text-left">
+                    <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Desativar Desbloqueio Rápido</p>
+                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Esquece a senha guardada pra Face ID/Touch ID</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
+            )}
             <button
               onClick={() => setShowLogoutConfirm(true)}
               title="Encerrar Sessão"
@@ -664,7 +692,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.4.3</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.5.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1190,6 +1218,45 @@ export default function SettingsView({
                 className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95"
               >
                 Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DESATIVAR DESBLOQUEIO POR FACE ID CONFIRM MODAL ── */}
+      {showDisableFaceIdConfirm && (
+        <div className="fixed inset-0 z-[65000] flex items-end justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-sm rounded-[2rem] p-6 shadow-2xl flex flex-col items-center gap-4 animate-in slide-in-from-bottom-4 duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
+              <Fingerprint size={32} className="text-indigo-600 dark:text-indigo-400" strokeWidth={2} />
+            </div>
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                Desativar Desbloqueio Rápido?
+              </h3>
+              <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
+                A senha guardada neste aparelho pra Face ID/Touch ID será esquecida. Você pode ativar de novo a qualquer momento na tela de login.
+              </p>
+            </div>
+            <div className="flex gap-3 w-full mt-1">
+              <button
+                onClick={() => setShowDisableFaceIdConfirm(false)}
+                className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${
+                  isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  await clearLoginUnlockCredentials();
+                  setFaceIdUnlockEnabled(false);
+                  setShowDisableFaceIdConfirm(false);
+                }}
+                className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95"
+              >
+                Desativar
               </button>
             </div>
           </div>
