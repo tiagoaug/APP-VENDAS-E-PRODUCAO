@@ -243,6 +243,7 @@ import PalmilhaPurchaseModal from "./components/PalmilhaPurchaseModal";
 import AIAssistantModal from "./components/AIAssistantModal";
 import HelpCenterModal from "./components/HelpCenterModal";
 import GuidedTourOverlay from "./components/GuidedTourOverlay";
+import OnboardingStepIntroPopup from "./components/OnboardingStepIntroPopup";
 import DraggableHelpPoint from "./components/DraggableHelpPoint";
 import { JOURNEYS, JourneyStep } from "./data/journeys";
 import ScannerModal from "./components/ScannerModal";
@@ -1970,7 +1971,13 @@ export default function App() {
   // `group` alimenta as etiquetas 🏭/🛒 no Roteiro (OnboardingRoadmapView) — indica se o passo
   // é específico de Fabricação, de Vendas, ou serve pros dois (a maioria dos cadastros de
   // catálogo é usada tanto por quem fabrica quanto por quem revende).
-  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas' }[] = [
+  // `intro` (novo formato, substituindo guideSteps passo a passo a pedido do Tiago): um popup
+  // com o texto da etapa, que fecha com "Entendi" e vira um "?" flutuante — ver
+  // OnboardingStepIntroPopup.tsx. `guidePulseFields` acende a bolinha vermelha pulsante (ver
+  // GuidePulseDot.tsx) nos campos daquele passo específico — cada view interpreta as chaves à
+  // sua maneira (CompanyProfileView usa 'name'/'phone'). Passos que ainda não foram convertidos
+  // continuam em guideSteps (GuidedTourOverlay) normalmente.
+  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; intro?: { paragraphs: string[] }; guidePulseFields?: string[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas' }[] = [
     {
       // Todos os campos do CompanyProfile são opcionais (até o CNPJ/CPF é marcado como tal na
       // tela) — completo assim que qualquer um deles for preenchido, sem exigir um campo
@@ -1978,11 +1985,15 @@ export default function App() {
       view: ViewType.COMPANY_PROFILE, label: 'Personalize sua Empresa',
       isComplete: !!(companyProfile.name || companyProfile.address || companyProfile.phone || companyProfile.logoUrl),
       why: 'O nome, telefone e endereço aparecem nos PDFs/JPGs que você manda pra clientes e fornecedores — deixa tudo com a cara do seu negócio desde o primeiro documento. Só o nome já é suficiente pra avançar; o resto você completa quando quiser.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'companyProfile.nome', text: 'Toque aqui e digite o nome da sua empresa — só isso já basta pra avançar.' },
-        { type: 'message', text: 'Telefone e endereço são opcionais, dá pra completar depois. O CNPJ/CPF também.' },
-        { type: 'highlight_tap', anchorKey: 'companyProfile.salvar', text: 'Toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Aqui na configuração da sua empresa você coloca todos os dados relevantes que você quiser que apareçam junto com os PDFs enviados pelo programa.',
+          'É uma personalização própria que dá a sua identidade ao seu negócio.',
+          'Essas informações ficam no cabeçalho ou no rodapé dos PDFs que futuramente você enviará para clientes e fornecedores.',
+          'Você também pode colocar a sua logo, num local do cadastro pra ser vista junto com suas informações.',
+        ],
+      },
+      guidePulseFields: ['name', 'phone'],
       group: 'shared',
     },
     {
@@ -8677,6 +8688,11 @@ export default function App() {
             profile={companyProfile}
             onSave={saveCompanyProfile}
             isDarkMode={isDarkMode}
+            guidePulseFields={
+              onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.COMPANY_PROFILE
+                ? onboardingSteps[onboardingStepIndex].guidePulseFields
+                : undefined
+            }
           />
         );
       case ViewType.MANUAL:
@@ -9433,24 +9449,36 @@ export default function App() {
               />
             )}
             {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (
-              <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
-                <Info size={18} className="shrink-0 mt-0.5" />
-                <p className="text-xs font-bold leading-relaxed">
-                  {onboardingSteps[onboardingStepIndex].why}
-                </p>
-              </div>
-            )}
-            {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView)
-              && (onboardingSteps[onboardingStepIndex].guideSteps?.length ?? 0) > onboardingGuideStepIndex && (
-              <GuidedTourOverlay
-                title={onboardingSteps[onboardingStepIndex].label}
-                steps={onboardingSteps[onboardingStepIndex].guideSteps!}
-                stepIndex={onboardingGuideStepIndex}
-                currentView={lastNonModalView}
-                isDarkMode={isDarkMode}
-                onAdvance={() => setOnboardingGuideStepIndex(i => i + 1)}
-                onExit={() => setOnboardingGuideStepIndex(onboardingSteps[onboardingStepIndex].guideSteps!.length)}
-              />
+              onboardingSteps[onboardingStepIndex].intro ? (
+                <OnboardingStepIntroPopup
+                  key={onboardingStepIndex}
+                  isDarkMode={isDarkMode}
+                  stepIndex={onboardingStepIndex + 1}
+                  totalSteps={onboardingSteps.length}
+                  title={onboardingSteps[onboardingStepIndex].label}
+                  paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
+                />
+              ) : (
+                <>
+                  <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
+                    <Info size={18} className="shrink-0 mt-0.5" />
+                    <p className="text-xs font-bold leading-relaxed">
+                      {onboardingSteps[onboardingStepIndex].why}
+                    </p>
+                  </div>
+                  {(onboardingSteps[onboardingStepIndex].guideSteps?.length ?? 0) > onboardingGuideStepIndex && (
+                    <GuidedTourOverlay
+                      title={onboardingSteps[onboardingStepIndex].label}
+                      steps={onboardingSteps[onboardingStepIndex].guideSteps!}
+                      stepIndex={onboardingGuideStepIndex}
+                      currentView={lastNonModalView}
+                      isDarkMode={isDarkMode}
+                      onAdvance={() => setOnboardingGuideStepIndex(i => i + 1)}
+                      onExit={() => setOnboardingGuideStepIndex(onboardingSteps[onboardingStepIndex].guideSteps!.length)}
+                    />
+                  )}
+                </>
+              )
             )}
             <Suspense fallback={<ViewLoadingFallback />}>
               {renderView(lastNonModalView)}
@@ -9485,24 +9513,36 @@ export default function App() {
             />
           )}
           {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
-            <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
-              <Info size={18} className="shrink-0 mt-0.5" />
-              <p className="text-xs font-bold leading-relaxed">
-                {onboardingSteps[onboardingStepIndex].why}
-              </p>
-            </div>
-          )}
-          {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView
-            && (onboardingSteps[onboardingStepIndex].guideSteps?.length ?? 0) > onboardingGuideStepIndex && (
-            <GuidedTourOverlay
-              title={onboardingSteps[onboardingStepIndex].label}
-              steps={onboardingSteps[onboardingStepIndex].guideSteps!}
-              stepIndex={onboardingGuideStepIndex}
-              currentView={currentView}
-              isDarkMode={isDarkMode}
-              onAdvance={() => setOnboardingGuideStepIndex(i => i + 1)}
-              onExit={() => setOnboardingGuideStepIndex(onboardingSteps[onboardingStepIndex].guideSteps!.length)}
-            />
+            onboardingSteps[onboardingStepIndex].intro ? (
+              <OnboardingStepIntroPopup
+                key={onboardingStepIndex}
+                isDarkMode={isDarkMode}
+                stepIndex={onboardingStepIndex + 1}
+                totalSteps={onboardingSteps.length}
+                title={onboardingSteps[onboardingStepIndex].label}
+                paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
+              />
+            ) : (
+              <>
+                <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
+                  <Info size={18} className="shrink-0 mt-0.5" />
+                  <p className="text-xs font-bold leading-relaxed">
+                    {onboardingSteps[onboardingStepIndex].why}
+                  </p>
+                </div>
+                {(onboardingSteps[onboardingStepIndex].guideSteps?.length ?? 0) > onboardingGuideStepIndex && (
+                  <GuidedTourOverlay
+                    title={onboardingSteps[onboardingStepIndex].label}
+                    steps={onboardingSteps[onboardingStepIndex].guideSteps!}
+                    stepIndex={onboardingGuideStepIndex}
+                    currentView={currentView}
+                    isDarkMode={isDarkMode}
+                    onAdvance={() => setOnboardingGuideStepIndex(i => i + 1)}
+                    onExit={() => setOnboardingGuideStepIndex(onboardingSteps[onboardingStepIndex].guideSteps!.length)}
+                  />
+                )}
+              </>
+            )
           )}
           {productWizardActive && productWizardSteps[productWizardStepIndex]?.view === currentView && (
             <StepWizardBar

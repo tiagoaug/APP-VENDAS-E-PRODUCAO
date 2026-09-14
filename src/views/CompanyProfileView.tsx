@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { CompanyProfile } from '../types';
-import { Building2, Camera, X, Phone, MapPin, FileDigit, Image as ImageIcon, Save } from 'lucide-react';
+import { Building2, Camera, X, Phone, MapPin, FileDigit, Image as ImageIcon, Save, Sparkles } from 'lucide-react';
 import { toast } from '../utils/toast';
+import GuidePulseDot from '../components/GuidePulseDot';
 
 interface CompanyProfileViewProps {
   profile: CompanyProfile;
   onSave: (profile: CompanyProfile) => Promise<void>;
   isDarkMode: boolean;
+  // Campos marcados com a bolinha vermelha pulsante durante o Assistente de Configuração (ver
+  // GuidePulseDot.tsx) — hoje só 'name'/'phone', mas aceita qualquer chave futura sem precisar
+  // mudar a assinatura.
+  guidePulseFields?: string[];
 }
 
 const EXPORT_POSITION_OPTIONS: { value: CompanyProfile['exportPosition']; label: string; desc: string }[] = [
@@ -37,7 +42,7 @@ function readImageResized(file: File, maxSide: number): Promise<string> {
   });
 }
 
-export default function CompanyProfileView({ profile, onSave, isDarkMode }: CompanyProfileViewProps) {
+export default function CompanyProfileView({ profile, onSave, isDarkMode, guidePulseFields }: CompanyProfileViewProps) {
   const [draft, setDraft] = useState<CompanyProfile>(profile);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -54,7 +59,6 @@ export default function CompanyProfileView({ profile, onSave, isDarkMode }: Comp
     }
   };
 
-  const toggleRowCls = `flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`;
 
   return (
     <div className="flex flex-col gap-6 pb-32 max-w-2xl mx-auto">
@@ -116,7 +120,9 @@ export default function CompanyProfileView({ profile, onSave, isDarkMode }: Comp
       {/* Dados */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Nome da Empresa</label>
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1.5">
+            Nome da Empresa <GuidePulseDot show={guidePulseFields?.includes('name')} />
+          </label>
           <input
             type="text"
             data-guide-anchor="companyProfile.nome"
@@ -128,7 +134,7 @@ export default function CompanyProfileView({ profile, onSave, isDarkMode }: Comp
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1.5"><Phone size={11} /> Telefone</label>
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 flex items-center gap-1.5"><Phone size={11} /> Telefone <GuidePulseDot show={guidePulseFields?.includes('phone')} /></label>
           <input
             type="text"
             value={draft.phone || ''}
@@ -161,43 +167,47 @@ export default function CompanyProfileView({ profile, onSave, isDarkMode }: Comp
         </div>
       </div>
 
-      {/* Onde exibir nos exports */}
-      <div className="flex flex-col gap-2">
-        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Nos PDFs e JPGs compartilhados</label>
+      {/* Card separado — agrupa tudo que é "destaque nos PDFs/JPGs compartilhados" (onde exibir
+          + o que incluir), distinto visualmente dos dados de cadastro em si acima. */}
+      <div className={`flex flex-col gap-4 p-5 rounded-[2rem] border-2 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-slate-50'}`}>
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-indigo-500" />
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Destaque nos PDFs e JPGs Compartilhados</label>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {EXPORT_POSITION_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               onClick={() => setDraft({ ...draft, exportPosition: opt.value })}
-              className={`p-4 rounded-2xl border-2 text-left transition-all ${draft.exportPosition === opt.value ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+              className={`p-4 rounded-2xl border-2 text-left transition-all ${draft.exportPosition === opt.value ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-white'}`}
             >
               <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{opt.label}</p>
               <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider mt-0.5 leading-tight">{opt.desc}</p>
             </button>
           ))}
         </div>
-      </div>
 
-      {/* O que mostrar */}
-      {draft.exportPosition !== 'none' && (
-        <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">O que incluir</label>
-          {([
-            ['showLogo', 'Logomarca'],
-            ['showName', 'Nome da empresa'],
-            ['showPhone', 'Telefone'],
-            ['showAddress', 'Endereço'],
-          ] as [keyof CompanyProfile, string][]).map(([key, label]) => (
-            <button key={key} type="button" onClick={() => setDraft({ ...draft, [key]: !draft[key] })} className={toggleRowCls}>
-              <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
-              <div className={`w-11 h-6 rounded-full relative transition-colors duration-300 ${draft[key] ? 'bg-indigo-600' : 'bg-slate-200'}`}>
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft[key] ? 'left-6' : 'left-1'}`} />
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+        {draft.exportPosition !== 'none' && (
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">O que incluir</label>
+            {([
+              ['showLogo', 'Logomarca'],
+              ['showName', 'Nome da empresa'],
+              ['showPhone', 'Telefone'],
+              ['showAddress', 'Endereço'],
+            ] as [keyof CompanyProfile, string][]).map(([key, label]) => (
+              <button key={key} type="button" onClick={() => setDraft({ ...draft, [key]: !draft[key] })} className={isDarkMode ? 'flex items-center justify-between p-4 rounded-2xl bg-slate-800' : 'flex items-center justify-between p-4 rounded-2xl bg-white border border-slate-100'}>
+                <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
+                <div className={`w-11 h-6 rounded-full relative transition-colors duration-300 ${draft[key] ? 'bg-indigo-600' : 'bg-slate-200'}`}>
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft[key] ? 'left-6' : 'left-1'}`} />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <button
         type="button"
