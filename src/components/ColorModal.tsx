@@ -1,15 +1,18 @@
 
 import { useState, useEffect } from 'react';
 import { ColorValue } from '../types';
+import GuidePulseDot from './GuidePulseDot';
 
 interface ColorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (color: Omit<ColorValue, 'id'>) => void;
   color?: ColorValue;
+  // Bolinha pulsante no Salvar, ver Etapa 4 do Assistente de Configuração (ColorsView.tsx).
+  guideActive?: boolean;
 }
 
-export default function ColorModal({ isOpen, onClose, onSave, color }: ColorModalProps) {
+export default function ColorModal({ isOpen, onClose, onSave, color, guideActive }: ColorModalProps) {
   const [name, setName] = useState(color?.name || '');
   const [isComposite, setIsComposite] = useState(color?.isComposite || false);
 
@@ -62,8 +65,9 @@ export default function ColorModal({ isOpen, onClose, onSave, color }: ColorModa
               onClose();
             }}
             data-guide-anchor="color.salvar"
-            className="flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg"
+            className="relative flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg"
           >
+            {guideActive && <span className="absolute top-1.5 right-1.5"><GuidePulseDot show /></span>}
             Salvar
           </button>
         </div>

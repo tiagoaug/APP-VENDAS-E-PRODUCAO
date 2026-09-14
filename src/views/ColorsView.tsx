@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ColorValue, ColorTemplate } from '../types';
 import { Plus, Trash2, Edit, Bookmark, BookmarkCheck, Sparkles, ChevronDown, Layers } from 'lucide-react';
 import ColorModal from '../components/ColorModal';
+import GuidePulseDot from '../components/GuidePulseDot';
 import { subscribeToColorTemplates, saveColorTemplate } from '../services/colorTemplatesService';
 import { isTemplateAdmin } from '../utils/templateAdmin';
 
@@ -12,9 +13,12 @@ interface ColorsViewProps {
   onDelete: (id: string) => void;
   isDarkMode: boolean;
   onStartJourney?: (journeyId: string) => void;
+  // Bolinha pulsante em "Modelos Disponíveis" + no Salvar do modal, ver Etapa 4 do Assistente
+  // de Configuração.
+  guideActive?: boolean;
 }
 
-export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode, onStartJourney }: ColorsViewProps) {
+export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode, onStartJourney, guideActive }: ColorsViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingColor, setEditingColor] = useState<ColorValue | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState<{ primary: boolean; composite: boolean }>({ primary: false, composite: false });
@@ -102,8 +106,9 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
           type="button"
           onClick={() => setTemplatesOpen(o => ({ ...o, [kind]: !o[kind] }))}
           data-guide-anchor="color.alternarModelos"
-          className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+          className="relative w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
         >
+          {guideActive && <span className="absolute top-2 right-9"><GuidePulseDot show /></span>}
           <div className="flex items-center gap-2">
             <Sparkles size={14} />
             <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
@@ -164,6 +169,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
           else onAdd(col);
         }}
         color={editingColor || undefined}
+        guideActive={guideActive}
       />
 
       {colors.length > 0 && isTemplateAdmin() && (

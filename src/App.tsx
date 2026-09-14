@@ -2041,12 +2041,21 @@ export default function App() {
       view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0,
       group: 'shared',
       why: 'A paleta de cores fica pronta pra usar em qualquer produto, sem digitar o nome toda vez.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'color.alternarModelos', text: 'Antes de criar do zero, toque aqui pra ver os modelos já prontos.' },
-        { type: 'message', text: 'Veja se tem uma cor aqui que já serve — é só tocar nela pra adicionar. Se não tiver nenhuma que sirva, toque em "Entendi" e vamos criar uma nova.' },
-        { type: 'highlight_tap', anchorKey: 'color.novo', text: 'Toque aqui para cadastrar uma cor nova.' },
-        { type: 'highlight_tap', anchorKey: 'color.salvar', text: 'Digite o nome e toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'As cores que você cadastra aqui aparecem tanto no cadastro de Produtos quanto no de Materiais/Insumos — a matéria-prima usada na fabricação dos calçados.',
+          'Abra "Modelos Disponíveis" e veja se alguma cor já pronta atende — é só tocar pra adicionar, sem digitar nada.',
+          'Não encontrou a cor que precisa? Toque em "Adicionar Nova Cor" e cadastre do seu jeito.',
+          'Só não esqueça: sempre que criar ou editar uma cor, toque em Salvar no final pra confirmar.',
+        ],
+        fullParagraphs: [
+          'A paleta de cores é compartilhada entre Produtos e Materiais/Insumos — uma vez cadastrada, a mesma cor fica disponível pra usar em qualquer um dos dois cadastros, sem precisar repetir.',
+          'Existem 2 tipos: Cores Primárias (cores puras, ex.: Preto, Branco, Vermelho) e Cores Compostas (combinações, ex.: Preto e Branco) — cada tipo tem seu próprio "Modelos Disponíveis" separado.',
+          '"Modelos Disponíveis" é uma lista compartilhada entre todas as contas do sistema — toque pra abrir, veja se alguma cor já pronta serve, e toque nela pra adicionar direto, sem digitar nada.',
+          'Se a cor que você precisa não estiver lá, toque em "Adicionar Nova Cor", dê um nome e marque se é composta ou não.',
+          'Sempre que criar ou editar uma cor, toque em Salvar no final pra confirmar — sem isso a mudança não é gravada.',
+        ],
+      },
     },
     ...(onboardingStatus?.businessType !== 'REVENDA'
       ? [{
@@ -5977,6 +5986,7 @@ export default function App() {
             }}
             isDarkMode={isDarkMode}
             onStartJourney={handleStartJourney}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.COLORS}
           />
         );
       case ViewType.BRANDS:
