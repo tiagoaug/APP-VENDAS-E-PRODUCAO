@@ -9984,6 +9984,7 @@ export default function App() {
         onToggleGuideMode={() => setGuideModeEnabled(prev => !prev)}
         helpPointMode={helpPointMode}
         onChangeHelpPointMode={setHelpPointMode}
+        onOpenOnboardingWizard={handleOpenOnboardingWizard}
       />
 
       {/* Mesmo bloqueio da Central de Ajuda acima — o "?" arrastável também tem um botão de

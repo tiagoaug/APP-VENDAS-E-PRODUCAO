@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick, BookOpen } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick, BookOpen, Rocket } from 'lucide-react';
 import { ViewType } from '../types';
 import { HelpTopic } from '../data/helpKnowledgeBase';
 import { getTopicForView, searchHelp } from '../utils/helpMatching';
@@ -21,6 +21,10 @@ interface HelpCenterModalProps {
   onNavigate: (view: ViewType) => void;
   // Inicia um tour guiado (spotlight) — ver GuidedTourOverlay.tsx / src/data/journeys.ts.
   onStartJourney: (journeyId: string) => void;
+  // Reabre o Assistente de Configuração Inicial (pergunta se quer continuar de onde parou ou
+  // refazer do zero) — mesmo handler usado em SettingsView (Sistema & Backup), reaproveitado
+  // aqui pra centralizar tudo relacionado a "me ajuda a aprender o sistema" num só lugar.
+  onOpenOnboardingWizard: () => void;
   // "Me guie" — modo de treinamento: toca sozinho o tour da tela atual e libera o "?"
   // arrastável (DraggableHelpPoint.tsx). Estado vive em App.tsx (localStorage).
   guideModeEnabled: boolean;
@@ -33,7 +37,7 @@ interface HelpCenterModalProps {
 
 export default function HelpCenterModal({
   isOpen, onClose, isDarkMode, currentView, currentViewTitle, productionEnabled, onNavigate, onStartJourney,
-  guideModeEnabled, onToggleGuideMode, helpPointMode, onChangeHelpPointMode,
+  guideModeEnabled, onToggleGuideMode, helpPointMode, onChangeHelpPointMode, onOpenOnboardingWizard,
 }: HelpCenterModalProps) {
   const [query, setQuery] = useState('');
   const [activeTopic, setActiveTopic] = useState<HelpTopic | null>(null);
@@ -88,6 +92,21 @@ export default function HelpCenterModal({
             </div>
           </div>
           <ChevronRight size={16} className="text-amber-500 shrink-0" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { onOpenOnboardingWizard(); onClose(); }}
+          className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl transition-colors ${isDarkMode ? 'bg-rose-900/20 hover:bg-rose-900/30' : 'bg-rose-50 hover:bg-rose-100'}`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <Rocket size={18} className="text-rose-600 dark:text-rose-400 shrink-0" />
+            <div className="min-w-0 text-left">
+              <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Assistente de Configuração</p>
+              <p className={`text-[10px] font-bold mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Continua ou refaz o roteiro inicial passo a passo</p>
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-rose-500 shrink-0" />
         </button>
 
         <label className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl cursor-pointer ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
