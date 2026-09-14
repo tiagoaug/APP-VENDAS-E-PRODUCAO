@@ -63,9 +63,17 @@ export const signInWithGoogle = async () => {
 // Precisa do idToken E do rawNonce pra montar a credential do lado do Firebase JS SDK — sem o
 // nonce, o Firebase rejeita o credential da Apple com "auth/invalid-credential" mesmo com um
 // idToken válido (a Apple exige esse nonce pra provar que o token não foi reaproveitado).
+//
+// `skipNativeAuth: true` é OBRIGATÓRIO aqui (ao contrário do Google, que funciona sem) — com o
+// padrão `skipNativeAuth: false` do capacitor.config.ts, o plugin nativo JÁ completa o login no
+// Firebase Auth nativo sozinho, consumindo o nonce/idToken. Quando o código também tentava
+// montar a credential e chamar signInWithCredential de novo aqui, a Apple rejeitava como
+// token/nonce já usado: "Firebase: Duplicate credential received... (auth/missing-or-invalid-nonce)".
+// Passando skipNativeAuth:true só nesta chamada, o nativo NÃO loga sozinho — só devolve
+// idToken+nonce, e a troca no Firebase acontece uma única vez, aqui.
 export const signInWithApple = async () => {
   if (Capacitor.isNativePlatform()) {
-    const result = await FirebaseAuthentication.signInWithApple();
+    const result = await FirebaseAuthentication.signInWithApple({ skipNativeAuth: true });
     const credential = appleProvider.credential({
       idToken: result.credential?.idToken,
       rawNonce: result.credential?.nonce,
