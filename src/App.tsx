@@ -393,7 +393,7 @@ function TabItem({
       title={label}
       aria-label={`Ir para ${label}`}
       data-guide-anchor={anchorKey}
-      className={`flex flex-col items-center justify-center gap-0.5 transition-all rounded-2xl ${big ? 'w-24 py-3 shrink-0 bg-black/[0.035] dark:bg-white/[0.06]' : fluid ? 'w-full py-1.5' : 'w-16 shrink-0 py-1.5'}`}
+      className={`flex flex-col items-center justify-center gap-0.5 transition-all rounded-2xl ${big ? 'flex-1 min-h-0 w-full py-2 bg-black/[0.035] dark:bg-white/[0.06]' : fluid ? 'w-full py-1.5' : 'w-16 shrink-0 py-1.5'}`}
     >
       <div className={`relative flex items-center justify-center rounded-xl transition-all ${big ? 'w-14 h-10' : 'w-10 h-7'}`} style={pillStyle}>
         <span className="transition-all" style={iconStyle}>
@@ -9630,23 +9630,39 @@ export default function App() {
             </button>
           ) : (
           <>
-          <div ref={navPillRef} className={`relative flex items-center w-full px-2 py-1.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
+          <div ref={navPillRef} className={`relative flex items-center w-full px-2 py-2.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
             {/* 3D top highlight streak */}
             <div className="absolute top-0 left-4 right-4 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
             {/* 3D bottom shadow line */}
             <div className="absolute bottom-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent pointer-events-none" />
-            <TabItem
-              icon={<LayoutDashboard size={24} />}
-              label="Home"
-              active={activeTab === "dashboard"}
-              onClick={() => resetTo(ViewType.DASHBOARD)}
-              anchorKey="nav.home"
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.dashboard}
-              monoColor={effectiveNavMonoColor}
-              big
-            />
+            {/* Coluna do Home espelha a do "Mais" do outro lado: botão grande em cima, faixa
+                fixa embaixo com o botão de recolher o menu — antes esse botão flutuava como um
+                círculo parcialmente cortado por baixo da cápsula, difícil de tocar em telas
+                pequenas. */}
+            <div className="flex flex-col gap-1.5 self-stretch shrink-0 w-24">
+              <TabItem
+                icon={<LayoutDashboard size={24} />}
+                label="Home"
+                active={activeTab === "dashboard"}
+                onClick={() => resetTo(ViewType.DASHBOARD)}
+                anchorKey="nav.home"
+                appTheme={appTheme}
+                iconMode={navIconMode}
+                tintColor={NAV_TAB_COLORS.dashboard}
+                monoColor={effectiveNavMonoColor}
+                big
+              />
+              <button
+                type="button"
+                onClick={() => { setNavMinimized(true); setNavExpanded(false); }}
+                title="Minimizar menu de navegação"
+                aria-label="Minimizar menu de navegação"
+                data-guide-anchor="nav.minimizar"
+                className="flex-1 min-h-0 w-full flex items-center justify-center rounded-full bg-black/[0.035] dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 active:scale-90 active:bg-black/[0.06] dark:active:bg-white/[0.1] transition-all"
+              >
+                <ChevronDown size={18} strokeWidth={3} />
+              </button>
+            </div>
             <div ref={attachMiddleNavContainerRef} className="flex-1 self-stretch min-w-0 overflow-hidden">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
@@ -9745,19 +9761,6 @@ export default function App() {
               );
             })()}
           </div>
-          {/* Botão de minimizar — fica logo abaixo do Home (canto esquerdo da cápsula) de
-              propósito: telas com algo tampado pela barra (ex.: um botão "Salvar" num modal
-              alto) ganham uma saída pra esconder a barra inteira e liberar a tela. */}
-          <button
-            type="button"
-            onClick={() => { setNavMinimized(true); setNavExpanded(false); }}
-            title="Minimizar menu de navegação"
-            aria-label="Minimizar menu de navegação"
-            data-guide-anchor="nav.minimizar"
-            className={`absolute -bottom-2.5 left-3 z-10 flex items-center justify-center w-7 h-7 rounded-full shadow-md active:scale-90 transition-all ${isDarkMode ? 'bg-slate-700 text-slate-200 border border-slate-600' : 'bg-white text-slate-500 border border-slate-200'}`}
-          >
-            <ChevronDown size={14} strokeWidth={3} />
-          </button>
           </>
           )}
         </div>
