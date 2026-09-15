@@ -150,7 +150,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       }
       if (module === 'production' && !isProductionPurchased && !trialStartedAt) {
         setConfirmTitle("Testar Módulo Produção");
-        setConfirmMessage(`O Módulo Produção é vendido separado de Vendas. Você pode testar todas as funções de fábrica (Engenharia de Produto, Insumos, PCP) grátis por ${PRODUCTION_TRIAL_DAYS} dias a partir de agora. Depois desse prazo, o módulo trava até a compra ser confirmada. Quer começar o teste agora?`);
+        setConfirmMessage(`O Módulo Produção é vendido separado de Vendas. Você pode testar todas as funções de fábrica (Engenharia de Produção, Insumos, PCP) grátis por ${PRODUCTION_TRIAL_DAYS} dias a partir de agora. Depois desse prazo, o módulo trava até a compra ser confirmada. Quer começar o teste agora?`);
         setPendingModule('production');
         setPendingAction('startProductionTrial');
         setIsConfirmOpen(true);
@@ -268,7 +268,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       lockLabel: !config.sales ? 'Requer Vendas' : 'Teste Expirado',
       trialEndsAt: isProductionTrialActive ? trialEndsAt! : undefined,
       color: 'bg-indigo-600',
-      features: ['Engenharia de Produto', 'Estoque de Insumos', 'Controle de PCP', 'Necessidade de Compras']
+      features: ['Engenharia de Produção', 'Estoque de Insumos', 'Controle de PCP', 'Necessidade de Compras']
     },
     // Assistente de IA ainda não é oferecido pra contas normais (só consultas de leitura, sem
     // cadastro/edição — ver diagnóstico feito com o usuário) — o card só aparece pra conta de

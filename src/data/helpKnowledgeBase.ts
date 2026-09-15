@@ -468,7 +468,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     view: ViewType.PRODUCTION_ENGINEERING,
-    title: 'Engenharia de Produto',
+    title: 'Engenharia de Produção',
     summary: 'O catálogo de produtos visto pelo lado de quem produz — o mesmo cadastro de Produtos, com foco na ficha técnica de materiais de cada modelo.',
     productionOnly: true,
     sections: [
@@ -482,9 +482,9 @@ export const HELP_TOPICS: HelpTopic[] = [
   {
     view: ViewType.PRODUCT_SHEET,
     title: 'Ficha Técnica',
-    summary: 'Mesma tela de Engenharia de Produto — só muda o nome/caminho de entrada.',
+    summary: 'Mesma tela de Engenharia de Produção — só muda o nome/caminho de entrada.',
     sections: [
-      { heading: 'Sem novidade aqui', body: 'Essa tela é idêntica à Engenharia de Produto (ver aquele tópico) — apenas acessada por outro atalho do menu.' },
+      { heading: 'Sem novidade aqui', body: 'Essa tela é idêntica à Engenharia de Produção (ver aquele tópico) — apenas acessada por outro atalho do menu.' },
     ],
     keywords: ['ficha tecnica', 'engenharia'],
     relatedViews: [ViewType.PRODUCTION_ENGINEERING],

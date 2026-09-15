@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Database,
   Hammer,
-  Copy
+  Copy,
+  GraduationCap
 } from "lucide-react";
 
 interface ProductionEngineeringViewProps {
@@ -26,6 +27,9 @@ interface ProductionEngineeringViewProps {
   categories: Category[];
   onBack: () => void;
   showThumbnails?: boolean;
+  // Abre o tutorial "Engenharia Guiada" (ver ENGINEERING_GUIDE_STEPS em App.tsx) — explica
+  // como ligar uma Ficha Técnica completa a um modelo já existente, passo a passo.
+  onOpenEngineeringGuide?: () => void;
 }
 
 export default function ProductionEngineeringView({
@@ -39,6 +43,7 @@ export default function ProductionEngineeringView({
   categories,
   onBack,
   showThumbnails = true,
+  onOpenEngineeringGuide,
 }: ProductionEngineeringViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -122,6 +127,23 @@ export default function ProductionEngineeringView({
         </div>
       </div>
 
+      {onOpenEngineeringGuide && (
+        <button
+          type="button"
+          onClick={onOpenEngineeringGuide}
+          data-guide-anchor="prodEng.abrirEngenhariaGuiada"
+          className="mt-2 w-full flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/20 active:scale-[0.99] transition-all"
+        >
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <GraduationCap size={18} />
+          </div>
+          <div className="min-w-0 text-left">
+            <p className="text-sm font-black">Engenharia Guiada</p>
+            <p className="text-[11px] font-medium opacity-80">Tutorial: como montar a Ficha Técnica de um modelo</p>
+          </div>
+        </button>
+      )}
+
       <button
         type="button"
         onClick={onAdd}
@@ -133,7 +155,7 @@ export default function ProductionEngineeringView({
         } shadow-[0_6px_24px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.07)]`}
       >
         <div className="absolute top-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-80 pointer-events-none" />
-        <Plus size={16} strokeWidth={3} /> Iniciar Nova Engenharia
+        <Plus size={16} strokeWidth={3} /> Iniciar Nova Engenharia de Produção
       </button>
 
       {filteredProducts.length === 0 ? (

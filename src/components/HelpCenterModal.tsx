@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick, BookOpen, Rocket, SlidersHorizontal } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick, BookOpen, Rocket, SlidersHorizontal, GraduationCap } from 'lucide-react';
 import { ViewType } from '../types';
 import { HelpTopic } from '../data/helpKnowledgeBase';
 import { getTopicForView, searchHelp } from '../utils/helpMatching';
@@ -29,6 +29,10 @@ interface HelpCenterModalProps {
   // Menu) — separado do Assistente de Configuração Inicial acima, ver VISUAL_SETUP_STEPS em
   // App.tsx. Sempre disponível, não só na primeira configuração da conta.
   onOpenVisualSetup: () => void;
+  // Roda o tutorial "Engenharia Guiada" (ligar uma Ficha Técnica a um modelo existente) — ver
+  // ENGINEERING_GUIDE_STEPS em App.tsx. Opcional porque só faz sentido com o Módulo de Produção
+  // ativo; some do menu quando o módulo está desligado.
+  onOpenEngineeringGuide?: () => void;
   // "Me guie" — modo de treinamento: toca sozinho o tour da tela atual e libera o "?"
   // arrastável (DraggableHelpPoint.tsx). Estado vive em App.tsx (localStorage).
   guideModeEnabled: boolean;
@@ -41,7 +45,7 @@ interface HelpCenterModalProps {
 
 export default function HelpCenterModal({
   isOpen, onClose, isDarkMode, currentView, currentViewTitle, productionEnabled, onNavigate, onStartJourney,
-  guideModeEnabled, onToggleGuideMode, helpPointMode, onChangeHelpPointMode, onOpenOnboardingWizard, onOpenVisualSetup,
+  guideModeEnabled, onToggleGuideMode, helpPointMode, onChangeHelpPointMode, onOpenOnboardingWizard, onOpenVisualSetup, onOpenEngineeringGuide,
 }: HelpCenterModalProps) {
   const [query, setQuery] = useState('');
   const [activeTopic, setActiveTopic] = useState<HelpTopic | null>(null);
@@ -127,6 +131,23 @@ export default function HelpCenterModal({
           </div>
           <ChevronRight size={16} className="text-indigo-500 shrink-0" />
         </button>
+
+        {onOpenEngineeringGuide && (
+          <button
+            type="button"
+            onClick={() => { onOpenEngineeringGuide(); onClose(); }}
+            className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl transition-colors ${isDarkMode ? 'bg-indigo-900/20 hover:bg-indigo-900/30' : 'bg-indigo-50 hover:bg-indigo-100'}`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <GraduationCap size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div className="min-w-0 text-left">
+                <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Engenharia Guiada</p>
+                <p className={`text-[10px] font-bold mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Como ligar a Ficha Técnica a um modelo existente</p>
+              </div>
+            </div>
+            <ChevronRight size={16} className="text-indigo-500 shrink-0" />
+          </button>
+        )}
 
         <label className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl cursor-pointer ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
           <div className="min-w-0">

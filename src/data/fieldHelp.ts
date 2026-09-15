@@ -1183,7 +1183,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'settings.sairAbrir': { text: 'Abre a confirmação de encerrar sessão — seus dados continuam salvos na nuvem.' },
   'settings.acessibilidadeFechar': { text: 'Fecha as opções de aparência.' },
   'settings.modoEscuro': { text: 'Alterna entre tema claro e escuro.' },
-  'settings.miniaturasEngenharia': { text: 'Mostra ou esconde a foto de cada modelo na tela de Engenharia de Produto.' },
+  'settings.miniaturasEngenharia': { text: 'Mostra ou esconde a foto de cada modelo na tela de Engenharia de Produção.' },
   'settings.privacidadeFinanceira': { text: 'Liga pra borrar todos os valores financeiros na tela (útil em público) — os números continuam lá, só ficam ilegíveis até desligar de novo.' },
   'settings.espacoTopoExtra': { text: 'Adiciona um espaço extra no topo das telas — útil em aparelhos onde o cabeçalho fica colado demais na barra de status.' },
   'settings.tema': { text: 'Escolhe a paleta de cores usada em todo o sistema.' },
@@ -1499,7 +1499,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'material.cardEditar': { text: 'Abre este insumo pra editar os dados cadastrados.' },
   'material.cardExcluir': { text: 'Exclui este insumo do cadastro.' },
 
-  // Engenharia de Produto (EngineeringEditor.tsx) — Etapa 2: cobertura completa.
+  // Engenharia de Produção (EngineeringEditor.tsx) — Etapa 2: cobertura completa.
   'engineeringEditor.voltar': { text: 'Volta pra tela anterior sem salvar esta engenharia.' },
   'engineeringEditor.tipoLancamento': { text: 'Escolhe o tipo de lançamento: Peça/Material (formulário completo com insumo e faca) ou Genérico (mão de obra/serviço avulso, sem material cadastrado).' },
   'engineeringEditor.simplesCalc': { text: 'Abre uma calculadora pra te ajudar a definir o valor (alíquota ou valor fixo).' },
@@ -1578,7 +1578,7 @@ export const FIELD_HELP: Record<string, FieldHelpEntry> = {
   'materialForm.corModalCancelar': { text: 'Fecha o popup sem salvar o estoque e custo por cor.' },
   'materialForm.corModalSalvar': { text: 'Salva o estoque e o custo de cada cor, atualizando o estoque total do insumo.' },
 
-  // Engenharia de Produto (ProductionEngineeringView.tsx) — Etapa 2: cobertura completa.
+  // Engenharia de Produção (ProductionEngineeringView.tsx) — Etapa 2: cobertura completa.
   'prodEng.excluirCancelar': { text: 'Cancela a exclusão, mantendo o modelo.' },
   'prodEng.excluirConfirmar': { text: 'Confirma a exclusão deste modelo e de toda a ficha técnica/consumos associados.' },
   'prodEng.novaEngenharia': { text: 'Começa a engenharia (ficha técnica) de um modelo novo.' },

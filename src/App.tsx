@@ -376,6 +376,87 @@ const VISUAL_SETUP_STEPS: VisualSetupStep[] = [
   },
 ];
 
+// Engenharia Guiada — tutorial à parte (Tiago: "a parte mais complicada do programa"),
+// explicando como ligar uma Ficha Técnica completa a um modelo JÁ EXISTENTE (diferente do
+// Cadastro Guiado de Modelo acima, que é pra criar um modelo NOVO do zero). Usa o mesmo par
+// StepWizardBar + OnboardingStepIntroPopup do resto do app, mas SEM minimizar a navegação —
+// aqui a pessoa precisa continuar navegando livremente (Engenharia → um produto → uma cor →
+// Ficha Técnica), coisa que os outros assistentes não exigem (suas telas são sempre as
+// mesmas, fixas por etapa). Por isso só a Etapa 1 navega de verdade (pro catálogo de
+// Engenharia); as demais só avançam o texto explicativo — a pessoa aplica cada explicação
+// na tela real, no seu próprio ritmo, sem o assistente forçar troca de tela no meio de uma
+// edição em andamento (arriscaria abrir um produto NOVO em branco por cima do que já estava
+// sendo editado). Estático, mora fora do App() como VISUAL_SETUP_STEPS.
+interface EngineeringGuideStep {
+  label: string;
+  paragraphs: string[];
+  fullParagraphs?: string[];
+}
+const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
+  {
+    label: 'Selecione um Modelo Existente',
+    paragraphs: [
+      'Engenharia é o mesmo Cadastro de Produtos, só que com foco na ficha técnica — em vez de criar um modelo do zero, você abre um que já existe (com nome, referência e cores já cadastrados) pra montar a ficha técnica dele.',
+      'Toque em "Editar Engenharia" em qualquer modelo da lista pra continuar este tutorial dentro dele.',
+    ],
+    fullParagraphs: [
+      'Engenharia é o mesmo Cadastro de Produtos, só que com foco na ficha técnica — em vez de criar um modelo do zero, você abre um que já existe (com nome, referência e cores já cadastrados) pra montar a ficha técnica dele.',
+      'Toque em "Editar Engenharia" em qualquer modelo da lista (ou em "Iniciar Nova Engenharia de Produção" se preferir cadastrar um modelo novo primeiro) pra continuar este tutorial dentro dele.',
+      'A partir daqui, as próximas etapas deste tutorial só explicam o que cada parte faz — você mesmo navega pela tela real enquanto lê, no seu ritmo. Toque em "Continuar" quando quiser ver a próxima explicação.',
+    ],
+  },
+  {
+    label: 'Grade de Produção e Matriz de Solado',
+    paragraphs: [
+      'Em "Configurações de Produção", escolha a Grade de Produção (as numerações em que o modelo é feito) e a Matriz de Solado (o molde/base usado) — os dois juntos definem em quais tamanhos o calçado existe.',
+    ],
+    fullParagraphs: [
+      'A Grade de Produção é o escalonamento de numerações (ex.: 34 ao 39) em que esse modelo é produzido. A Matriz de Solado é o molde/base física usada — ela já vem com sua própria matriz de tamanhos e custo por par.',
+      'Se o número gravado na sola não bater com o número real do calçado (comum quando a fôrma do solado é diferente da fôrma do cabedal), use "Mapeamento de Solados por Numeração" logo abaixo pra dizer qual numeração da sola corresponde a qual numeração do calçado.',
+      'Essas duas escolhas (Grade + Matriz) precisam estar feitas antes de avançar pra Ficha Técnica — vários cálculos de consumo (ex.: peças de corte por numeração, mapeamento de facas) dependem delas.',
+    ],
+  },
+  {
+    label: 'Adicione ou Abra uma Cor',
+    paragraphs: [
+      'A Ficha Técnica é por COR — role até "Cores e Variações", toque em "Adicionar Cor" (se ainda não tiver nenhuma) ou em "Editar Engenharia" numa cor já existente pra entrar nela.',
+    ],
+    fullParagraphs: [
+      'Cada cor do modelo tem sua própria Ficha Técnica, independente das outras — um mesmo modelo pode gastar mais material numa cor do que noutra (ex.: um material que só uma cor usa), então cada cor precisa da sua ficha própria.',
+      'Já tem a ficha pronta numa cor e quer aplicar a mesma coisa noutra cor do mesmo modelo? Use "Copiar Engenharia" na cor de origem e "Colar Engenharia" na cor de destino, em vez de refazer tudo — só use quando as duas cores realmente consomem os mesmos materiais.',
+      'Dentro da cor, dois modos: "Cores & Info" (foto, cor do solado, instruções por setor) e "Ficha Técnica" (a aba da próxima etapa deste tutorial) — a aba Ficha Técnica só aparece com o Módulo de Produção ativo.',
+    ],
+  },
+  {
+    label: 'Ficha Técnica: Como Funciona',
+    paragraphs: [
+      'A Ficha Técnica lista tudo que compõe o par: peças de corte, embalagens, químicos, aviamentos, mão de obra e mais — é o que calcula o custo de produção automaticamente. Esta etapa é mais longa: toque em "Ver explicação completa" pra ler tudo antes de começar a lançar itens.',
+    ],
+    fullParagraphs: [
+      'CATEGORIAS: os itens ficam agrupados em categorias — "Componentes do Cabedal" (peças de corte) tem destaque próprio no topo; as demais (Embalagens, Químicos, Aviamentos, Impostos, Fretes, Comissões, Folha de Pagamento, Serviços, e categorias que você mesmo criar em "Gerenciar Categorias") ficam em acordeões abaixo. "Serviços" é diferente das outras: é mão de obra do conjunto inteiro (ex.: costura, montagem), lançada direto ali, sem abrir tela nova.',
+      'ADICIONANDO UM ITEM: em qualquer categoria (menos Serviços), tocar em "Nova Peça"/"Adicionar" abre a tela de lançamento. Lá, escolha entre "Peça/Material" (vincula um material do seu Cadastro de Materiais, entra na Necessidade de Compra) ou "Genérico" (só um nome livre + quantidade + valor, sem vínculo — útil pra mão de obra avulsa que não é um material de estoque).',
+      'PEÇAS DE CORTE: aqui você escolhe entre "Rastreado por Faca" (vincula uma Faca/Molde cadastrada, calcula peças por par a partir da área da faca) ou "Só Quantidade de Material" (você digita direto quanto de material gasta, sem faca). Não achou a faca ou o material na busca? Tem um atalho "Cadastre aqui" que abre o cadastro completo sem sair da Ficha Técnica.',
+      'QUANTIDADE: 3 jeitos de informar o consumo — "Simples" (você digita o número que já sabe), "Rendimento" (informa quanto rende uma embalagem/lote em pares, o sistema divide sozinho) e "Pesagem" (pesa o material antes e depois de produzir um lote de teste, o sistema calcula o consumo real por par a partir da diferença).',
+      'EMBALAGENS têm dois ajustes extras: "/par" (gasta a cada par) vs "/grade" (gasta uma vez pra caixa/lote inteiro, não por par) e uma "Modalidade" (Atacado/Varejo/Ambos) que decide se esse item entra na Necessidade de Compra de vendas no par, em caixa fechada, ou nos dois.',
+      'FIXO x FIXO VARIÁVEL: cada categoria (não cada item) tem um botão pra marcar se o custo dela é "Fixo" (um valor por par que não muda) ou "Fixo Variável" (um valor MENSAL — ex.: uma conta ou folha de pagamento — que o sistema dilui em custo por par sozinho, dividindo pelos "Dias Úteis no Mês" e "Pares Estimados por Dia" que você preenche uma vez, no card "Custo Total do Produto"). Sem preencher esses dois números, os itens Fixo Variável ficam de fora do total.',
+      'COR e PEÇAS/PAR: cada item pode ter uma cor vinculada (com "Ignorar Cor" pra materiais que servem em qualquer cor) e uma quantidade de peças por par (padrão 2 — um pra cada pé; "Ignorar Qtd/Par" pra itens que não escalam com a quantidade de pés).',
+      'SETORES: dentro de cada item, "Fluxo de Setores/Serviços" deixa anexar um serviço terceirizado (ex.: bordado numa peça específica) com uma instrução de texto opcional pra esse setor — essas instruções aparecem depois em Instruções por Setor e nas etiquetas/fichas de produção.',
+      'Recomendação: comece por "Componentes do Cabedal" (o que realmente vira o calçado), depois passe pelas categorias de acordeão uma a uma. Não precisa fazer tudo de uma vez — a ficha salva o que já foi lançado a qualquer momento.',
+    ],
+  },
+  {
+    label: 'Roteiro de Produção e Setores',
+    paragraphs: [
+      '"Roteiro de Produção" define por quais setores da fábrica esse modelo passa, em ordem — e "Valores de Serviço por Setor" já sugere um R$/par padrão pra cada um, usado quando você terceiriza uma etapa.',
+    ],
+    fullParagraphs: [
+      'O Roteiro de Produção (lista ordenável de setores) também restringe quais setores aparecem como opção depois, tanto em "Instruções por Setor" (dentro de cada cor) quanto no "Fluxo de Setores/Serviços" de cada item da Ficha Técnica — cadastre o roteiro antes de tentar anexar um serviço a um setor que ainda não está na lista.',
+      '"Valores de Serviço por Setor" só aparece depois que o Roteiro tiver pelo menos 1 setor. Serve de valor sugerido (não obrigatório) na hora de emitir uma Ordem de Serviço pra um prestador terceirizado desse setor.',
+      'Esta é a última etapa deste tutorial — pode rodar de novo a qualquer momento pelo botão "Engenharia Guiada". Nenhuma etapa aqui apaga ou altera dados: é só uma explicação, o que você já lançou continua salvo do jeito que estava.',
+    ],
+  },
+];
+
 const MODULE_VIEWS: Record<string, ViewType[]> = {
   sales: [
     ViewType.PURCHASES,
@@ -665,6 +746,37 @@ export default function App() {
   // Central de Ajuda, não só na primeira vez que a conta é configurada.
   const [visualSetupActive, setVisualSetupActive] = useState(false);
   const [visualSetupStepIndex, setVisualSetupStepIndex] = useState(0);
+  // Engenharia Guiada — tutorial de como ligar uma Ficha Técnica a um modelo existente (ver
+  // ENGINEERING_GUIDE_STEPS). Usa StepWizardBar (portal flutuante, mesmo componente do Cadastro
+  // Guiado de Modelo abaixo) em vez do mecanismo de nav minimizada dos outros 2 assistentes,
+  // porque aqui a pessoa precisa continuar navegando livremente entre telas reais.
+  const [engineeringGuideActive, setEngineeringGuideActive] = useState(false);
+  const [engineeringGuideStepIndex, setEngineeringGuideStepIndex] = useState(0);
+  const [engineeringGuideIntroOpen, setEngineeringGuideIntroOpen] = useState(true);
+  useEffect(() => {
+    setEngineeringGuideIntroOpen(true);
+  }, [engineeringGuideStepIndex]);
+  const handleStartEngineeringGuide = () => {
+    setEngineeringGuideStepIndex(0);
+    setEngineeringGuideIntroOpen(true);
+    navigateTo(ViewType.PRODUCTION_ENGINEERING);
+    setEngineeringGuideActive(true);
+  };
+  const handleEngineeringGuideAdvance = () => {
+    const next = engineeringGuideStepIndex + 1;
+    if (next >= ENGINEERING_GUIDE_STEPS.length) {
+      setEngineeringGuideActive(false);
+      return;
+    }
+    setEngineeringGuideStepIndex(next);
+  };
+  const handleEngineeringGuideBack = () => {
+    if (engineeringGuideStepIndex <= 0) return;
+    setEngineeringGuideStepIndex(engineeringGuideStepIndex - 1);
+  };
+  // Sem popup de confirmação ao sair — igual Personalização Visual, é só uma explicação, não
+  // há cadastro em andamento pra perder aqui.
+  const handleEngineeringGuideDismiss = () => setEngineeringGuideActive(false);
   // Popup mostrado ao tocar em "Assistente de Configuração" (Mais Opções) — pergunta se quer
   // continuar de onde parou ou refazer tudo do zero, mesmo que já tenha configurado antes.
   const [showOnboardingWizardChoice, setShowOnboardingWizardChoice] = useState(false);
@@ -8032,7 +8144,7 @@ export default function App() {
                           <Database size={22} />
                         </div>
                         <div className="text-left">
-                          <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Engenharia de Produto</p>
+                          <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Engenharia de Produção</p>
                           <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Produtos, Grades e Solados</p>
                         </div>
                       </div>
@@ -8151,6 +8263,7 @@ export default function App() {
             products={products}
             categories={categories}
             showThumbnails={showEngineeringThumbnails}
+            onOpenEngineeringGuide={handleStartEngineeringGuide}
             onAdd={handleOpenProductCreationChoice}
             onEdit={(id) => navigateTo(ViewType.PRODUCT_FORM, id)}
             onDelete={async (id) => {
@@ -9388,7 +9501,7 @@ export default function App() {
       case ViewType.PRODUCTION_CONFIG:
         return "Configurações de Produção";
       case ViewType.PRODUCTION_ENGINEERING:
-        return "Engenharia de Produto";
+        return "Engenharia de Produção";
       case ViewType.PRODUCT_SHEET:
         return "Ficha Técnica";
       case ViewType.PRODUCTION_SERVICE_ORDER_FORM:
@@ -9424,7 +9537,12 @@ export default function App() {
       case ViewType.DELIVERY_PRINT_CONFIG:
         return "Central de Impressão";
       case ViewType.PRODUCT_FORM:
-        return "Cadastro de Produto";
+        // Mesmo critério de `module` usado pra renderizar o formulário (ver App.tsx ~6464) —
+        // veio de Engenharia/Módulo de Produção com o módulo realmente ativo = mesmo nome da
+        // tela de origem, não o nome genérico de cadastro comercial.
+        return modulesConfig.production && (lastNonModalView === ViewType.PRODUCTION_MENU || lastNonModalView === ViewType.PRODUCTION_ENGINEERING)
+          ? "Engenharia de Produção"
+          : "Cadastro de Produto";
       case ViewType.SALE_FORM:
         return "Lançamento de Venda";
       case ViewType.PURCHASE_FORM:
@@ -9897,6 +10015,36 @@ export default function App() {
                 {productWizardSteps[productWizardStepIndex].description}
               </p>
             </div>
+          )}
+          {/* Engenharia Guiada — barra flutuante sempre visível (não gira por tela, como as
+              acima) enquanto o assistente está ativo; a pessoa navega livre entre Engenharia →
+              produto → cor → Ficha Técnica sem o assistente forçar troca de tela. */}
+          {engineeringGuideActive && (
+            <StepWizardBar
+              isDarkMode={isDarkMode}
+              title="Engenharia Guiada"
+              stepIndex={engineeringGuideStepIndex + 1}
+              totalSteps={ENGINEERING_GUIDE_STEPS.length}
+              isComplete={true}
+              onContinue={handleEngineeringGuideAdvance}
+              onSkipStep={handleEngineeringGuideAdvance}
+              onDismiss={handleEngineeringGuideDismiss}
+              onBack={handleEngineeringGuideBack}
+              canGoBack={engineeringGuideStepIndex > 0}
+              topOffsetPx={12 + headerTopSpacePx}
+            />
+          )}
+          {engineeringGuideActive && (
+            <OnboardingStepIntroPopup
+              isDarkMode={isDarkMode}
+              stepIndex={engineeringGuideStepIndex + 1}
+              totalSteps={ENGINEERING_GUIDE_STEPS.length}
+              title={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].label}
+              paragraphs={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].paragraphs}
+              fullParagraphs={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].fullParagraphs}
+              isOpen={engineeringGuideIntroOpen}
+              onClose={() => setEngineeringGuideIntroOpen(false)}
+            />
           )}
           {renderView(currentView)}
         </Suspense>
@@ -10615,6 +10763,7 @@ export default function App() {
         onChangeHelpPointMode={setHelpPointMode}
         onOpenOnboardingWizard={handleOpenOnboardingWizard}
         onOpenVisualSetup={handleStartVisualSetup}
+        onOpenEngineeringGuide={modulesConfig.production ? handleStartEngineeringGuide : undefined}
       />
 
       {/* Mesmo bloqueio da Central de Ajuda acima — o "?" arrastável também tem um botão de

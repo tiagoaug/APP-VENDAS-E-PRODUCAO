@@ -831,7 +831,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.20.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.21.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -915,7 +915,7 @@ export default function SettingsView({
                 </button>
               </div>
 
-              {/* Miniaturas dos modelos na Engenharia de Produto */}
+              {/* Miniaturas dos modelos na Engenharia de Produção */}
               {setShowEngineeringThumbnails && (
                 <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
                   <div className="flex items-center gap-3 min-w-0">
@@ -930,7 +930,7 @@ export default function SettingsView({
                   <button
                     onClick={() => setShowEngineeringThumbnails(!showEngineeringThumbnails)}
                     title="Mostrar/ocultar miniaturas dos modelos"
-                    aria-label="Mostrar ou ocultar miniaturas dos modelos na Engenharia de Produto"
+                    aria-label="Mostrar ou ocultar miniaturas dos modelos na Engenharia de Produção"
                     data-guide-anchor="settings.miniaturasEngenharia"
                     className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
