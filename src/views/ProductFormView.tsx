@@ -54,6 +54,13 @@ interface ProductFormViewProps {
   restrictedProductMode?: boolean;
   module?: 'SALES' | 'PRODUCTION';
   guided?: boolean;
+  // Etapa ativa do tutorial "Engenharia Guiada" (ver ENGINEERING_GUIDE_STEPS em App.tsx) —
+  // independente de `guided`/`isGuided` (que só funcionam pra produto NOVO, sem
+  // existingProduct); esse aqui liga bolinhas pulsantes nos campos de produção/engenharia
+  // relevantes pra cada etapa, mesmo editando um produto já existente. Tipo solto (não a união
+  // completa de App.tsx) porque esta tela só reage a 4 dos 5 valores possíveis
+  // ('selecionarModelo' é tratado em ProductionEngineeringView, não aqui).
+  engineeringGuideTarget?: string | null;
 }
 
 // Ordem das seções no Cadastro Guiado — cada chave corresponde a um bloco já existente do
@@ -125,7 +132,7 @@ function syncAssemblySectorNotes(
   return cleaned;
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, brands = [], productModels = [], productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, onQuickAddCategory, onCreateGrid, onUpdateGrid, onDeleteGrid, onQuickAddFlowTag, onQuickAddPerson, onQuickAddMaterial, onQuickAddColor, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES', guided = false }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, brands = [], productModels = [], productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, onQuickAddCategory, onCreateGrid, onUpdateGrid, onDeleteGrid, onQuickAddFlowTag, onQuickAddPerson, onQuickAddMaterial, onQuickAddColor, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES', guided = false, engineeringGuideTarget = null }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   // Fixa o id do produto no momento em que o formulário é aberto: ao criar um modelo novo
   // (productId nulo), o primeiro salvamento gera um id aleatório e os salvamentos
@@ -790,9 +797,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     <button
                       onClick={() => setVarView('consumo')}
                       data-guide-anchor="productForm.abaFichaTecnica"
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
+                      className={`relative px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
                     >
                       Ficha Técnica
+                      {engineeringGuideTarget === 'fichaTecnica' && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
                     </button>
                   )}
                 </div>
@@ -1939,6 +1947,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     title="Categorias da Ficha Técnica"
                     icon={<Tag size={18} />}
                     maxWidth="max-w-md"
+                    zIndex={97000}
                   >
                     <div className="flex flex-col gap-4 p-1">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
@@ -2391,7 +2400,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             {module === 'PRODUCTION' && (
               <div className="pt-4 border-t border-slate-50 dark:border-slate-800">
                 <label className="text-[10px] uppercase font-black text-slate-900 dark:text-white mb-4 block tracking-widest flex items-center gap-2">
-                  <Factory size={14} className="text-indigo-500" /> Configurações de Produção
+                  <Factory size={14} className="text-indigo-500" /> Configurações de Produção {engineeringGuideTarget === 'grade' && <GuidePulseDot show />}
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1">
@@ -2892,7 +2901,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <Factory size={20} />
               </div>
               <div className="flex-1 text-left min-w-0">
-                <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">Roteiro de Produção</h3>
+                <h3 className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">Roteiro de Produção {engineeringGuideTarget === 'roteiro' && <GuidePulseDot show />}</h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">
                   {productionRoute.length > 0 ? `${productionRoute.length} setor${productionRoute.length > 1 ? 'es' : ''} na sequência` : 'Sequência de setores para este modelo'}
                 </p>
@@ -2910,6 +2919,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           title="Roteiro de Produção"
           icon={<Factory size={20} />}
           maxWidth="max-w-lg"
+          zIndex={97000}
         >
           <div className="flex flex-col gap-1">
             <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1 mb-4">
@@ -3040,7 +3050,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               <DollarSign size={20} />
             </div>
             <div className="flex-1 text-left min-w-0">
-              <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">Valores de Serviço por Setor</h3>
+              <h3 className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">Valores de Serviço por Setor {engineeringGuideTarget === 'roteiro' && <GuidePulseDot show />}</h3>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">
                 {Object.keys(sectorPrices).length > 0 ? `${Object.keys(sectorPrices).length} setor${Object.keys(sectorPrices).length > 1 ? 'es' : ''} com valor sugerido` : 'R$/par sugerido ao emitir OS terceirizada'}
               </p>
@@ -3145,7 +3155,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               aria-label="Adicionar nova variação de cor"
               title="Adicionar Cor"
             >
-              {isGuided && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
+              {(isGuided || engineeringGuideTarget === 'cor') && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
               <Plus size={16} strokeWidth={3} /> Adicionar Cor
             </button>
           </div>
@@ -3257,11 +3267,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     <button
                       onClick={() => setActiveVariationIndex(i)}
                       data-guide-anchor="productForm.editarEngenhariaVariacao"
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                      className="relative w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                       aria-label={`Editar ficha técnica ${v.colorName}`}
                       title="Editar Engenharia"
                     >
                       Editar Engenharia <ChevronRight size={16} />
+                      {(engineeringGuideTarget === 'cor' || engineeringGuideTarget === 'fichaTecnica') && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
                     </button>
                   )}
                   {module === 'SALES' && (
@@ -3329,6 +3340,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           title="Mapeamento de Solados"
           closeLabel="Feche após mapear"
           maxWidth="max-w-4xl"
+          zIndex={97000}
         >
           {(() => {
             const cabedal = grids.find(g => g.id === productionGridId);
@@ -3408,7 +3420,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         </Modal>
 
         {soleSizePickerFor && createPortal(
-          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 65000 }}>
+          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 97500 }}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSoleSizePickerFor(null)} />
             <div className={`relative w-full max-w-sm max-h-[80vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
               <div className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>

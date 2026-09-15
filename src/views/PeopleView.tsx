@@ -128,34 +128,48 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
           />
         </div>
 
-        <div className={`border p-1 rounded-2xl shadow-sm self-start ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        <div className="flex items-stretch gap-2">
+          <div className={`flex-1 grid grid-cols-2 gap-1 border p-1 rounded-2xl shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <button
+              onClick={() => setFilter('ALL')}
+              data-guide-anchor="people.selecionarFiltro"
+              className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'ALL' ? (isDarkMode ? 'bg-indigo-600' : 'bg-slate-900') + ' text-white' : 'text-slate-400'}`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => setFilter('CUSTOMER')}
+              data-guide-anchor="people.selecionarFiltro"
+              className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'CUSTOMER' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+            >
+              Clientes
+            </button>
+            <button
+              onClick={() => setFilter('SUPPLIER')}
+              data-guide-anchor="people.selecionarFiltro"
+              className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SUPPLIER' ? 'bg-amber-600 text-white' : 'text-slate-400'}`}
+            >
+              Fornecedores
+            </button>
+            <button
+              onClick={() => setFilter('SERVICE_PROVIDER')}
+              data-guide-anchor="people.selecionarFiltro"
+              className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SERVICE_PROVIDER' ? 'bg-teal-600 text-white' : 'text-slate-400'}`}
+            >
+              Terceirizados
+            </button>
+          </div>
+          {/* Novo Cadastro — antes era um botão flutuante (FAB) fixo no canto inferior direito;
+              subiu pra cá, no topo ao lado dos filtros, a pedido do Tiago — retângulo esticado
+              pra mesma altura do card de filtros (items-stretch no pai), não mais um quadrado. */}
           <button
-            onClick={() => setFilter('ALL')}
-            data-guide-anchor="people.selecionarFiltro"
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'ALL' ? (isDarkMode ? 'bg-indigo-600' : 'bg-slate-900') + ' text-white' : 'text-slate-400'}`}
+            onClick={() => { setEditingPerson(null); setIsModalOpen(true); }}
+            data-guide-anchor="people.novo"
+            className={`w-14 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white shadow-lg flex items-center justify-center active:scale-95 transition-all shrink-0 ${isDarkMode ? 'shadow-none' : 'shadow-slate-300'}`}
+            title="Novo Cadastro"
+            aria-label="Novo Cadastro"
           >
-            Todos
-          </button>
-          <button
-            onClick={() => setFilter('CUSTOMER')}
-            data-guide-anchor="people.selecionarFiltro"
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'CUSTOMER' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
-          >
-            Clientes
-          </button>
-          <button
-            onClick={() => setFilter('SUPPLIER')}
-            data-guide-anchor="people.selecionarFiltro"
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SUPPLIER' ? 'bg-amber-600 text-white' : 'text-slate-400'}`}
-          >
-            Fornecedores
-          </button>
-          <button
-            onClick={() => setFilter('SERVICE_PROVIDER')}
-            data-guide-anchor="people.selecionarFiltro"
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SERVICE_PROVIDER' ? 'bg-teal-600 text-white' : 'text-slate-400'}`}
-          >
-            Terceirizados
+            <Plus size={22} strokeWidth={3} />
           </button>
         </div>
       </div>
@@ -247,16 +261,6 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
           </div>
         )}
       </div>
-
-      <button
-        onClick={() => { setEditingPerson(null); setIsModalOpen(true); }}
-        data-guide-anchor="people.novo"
-        className={`fixed bottom-32 right-6 w-14 h-14 bg-slate-900 dark:bg-indigo-600 text-white rounded-[2rem] shadow-2xl flex items-center justify-center active:scale-95 transition-all z-20 border-4 border-white dark:border-slate-800 ${isDarkMode ? 'shadow-none' : 'shadow-slate-300'}`}
-        title="Novo Cadastro"
-        aria-label="Novo Cadastro"
-      >
-        <Plus size={32} strokeWidth={3} />
-      </button>
     </div>
   );
 }

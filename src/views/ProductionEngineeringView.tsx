@@ -12,9 +12,9 @@ import {
   ChevronRight,
   Database,
   Hammer,
-  Copy,
-  GraduationCap
+  Copy
 } from "lucide-react";
+import GuidePulseDot from "../components/GuidePulseDot";
 
 interface ProductionEngineeringViewProps {
   products: Product[];
@@ -30,6 +30,15 @@ interface ProductionEngineeringViewProps {
   // Abre o tutorial "Engenharia Guiada" (ver ENGINEERING_GUIDE_STEPS em App.tsx) — explica
   // como ligar uma Ficha Técnica completa a um modelo já existente, passo a passo.
   onOpenEngineeringGuide?: () => void;
+  // Toggle liga/desliga direto no card, sem precisar entrar na 1ª etapa pra depois tocar no
+  // X — reflete/controla o mesmo estado que o "X" da barra de etapas encerra.
+  engineeringGuideActive?: boolean;
+  onToggleEngineeringGuide?: () => void;
+  // Bolinha pulsante na Etapa 1 do tutorial ("Selecione um Modelo Existente") — aponta pro
+  // botão de editar de qualquer modelo da lista. Só checamos 'selecionarModelo' aqui; os
+  // demais valores possíveis (ver ENGINEERING_GUIDE_STEPS em App.tsx) não fazem sentido nesta
+  // tela, por isso o tipo solto (string) em vez de importar a união inteira.
+  engineeringGuideTarget?: string | null;
 }
 
 export default function ProductionEngineeringView({
@@ -44,6 +53,9 @@ export default function ProductionEngineeringView({
   onBack,
   showThumbnails = true,
   onOpenEngineeringGuide,
+  engineeringGuideActive = false,
+  onToggleEngineeringGuide,
+  engineeringGuideTarget,
 }: ProductionEngineeringViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -127,22 +139,6 @@ export default function ProductionEngineeringView({
         </div>
       </div>
 
-      {onOpenEngineeringGuide && (
-        <button
-          type="button"
-          onClick={onOpenEngineeringGuide}
-          data-guide-anchor="prodEng.abrirEngenhariaGuiada"
-          className="mt-2 w-full flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/20 active:scale-[0.99] transition-all"
-        >
-          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            <GraduationCap size={18} />
-          </div>
-          <div className="min-w-0 text-left">
-            <p className="text-sm font-black">Engenharia Guiada</p>
-            <p className="text-[11px] font-medium opacity-80">Tutorial: como montar a Ficha Técnica de um modelo</p>
-          </div>
-        </button>
-      )}
 
       <button
         type="button"
@@ -168,7 +164,7 @@ export default function ProductionEngineeringView({
         </div>
       ) : (
         <div className="flex flex-col gap-4 mt-4">
-          {filteredProducts.map((product) => (
+          {filteredProducts.map((product, index) => (
             <EngineeringCard
               key={product.id}
               product={product}
@@ -179,6 +175,7 @@ export default function ProductionEngineeringView({
               isDarkMode={isDarkMode}
               categories={categories}
               showThumbnail={showThumbnails}
+              showGuideDot={engineeringGuideTarget === 'selecionarModelo' && index === 0}
             />
           ))}
         </div>
@@ -196,6 +193,7 @@ interface EngineeringCardProps {
   isDarkMode: boolean;
   categories: Category[];
   showThumbnail?: boolean;
+  showGuideDot?: boolean;
 }
 
 function EngineeringCard({
@@ -207,6 +205,7 @@ function EngineeringCard({
   isDarkMode,
   categories,
   showThumbnail = true,
+  showGuideDot = false,
 }: EngineeringCardProps) {
   const variationsCount = (product.variations || []).length;
   
@@ -272,9 +271,10 @@ function EngineeringCard({
               onClick={onEdit}
               data-guide-anchor="prodEng.editar"
               title="Editar Engenharia"
-              className="w-9 h-9 flex items-center justify-center rounded-xl bg-amber-300 hover:bg-amber-400 text-amber-900 active:scale-90 transition-all shadow-sm"
+              className="relative w-9 h-9 flex items-center justify-center rounded-xl bg-amber-300 hover:bg-amber-400 text-amber-900 active:scale-90 transition-all shadow-sm"
             >
               <ChevronRight size={18} strokeWidth={3} />
+              {showGuideDot && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
             </button>
           </div>
         </div>

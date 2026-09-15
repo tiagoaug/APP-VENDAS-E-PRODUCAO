@@ -233,7 +233,6 @@ const DeliveryPrintConfigView = lazy(() => import("./views/DeliveryPrintConfigVi
 
 
 // Modals
-import StepWizardBar from "./components/StepWizardBar";
 import AccountModal from "./components/AccountModal";
 import ProductCreationChoiceModal from "./components/ProductCreationChoiceModal";
 import AIAssistantSettings from "./components/AIAssistantSettings";
@@ -378,23 +377,26 @@ const VISUAL_SETUP_STEPS: VisualSetupStep[] = [
 
 // Engenharia Guiada — tutorial à parte (Tiago: "a parte mais complicada do programa"),
 // explicando como ligar uma Ficha Técnica completa a um modelo JÁ EXISTENTE (diferente do
-// Cadastro Guiado de Modelo acima, que é pra criar um modelo NOVO do zero). Usa o mesmo par
-// StepWizardBar + OnboardingStepIntroPopup do resto do app, mas SEM minimizar a navegação —
-// aqui a pessoa precisa continuar navegando livremente (Engenharia → um produto → uma cor →
-// Ficha Técnica), coisa que os outros assistentes não exigem (suas telas são sempre as
-// mesmas, fixas por etapa). Por isso só a Etapa 1 navega de verdade (pro catálogo de
-// Engenharia); as demais só avançam o texto explicativo — a pessoa aplica cada explicação
-// na tela real, no seu próprio ritmo, sem o assistente forçar troca de tela no meio de uma
-// edição em andamento (arriscaria abrir um produto NOVO em branco por cima do que já estava
-// sendo editado). Estático, mora fora do App() como VISUAL_SETUP_STEPS.
+// Cadastro Guiado de Modelo acima, que é pra criar um modelo NOVO do zero). Mesma barra de
+// etapas embutida no <nav> minimizado da Configuração Inicial/Personalização Visual (ver
+// render do <nav> mais abaixo). Só a Etapa 1 navega de verdade (pro catálogo de Engenharia);
+// as demais só avançam o texto explicativo e as bolinhas pulsantes (ver engineeringGuideTarget
+// em ProductFormView/ProductionEngineeringView) — a pessoa aplica cada explicação na tela
+// real, no seu próprio ritmo, sem o assistente forçar troca de tela no meio de uma edição em
+// andamento (arriscaria abrir um produto NOVO em branco por cima do que já estava sendo
+// editado). Estático, mora fora do App() como VISUAL_SETUP_STEPS.
 interface EngineeringGuideStep {
   label: string;
+  // Onde a bolinha vermelha pulsante aponta nesta etapa — 'selecionarModelo' vive em
+  // ProductionEngineeringView, os demais em ProductFormView (ver engineeringGuideTarget).
+  target: 'selecionarModelo' | 'grade' | 'cor' | 'fichaTecnica' | 'roteiro';
   paragraphs: string[];
   fullParagraphs?: string[];
 }
 const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
   {
     label: 'Selecione um Modelo Existente',
+    target: 'selecionarModelo',
     paragraphs: [
       'Engenharia é o mesmo Cadastro de Produtos, só que com foco na ficha técnica — em vez de criar um modelo do zero, você abre um que já existe (com nome, referência e cores já cadastrados) pra montar a ficha técnica dele.',
       'Toque em "Editar Engenharia" em qualquer modelo da lista pra continuar este tutorial dentro dele.',
@@ -407,6 +409,7 @@ const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
   },
   {
     label: 'Grade de Produção e Matriz de Solado',
+    target: 'grade',
     paragraphs: [
       'Em "Configurações de Produção", escolha a Grade de Produção (as numerações em que o modelo é feito) e a Matriz de Solado (o molde/base usado) — os dois juntos definem em quais tamanhos o calçado existe.',
     ],
@@ -418,6 +421,7 @@ const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
   },
   {
     label: 'Adicione ou Abra uma Cor',
+    target: 'cor',
     paragraphs: [
       'A Ficha Técnica é por COR — role até "Cores e Variações", toque em "Adicionar Cor" (se ainda não tiver nenhuma) ou em "Editar Engenharia" numa cor já existente pra entrar nela.',
     ],
@@ -429,6 +433,7 @@ const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
   },
   {
     label: 'Ficha Técnica: Como Funciona',
+    target: 'fichaTecnica',
     paragraphs: [
       'A Ficha Técnica lista tudo que compõe o par: peças de corte, embalagens, químicos, aviamentos, mão de obra e mais — é o que calcula o custo de produção automaticamente. Esta etapa é mais longa: toque em "Ver explicação completa" pra ler tudo antes de começar a lançar itens.',
     ],
@@ -446,6 +451,7 @@ const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
   },
   {
     label: 'Roteiro de Produção e Setores',
+    target: 'roteiro',
     paragraphs: [
       '"Roteiro de Produção" define por quais setores da fábrica esse modelo passa, em ordem — e "Valores de Serviço por Setor" já sugere um R$/par padrão pra cada um, usado quando você terceiriza uma etapa.',
     ],
@@ -747,9 +753,10 @@ export default function App() {
   const [visualSetupActive, setVisualSetupActive] = useState(false);
   const [visualSetupStepIndex, setVisualSetupStepIndex] = useState(0);
   // Engenharia Guiada — tutorial de como ligar uma Ficha Técnica a um modelo existente (ver
-  // ENGINEERING_GUIDE_STEPS). Usa StepWizardBar (portal flutuante, mesmo componente do Cadastro
-  // Guiado de Modelo abaixo) em vez do mecanismo de nav minimizada dos outros 2 assistentes,
-  // porque aqui a pessoa precisa continuar navegando livremente entre telas reais.
+  // ENGINEERING_GUIDE_STEPS). Mesmo mecanismo visual da Configuração Inicial/Personalização
+  // Visual (barra de etapas embutida no <nav> minimizado, embaixo) — Tiago pediu consistência
+  // com os outros 2 assistentes em vez do StepWizardBar flutuante (que sobrepunha o cabeçalho
+  // em telas menores, o mesmo problema já resolvido antes pra Configuração Inicial).
   const [engineeringGuideActive, setEngineeringGuideActive] = useState(false);
   const [engineeringGuideStepIndex, setEngineeringGuideStepIndex] = useState(0);
   const [engineeringGuideIntroOpen, setEngineeringGuideIntroOpen] = useState(true);
@@ -6577,6 +6584,7 @@ export default function App() {
         return (
           <ProductFormView
             module={module}
+            engineeringGuideTarget={engineeringGuideActive ? ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex]?.target : null}
             productId={selectedProductId}
             products={products}
             grids={grids}
@@ -8264,6 +8272,7 @@ export default function App() {
             categories={categories}
             showThumbnails={showEngineeringThumbnails}
             onOpenEngineeringGuide={handleStartEngineeringGuide}
+            engineeringGuideTarget={engineeringGuideActive ? ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex]?.target : null}
             onAdd={handleOpenProductCreationChoice}
             onEdit={(id) => navigateTo(ViewType.PRODUCT_FORM, id)}
             onDelete={async (id) => {
@@ -9337,8 +9346,8 @@ export default function App() {
   // produto é salvo, sem precisar do botão "Continuar" do Assistente (que fica escondido).
   const isOnboardingOnProductStep = onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.PRODUCT_FORM;
   useEffect(() => {
-    setNavMinimized((onboardingActive && !isOnboardingOnProductStep) || visualSetupActive);
-  }, [onboardingActive, visualSetupActive, isOnboardingOnProductStep]);
+    setNavMinimized((onboardingActive && !isOnboardingOnProductStep) || visualSetupActive || engineeringGuideActive || productWizardActive);
+  }, [onboardingActive, visualSetupActive, engineeringGuideActive, productWizardActive, isOnboardingOnProductStep]);
 
   // Sem o botão "Continuar" do Assistente visível nesta etapa (ver acima), o avanço pra Etapa 13
   // precisa ser automático: assim que o tutorial de 9 passos salva o primeiro produto (borda de
@@ -9993,47 +10002,11 @@ export default function App() {
               </>
             )
           )}
-          {productWizardActive && productWizardSteps[productWizardStepIndex]?.view === currentView && (
-            <StepWizardBar
-              isDarkMode={isDarkMode}
-              title="Cadastro Guiado"
-              stepIndex={productWizardStepIndex + 1}
-              totalSteps={productWizardSteps.length}
-              isComplete={productWizardSteps[productWizardStepIndex].isComplete}
-              onContinue={handleProductWizardAdvance}
-              onSkipStep={handleProductWizardAdvance}
-              onDismiss={handleProductWizardDismiss}
-              onBack={handleProductWizardBack}
-              canGoBack={productWizardStepIndex > 0}
-              topOffsetPx={12 + headerTopSpacePx}
-            />
-          )}
-          {productWizardActive && productWizardSteps[productWizardStepIndex]?.view === currentView && (
-            <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
-              <Info size={18} className="shrink-0 mt-0.5" />
-              <p className="text-xs font-bold leading-relaxed">
-                {productWizardSteps[productWizardStepIndex].description}
-              </p>
-            </div>
-          )}
-          {/* Engenharia Guiada — barra flutuante sempre visível (não gira por tela, como as
-              acima) enquanto o assistente está ativo; a pessoa navega livre entre Engenharia →
-              produto → cor → Ficha Técnica sem o assistente forçar troca de tela. */}
-          {engineeringGuideActive && (
-            <StepWizardBar
-              isDarkMode={isDarkMode}
-              title="Engenharia Guiada"
-              stepIndex={engineeringGuideStepIndex + 1}
-              totalSteps={ENGINEERING_GUIDE_STEPS.length}
-              isComplete={true}
-              onContinue={handleEngineeringGuideAdvance}
-              onSkipStep={handleEngineeringGuideAdvance}
-              onDismiss={handleEngineeringGuideDismiss}
-              onBack={handleEngineeringGuideBack}
-              canGoBack={engineeringGuideStepIndex > 0}
-              topOffsetPx={12 + headerTopSpacePx}
-            />
-          )}
+          {/* A barra de etapas do Cadastro Guiado e da Engenharia Guiada mora no <nav>
+              minimizado agora (ver render do <nav> mais abaixo), mesmo mecanismo da
+              Configuração Inicial/Personalização Visual — StepWizardBar flutuante saiu de uso
+              (sobrepunha o cabeçalho em telas menores). Aqui só o popup de explicação por
+              etapa da Engenharia Guiada. */}
           {engineeringGuideActive && (
             <OnboardingStepIntroPopup
               isDarkMode={isDarkMode}
@@ -10249,7 +10222,7 @@ export default function App() {
         // inteiro (z-40 normal). Sem isso, a barra de "Continuar" ficava inacessível atrás do
         // Modal em qualquer etapa desse tipo (reportado pelo Tiago: "Categorias não tem opção
         // de continuar") — só ficava visível nas etapas com tela própria (Empresa, Equipe).
-        (onboardingActive || visualSetupActive) && navMinimized ? 'z-[95000]' : 'z-40'
+        (onboardingActive || visualSetupActive || engineeringGuideActive || productWizardActive) && navMinimized ? 'z-[95000]' : 'z-40'
       }`}>
         <div className="relative w-full max-w-md pointer-events-auto">
           {navMinimized ? (
@@ -10410,6 +10383,155 @@ export default function App() {
                       type="button"
                       onClick={handleVisualSetupAdvance}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-black transition-colors bg-indigo-600 text-white"
+                    >
+                      Continuar
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : engineeringGuideActive ? (
+              // Mesmo desenho da Personalização Visual — sem popup de confirmação ao sair
+              // (handleEngineeringGuideDismiss encerra na hora, é só uma explicação).
+              <div className={`relative w-full flex flex-col gap-2 px-4 py-3 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium tracking-wide uppercase truncate text-blue-900 dark:text-blue-300">
+                    Engenharia Guiada · Etapa {engineeringGuideStepIndex + 1} de {ENGINEERING_GUIDE_STEPS.length}
+                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setEngineeringGuideIntroOpen(true)}
+                      title="O que estou fazendo aqui?"
+                      aria-label="O que estou fazendo aqui? Toque para ver a explicação desta etapa de novo."
+                      className="relative w-7 h-7 rounded-full bg-indigo-600 text-white shadow flex items-center justify-center shrink-0"
+                    >
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" style={{ animationDuration: '3s' }} />
+                      <HelpCircle size={13} strokeWidth={2.5} className="relative" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEngineeringGuideDismiss}
+                      aria-label="Encerrar engenharia guiada"
+                      title="Encerrar engenharia guiada"
+                      className="w-8 h-8 -m-1 flex items-center justify-center rounded-full text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 active:scale-90 transition-all shrink-0"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {Array.from({ length: ENGINEERING_GUIDE_STEPS.length }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        i < engineeringGuideStepIndex ? 'bg-indigo-500' : i === engineeringGuideStepIndex ? 'bg-indigo-400' : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={handleEngineeringGuideBack}
+                      disabled={engineeringGuideStepIndex === 0}
+                      aria-label="Voltar etapa"
+                      title="Voltar etapa"
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-black transition-colors shrink-0 ${
+                        engineeringGuideStepIndex > 0
+                          ? (isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                          : `${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'} cursor-not-allowed`
+                      }`}
+                    >
+                      <ArrowLeft size={14} />
+                      Voltar Etapa
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleEngineeringGuideAdvance}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-black transition-colors bg-indigo-600 text-white"
+                    >
+                      Continuar
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : productWizardActive ? (
+              // Cadastro Guiado de Modelo — mesmo desenho, mas com "isComplete" de verdade (cada
+              // etapa exige um cadastro real — fornecedor/categoria/cor — antes de liberar
+              // Continuar) e SEM o botão "?" (a explicação já fica fixa embaixo da barra, ver
+              // renderização de productWizardSteps[...].description mais abaixo).
+              <div className={`relative w-full flex flex-col gap-2 px-4 py-3 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium tracking-wide uppercase truncate text-blue-900 dark:text-blue-300">
+                    Cadastro Guiado · Etapa {productWizardStepIndex + 1} de {productWizardSteps.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleProductWizardDismiss}
+                    aria-label="Encerrar cadastro guiado"
+                    title="Encerrar cadastro guiado"
+                    className="w-8 h-8 -m-1 flex items-center justify-center rounded-full text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 active:scale-90 transition-all shrink-0"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {Array.from({ length: productWizardSteps.length }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        i < productWizardStepIndex ? 'bg-indigo-500' : i === productWizardStepIndex ? 'bg-indigo-400' : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                <p className="text-[11px] font-medium tracking-wide leading-relaxed text-blue-950 dark:text-blue-300">
+                  {productWizardSteps[productWizardStepIndex].description}
+                </p>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={handleProductWizardBack}
+                      disabled={productWizardStepIndex === 0}
+                      aria-label="Voltar etapa"
+                      title="Voltar etapa"
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-black transition-colors shrink-0 ${
+                        productWizardStepIndex > 0
+                          ? (isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                          : `${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'} cursor-not-allowed`
+                      }`}
+                    >
+                      <ArrowLeft size={14} />
+                      Voltar Etapa
+                    </button>
+                    {productWizardSteps[productWizardStepIndex].isComplete && <Check size={16} className="text-emerald-500 shrink-0" />}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleProductWizardAdvance}
+                      className={`text-[11px] font-bold uppercase tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                    >
+                      Pular
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleProductWizardAdvance}
+                      disabled={!productWizardSteps[productWizardStepIndex].isComplete}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-black transition-colors ${
+                        productWizardSteps[productWizardStepIndex].isComplete ? 'bg-indigo-600 text-white' : `${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'} cursor-not-allowed`
+                      }`}
                     >
                       Continuar
                       <ArrowRight size={14} />
