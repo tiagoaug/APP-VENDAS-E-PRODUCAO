@@ -25,7 +25,15 @@ const CONFIG = {
   },
 };
 
-export function ToastContainer() {
+interface ToastContainerProps {
+  // Mesmo valor de "Espaço no Topo" (Configurações > Acessibilidade) aplicado no <header> —
+  // sem isso, um toast podia aparecer ACIMA da altura que a pessoa configurou pra não ficar
+  // atrás da câmera/notch, cobrindo justamente a área que ela ajustou pra evitar (ver mesmo
+  // tratamento em StepWizardBar.tsx).
+  topOffsetPx?: number;
+}
+
+export function ToastContainer({ topOffsetPx = 0 }: ToastContainerProps) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   useEffect(() => {
@@ -41,7 +49,10 @@ export function ToastContainer() {
   }, []);
 
   return createPortal(
-    <div className="fixed top-4 right-4 z-[9999999] flex flex-col gap-2 pointer-events-none max-w-[320px] w-full">
+    <div
+      style={{ top: `calc(env(safe-area-inset-top, 0px) + 1rem + ${topOffsetPx}px)` }}
+      className="fixed right-4 z-[9999999] flex flex-col gap-2 pointer-events-none max-w-[320px] w-full"
+    >
       <AnimatePresence>
         {toasts.map(t => {
           const cfg = CONFIG[t.type];

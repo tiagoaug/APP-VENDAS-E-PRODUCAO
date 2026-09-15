@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Users,
   Tags,
@@ -106,10 +106,12 @@ interface SettingsViewProps {
   setShowEngineeringThumbnails?: (v: boolean) => void;
   hideFinancialValues?: boolean;
   setHideFinancialValues?: (v: boolean) => void;
-  // Empurra o cabeçalho um pouco mais pra baixo — pra iPhones com notch/Dynamic Island onde o
-  // espaço padrão não é suficiente (ver App.tsx <header> style).
-  extraHeaderTopSpace?: boolean;
-  setExtraHeaderTopSpace?: (v: boolean) => void;
+  // Empurra o cabeçalho um pouco mais pra baixo em pixels — pra aparelhos (iPhone com notch/
+  // Dynamic Island, ou Android com câmera/status bar) onde o espaço padrão não é suficiente
+  // (ver App.tsx <header> style). Era um toggle liga/desliga (+40px fixo), virou um valor livre
+  // ajustado por um cursor, pra acertar a altura exata em qualquer aparelho.
+  headerTopSpacePx?: number;
+  setHeaderTopSpacePx?: (v: number) => void;
   onOpenOnboardingWizard: () => void;
   onOpenProductCreationChoice: () => void;
   // Abre a Impressão de Etiquetas (Ablemark) — antes era um ícone fixo no topo do app; agora
@@ -144,8 +146,8 @@ export default function SettingsView({
   setShowEngineeringThumbnails,
   hideFinancialValues = false,
   setHideFinancialValues,
-  extraHeaderTopSpace = false,
-  setExtraHeaderTopSpace,
+  headerTopSpacePx = 0,
+  setHeaderTopSpacePx,
   onOpenOnboardingWizard,
   onOpenProductCreationChoice,
   onOpenLabelPrintStudio,
@@ -179,6 +181,37 @@ export default function SettingsView({
   const handleSetAverageMode = (mode: 'FULL_PERIOD' | 'ELAPSED') => {
     setAverageMode(mode);
     saveProductionScheduleConfig({ excludeWeekends, averageMode: mode });
+  };
+  // Editor de "Espaço no Topo" — abre um popup com um cursor vertical pra ajustar o valor em
+  // pixels ao vivo (vendo uma prévia do próprio cabeçalho se movendo), só grava de verdade no
+  // app quando "Salvar" é tocado — `draftHeaderTopSpacePx` guarda o valor sendo arrastado,
+  // sem tocar no valor real (`headerTopSpacePx`) até confirmar.
+  const [headerSpaceEditorOpen, setHeaderSpaceEditorOpen] = useState(false);
+  const [draftHeaderTopSpacePx, setDraftHeaderTopSpacePx] = useState(headerTopSpacePx);
+  const HEADER_SPACE_MAX = 80;
+  const headerSpaceTrackRef = useRef<HTMLDivElement>(null);
+  const headerSpaceDraggingRef = useRef(false);
+
+  // Arrasto vertical do cursor — a trilha vai de cima (0px) a baixo (HEADER_SPACE_MAX), então a
+  // posição do toque é invertida em relação ao valor (mais pra baixo na trilha = mais espaço).
+  const updateHeaderSpaceFromPointer = (clientY: number) => {
+    const track = headerSpaceTrackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+    setDraftHeaderTopSpacePx(Math.round(ratio * HEADER_SPACE_MAX));
+  };
+  const handleHeaderSpacePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    headerSpaceDraggingRef.current = true;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    updateHeaderSpaceFromPointer(e.clientY);
+  };
+  const handleHeaderSpacePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!headerSpaceDraggingRef.current) return;
+    updateHeaderSpaceFromPointer(e.clientY);
+  };
+  const handleHeaderSpacePointerUp = () => {
+    headerSpaceDraggingRef.current = false;
   };
   const [showNavConfig, setShowNavConfig] = useState(false);
   const [showA11y, setShowA11y] = useState(false);
@@ -521,7 +554,7 @@ export default function SettingsView({
                 )}
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Quem está usando</p>
-                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">{activeCollaborator ? activeCollaborator.name : 'Acesso Completo'}</p>
+                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">{activeCollaborator ? activeCollaborator.name : 'Acesso Completo'}</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -556,7 +589,7 @@ export default function SettingsView({
                   </div>
                   <div className="text-left min-w-0">
                     <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Módulos do Sistema</p>
-                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5 truncate">Ativar ou desativar módulos</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5 truncate">Ativar ou desativar módulos</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className={`shrink-0 ${isDarkMode ? 'text-slate-700' : 'text-slate-300'}`} />
@@ -594,7 +627,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Acessibilidade e Personalização</p>
-                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Tema, fonte e tamanho</p>
+                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Tema, fonte e tamanho</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -614,7 +647,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Organizar Dashboard</p>
-                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Layout e atalhos da tela inicial</p>
+                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Layout e atalhos da tela inicial</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -636,7 +669,7 @@ export default function SettingsView({
                   </div>
                   <div className="text-left">
                     <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Conta Desenvolvedora</p>
-                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Só você vê isto</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Só você vê isto</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -657,7 +690,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</p>
-                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Escolha e ordene os ícones da barra</p>
+                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Escolha e ordene os ícones da barra</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -677,7 +710,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Limpeza e Arquivamento</p>
-                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Arquivar Vendas/Compras/Produção antigas</p>
+                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Arquivar Vendas/Compras/Produção antigas</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -702,7 +735,7 @@ export default function SettingsView({
                   </div>
                   <div className="text-left">
                     <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Desativar Desbloqueio Rápido</p>
-                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Esquece a senha guardada pra Face ID/Touch ID</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Esquece a senha guardada pra Face ID/Touch ID</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -721,7 +754,7 @@ export default function SettingsView({
                   </div>
                   <div className="text-left">
                     <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ativar Desbloqueio Rápido</p>
-                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Entrar direto com {enableFaceIdLabel}, sem digitar a senha</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Entrar direto com {enableFaceIdLabel}, sem digitar a senha</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -740,7 +773,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-black tracking-tight text-rose-500">Encerrar Sessão</p>
-                  <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Sair da conta atual</p>
+                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Sair da conta atual</p>
                 </div>
               </div>
               <ChevronRight size={18} className="text-rose-300" />
@@ -750,7 +783,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.13.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.14.1</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -862,29 +895,32 @@ export default function SettingsView({
                 </div>
               )}
 
-              {/* Espaço no Topo (iPhone) — empurra o cabeçalho pra baixo em aparelhos com
-                  notch/Dynamic Island, onde a área de status pode cobrir parte dele. */}
-              {setExtraHeaderTopSpace && (
-                <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+              {/* Espaço no Topo — empurra o cabeçalho pra baixo em aparelhos Android ou iPhone
+                  com notch/Dynamic Island/câmera, onde a área de status pode cobrir parte dele.
+                  Era um toggle liga/desliga (+40px fixo); virou um cursor livre — toca no card
+                  pra abrir o ajuste fino. */}
+              {setHeaderTopSpacePx && (
+                <button
+                  type="button"
+                  onClick={() => { setDraftHeaderTopSpacePx(headerTopSpacePx); setHeaderSpaceEditorOpen(true); }}
+                  title="Ajustar espaço extra no topo do cabeçalho"
+                  aria-label="Ajustar espaço extra no topo do cabeçalho"
+                  data-guide-anchor="settings.espacoTopoExtra"
+                  className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
                       <Layout size={18} />
                     </div>
                     <div className="min-w-0">
-                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo (iPhone)</p>
-                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Abaixa o cabeçalho pra não ficar atrás da câmera/notch</p>
+                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Ajuste fino pra não ficar atrás da câmera/notch</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setExtraHeaderTopSpace(!extraHeaderTopSpace)}
-                    title="Ativar/desativar espaço extra no topo do cabeçalho"
-                    aria-label="Ativar ou desativar espaço extra no topo do cabeçalho"
-                    data-guide-anchor="settings.espacoTopoExtra"
-                    className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${extraHeaderTopSpace ? 'bg-indigo-600' : 'bg-slate-200'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${extraHeaderTopSpace ? 'left-7' : 'left-1'}`} />
-                  </button>
-                </div>
+                  <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                    {headerTopSpacePx}px
+                  </span>
+                </button>
               )}
 
               {/* Tema — acordeão minimizado por padrão (escolha rara de revisitar). */}
@@ -1276,6 +1312,90 @@ export default function SettingsView({
                 className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95"
               >
                 Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDITOR DE "ESPAÇO NO TOPO" — cursor vertical com prévia ao vivo do cabeçalho.
+          Fecha sem salvar se cancelar; só grava em headerTopSpacePx (e localStorage, via
+          App.tsx) ao tocar em "Salvar", mesmo quando o valor já mudou por causa do arrasto. ── */}
+      {headerSpaceEditorOpen && setHeaderTopSpacePx && (
+        <div
+          className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setHeaderSpaceEditorOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo</h3>
+              <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
+                Arraste o cursor até o cabeçalho parar exatamente abaixo da câmera/notch/barra de
+                status do seu aparelho — funciona tanto no Android quanto no iPhone, já que a
+                altura do recorte varia de modelo pra modelo. Toque em "Salvar" quando estiver bom.
+              </p>
+            </div>
+
+            {/* Prévia ao vivo — a barrinha se move junto com o cursor, no MESMO valor em pixels
+                que será aplicado no cabeçalho de verdade. */}
+            <div className={`relative rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`} style={{ height: HEADER_SPACE_MAX + 56 }}>
+              <div
+                className="absolute inset-x-2 h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg flex items-center justify-center transition-[top] duration-75"
+                style={{ top: draftHeaderTopSpacePx + 8 }}
+              >
+                <span className="text-white text-[9px] font-black uppercase tracking-widest">Cabeçalho</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-5">
+              {/* Trilha vertical do cursor — onPointerMove só reage enquanto arrastando
+                  (headerSpaceDraggingRef), então dá pra passar o dedo por cima sem querer sem
+                  mudar o valor à toa. */}
+              <div
+                ref={headerSpaceTrackRef}
+                onPointerDown={handleHeaderSpacePointerDown}
+                onPointerMove={handleHeaderSpacePointerMove}
+                onPointerUp={handleHeaderSpacePointerUp}
+                onPointerCancel={handleHeaderSpacePointerUp}
+                className={`relative w-12 h-40 rounded-full shrink-0 cursor-grab active:cursor-grabbing touch-none ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
+              >
+                <div className={`absolute left-1/2 -translate-x-1/2 top-2 bottom-2 w-1.5 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-indigo-600 shadow-lg border-4 border-white dark:border-slate-900 transition-[top] duration-75"
+                  style={{ top: `calc(${(draftHeaderTopSpacePx / HEADER_SPACE_MAX) * 100}% - ${(draftHeaderTopSpacePx / HEADER_SPACE_MAX) * 36}px)` }}
+                />
+              </div>
+              <div className="flex-1 flex flex-col gap-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Valor Atual</span>
+                <span className={`text-3xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{draftHeaderTopSpacePx}<span className="text-sm text-slate-400 ml-1">px</span></span>
+                <button
+                  type="button"
+                  onClick={() => setDraftHeaderTopSpacePx(0)}
+                  className="self-start text-[10px] font-black uppercase tracking-widest text-indigo-500 mt-1"
+                >
+                  Zerar
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setHeaderSpaceEditorOpen(false)}
+                className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${
+                  isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => { setHeaderTopSpacePx(draftHeaderTopSpacePx); setHeaderSpaceEditorOpen(false); }}
+                data-guide-anchor="settings.espacoTopoSalvar"
+                className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Check size={16} /> Salvar
               </button>
             </div>
           </div>

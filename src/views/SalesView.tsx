@@ -2406,7 +2406,7 @@ export default function SalesView({
                     </h3>
                     <div className="flex flex-col gap-1 mt-1.5">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <div data-guide-anchor="sales.cardDataPedido" className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 font-black tracking-widest">
+                        <div data-guide-anchor="sales.cardDataPedido" className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">
                           <Calendar size={10} strokeWidth={3} />
                           {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
                         </div>
@@ -2420,7 +2420,7 @@ export default function SalesView({
                           title="Copiar número do pedido"
                           aria-label="Copiar número do pedido"
                           data-guide-anchor="sales.cardNumeroPedido"
-                          className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest active:scale-95 transition-all"
+                          className="flex items-center gap-1 text-[11px] text-indigo-500 dark:text-indigo-400 font-medium tracking-wide active:scale-95 transition-all"
                         >
                           <Hash size={10} strokeWidth={3} />
                           {sale.orderNumber}
@@ -2438,7 +2438,7 @@ export default function SalesView({
                         )}
                       </div>
                       {sale.deliveryStatus === 'DELIVERED' && sale.deliveredAt && (
-                        <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-black tracking-widest" data-guide-anchor="sales.dataEntrega">
+                        <div className="flex items-center gap-1 text-[11px] text-emerald-500 font-medium tracking-wide" data-guide-anchor="sales.dataEntrega">
                           <Truck size={10} strokeWidth={3} />
                           Entregue em {format(sale.deliveredAt, "dd/MM/yyyy", { locale: ptBR })}
                         </div>

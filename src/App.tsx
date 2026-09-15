@@ -444,16 +444,27 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('show_engineering_thumbnails', String(showEngineeringThumbnails));
   }, [showEngineeringThumbnails]);
-  // Espaço extra no topo do cabeçalho — em alguns iPhones (notch/Dynamic Island) o WebView do
-  // Capacitor renderiza embaixo da área de status, e o padding-top fixo do <header> não é
-  // suficiente sozinho pra não ficar atrás da câmera; é uma opção manual (não detecção
-  // automática de plataforma) porque a altura do recorte varia por aparelho.
-  const [extraHeaderTopSpace, setExtraHeaderTopSpace] = useState<boolean>(() => {
-    return localStorage.getItem('extra_header_top_space') === 'true';
+  // Espaço extra no topo do cabeçalho — em alguns aparelhos (notch/Dynamic Island no iPhone,
+  // ou câmera/status bar em certos Android) o WebView do Capacitor renderiza embaixo da área de
+  // status, e o padding-top fixo do <header> não é suficiente sozinho pra não ficar atrás da
+  // câmera; é um ajuste manual em pixels (não detecção automática de plataforma) porque a altura
+  // do recorte varia por aparelho — era só um toggle liga/desliga (+40px fixo), virou um valor
+  // livre ajustado por um cursor (ver "Espaço no Topo" em SettingsView.tsx) a pedido do Tiago,
+  // pra dar pra acertar a altura exata em qualquer aparelho, não só um valor fixo que podia
+  // sobrar ou faltar.
+  const [headerTopSpacePx, setHeaderTopSpacePx] = useState<number>(() => {
+    const saved = localStorage.getItem('header_top_space_px');
+    if (saved !== null) {
+      const parsed = parseInt(saved, 10);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    // Migração do toggle antigo (booleano, sempre +40px) — quem já tinha ligado continua com
+    // o mesmo resultado visual de antes, só que agora ajustável.
+    return localStorage.getItem('extra_header_top_space') === 'true' ? 40 : 0;
   });
   useEffect(() => {
-    localStorage.setItem('extra_header_top_space', String(extraHeaderTopSpace));
-  }, [extraHeaderTopSpace]);
+    localStorage.setItem('header_top_space_px', String(headerTopSpacePx));
+  }, [headerTopSpacePx]);
   // Modo Privacidade Financeira — borra valores no Financeiro/Dashboard (ver PrivacyContext).
   const [hideFinancialValues, setHideFinancialValues] = useState<boolean>(() => {
     return localStorage.getItem('hide_financial_values') === 'true';
@@ -5728,8 +5739,8 @@ export default function App() {
             setShowEngineeringThumbnails={setShowEngineeringThumbnails}
             hideFinancialValues={hideFinancialValues}
             setHideFinancialValues={setHideFinancialValues}
-            extraHeaderTopSpace={extraHeaderTopSpace}
-            setExtraHeaderTopSpace={setExtraHeaderTopSpace}
+            headerTopSpacePx={headerTopSpacePx}
+            setHeaderTopSpacePx={setHeaderTopSpacePx}
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
             onOpenProductCreationChoice={handleOpenProductCreationChoice}
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
@@ -9381,14 +9392,14 @@ export default function App() {
     <div
       className={`flex flex-col h-screen ${themeVisual.outerBg} font-sans ${themeVisual.baseText} overflow-hidden overflow-x-hidden`}
     >
-      <ToastContainer />
+      <ToastContainer topOffsetPx={headerTopSpacePx} />
       {/* Header — pt-10 base + env(safe-area-inset-top) (notch/Dynamic Island; só tem efeito
           com viewport-fit=cover no index.html) + um empurrão manual extra opcional (ver
           "Espaço no Topo (iPhone)" em Configurações > Aparência), pra quando o safe-area
           sozinho não é suficiente no WebView do Capacitor nesse aparelho específico. */}
       <header
         className={`sticky top-0 z-10 shrink-0 px-4 pb-3 ${themeVisual.headerGradient}`}
-        style={{ paddingTop: `calc(2.5rem + env(safe-area-inset-top, 0px)${extraHeaderTopSpace ? ' + 40px' : ''})` }}
+        style={{ paddingTop: `calc(2.5rem + env(safe-area-inset-top, 0px) + ${headerTopSpacePx}px)` }}
       >
         <div className={`relative flex items-center justify-between px-4 py-2.5 rounded-[1.75rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.07)]`}>
           {/* 3D top highlight */}
@@ -9535,6 +9546,7 @@ export default function App() {
                 onDismiss={handleOnboardingDismiss}
                 onBack={handleOnboardingBack}
                 canGoBack={onboardingStepIndex > 0}
+                topOffsetPx={12 + headerTopSpacePx}
               />
             )}
             {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (
@@ -9604,6 +9616,7 @@ export default function App() {
               onDismiss={handleOnboardingDismiss}
               onBack={handleOnboardingBack}
               canGoBack={onboardingStepIndex > 0}
+              topOffsetPx={12 + headerTopSpacePx}
             />
           )}
           {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
@@ -9653,6 +9666,7 @@ export default function App() {
               onDismiss={handleProductWizardDismiss}
               onBack={handleProductWizardBack}
               canGoBack={productWizardStepIndex > 0}
+              topOffsetPx={12 + headerTopSpacePx}
             />
           )}
           {productWizardActive && productWizardSteps[productWizardStepIndex]?.view === currentView && (

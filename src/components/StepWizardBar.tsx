@@ -13,6 +13,12 @@ interface StepWizardBarProps {
   onDismiss: () => void;
   onBack?: () => void;
   canGoBack?: boolean;
+  // Distância extra do topo, em pixels, somada a env(safe-area-inset-top) — sem isso a barra
+  // (fixa via portal, fora do <header> normal) ignorava a área de status e ficava colada/atrás
+  // do relógio/notch em vários aparelhos. Usa o MESMO valor de "Espaço no Topo" (Configurações
+  // > Acessibilidade) que a pessoa já ajustou pro cabeçalho normal, pra ficar consistente em
+  // vez de precisar resolver esse overlap duas vezes.
+  topOffsetPx?: number;
 }
 
 // Telas como Embalagens/Unidades (dentro de Configuração de Produção) abrem um Modal PRÓPRIO
@@ -22,13 +28,14 @@ interface StepWizardBarProps {
 // sem noção de como avançar). Virou um portal fixo com zIndex bem alto, sempre visível por cima
 // de qualquer modal aninhado, independente da tela do passo atual.
 export default function StepWizardBar({
-  isDarkMode, title, stepIndex, totalSteps, isComplete, onContinue, onSkipStep, onDismiss, onBack, canGoBack,
+  isDarkMode, title, stepIndex, totalSteps, isComplete, onContinue, onSkipStep, onDismiss, onBack, canGoBack, topOffsetPx = 12,
 }: StepWizardBarProps) {
   return createPortal(
     <motion.div
       initial={{ opacity: 0, y: -12 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`fixed top-3 inset-x-0 z-[90000] mx-auto w-[calc(100%-1.5rem)] max-w-md rounded-3xl border shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+      style={{ top: `calc(env(safe-area-inset-top, 0px) + ${topOffsetPx}px)` }}
+      className={`fixed inset-x-0 z-[90000] mx-auto w-[calc(100%-1.5rem)] max-w-md rounded-3xl border shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
     >
       <div className="flex items-center justify-between px-4 pt-3">
         <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
