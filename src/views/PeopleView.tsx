@@ -18,9 +18,12 @@ interface PeopleViewProps {
   aiPrefillData?: Partial<Person> | null;
   onPrefillConsumed?: () => void;
   initialFilter?: 'ALL' | 'CUSTOMER' | 'SUPPLIER';
+  // Bolinha pulsante em Nome/Telefone/Categoria de Cadastro do PersonModal, ver Etapa 8 do
+  // Assistente de Configuração.
+  guideActive?: boolean;
 }
 
-export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode, aiPrefillData, onPrefillConsumed, initialFilter }: PeopleViewProps) {
+export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode, aiPrefillData, onPrefillConsumed, initialFilter, guideActive }: PeopleViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SERVICE_PROVIDER'>(() => initialFilter ?? 'ALL');
 
@@ -101,6 +104,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
         allPeople={people}
         initialData={aiInitialData ?? undefined}
         isDarkMode={isDarkMode}
+        guideActive={guideActive}
       />
       {isHistoryModalOpen && historyPerson && (
         <FinancialHistoryModal
@@ -151,7 +155,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
             data-guide-anchor="people.selecionarFiltro"
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SERVICE_PROVIDER' ? 'bg-teal-600 text-white' : 'text-slate-400'}`}
           >
-            Prestadores
+            Terceirizados
           </button>
         </div>
       </div>

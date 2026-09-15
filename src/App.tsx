@@ -2125,11 +2125,17 @@ export default function App() {
       view: ViewType.PEOPLE, params: { initialFilter: 'CUSTOMER' as const }, label: 'Cadastre um Cliente', isComplete: people.some(p => p.isCustomer),
       group: 'vendas',
       why: 'Precisa de pelo menos um cliente cadastrado pra conseguir registrar sua primeira venda.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um cliente novo.' },
-        { type: 'message', text: "Marque a opção \"Cliente\" e preencha nome e telefone." },
-        { type: 'highlight_tap', anchorKey: 'person.salvar', text: 'Toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Cadastros reúne todas as pessoas e empresas que você faz negócio: Clientes, Fornecedores e Terceirizados. A mesma pessoa pode ser mais de um tipo ao mesmo tempo, é só marcar as opções que se aplicam.',
+          'Pra Clientes, você também pode salvar um Endereço de Entrega Padrão — ele já vem preenchido automaticamente na hora de criar uma Venda pra esse cliente, sem digitar tudo de novo.',
+        ],
+        fullParagraphs: [
+          'Toque em "Adicionar Novo Registro" e marque o(s) tipo(s) dessa pessoa: "Cliente" (compra de você, aparece como opção na tela de Venda), "Fornecedor" (vende matéria-prima, produtos ou serviços pra você, aparece nas Compras e Ordens de Serviço) e "Terceirizado" (presta um serviço pra você, ex.: terceirização, conserto — aparece como opção na Ordem de Serviço).',
+          'Esses tipos não são exclusivos — uma pessoa pode ser Cliente e Fornecedor ao mesmo tempo, por exemplo. Use os filtros no topo da tela (Clientes/Fornecedores/Terceirizados) pra encontrar rápido quem você já cadastrou.',
+          'Endereço de Entrega Padrão (só aparece quando "Cliente" está marcado) fica salvo direto no cadastro dessa pessoa. Quando você cria uma Venda pra ela, o botão "Usar Endereço Cadastrado" puxa esse endereço automaticamente — útil quando entrega sempre no mesmo lugar, evita digitar tudo de novo em cada venda.',
+        ],
+      },
     },
     {
       view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Cadastre um Fornecedor', isComplete: people.some(p => p.isSupplier),
@@ -5785,6 +5791,7 @@ export default function App() {
             aiPrefillData={aiPersonPrefill}
             onPrefillConsumed={() => setAiPersonPrefill(null)}
             initialFilter={currentParams?.initialFilter}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.PEOPLE}
           />
         );
       case ViewType.PERSON_DETAIL:

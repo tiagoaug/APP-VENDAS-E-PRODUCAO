@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import { Contacts } from '@capacitor-community/contacts';
 import { toast } from '../utils/toast';
 import DeliveryAddressForm from './DeliveryAddressForm';
+import GuidePulseDot from './GuidePulseDot';
 
 interface PersonModalProps {
   isOpen: boolean;
@@ -15,9 +16,12 @@ interface PersonModalProps {
   allPeople: Person[];
   initialData?: Partial<Person>;
   isDarkMode: boolean;
+  // Bolinha pulsante em Nome, Telefone e Categoria de Cadastro, ver Etapa 8 do Assistente de
+  // Configuração (mesmo mecanismo de CollaboratorsConfigView/CategoriesView/etc.).
+  guideActive?: boolean;
 }
 
-export default function PersonModal({ isOpen, onClose, onSave, person, sellers, allPeople, initialData, isDarkMode }: PersonModalProps) {
+export default function PersonModal({ isOpen, onClose, onSave, person, sellers, allPeople, initialData, isDarkMode, guideActive }: PersonModalProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -32,11 +36,6 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
   const [internalContacts, setInternalContacts] = useState<{ name: string; role: 'Vendedor' | 'Comprador' }[]>([]);
   const [observations, setObservations] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress | undefined>(undefined);
-  // Popup "tem um vendedor/comprador?" disparado ao MARCAR Cliente (pergunta por Comprador) ou
-  // Fornecedor (pergunta por Vendedor) — ver onChange dos checkboxes abaixo. Substitui a antiga
-  // seção sempre visível "Vendedores/Compradores Internos" (buscava/linkava Pessoas reais),
-  // que gerava confusão por ficar exposta o tempo todo mesmo sem nada pra cadastrar ali.
-  const [contactPrompt, setContactPrompt] = useState<{ role: 'Vendedor' | 'Comprador'; step: 'ask' | 'name'; name: string } | null>(null);
 
   useEffect(() => {
     if (person) {
@@ -70,19 +69,9 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       setObservations(initialData?.observations || '');
       setDeliveryAddress(initialData?.defaultDeliveryAddress);
     }
-    setContactPrompt(null);
   }, [person, isOpen, initialData]);
 
   if (!isOpen) return null;
-
-  // Passo "Sim" do popup de vendedor/comprador interno — adiciona o nome digitado como contato
-  // interno simples (sem vincular a uma Pessoa cadastrada, mesmo formato de sempre em
-  // internalContacts) e fecha o popup.
-  const confirmContactPrompt = () => {
-    if (!contactPrompt || !contactPrompt.name.trim()) return;
-    setInternalContacts([...internalContacts, { name: contactPrompt.name.trim(), role: contactPrompt.role }]);
-    setContactPrompt(null);
-  };
 
   // Importa nome/telefone/e-mail direto da agenda nativa do aparelho (Android/iOS) — evita
   // digitar de novo um contato que a pessoa já tem salvo no celular.
@@ -152,7 +141,6 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
   };
 
   return (
-    <>
     <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-white dark:bg-slate-900 rounded-[32px] p-8 w-full max-w-2xl shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto force-scrollbar">
         <div className="flex justify-between items-center mb-8">
@@ -190,7 +178,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Nome Completo</label>
+            <label className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Nome Completo {guideActive && <GuidePulseDot show />}</label>
             <input
               type="text"
               placeholder="Ex: João Silva"
@@ -201,7 +189,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Telefone / WhatsApp</label>
+            <label className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1">Telefone / WhatsApp {guideActive && <GuidePulseDot show />}</label>
             <input
               type="tel"
               placeholder="(00) 00000-0000"
@@ -234,17 +222,13 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
           </div>
 
           <div className="flex flex-col gap-2 pt-2">
+            <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Categoria de Cadastro {guideActive && <GuidePulseDot show />}</label>
             <label className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
               <input
                 type="checkbox"
                 className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
                 checked={isCustomer}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setIsCustomer(checked);
-                  // Só pergunta ao MARCAR — desmarcar não deve interromper com popup nenhum.
-                  if (checked) setContactPrompt({ role: 'Comprador', step: 'ask', name: '' });
-                }}
+                onChange={(e) => setIsCustomer(e.target.checked)}
               />
               <div className="min-w-0">
                 <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Cliente</span>
@@ -256,11 +240,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                 type="checkbox"
                 className="mt-0.5 w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 shrink-0"
                 checked={isSupplier}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setIsSupplier(checked);
-                  if (checked) setContactPrompt({ role: 'Vendedor', step: 'ask', name: '' });
-                }}
+                onChange={(e) => setIsSupplier(e.target.checked)}
               />
               <div className="min-w-0">
                 <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Fornecedor</span>
@@ -279,7 +259,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
                 onChange={(e) => setIsServiceProvider(e.target.checked)}
               />
               <div className="min-w-0">
-                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Prestador de Serviço</span>
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 block">Terceirizado</span>
                 <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 block mt-0.5">Marque quando essa pessoa presta um serviço (ex.: terceirização, conserto). Ela aparece como opção na Ordem de Serviço.</span>
               </div>
             </label>
@@ -335,83 +315,5 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
         </div>
       </div>
     </div>
-
-    {contactPrompt && (
-      <div
-        className="fixed inset-0 bg-slate-900/70 z-[70] flex items-center justify-center p-4"
-        // No passo "ask", tocar fora equivale a responder Não (sem dado nenhum a perder). No
-        // passo "name" NÃO fecha mais — evita perder o nome já digitado por um toque
-        // acidental fora do cartão (ex.: teclado do celular empurrando o layout).
-        onClick={() => { if (contactPrompt.step === 'ask') setContactPrompt(null); }}
-      >
-        <div
-          className="bg-white dark:bg-slate-900 rounded-[28px] p-6 w-full max-w-sm shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {contactPrompt.step === 'ask' ? (
-            <>
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-6 text-center leading-relaxed">
-                {contactPrompt.role === 'Comprador'
-                  ? 'Esse cliente tem um comprador responsável que você já conhece?'
-                  : 'Esse fornecedor tem um vendedor que te atende?'}
-              </p>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setContactPrompt(null)}
-                  data-guide-anchor="person.contactPromptNao"
-                  className="flex-1 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
-                >
-                  Não
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContactPrompt(prev => prev ? { ...prev, step: 'name' } : prev)}
-                  data-guide-anchor="person.contactPromptSim"
-                  className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
-                >
-                  Sim
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <label className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2 block">
-                Nome do {contactPrompt.role.toLowerCase()}
-              </label>
-              <input
-                autoFocus
-                type="text"
-                placeholder={`Nome do ${contactPrompt.role.toLowerCase()}...`}
-                className="w-full h-14 bg-slate-50 dark:bg-slate-800/50 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 text-base font-bold transition-all outline-none dark:text-white mb-4"
-                value={contactPrompt.name}
-                onChange={(e) => setContactPrompt(prev => prev ? { ...prev, name: e.target.value } : prev)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && contactPrompt.name.trim()) confirmContactPrompt(); }}
-              />
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setContactPrompt(null)}
-                  data-guide-anchor="person.contactPromptCancelar"
-                  className="flex-1 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  disabled={!contactPrompt.name.trim()}
-                  onClick={confirmContactPrompt}
-                  data-guide-anchor="person.contactPromptConfirmar"
-                  className="flex-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
-                >
-                  Confirmar
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    )}
-    </>
   );
 }
