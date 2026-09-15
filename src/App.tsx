@@ -304,7 +304,7 @@ const MODAL_VIEWS = [
 // estado do componente), por isso mora fora do App() em vez de recalculado a cada render.
 interface VisualSetupStep {
   label: string;
-  target: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones';
+  target: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones' | 'navegacao';
   paragraphs: string[];
   fullParagraphs?: string[];
 }
@@ -360,8 +360,18 @@ const VISUAL_SETUP_STEPS: VisualSetupStep[] = [
     paragraphs: [
       'Toque em "Ícones do Menu" pra escolher entre ícones coloridos (cada um com sua cor) ou monocromáticos (uma cor só, mais discreto).',
     ],
+  },
+  {
+    label: 'Personalize a Navegação',
+    target: 'navegacao',
+    paragraphs: [
+      'Em Mais Opções, toque em "Personalizar Navegação" pra escolher, ordenar, fixar ou esconder os ícones da barra debaixo.',
+    ],
     fullParagraphs: [
-      'Esse é o último passo do Assistente de Personalização Visual — pode rodar de novo a qualquer momento pra revisar qualquer uma dessas escolhas.',
+      'Arraste pela alça (⠿) ou use as setas pra cima/baixo pra reordenar. "Home" fica sempre primeiro e "Mais" sempre por último — os dois são fixos e não entram no reordenamento.',
+      'O pino (📌) marca quem aparece SEMPRE na barra visível — o resto só some quando você fecha a barra, mas continua acessível tocando na seta pra cima (expande "Mais") pra ver a lista completa.',
+      'O olho (👁) esconde o ícone por completo, inclusive na lista expandida — use pra áreas que você não usa no dia a dia, sem precisar desativar o módulo inteiro em Módulos do Sistema.',
+      'Esse é o último passo do Assistente de Personalização Visual — pode rodar de novo a qualquer momento pra revisar qualquer uma dessas escolhas. As alterações salvam na hora e sincronizam em todos os dispositivos.',
     ],
   },
 ];

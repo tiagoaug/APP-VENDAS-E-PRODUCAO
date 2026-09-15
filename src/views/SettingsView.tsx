@@ -128,7 +128,7 @@ interface SettingsViewProps {
   // Assistente de Personalização Visual — separado do Assistente de Configuração Inicial (ver
   // VISUAL_SETUP_STEPS em App.tsx). `visualGuideTarget` diz qual seção de Acessibilidade
   // abrir/pulsar automaticamente enquanto ele está ativo; undefined/null = não está ativo.
-  visualGuideTarget?: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones' | null;
+  visualGuideTarget?: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones' | 'navegacao' | null;
   onOpenVisualSetup: () => void;
   onOpenOnboardingWizard: () => void;
   onOpenProductCreationChoice: () => void;
@@ -250,6 +250,13 @@ export default function SettingsView({
   // sozinha no meio do tour guiado.
   useEffect(() => {
     if (!visualGuideTarget) return;
+    // "Personalizar Navegação" é um modal PRÓPRIO (BottomNavConfigModal), fora do popup de
+    // Acessibilidade — os outros 5 alvos abrem showA11y, este abre showNavConfig no lugar.
+    if (visualGuideTarget === 'navegacao') {
+      setShowA11y(false);
+      setShowNavConfig(true);
+      return;
+    }
     setShowA11y(true);
     if (visualGuideTarget === 'tema') setThemeSectionOpen(true);
     if (visualGuideTarget === 'fonte') setFontSectionOpen(true);
@@ -730,7 +737,7 @@ export default function SettingsView({
                   <MoveHorizontal size={22} />
                 </div>
                 <div className="text-left">
-                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</p>
+                  <p className={`flex items-center gap-1.5 text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação {visualGuideTarget === 'navegacao' && <GuidePulseDot show />}</p>
                   <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Escolha e ordene os ícones da barra</p>
                 </div>
               </div>
@@ -824,7 +831,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.19.7</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.20.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
