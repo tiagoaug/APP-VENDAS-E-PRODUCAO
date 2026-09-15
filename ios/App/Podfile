@@ -8,20 +8,28 @@ use_frameworks!
 # Requires CocoaPods 1.6 or newer
 install! 'cocoapods', :disable_input_output_paths => true
 
+# ATENÇÃO: tudo dentro de `def capacitor_pods ... end` é REESCRITO automaticamente pelo
+# `npx cap sync ios` toda vez que roda (ver node_modules/@capacitor/cli/dist/ios/update.js,
+# updatePodfile() — o regex `/(def capacitor_pods)[\s\S]+?(\nend)/` substitui esse bloco
+# inteiro por uma lista gerada de `pod 'Nome', :path => '...'` simples, SEM subspecs). Foi
+# exatamente por isso que adicionar `:subspecs => ['Google']` direto na linha do
+# CapacitorFirebaseAuthentication aqui dentro nunca funcionava: o "Sincronizar Capacitor iOS"
+# do Codemagic roda ANTES do "Instalar CocoaPods" e apagava essa edição a cada build, sem
+# nenhum erro visível — o pod install seguinte sempre resolvia o subspec "Lite" (padrão), que
+# compila FirebaseAuthentication.signInWithGoogle() como uma função VAZIA (todo o corpo Swift
+# fica atrás de "#if RGCFA_INCLUDE_GOOGLE", só definida pelo subspec "Google" — ver
+# node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/GoogleAuthProviderHandler.swift
+# e CapacitorFirebaseAuthentication.podspec). A Promise do lado JS nunca resolvia nem
+# rejeitava — travava até o timeout de 15s do resolveAuthCall ("Tempo esgotado ao conectar"),
+# mesmo com skipNativeAuth:true já correto. Sign in with Apple não depende de subspec (não usa
+# SDK de terceiros), por isso sempre funcionou normalmente enquanto Google travava.
 def capacitor_pods
   pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
   pod 'AparajitaCapacitorBiometricAuth', :path => '../../node_modules/@aparajita/capacitor-biometric-auth'
   pod 'CapacitorCommunityContacts', :path => '../../node_modules/@capacitor-community/contacts'
   pod 'CapacitorCommunitySpeechRecognition', :path => '../../node_modules/@capacitor-community/speech-recognition'
-  # :subspecs => ['Google'] é OBRIGATÓRIO — o default do plugin é o subspec "Lite" (sem Google/
-  # Facebook), que compila FirebaseAuthentication.signInWithGoogle() como uma função VAZIA (todo
-  # o corpo fica atrás de "#if RGCFA_INCLUDE_GOOGLE", só definido pelo subspec "Google"). Sem
-  # isso, a Promise do lado JS nunca resolve nem rejeita — trava até o timeout de 15s do
-  # resolveAuthCall ("Tempo esgotado ao conectar"), mesmo com login/senha do Firebase corretos.
-  # Sign in with Apple não precisa de subspec (não depende de SDK de terceiros), por isso
-  # funcionava normalmente enquanto Google travava.
-  pod 'CapacitorFirebaseAuthentication', :path => '../../node_modules/@capacitor-firebase/authentication', :subspecs => ['Google']
+  pod 'CapacitorFirebaseAuthentication', :path => '../../node_modules/@capacitor-firebase/authentication'
   pod 'CapacitorMlkitBarcodeScanning', :path => '../../node_modules/@capacitor-mlkit/barcode-scanning'
   pod 'CapacitorMlkitTextRecognition', :path => '../../node_modules/@capacitor-mlkit/text-recognition'
   pod 'CapacitorCamera', :path => '../../node_modules/@capacitor/camera'
@@ -37,7 +45,11 @@ end
 
 target 'App' do
   capacitor_pods
-  # Add your Pods here
+  # Fica FORA de capacitor_pods de propósito (ver aviso grande no topo do arquivo) — essa linha
+  # sobrevive ao `cap sync ios`. Só declara o subspec ADICIONAL "Google"; a declaração "Lite"
+  # (padrão, vazia) continua vindo de capacitor_pods acima — CocoaPods aceita múltiplas linhas
+  # `pod` pro mesmo nome com subspecs diferentes no mesmo target, mesclando os requisitos.
+  pod 'CapacitorFirebaseAuthentication/Google', :path => '../../node_modules/@capacitor-firebase/authentication'
 end
 
 post_install do |installer|
