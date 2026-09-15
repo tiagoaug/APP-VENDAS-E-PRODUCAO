@@ -9947,6 +9947,25 @@ export default function App() {
                 onClose={() => setVisualSetupIntroOpen(false)}
               />
             )}
+            {/* Etapa 1 da Engenharia Guiada mira em PRODUCTION_ENGINEERING, que NÃO é uma
+                MODAL_VIEWS — o bloco irmão deste (mais abaixo, dentro do <Modal>) só monta
+                quando currentView é uma tela modal, então essa etapa nunca aparecia sozinha
+                (bug real: popup e dica sumiam na Etapa 1). engineeringGuideStepIndex === 0
+                evita duplicar o popup quando o usuário avança pra dentro do Cadastro de
+                Produto (Etapas 2-5, aí sim MODAL_VIEWS) enquanto lastNonModalView ainda
+                aponta pra Engenharia por baixo do Modal aberto. */}
+            {engineeringGuideActive && engineeringGuideStepIndex === 0 && lastNonModalView === ViewType.PRODUCTION_ENGINEERING && (
+              <OnboardingStepIntroPopup
+                isDarkMode={isDarkMode}
+                stepIndex={1}
+                totalSteps={ENGINEERING_GUIDE_STEPS.length}
+                title={ENGINEERING_GUIDE_STEPS[0].label}
+                paragraphs={ENGINEERING_GUIDE_STEPS[0].paragraphs}
+                fullParagraphs={ENGINEERING_GUIDE_STEPS[0].fullParagraphs}
+                isOpen={engineeringGuideIntroOpen}
+                onClose={() => setEngineeringGuideIntroOpen(false)}
+              />
+            )}
             <Suspense fallback={<ViewLoadingFallback />}>
               {renderView(lastNonModalView)}
             </Suspense>
