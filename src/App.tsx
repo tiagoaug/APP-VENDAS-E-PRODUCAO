@@ -295,6 +295,77 @@ const MODAL_VIEWS = [
   ViewType.DEVELOPER_ACCOUNT,
 ];
 
+// Assistente de Personalização Visual — separado do Assistente de Configuração Inicial de
+// propósito (Tiago: "essas 5 novas etapas devem ser separadas das 13, para não ficar extenso
+// esses cadastros"). Sempre acessível (não é um fluxo de primeira vez só) via Mais Opções →
+// Acessibilidade e Personalização, ou pela Central de Ajuda — ver handleStartVisualSetup em
+// App.tsx. Cada etapa vive dentro do mesmo popup "Acessibilidade" (showA11y em
+// SettingsView.tsx); `target` diz qual seção abrir/pulsar. Estático (não depende de nenhum
+// estado do componente), por isso mora fora do App() em vez de recalculado a cada render.
+interface VisualSetupStep {
+  label: string;
+  target: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones';
+  paragraphs: string[];
+  fullParagraphs?: string[];
+}
+const VISUAL_SETUP_STEPS: VisualSetupStep[] = [
+  {
+    label: 'Ajuste o Espaço no Topo',
+    target: 'topo',
+    paragraphs: [
+      'Em Mais Opções → Acessibilidade e Personalização, toque em "Espaço no Topo" pra abrir um cursor de ajuste fino.',
+      'Se o cabeçalho do app estiver cobrindo a câmera/notch (ou sobrando espaço demais em cima), arraste até ficar certo pro SEU aparelho e toque em Salvar.',
+    ],
+    fullParagraphs: [
+      'Cada aparelho tem uma altura diferente de área de status (notch, Dynamic Island, câmera furo-na-tela) — não dá pra acertar um valor único que sirva pra todo mundo, por isso esse ajuste é manual.',
+      'O cursor vai de -40px (levanta o cabeçalho, pra quando o espaço padrão já é grande demais) até 80px (abaixa o cabeçalho, pra quando a área de status cobre parte dele). O valor em pixels aparece ao vivo numa prévia, junto com o botão "Salvar" pra travar o ajuste.',
+      'Se não notar nada de errado no seu aparelho, pode deixar como está (0px) e seguir em frente — é opcional.',
+    ],
+  },
+  {
+    label: 'Escolha um Tema',
+    target: 'tema',
+    paragraphs: [
+      'Dentro da Acessibilidade, toque em "Tema" pra abrir as opções de cor e escolher a que combina com sua marca.',
+    ],
+    fullParagraphs: [
+      'O Tema muda a cor de destaque usada em botões principais, ícones ativos e no gradiente do cabeçalho/menu — não muda o Modo Escuro/Claro, que é um ajuste separado (o botão de sol/lua no topo desta mesma tela).',
+      'Pode trocar quantas vezes quiser, sem afetar nenhum dado cadastrado — é só uma preferência visual, salva neste aparelho.',
+    ],
+  },
+  {
+    label: 'Escolha uma Fonte',
+    target: 'fonte',
+    paragraphs: [
+      'Toque em "Fonte" pra escolher a fonte usada em todo o app.',
+    ],
+    fullParagraphs: [
+      'Só muda a aparência do texto (tipo de letra) — não afeta nada nos cadastros ou relatórios. Escolha a que for mais confortável de ler no seu aparelho.',
+    ],
+  },
+  {
+    label: 'Ajuste o Tamanho da Fonte',
+    target: 'tamanho',
+    paragraphs: [
+      'Toque em "Tamanho da Fonte" e escolha entre 80% e 110% — ajuda quem prefere um texto maior ou quer caber mais informação na tela.',
+    ],
+    fullParagraphs: [
+      'Esse ajuste é independente do tamanho de fonte do sistema operacional do celular — muda só dentro do app, sem afetar outros aplicativos.',
+      '100% é o padrão. Valores acima aumentam o texto (mais fácil de ler, cabe menos coisa por tela); valores abaixo diminuem (cabe mais informação, texto menor).',
+    ],
+  },
+  {
+    label: 'Personalize os Ícones do Menu',
+    target: 'icones',
+    paragraphs: [
+      'Toque em "Ícones do Menu" pra escolher entre ícones coloridos (cada um com sua cor) ou monocromáticos (uma cor só, mais discreto).',
+    ],
+    fullParagraphs: [
+      'Esse é o último passo do Assistente de Personalização Visual — pode rodar de novo a qualquer momento pra revisar qualquer uma dessas escolhas.',
+    ],
+  },
+];
+
 const MODULE_VIEWS: Record<string, ViewType[]> = {
   sales: [
     ViewType.PURCHASES,
@@ -549,6 +620,11 @@ export default function App() {
   // onboardingSteps[i].guideSteps / GuidedTourOverlay. Reseta pra 0 sempre que a etapa muda.
   const [onboardingGuideStepIndex, setOnboardingGuideStepIndex] = useState(0);
   const onboardingAutoTriggeredRef = useRef(false);
+  // Assistente de Personalização Visual — independente do Assistente de Configuração Inicial
+  // acima (ver VISUAL_SETUP_STEPS), sempre disponível via Mais Opções → Acessibilidade e pela
+  // Central de Ajuda, não só na primeira vez que a conta é configurada.
+  const [visualSetupActive, setVisualSetupActive] = useState(false);
+  const [visualSetupStepIndex, setVisualSetupStepIndex] = useState(0);
   // Popup mostrado ao tocar em "Assistente de Configuração" (Mais Opções) — pergunta se quer
   // continuar de onde parou ou refazer tudo do zero, mesmo que já tenha configurado antes.
   const [showOnboardingWizardChoice, setShowOnboardingWizardChoice] = useState(false);
@@ -1992,7 +2068,7 @@ export default function App() {
   // GuidePulseDot.tsx) nos campos daquele passo específico — cada view interpreta as chaves à
   // sua maneira (CompanyProfileView usa 'name'/'phone'). Passos que ainda não foram convertidos
   // continuam em guideSteps (GuidedTourOverlay) normalmente.
-  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; intro?: { paragraphs: string[]; fullParagraphs?: string[] }; guidePulseFields?: string[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas'; visualGuideTarget?: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones' }[] = [
+  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; intro?: { paragraphs: string[]; fullParagraphs?: string[] }; guidePulseFields?: string[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas' }[] = [
     {
       // Todos os campos do CompanyProfile são opcionais (até o CNPJ/CPF é marcado como tal na
       // tela) — completo assim que qualquer um deles for preenchido, sem exigir um campo
@@ -2201,89 +2277,6 @@ export default function App() {
         { type: 'highlight_tap', anchorKey: 'saleForm.finalizar', text: 'Toque aqui para concluir a venda. O estoque baixa automaticamente e a receita entra no financeiro.' },
       ],
     },
-    // ── Configurações Visuais — continuação do mesmo Assistente depois dos 13 passos de
-    // cadastro, a pedido do Tiago ("além de configurações iniciais, vamos fazer as
-    // configurações visuais"). Sempre completos (isComplete: true) porque são só um tour
-    // guiado pelas opções de aparência, não um cadastro obrigatório — "Continuar" nunca fica
-    // travado aqui. Todos vivem dentro do mesmo popup "Acessibilidade" em Mais Opções
-    // (showA11y em SettingsView.tsx); `visualGuideTarget` diz qual seção abrir/pulsar em cada
-    // passo (ver useEffect de visualGuideTarget em SettingsView.tsx).
-    {
-      view: ViewType.SETTINGS, label: 'Ajuste o Espaço no Topo', isComplete: true,
-      group: 'shared',
-      why: 'Corrige o cabeçalho ficando atrás da câmera/notch em alguns aparelhos — um ajuste que só quem usa o app no dia a dia percebe se precisa.',
-      visualGuideTarget: 'topo',
-      intro: {
-        paragraphs: [
-          'Em Mais Opções → Acessibilidade e Personalização, toque em "Espaço no Topo" pra abrir um cursor de ajuste fino.',
-          'Se o cabeçalho do app estiver cobrindo a câmera/notch (ou sobrando espaço demais em cima), arraste até ficar certo pro SEU aparelho e toque em Salvar.',
-        ],
-        fullParagraphs: [
-          'Cada aparelho tem uma altura diferente de área de status (notch, Dynamic Island, câmera furo-na-tela) — não dá pra acertar um valor único que sirva pra todo mundo, por isso esse ajuste é manual.',
-          'O cursor vai de -40px (levanta o cabeçalho, pra quando o espaço padrão já é grande demais) até 80px (abaixa o cabeçalho, pra quando a área de status cobre parte dele). O valor em pixels aparece ao vivo numa prévia, junto com o botão "Salvar" pra travar o ajuste.',
-          'Se não notar nada de errado no seu aparelho, pode deixar como está (0px) e seguir em frente — é opcional.',
-        ],
-      },
-    },
-    {
-      view: ViewType.SETTINGS, label: 'Escolha um Tema', isComplete: true,
-      group: 'shared',
-      why: 'Muda a cor de destaque usada em botões, ícones e cabeçalhos por todo o app.',
-      visualGuideTarget: 'tema',
-      intro: {
-        paragraphs: [
-          'Dentro da Acessibilidade, toque em "Tema" pra abrir as opções de cor e escolher a que combina com sua marca.',
-        ],
-        fullParagraphs: [
-          'O Tema muda a cor de destaque usada em botões principais, ícones ativos e no gradiente do cabeçalho/menu — não muda o Modo Escuro/Claro, que é um ajuste separado (o botão de sol/lua no topo desta mesma tela).',
-          'Pode trocar quantas vezes quiser, sem afetar nenhum dado cadastrado — é só uma preferência visual, salva neste aparelho.',
-        ],
-      },
-    },
-    {
-      view: ViewType.SETTINGS, label: 'Escolha uma Fonte', isComplete: true,
-      group: 'shared',
-      why: 'Muda a fonte usada em todo o app — só uma questão de gosto/legibilidade.',
-      visualGuideTarget: 'fonte',
-      intro: {
-        paragraphs: [
-          'Toque em "Fonte" pra escolher a fonte usada em todo o app.',
-        ],
-        fullParagraphs: [
-          'Só muda a aparência do texto (tipo de letra) — não afeta nada nos cadastros ou relatórios. Escolha a que for mais confortável de ler no seu aparelho.',
-        ],
-      },
-    },
-    {
-      view: ViewType.SETTINGS, label: 'Ajuste o Tamanho da Fonte', isComplete: true,
-      group: 'shared',
-      why: 'Deixa o texto maior ou menor em todo o app, sem precisar mexer na configuração de acessibilidade do próprio celular.',
-      visualGuideTarget: 'tamanho',
-      intro: {
-        paragraphs: [
-          'Toque em "Tamanho da Fonte" e escolha entre 80% e 110% — ajuda quem prefere um texto maior ou quer caber mais informação na tela.',
-        ],
-        fullParagraphs: [
-          'Esse ajuste é independente do tamanho de fonte do sistema operacional do celular — muda só dentro do app, sem afetar outros aplicativos.',
-          '100% é o padrão. Valores acima aumentam o texto (mais fácil de ler, cabe menos coisa por tela); valores abaixo diminuem (cabe mais informação, texto menor).',
-        ],
-      },
-    },
-    {
-      view: ViewType.SETTINGS, label: 'Personalize os Ícones do Menu', isComplete: true,
-      group: 'shared',
-      why: 'Escolhe entre ícones coloridos ou monocromáticos na barra de navegação de baixo.',
-      visualGuideTarget: 'icones',
-      intro: {
-        paragraphs: [
-          'Toque em "Ícones do Menu" pra escolher entre ícones coloridos (cada um com sua cor) ou monocromáticos (uma cor só, mais discreto).',
-        ],
-        fullParagraphs: [
-          'Esse é o último passo do Assistente de Configuração — depois dele, o app já está pronto do jeito que você preferir, tanto nos cadastros quanto na aparência.',
-          'Pode voltar em Mais Opções → Acessibilidade e Personalização a qualquer momento pra mudar qualquer uma dessas escolhas de novo.',
-        ],
-      },
-    },
   ];
 
   const goToOnboardingStep = (index: number) => {
@@ -2340,6 +2333,31 @@ export default function App() {
     if (!onboardingStatus) {
       saveOnboardingStatus({ skippedAt: Date.now() });
     }
+  };
+
+  // Assistente de Personalização Visual — sem popup de confirmação ao sair (diferente do
+  // Assistente de Configuração Inicial): aqui não tem cadastro em andamento pra perder, é só
+  // um tour pelas opções de aparência, então "Menu"/X encerra na hora.
+  const handleStartVisualSetup = () => {
+    setVisualSetupStepIndex(0);
+    setVisualSetupIntroOpen(true);
+    navigateTo(ViewType.SETTINGS);
+    setVisualSetupActive(true);
+  };
+  const handleVisualSetupAdvance = () => {
+    const next = visualSetupStepIndex + 1;
+    if (next >= VISUAL_SETUP_STEPS.length) {
+      setVisualSetupActive(false);
+      return;
+    }
+    setVisualSetupStepIndex(next);
+  };
+  const handleVisualSetupBack = () => {
+    if (visualSetupStepIndex <= 0) return;
+    setVisualSetupStepIndex(visualSetupStepIndex - 1);
+  };
+  const handleVisualSetupDismiss = () => {
+    setVisualSetupActive(false);
   };
 
   // Tocar em "Assistente de Configuração" (Mais Opções) nunca mais entra direto — sempre
@@ -5835,7 +5853,8 @@ export default function App() {
             setHideFinancialValues={setHideFinancialValues}
             headerTopSpacePx={headerTopSpacePx}
             setHeaderTopSpacePx={setHeaderTopSpacePx}
-            visualGuideTarget={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.SETTINGS ? onboardingSteps[onboardingStepIndex]?.visualGuideTarget : undefined}
+            visualGuideTarget={visualSetupActive ? VISUAL_SETUP_STEPS[visualSetupStepIndex]?.target : undefined}
+            onOpenVisualSetup={handleStartVisualSetup}
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
             onOpenProductCreationChoice={handleOpenProductCreationChoice}
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
@@ -9106,8 +9125,8 @@ export default function App() {
   // "decidir abandonar a configuração e sair" descrita pelo Tiago. Termina/abandona o
   // assistente → onboardingActive vira false → volta a minimizar como estava antes sozinho.
   useEffect(() => {
-    setNavMinimized(onboardingActive);
-  }, [onboardingActive]);
+    setNavMinimized(onboardingActive || visualSetupActive);
+  }, [onboardingActive, visualSetupActive]);
 
   // Popup de introdução da etapa (OnboardingStepIntroPopup) — controlado aqui em vez de estado
   // interno do componente, porque o gatilho "?" que reabre a explicação mora dentro do pill
@@ -9117,6 +9136,12 @@ export default function App() {
   useEffect(() => {
     setOnboardingIntroOpen(true);
   }, [onboardingStepIndex]);
+
+  // Mesmo padrão acima, só que pro Assistente de Personalização Visual (ver VISUAL_SETUP_STEPS).
+  const [visualSetupIntroOpen, setVisualSetupIntroOpen] = useState(true);
+  useEffect(() => {
+    setVisualSetupIntroOpen(true);
+  }, [visualSetupStepIndex]);
 
   // Popup de confirmação ao tocar no "Menu" minimizado durante o Assistente de Configuração —
   // pergunta se é pra continuar no formulário ou sair de vez, em vez de expandir o menu direto
@@ -9664,6 +9689,18 @@ export default function App() {
                 </>
               )
             )}
+            {visualSetupActive && lastNonModalView === ViewType.SETTINGS && (
+              <OnboardingStepIntroPopup
+                isDarkMode={isDarkMode}
+                stepIndex={visualSetupStepIndex + 1}
+                totalSteps={VISUAL_SETUP_STEPS.length}
+                title={VISUAL_SETUP_STEPS[visualSetupStepIndex].label}
+                paragraphs={VISUAL_SETUP_STEPS[visualSetupStepIndex].paragraphs}
+                fullParagraphs={VISUAL_SETUP_STEPS[visualSetupStepIndex].fullParagraphs}
+                isOpen={visualSetupIntroOpen}
+                onClose={() => setVisualSetupIntroOpen(false)}
+              />
+            )}
             <Suspense fallback={<ViewLoadingFallback />}>
               {renderView(lastNonModalView)}
             </Suspense>
@@ -9939,7 +9976,14 @@ export default function App() {
           createPortal (ver mais abaixo) — o <nav> como um todo continua no nível baixo de
           sempre. */}
       {![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
-      <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
+      <nav className={`fixed bottom-0 left-0 right-0 flex items-end justify-center pb-5 px-4 pointer-events-none ${
+        // Muitas etapas do Assistente (Categorias, Cores, Grades, Pessoas, Contas...) são
+        // MODAL_VIEWS — renderizam dentro do Modal global (zIndex 50000), que cobre esse <nav>
+        // inteiro (z-40 normal). Sem isso, a barra de "Continuar" ficava inacessível atrás do
+        // Modal em qualquer etapa desse tipo (reportado pelo Tiago: "Categorias não tem opção
+        // de continuar") — só ficava visível nas etapas com tela própria (Empresa, Equipe).
+        (onboardingActive || visualSetupActive) && navMinimized ? 'z-[95000]' : 'z-40'
+      }`}>
         <div className="relative w-full max-w-md pointer-events-auto">
           {navMinimized ? (
             onboardingActive ? (
@@ -10026,6 +10070,79 @@ export default function App() {
                       className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-black transition-colors ${
                         onboardingSteps[onboardingStepIndex]?.isComplete ? 'bg-indigo-600 text-white' : `${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'} cursor-not-allowed`
                       }`}
+                    >
+                      Continuar
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : visualSetupActive ? (
+              // Mesmo desenho da barra do Assistente de Configuração Inicial acima, só que sem
+              // popup de confirmação ao sair (handleVisualSetupDismiss encerra na hora — não há
+              // cadastro em andamento pra perder aqui, é só um tour pelas opções de aparência).
+              <div className={`relative w-full flex flex-col gap-2 px-4 py-3 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium tracking-wide uppercase truncate text-blue-900 dark:text-blue-300">
+                    Personalização Visual · Etapa {visualSetupStepIndex + 1} de {VISUAL_SETUP_STEPS.length}
+                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setVisualSetupIntroOpen(true)}
+                      title="O que estou fazendo aqui?"
+                      aria-label="O que estou fazendo aqui? Toque para ver a explicação desta etapa de novo."
+                      className="relative w-7 h-7 rounded-full bg-indigo-600 text-white shadow flex items-center justify-center shrink-0"
+                    >
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" style={{ animationDuration: '3s' }} />
+                      <HelpCircle size={13} strokeWidth={2.5} className="relative" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleVisualSetupDismiss}
+                      aria-label="Encerrar personalização visual"
+                      title="Encerrar personalização visual"
+                      className="w-8 h-8 -m-1 flex items-center justify-center rounded-full text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 active:scale-90 transition-all shrink-0"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {Array.from({ length: VISUAL_SETUP_STEPS.length }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        i < visualSetupStepIndex ? 'bg-indigo-500' : i === visualSetupStepIndex ? 'bg-indigo-400' : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={handleVisualSetupBack}
+                      disabled={visualSetupStepIndex === 0}
+                      aria-label="Voltar etapa"
+                      title="Voltar etapa"
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-black transition-colors shrink-0 ${
+                        visualSetupStepIndex > 0
+                          ? (isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                          : `${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'} cursor-not-allowed`
+                      }`}
+                    >
+                      <ArrowLeft size={14} />
+                      Voltar Etapa
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleVisualSetupAdvance}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-black transition-colors bg-indigo-600 text-white"
                     >
                       Continuar
                       <ArrowRight size={14} />
@@ -10378,6 +10495,7 @@ export default function App() {
         helpPointMode={helpPointMode}
         onChangeHelpPointMode={setHelpPointMode}
         onOpenOnboardingWizard={handleOpenOnboardingWizard}
+        onOpenVisualSetup={handleStartVisualSetup}
       />
 
       {/* Mesmo bloqueio da Central de Ajuda acima — o "?" arrastável também tem um botão de

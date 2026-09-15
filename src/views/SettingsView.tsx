@@ -49,7 +49,11 @@ import {
   PackageOpen,
   ShieldCheck,
   Info,
-  Fingerprint
+  Fingerprint,
+  LayoutDashboard,
+  ShoppingCart,
+  ShoppingBag,
+  DollarSign
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -57,7 +61,7 @@ import { auth } from '../lib/firebase';
 import { isLoginUnlockEnabled, clearLoginUnlockCredentials, isNativeBiometricAvailable, getBiometryLabel, saveLoginUnlockCredentials } from '../utils/biometricAuth';
 import { toast } from '../utils/toast';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
-import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
+import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE, NAV_TAB_COLORS } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
 import { SALES_TRIAL_DAYS, PRODUCTION_TRIAL_DAYS, PERSONAL_TRIAL_DAYS } from '../constants';
 import AIAssistantSettings from '../components/AIAssistantSettings';
@@ -113,10 +117,11 @@ interface SettingsViewProps {
   // ajustado por um cursor, pra acertar a altura exata em qualquer aparelho.
   headerTopSpacePx?: number;
   setHeaderTopSpacePx?: (v: number) => void;
-  // Etapas de Configurações Visuais do Assistente de Configuração (continuação depois dos 13
-  // passos de cadastro, ver onboardingSteps em App.tsx) — diz qual seção de Acessibilidade
-  // abrir/pulsar automaticamente. undefined/null = Assistente não está numa dessas etapas.
+  // Assistente de Personalização Visual — separado do Assistente de Configuração Inicial (ver
+  // VISUAL_SETUP_STEPS em App.tsx). `visualGuideTarget` diz qual seção de Acessibilidade
+  // abrir/pulsar automaticamente enquanto ele está ativo; undefined/null = não está ativo.
   visualGuideTarget?: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones' | null;
+  onOpenVisualSetup: () => void;
   onOpenOnboardingWizard: () => void;
   onOpenProductCreationChoice: () => void;
   // Abre a Impressão de Etiquetas (Ablemark) — antes era um ícone fixo no topo do app; agora
@@ -154,6 +159,7 @@ export default function SettingsView({
   headerTopSpacePx = 0,
   setHeaderTopSpacePx,
   visualGuideTarget,
+  onOpenVisualSetup,
   onOpenOnboardingWizard,
   onOpenProductCreationChoice,
   onOpenLabelPrintStudio,
@@ -805,7 +811,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.16.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.17.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -846,6 +852,51 @@ export default function SettingsView({
             </div>
 
             <div className="p-5 flex flex-col gap-5">
+              {/* Assistente de Personalização Visual — roda o tour guiado por Espaço no Topo/
+                  Tema/Fonte/Tamanho/Ícones do Menu, um de cada vez, com explicação e bolinha
+                  pulsante em cada seção (ver VISUAL_SETUP_STEPS em App.tsx). Sempre disponível
+                  aqui, não só na primeira configuração da conta. */}
+              {!visualGuideTarget && (
+                <button
+                  type="button"
+                  onClick={() => { setShowA11y(false); onOpenVisualSetup(); }}
+                  data-guide-anchor="settings.abrirAssistenteVisual"
+                  className="w-full flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/20 active:scale-[0.99] transition-all"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                    <SlidersHorizontal size={18} />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="text-sm font-black">Assistente de Personalização Visual</p>
+                    <p className="text-[11px] font-medium opacity-80">Um tour guiado por Tema, Fonte e mais opções</p>
+                  </div>
+                </button>
+              )}
+
+              {/* Prévia ao vivo — junta Tema (cor da cápsula), Ícones do Menu (cor de cada
+                  ícone), Fonte e Tamanho da Fonte numa mini simulação da barra de navegação e
+                  de um texto de exemplo, pra dar pra ver o resultado combinado sem precisar
+                  fechar esse popup e checar cada mudança na tela de verdade. */}
+              <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Prévia</p>
+                <div className={`flex items-center justify-around gap-2 p-3 rounded-2xl mb-3 ${THEME_VISUALS[appTheme].pillGradient}`}>
+                  {[
+                    { key: 'dashboard', Icon: LayoutDashboard },
+                    { key: 'purchases', Icon: ShoppingCart },
+                    { key: 'sales', Icon: ShoppingBag },
+                    { key: 'financial', Icon: DollarSign },
+                  ].map(({ key, Icon }) => (
+                    <Icon key={key} size={18} color={navIconMode === 'colored' ? NAV_TAB_COLORS[key] : navMonoColor} />
+                  ))}
+                </div>
+                <p
+                  style={{ fontFamily, fontSize: `${13 * (fontScale / 100)}px` }}
+                  className={`font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                >
+                  Texto de exemplo — Aa Bb Cc 123
+                </p>
+              </div>
+
               {/* Dark Mode toggle — atalho rápido */}
               <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
                 <div className="flex items-center gap-3 min-w-0">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick, BookOpen, Rocket } from 'lucide-react';
+import { HelpCircle, Search, ChevronRight, ArrowRight, Compass, PlayCircle, Hand, MousePointerClick, BookOpen, Rocket, SlidersHorizontal } from 'lucide-react';
 import { ViewType } from '../types';
 import { HelpTopic } from '../data/helpKnowledgeBase';
 import { getTopicForView, searchHelp } from '../utils/helpMatching';
@@ -25,6 +25,10 @@ interface HelpCenterModalProps {
   // refazer do zero) — mesmo handler usado em SettingsView (Sistema & Backup), reaproveitado
   // aqui pra centralizar tudo relacionado a "me ajuda a aprender o sistema" num só lugar.
   onOpenOnboardingWizard: () => void;
+  // Roda o Assistente de Personalização Visual (Tema/Fonte/Tamanho/Espaço no Topo/Ícones do
+  // Menu) — separado do Assistente de Configuração Inicial acima, ver VISUAL_SETUP_STEPS em
+  // App.tsx. Sempre disponível, não só na primeira configuração da conta.
+  onOpenVisualSetup: () => void;
   // "Me guie" — modo de treinamento: toca sozinho o tour da tela atual e libera o "?"
   // arrastável (DraggableHelpPoint.tsx). Estado vive em App.tsx (localStorage).
   guideModeEnabled: boolean;
@@ -37,7 +41,7 @@ interface HelpCenterModalProps {
 
 export default function HelpCenterModal({
   isOpen, onClose, isDarkMode, currentView, currentViewTitle, productionEnabled, onNavigate, onStartJourney,
-  guideModeEnabled, onToggleGuideMode, helpPointMode, onChangeHelpPointMode, onOpenOnboardingWizard,
+  guideModeEnabled, onToggleGuideMode, helpPointMode, onChangeHelpPointMode, onOpenOnboardingWizard, onOpenVisualSetup,
 }: HelpCenterModalProps) {
   const [query, setQuery] = useState('');
   const [activeTopic, setActiveTopic] = useState<HelpTopic | null>(null);
@@ -107,6 +111,21 @@ export default function HelpCenterModal({
             </div>
           </div>
           <ChevronRight size={16} className="text-rose-500 shrink-0" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { onOpenVisualSetup(); onClose(); }}
+          className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl transition-colors ${isDarkMode ? 'bg-indigo-900/20 hover:bg-indigo-900/30' : 'bg-indigo-50 hover:bg-indigo-100'}`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <SlidersHorizontal size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <div className="min-w-0 text-left">
+              <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalização Visual</p>
+              <p className={`text-[10px] font-bold mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tour guiado por Tema, Fonte, Tamanho e mais</p>
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-indigo-500 shrink-0" />
         </button>
 
         <label className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl cursor-pointer ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
