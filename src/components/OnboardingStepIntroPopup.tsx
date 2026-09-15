@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import GuidePulseDot from './GuidePulseDot';
 
 interface OnboardingStepIntroPopupProps {
   isDarkMode: boolean;
@@ -11,6 +12,9 @@ interface OnboardingStepIntroPopupProps {
   // "Ver resumo". Sem isso, o popup mostra só `paragraphs` sem esse link (compatível com
   // passos ainda não convertidos pra ter as duas versões).
   fullParagraphs?: string[];
+  // Dica sobre a bolinha vermelha pulsante — só faz sentido na Etapa 1, onde o mecanismo é
+  // apresentado pela primeira vez; nas etapas seguintes o usuário já sabe o que ela significa.
+  showPulseTip?: boolean;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -21,7 +25,7 @@ interface OnboardingStepIntroPopupProps {
 // gatilho "?" que reabre essa mesma explicação depois de fechado NÃO mora aqui (fica dentro do
 // pill minimizado da navegação, ver App.tsx) — este componente só renderiza o popup em si,
 // controlado de fora via isOpen/onClose.
-export default function OnboardingStepIntroPopup({ isDarkMode, stepIndex, totalSteps, title, paragraphs, fullParagraphs, isOpen, onClose }: OnboardingStepIntroPopupProps) {
+export default function OnboardingStepIntroPopup({ isDarkMode, stepIndex, totalSteps, title, paragraphs, fullParagraphs, showPulseTip, isOpen, onClose }: OnboardingStepIntroPopupProps) {
   const [showFull, setShowFull] = useState(false);
 
   // Sempre reabre no resumo — evita herdar "modo completo" de uma etapa anterior quando o
@@ -50,6 +54,15 @@ export default function OnboardingStepIntroPopup({ isDarkMode, stepIndex, totalS
             <p key={i} className={`text-sm font-medium leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{p}</p>
           ))}
         </div>
+
+        {showPulseTip && (
+          <div className={`flex items-start gap-2.5 p-3 rounded-2xl ${isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50'}`}>
+            <span className="mt-0.5"><GuidePulseDot show /></span>
+            <p className={`text-xs font-medium leading-relaxed ${isDarkMode ? 'text-rose-300' : 'text-rose-700'}`}>
+              Dica: use as bolinhas vermelhas pulsantes nesta tela como direção — elas marcam os pontos sugeridos para essa etapa.
+            </p>
+          </div>
+        )}
 
         {fullParagraphs && fullParagraphs.length > 0 && (
           <button

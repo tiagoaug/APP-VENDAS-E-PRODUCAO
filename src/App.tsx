@@ -9525,6 +9525,7 @@ export default function App() {
                   title={onboardingSteps[onboardingStepIndex].label}
                   paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
                   fullParagraphs={onboardingSteps[onboardingStepIndex].intro!.fullParagraphs}
+                  showPulseTip={onboardingStepIndex === 0}
                   isOpen={onboardingIntroOpen}
                   onClose={() => setOnboardingIntroOpen(false)}
                 />
@@ -9593,6 +9594,7 @@ export default function App() {
                 title={onboardingSteps[onboardingStepIndex].label}
                 paragraphs={onboardingSteps[onboardingStepIndex].intro!.paragraphs}
                   fullParagraphs={onboardingSteps[onboardingStepIndex].intro!.fullParagraphs}
+                showPulseTip={onboardingStepIndex === 0}
                 isOpen={onboardingIntroOpen}
                 onClose={() => setOnboardingIntroOpen(false)}
               />

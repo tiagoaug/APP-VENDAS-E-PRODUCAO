@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Grid, GridType, GridTemplate } from '../types';
-import { Plus, TableCellsMerge, Trash2, Edit, Ruler, Target, Footprints, Scissors, Filter, Box, LayoutGrid, Zap, Bookmark, BookmarkCheck, Sparkles, ChevronDown } from 'lucide-react';
+import { Plus, TableCellsMerge, Trash2, Edit, Ruler, Target, Footprints, Scissors, Filter, Box, LayoutGrid, Zap, Bookmark, BookmarkCheck, Sparkles, ChevronDown, HelpCircle } from 'lucide-react';
 import GradeModal from '../components/GradeModal';
 import GuidePulseDot from '../components/GuidePulseDot';
 import { subscribeToGridTemplates, saveGridTemplate, deleteGridTemplate } from '../services/gridTemplatesService';
@@ -24,6 +24,9 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode,
   const [activeFilter, setActiveFilter] = useState<GridType | 'ALL'>('ALL');
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
+  // Antes era um card fixo grande acima dos filtros; virou uma explicação sob demanda atrás do
+  // "?" no canto do card "Filtrar por tipo", a pedido do Tiago, pra não ocupar espaço à toa.
+  const [showFilterInfo, setShowFilterInfo] = useState(false);
 
   // Modelos de grade salvos por qualquer conta (coleção compartilhada, fora de users/{uid})
   // — pool de sugestões prontas pra tocar e adicionar, alimentada pelo botão de marcador em
@@ -80,21 +83,32 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode,
         guideActive={guideActive}
       />
 
-      <div className={`p-5 rounded-2xl border flex items-start gap-4 ${isDarkMode ? 'bg-cyan-900/10 border-cyan-900/30' : 'bg-cyan-50/50 border-cyan-100'}`}>
-        <Ruler size={20} className="text-cyan-500 mt-0.5 shrink-0 rotate-90" />
-        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-relaxed">
-          Grades de Tamanhos definem <span className="text-cyan-600 dark:text-cyan-400 font-black">quais numerações existem</span> no processo produtivo de cada modelo. 
-          Os padrões de embalagem (quantidade de pares por tamanho) são configurados separadamente em <span className="text-cyan-600 dark:text-cyan-400 font-black">Embalagens</span>.
-        </p>
-      </div>
-
       <div className="flex flex-col gap-4">
         {/* Filters */}
         <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-          <div className="flex items-center gap-2 mb-2 px-1">
-            <Filter size={13} className="text-slate-400 shrink-0" />
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Filtrar por tipo</span>
+          <div className="flex items-center justify-between gap-2 mb-2 px-1">
+            <div className="flex items-center gap-2">
+              <Filter size={13} className="text-slate-400 shrink-0" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Filtrar por tipo</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFilterInfo(v => !v)}
+              aria-label="O que são Grades de Tamanhos?"
+              className={`shrink-0 rounded-full p-0.5 transition-colors ${showFilterInfo ? 'text-cyan-500' : 'text-slate-300 dark:text-slate-600 hover:text-cyan-500'}`}
+            >
+              <HelpCircle size={15} />
+            </button>
           </div>
+          {showFilterInfo && (
+            <div className={`mb-2 p-3 rounded-xl flex items-start gap-2.5 ${isDarkMode ? 'bg-cyan-900/10' : 'bg-cyan-50/50'}`}>
+              <Ruler size={16} className="text-cyan-500 mt-0.5 shrink-0 rotate-90" />
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-relaxed">
+                Grades de Tamanhos definem <span className="text-cyan-600 dark:text-cyan-400 font-black">quais numerações existem</span> no processo produtivo de cada modelo.
+                Os padrões de embalagem (quantidade de pares por tamanho) são configurados separadamente em <span className="text-cyan-600 dark:text-cyan-400 font-black">Embalagens</span>.
+              </p>
+            </div>
+          )}
           {(() => {
             const filters = [
               { id: 'ALL',                label: 'Todas',      color: 'indigo',  icon: LayoutGrid },
