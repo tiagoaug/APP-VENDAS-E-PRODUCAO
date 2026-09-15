@@ -1737,6 +1737,11 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <Copy size={14} /> Salvar Como
         </button>
       </div>
+      {/* Galeria (salvar imagem) e Imprimir (Bluetooth, Ablemark) são os dois só-Android desta
+          fileira — sem nenhum dos dois, a fileira inteira some no iOS em vez de deixar uma
+          faixa vazia (o gap do flex-col pai ainda contaria mesmo com os botões escondidos
+          individualmente). "Compartilhar JPG/PDF" abaixo continua cobrindo o iOS. */}
+      {(isGallerySaverPlatform() || isAblemarkPlatform()) && (
       <div className="flex gap-2">
         {isGallerySaverPlatform() && (
         <button
@@ -1762,6 +1767,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           <Download size={14} /> {savingGallery ? 'Salvando...' : 'Galeria'}
         </button>
         )}
+        {isAblemarkPlatform() && (
         <button
           type="button"
           onClick={handleOpenPrintPreview}
@@ -1770,7 +1776,9 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         >
           <Printer size={14} /> Imprimir
         </button>
+        )}
       </div>
+      )}
       <div className="flex gap-2">
         <button
           type="button"

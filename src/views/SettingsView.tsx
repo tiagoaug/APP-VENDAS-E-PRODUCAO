@@ -478,10 +478,10 @@ export default function SettingsView({
                     </div>
                     <div className="min-w-0">
                       <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Só Dias Úteis na Média</p>
-                      <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">
+                      <p className="text-[11px] font-medium tracking-wide text-slate-400 mt-0.5 leading-relaxed">
                         Divide os pares produzidos só pelos dias de seg. a sex. do período, excluindo sábado e domingo — em vez de todos os dias corridos
                       </p>
-                      <p className="text-[9px] font-bold text-teal-500 mt-1 leading-relaxed">
+                      <p className="text-[11px] font-medium tracking-wide text-teal-500 mt-1 leading-relaxed">
                         Usado na barra de estatísticas do PCP Monitor e no card "Análise de Produção" do Painel, pra calcular a média de pares produzidos por dia.
                       </p>
                     </div>
@@ -509,7 +509,7 @@ export default function SettingsView({
                       </div>
                       <div className="min-w-0">
                         <p className={`text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Período Total de Dias Úteis</p>
-                        <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">Divide pelos dias úteis do período inteiro, mesmo os que ainda não chegaram</p>
+                        <p className="text-[11px] font-medium tracking-wide text-slate-400 mt-0.5 leading-relaxed">Divide pelos dias úteis do período inteiro, mesmo os que ainda não chegaram</p>
                       </div>
                     </button>
                     <button
@@ -526,7 +526,7 @@ export default function SettingsView({
                           <p className={`text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Média até o Momento no Mês</p>
                           <span className="px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">Recomendado</span>
                         </div>
-                        <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-relaxed">Divide só pelos dias úteis já trabalhados até hoje — não dilui pelos dias que ainda faltam</p>
+                        <p className="text-[11px] font-medium tracking-wide text-slate-400 mt-0.5 leading-relaxed">Divide só pelos dias úteis já trabalhados até hoje — não dilui pelos dias que ainda faltam</p>
                       </div>
                     </button>
                   </div>
@@ -788,7 +788,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.15.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.15.1</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}

@@ -7,11 +7,15 @@ workflows:
       node: 22
       xcode: latest
       vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        # Projeto migrado de SPM pra CocoaPods (3 plugins — ML Kit Text Recognition/Barcode
+        # Scanning e o Speech Recognition — só existem como .podspec, sem Package.swift; SPM
+        # puro deixava esses 3 "instalados" no JS mas nunca compilados de verdade no app,
+        # falhando em runtime com "plugin is not implemented on ios"). Depois do `pod install`
+        # abaixo, o build tem que abrir o .xcworkspace gerado, não mais o .xcodeproj sozinho.
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
     cache:
       cache_paths:
-        - $HOME/Library/Caches/org.swift.swiftpm
         - $CM_BUILD_DIR/DerivedData
     scripts:
       - name: Instalar dependências (npm)
@@ -20,34 +24,18 @@ workflows:
         script: npm run build
       - name: Sincronizar Capacitor iOS
         script: npx cap sync ios
-      - name: Instalar CocoaPods (se algum plugin precisar — este projeto usa SPM por padrão)
-        script: |
-          if [ -f "ios/App/Podfile" ]; then
-            cd ios/App && pod install
-          else
-            echo "Sem Podfile — build 100% via Swift Package Manager."
-          fi
-      # Resolve os pacotes SPM (Firebase, MLKit, Capacitor core etc.) separado do build, com
-      # retry manual — os downloads desses .zip grandes do GitHub Releases falham às vezes por
-      # instabilidade de rede na máquina de build (não é um erro do nosso config), então tenta
-      # de novo automaticamente em vez de derrubar o build inteiro na primeira falha.
-      - name: Resolver pacotes Swift Package Manager (com retry)
-        script: |
-          for i in 1 2 3; do
-            xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -derivedDataPath "$CM_BUILD_DIR/DerivedData" && break
-            echo "Tentativa $i falhou, tentando de novo em 15s..."
-            sleep 15
-          done
+      - name: Instalar CocoaPods
+        script: cd ios/App && pod install
       # Build só pra simulador: não precisa de conta de desenvolvedor Apple nem de
       # certificado de assinatura — serve pra validar que o projeto compila (inclusive
-      # detectar se algum plugin sem Package.swift quebra o build via SPM).
+      # detectar se a migração pra CocoaPods linkou os 3 plugins problemáticos direito).
       # -derivedDataPath explícito: sem isso o xcodebuild salva o .app na pasta padrão do
       # DerivedData (fora de qualquer caminho do repo), e o glob de `artifacts` abaixo nunca
       # encontra nada — build passa, mas não aparece nenhum artefato/Quick Launch no Codemagic.
       - name: Build para iOS Simulator (sem assinatura)
         script: |
           xcodebuild build \
-            -project "$XCODE_PROJECT" \
+            -workspace "$XCODE_WORKSPACE" \
             -scheme "$XCODE_SCHEME" \
             -configuration Debug \
             -sdk iphonesimulator \
@@ -87,7 +75,9 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.musgo.vendaseproducao
       vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        # Ver comentário equivalente no workflow ios-simulator-build sobre a migração SPM →
+        # CocoaPods.
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
     scripts:
       - name: Instalar dependências (npm)
@@ -96,17 +86,14 @@ workflows:
         script: npm run build
       - name: Sincronizar Capacitor iOS
         script: npx cap sync ios
-      - name: Instalar CocoaPods (se necessário)
-        script: |
-          if [ -f "ios/App/Podfile" ]; then
-            cd ios/App && pod install
-          fi
+      - name: Instalar CocoaPods
+        script: cd ios/App && pod install
       - name: Assinatura automática de código
         script: xcode-project use-profiles
       - name: Build e assinatura do .ipa
         script: |
           xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
+            --workspace "$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
     artifacts:
       # xcode-project build-ipa exporta relativo à raiz do repositório (confirmado no log:

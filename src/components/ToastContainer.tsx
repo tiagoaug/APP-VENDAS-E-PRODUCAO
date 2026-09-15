@@ -33,6 +33,11 @@ interface ToastContainerProps {
   topOffsetPx?: number;
 }
 
+// Mesma base (2.5rem) do paddingTop do <header> em App.tsx — antes usava 1rem, o que deixava
+// o toast numa faixa própria ACIMA do cabeçalho em vez de alinhado com ele (reportado pelo
+// Tiago). Com o mesmo valor, o toast aparece na mesma linha do cabeçalho, não numa tira extra.
+const TOAST_TOP_BASE = '2.5rem';
+
 export function ToastContainer({ topOffsetPx = 0 }: ToastContainerProps) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
@@ -50,7 +55,7 @@ export function ToastContainer({ topOffsetPx = 0 }: ToastContainerProps) {
 
   return createPortal(
     <div
-      style={{ top: `calc(env(safe-area-inset-top, 0px) + 1rem + ${topOffsetPx}px)` }}
+      style={{ top: `calc(env(safe-area-inset-top, 0px) + ${TOAST_TOP_BASE} + ${topOffsetPx}px)` }}
       className="fixed right-4 z-[9999999] flex flex-col gap-2 pointer-events-none max-w-[320px] w-full"
     >
       <AnimatePresence>
