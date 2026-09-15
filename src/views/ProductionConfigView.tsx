@@ -1949,6 +1949,10 @@ function GenericConfigList({
     }
 
     // Validation for Packaging Grade
+    if (type === 'PACKAGING' && !(editingItem as any).metadata?.capacity) {
+      toast.show('Faltou escolher a quantidade da grade.');
+      return;
+    }
     if (type === 'PACKAGING' && (editingItem as any).metadata?.mode !== 'FREE') {
       const sizeQuantities = (editingItem as any).metadata?.sizeQuantities || {};
       const totalDist = Object.values(sizeQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
@@ -4556,9 +4560,9 @@ function GenericConfigList({
           ) : type === 'PACKAGING' ? (
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Grid3X3 size={32} /></div><p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest leading-relaxed">Configuração de Grades e<br />Tamanhos para Embalagens</p></div>
-              <div className="flex flex-col gap-2"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+              <div className="flex flex-col gap-2"><label className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Nome do Padrão * {guideActive && <GuidePulseDot show />}</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
               <div className="flex flex-col gap-2">
-                <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tipo de Grade</label>
+                <label className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tipo de Grade {guideActive && <GuidePulseDot show />}</label>
                 <div data-guide-anchor="pkg.tipoGradeToggle" className="flex flex-col gap-2">
                   <button
                     type="button"
@@ -4578,7 +4582,7 @@ function GenericConfigList({
                   </button>
                 </div>
               </div>
-              <div className="flex flex-col gap-2"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div>
+              <div className="flex flex-col gap-2"><label className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Capacidade Total (Pares) * {guideActive && <GuidePulseDot show />}</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div>
                 <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares cabem nessa embalagem?</p>
               </div>
 
@@ -4609,7 +4613,7 @@ function GenericConfigList({
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2 ml-2">
                   <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-500"><Factory size={16} /></div>
-                  <label className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Grade de Produção Padrão</label>
+                  <label className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Grade de Produção Padrão {guideActive && <GuidePulseDot show />}</label>
                 </div>
                 <button
                   type="button"
@@ -4738,16 +4742,10 @@ function GenericConfigList({
                 )}
               </Modal>
 
-              {editingItem?.metadata?.mode !== 'FREE' && (
+              {editingItem?.metadata?.mode !== 'FREE' && (editingItem?.metadata?.sizes || []).length > 0 && (
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-4">
-                    <label htmlFor="pack-new-size" className={`text-[10px] font-black uppercase tracking-widest px-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Adicionar Numerações</label>
-                    <div className="flex gap-2">
-                      <input id="pack-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
-                      <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} data-guide-anchor="pkg.numeracaoAdicionar" className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
-                        <Plus size={24} strokeWidth={3} />
-                      </button>
-                    </div>
+                    <label className={`text-[10px] font-black uppercase tracking-widest px-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Numerações desta Embalagem</label>
                     <div className="flex flex-wrap gap-2">
                       {(editingItem?.metadata?.sizes || []).map(size => (
                         <div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
@@ -4763,7 +4761,7 @@ function GenericConfigList({
                     <div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}>
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-between px-2">
-                          <h4 className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Distribuição da Grade</h4>
+                          <h4 className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Distribuição da Grade {guideActive && <GuidePulseDot show />}</h4>
                           <span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span>
                         </div>
                         <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares de cada número vão nessa embalagem — a soma precisa bater com a Capacidade Total.</p>
@@ -4771,7 +4769,7 @@ function GenericConfigList({
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {(editingItem?.metadata?.sizes || []).map(size => (
                           <div key={size} className="flex flex-col gap-2 items-center">
-                            <label htmlFor={`pack-qty-${size}`} className="text-[9px] font-black text-slate-400 uppercase">{size}</label>
+                            <label htmlFor={`pack-qty-${size}`} className={`text-[9px] font-black uppercase ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{size}</label>
                             <input
                               id={`pack-qty-${size}`}
                               type="number"
