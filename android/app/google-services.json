@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "934569927713-70l9h2d68bao44290u86ib2uprnqp0b3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.musgo.vendaseproducao",
+            "certificate_hash": "443d6d24c98ac1f033de887940ec8dde8550fd10"
+          }
+        },
+        {
           "client_id": "934569927713-mv0clmv4qa4tafs667flsp5iog4gbd4e.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

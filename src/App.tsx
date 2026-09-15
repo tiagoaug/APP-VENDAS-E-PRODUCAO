@@ -545,6 +545,36 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('hide_financial_values', String(hideFinancialValues));
   }, [hideFinancialValues]);
+  // Controle da Barra de Atalhos do cabeçalho — Tiago pediu pra poder ocultar cada atalho
+  // (Privacidade/Ajuda/Modo Diurno) individualmente e escolher se ele fica parado ou com o
+  // "balancinho" de animação ociosa (ver scanAnim/aiAnim/themeAnim logo abaixo — mesmo padrão,
+  // só que agora opcional por atalho). Ver "Controle da Barra de Atalhos" em Acessibilidade
+  // (SettingsView.tsx).
+  const [headerShortcutVisibility, setHeaderShortcutVisibility] = useState<{ privacidade: boolean; ajuda: boolean; tema: boolean }>(() => {
+    const saved = localStorage.getItem('header_shortcut_visibility');
+    if (saved) { try { return { privacidade: true, ajuda: true, tema: true, ...JSON.parse(saved) }; } catch { /* ignora JSON corrompido */ } }
+    return { privacidade: true, ajuda: true, tema: true };
+  });
+  useEffect(() => {
+    localStorage.setItem('header_shortcut_visibility', JSON.stringify(headerShortcutVisibility));
+  }, [headerShortcutVisibility]);
+  const toggleHeaderShortcutVisibility = (key: 'privacidade' | 'ajuda' | 'tema') => {
+    setHeaderShortcutVisibility(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  // Animação por atalho é opt-in (default estático) pra Privacidade/Ajuda, que nunca tiveram
+  // o balancinho — só o Modo Diurno já vinha animado por padrão, então mantém true aqui pra
+  // não mudar o comportamento de quem já usa o app.
+  const [headerShortcutAnimated, setHeaderShortcutAnimated] = useState<{ privacidade: boolean; ajuda: boolean; tema: boolean }>(() => {
+    const saved = localStorage.getItem('header_shortcut_animated');
+    if (saved) { try { return { privacidade: false, ajuda: false, tema: true, ...JSON.parse(saved) }; } catch { /* ignora JSON corrompido */ } }
+    return { privacidade: false, ajuda: false, tema: true };
+  });
+  useEffect(() => {
+    localStorage.setItem('header_shortcut_animated', JSON.stringify(headerShortcutAnimated));
+  }, [headerShortcutAnimated]);
+  const toggleHeaderShortcutAnimated = (key: 'privacidade' | 'ajuda' | 'tema') => {
+    setHeaderShortcutAnimated(prev => ({ ...prev, [key]: !prev[key] }));
+  };
   // "Me guie" — modo de treinamento: toca sozinho o tour da tela atual (ver JOURNEYS) e libera
   // o "?" arrastável (DraggableHelpPoint). Ver plano em lazy-seeking-sun.md.
   const [guideModeEnabled, setGuideModeEnabled] = useState<boolean>(() => {
@@ -797,6 +827,8 @@ export default function App() {
   const [scanAnim, setScanAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
   const [aiAnim, setAiAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
   const [themeAnim, setThemeAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
+  const [privacyAnim, setPrivacyAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
+  const [helpAnim, setHelpAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
 
   useEffect(() => {
     const getRandomVal = (min: number, max: number) => Math.random() * (max - min) + min;
@@ -817,6 +849,20 @@ export default function App() {
         opacity: getRandomVal(0.88, 1)
       });
       setThemeAnim({
+        scale: getRandomVal(0.92, 1.12),
+        rotate: getRandomVal(-12, 12),
+        y: getRandomVal(-2, 2),
+        x: getRandomVal(-2, 2),
+        opacity: getRandomVal(0.88, 1)
+      });
+      setPrivacyAnim({
+        scale: getRandomVal(0.92, 1.12),
+        rotate: getRandomVal(-12, 12),
+        y: getRandomVal(-2, 2),
+        x: getRandomVal(-2, 2),
+        opacity: getRandomVal(0.88, 1)
+      });
+      setHelpAnim({
         scale: getRandomVal(0.92, 1.12),
         rotate: getRandomVal(-12, 12),
         y: getRandomVal(-2, 2),
@@ -5881,6 +5927,10 @@ export default function App() {
             setHideFinancialValues={setHideFinancialValues}
             headerTopSpacePx={headerTopSpacePx}
             setHeaderTopSpacePx={setHeaderTopSpacePx}
+            headerShortcutVisibility={headerShortcutVisibility}
+            onToggleHeaderShortcutVisibility={toggleHeaderShortcutVisibility}
+            headerShortcutAnimated={headerShortcutAnimated}
+            onToggleHeaderShortcutAnimated={toggleHeaderShortcutAnimated}
             visualGuideTarget={visualSetupActive ? VISUAL_SETUP_STEPS[visualSetupStepIndex]?.target : undefined}
             onOpenVisualSetup={handleStartVisualSetup}
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
@@ -9608,6 +9658,7 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-3 text-slate-500">
+          {headerShortcutVisibility.privacidade && (
           <motion.button
             type="button"
             onClick={() => setHideFinancialValues(v => !v)}
@@ -9616,10 +9667,13 @@ export default function App() {
             aria-label={hideFinancialValues ? "Desativar Modo Privacidade" : "Ativar Modo Privacidade"}
             whileHover={{ scale: 1.15 }}
             whileTap={{ scale: 0.9 }}
+            animate={headerShortcutAnimated.privacidade ? privacyAnim : undefined}
+            transition={{ duration: 1.5, ease: "easeInOut" }}
             className={`p-2 rounded-full transition-colors ${hideFinancialValues ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
           >
             {hideFinancialValues ? <EyeOff size={20} /> : <Eye size={20} />}
           </motion.button>
+          )}
           {modulesConfig.production && (
           <motion.button
             type="button"
@@ -9642,7 +9696,7 @@ export default function App() {
               navegam pra outras telas (Manual do Sistema, "Ir para a tela relacionada" de FAQs,
               "Iniciar tour" de Guias), que eram uma segunda forma de escapar da introdução
               inicial mesmo com o menu de navegação já escondido (ver <nav> mais abaixo). */}
-          {![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
+          {headerShortcutVisibility.ajuda && ![ViewType.ONBOARDING_WELCOME, ViewType.ONBOARDING_ROADMAP, ViewType.ONBOARDING_COMPLETE].includes(currentView) && (
           <motion.button
             type="button"
             onClick={() => setIsHelpCenterOpen(true)}
@@ -9651,6 +9705,8 @@ export default function App() {
             aria-label="Central de Ajuda"
             whileHover={{ scale: 1.15, rotate: -8 }}
             whileTap={{ scale: 0.9 }}
+            animate={headerShortcutAnimated.ajuda ? helpAnim : undefined}
+            transition={{ duration: 1.5, ease: "easeInOut" }}
             className="p-2 rounded-full bg-sky-50 dark:bg-sky-900/30 text-sky-500 dark:text-sky-400 transition-colors hover:bg-sky-100 dark:hover:bg-sky-900/50"
           >
             <HelpCircle size={20} />
@@ -9672,6 +9728,7 @@ export default function App() {
               <Sparkles size={20} />
             </motion.button>
           )}
+          {headerShortcutVisibility.tema && (
           <motion.button
             onClick={toggleDarkMode}
             data-guide-anchor="app.modoEscuroToggle"
@@ -9679,12 +9736,13 @@ export default function App() {
             aria-label={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
             whileHover={{ scale: 1.15, rotate: 25 }}
             whileTap={{ scale: 0.9 }}
-            animate={themeAnim}
+            animate={headerShortcutAnimated.tema ? themeAnim : undefined}
             transition={{ duration: 1.5, ease: "easeInOut" }}
             className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50' : 'bg-blue-50 text-blue-500 hover:bg-blue-100'}`}
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </motion.button>
+          )}
         </div>
         </div>
       </header>

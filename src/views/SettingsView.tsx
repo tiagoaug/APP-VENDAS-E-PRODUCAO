@@ -27,6 +27,7 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  HelpCircle,
   Lock,
   SlidersHorizontal,
   Printer,
@@ -117,6 +118,13 @@ interface SettingsViewProps {
   // ajustado por um cursor, pra acertar a altura exata em qualquer aparelho.
   headerTopSpacePx?: number;
   setHeaderTopSpacePx?: (v: number) => void;
+  // Controle da Barra de Atalhos do cabeçalho (Privacidade/Ajuda/Modo Diurno) — visibilidade e
+  // animação ociosa (o "balancinho") individual por atalho, ver App.tsx headerShortcutVisibility/
+  // headerShortcutAnimated.
+  headerShortcutVisibility?: { privacidade: boolean; ajuda: boolean; tema: boolean };
+  onToggleHeaderShortcutVisibility?: (key: 'privacidade' | 'ajuda' | 'tema') => void;
+  headerShortcutAnimated?: { privacidade: boolean; ajuda: boolean; tema: boolean };
+  onToggleHeaderShortcutAnimated?: (key: 'privacidade' | 'ajuda' | 'tema') => void;
   // Assistente de Personalização Visual — separado do Assistente de Configuração Inicial (ver
   // VISUAL_SETUP_STEPS em App.tsx). `visualGuideTarget` diz qual seção de Acessibilidade
   // abrir/pulsar automaticamente enquanto ele está ativo; undefined/null = não está ativo.
@@ -158,6 +166,10 @@ export default function SettingsView({
   setHideFinancialValues,
   headerTopSpacePx = 0,
   setHeaderTopSpacePx,
+  headerShortcutVisibility = { privacidade: true, ajuda: true, tema: true },
+  onToggleHeaderShortcutVisibility,
+  headerShortcutAnimated = { privacidade: false, ajuda: false, tema: true },
+  onToggleHeaderShortcutAnimated,
   visualGuideTarget,
   onOpenVisualSetup,
   onOpenOnboardingWizard,
@@ -173,6 +185,7 @@ export default function SettingsView({
   const [fontSectionOpen, setFontSectionOpen] = useState(false);
   const [fontScaleSectionOpen, setFontScaleSectionOpen] = useState(false);
   const [navIconsSectionOpen, setNavIconsSectionOpen] = useState(false);
+  const [shortcutBarSectionOpen, setShortcutBarSectionOpen] = useState(false);
   // Só Dias Úteis na Média — antes vivia só em Configuração de Fábrica, trazido pra cá pra
   // centralizar toda a configuração de Produção no Menu Mais (mesma coleção/serviço, só que
   // lido/gravado direto daqui em vez de por ProductionConfigView).
@@ -811,7 +824,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.18.1</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.19.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -872,30 +885,6 @@ export default function SettingsView({
                   </div>
                 </button>
               )}
-
-              {/* Prévia ao vivo — junta Tema (cor da cápsula), Ícones do Menu (cor de cada
-                  ícone), Fonte e Tamanho da Fonte numa mini simulação da barra de navegação e
-                  de um texto de exemplo, pra dar pra ver o resultado combinado sem precisar
-                  fechar esse popup e checar cada mudança na tela de verdade. */}
-              <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Prévia</p>
-                <div className={`flex items-center justify-around gap-2 p-3 rounded-2xl mb-3 ${THEME_VISUALS[appTheme].pillGradient}`}>
-                  {[
-                    { key: 'dashboard', Icon: LayoutDashboard },
-                    { key: 'purchases', Icon: ShoppingCart },
-                    { key: 'sales', Icon: ShoppingBag },
-                    { key: 'financial', Icon: DollarSign },
-                  ].map(({ key, Icon }) => (
-                    <Icon key={key} size={18} color={navIconMode === 'colored' ? NAV_TAB_COLORS[key] : navMonoColor} />
-                  ))}
-                </div>
-                <p
-                  style={{ fontFamily, fontSize: `${13 * (fontScale / 100)}px` }}
-                  className={`font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                >
-                  Texto de exemplo — Aa Bb Cc 123
-                </p>
-              </div>
 
               {/* Dark Mode toggle — atalho rápido */}
               <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
@@ -1172,7 +1161,99 @@ export default function SettingsView({
                         </div>
                       </div>
                     )}
+
+                    {/* Prévia ao vivo — antes ficava solta lá em cima, junto do botão do
+                        Assistente; Tiago pediu pra morar aqui dentro de Ícones do Menu, já que
+                        é a cor do ícone (mono ou colorido) que muda na hora — Tema/Fonte/Tamanho
+                        continuam refletidos junto, só a localização mudou. */}
+                    <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'}`}>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-2">Prévia</p>
+                      <div className={`flex items-center justify-around gap-2 p-3 rounded-2xl mb-3 ${THEME_VISUALS[appTheme].pillGradient}`}>
+                        {[
+                          { key: 'dashboard', Icon: LayoutDashboard },
+                          { key: 'purchases', Icon: ShoppingCart },
+                          { key: 'sales', Icon: ShoppingBag },
+                          { key: 'financial', Icon: DollarSign },
+                        ].map(({ key, Icon }) => (
+                          <Icon key={key} size={18} color={navIconMode === 'colored' ? NAV_TAB_COLORS[key] : navMonoColor} />
+                        ))}
+                      </div>
+                      <p
+                        style={{ fontFamily, fontSize: `${13 * (fontScale / 100)}px` }}
+                        className={`font-bold truncate px-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                      >
+                        Texto de exemplo — Aa Bb Cc 123
+                      </p>
+                    </div>
                   </>
+                )}
+              </div>
+
+              {/* Controle da Barra de Atalhos — Privacidade/Ajuda/Modo Diurno no cabeçalho.
+                  Acordeão minimizado por padrão, mesmo padrão de Ícones do Menu logo acima. Pra
+                  cada atalho: "Exibir" (mostra/esconde o botão do cabeçalho) e "Com Movimento"
+                  (o balancinho de animação ociosa — ver privacyAnim/helpAnim/themeAnim em
+                  App.tsx; estático = só fica parado até o toque). */}
+              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                <button
+                  type="button"
+                  onClick={() => setShortcutBarSectionOpen(v => !v)}
+                  data-guide-anchor="settings.barraAtalhosAcordeao"
+                  className="flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-sky-400' : 'bg-sky-50 text-sky-500'}`}>
+                      <MoveHorizontal size={18} />
+                    </div>
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Controle da Barra de Atalhos</p>
+                  </div>
+                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${shortcutBarSectionOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {shortcutBarSectionOpen && (
+                  <div className="flex flex-col gap-2">
+                    {([
+                      { key: 'privacidade' as const, label: 'Privacidade', Icon: hideFinancialValues ? EyeOff : Eye, iconBg: 'bg-rose-50 dark:bg-slate-700 text-rose-500 dark:text-rose-400' },
+                      { key: 'ajuda' as const, label: 'Ajuda', Icon: HelpCircle, iconBg: 'bg-sky-50 dark:bg-slate-700 text-sky-500 dark:text-sky-400' },
+                      { key: 'tema' as const, label: isDarkMode ? 'Modo Noturno' : 'Modo Diurno', Icon: isDarkMode ? Moon : Sun, iconBg: 'bg-amber-50 dark:bg-slate-700 text-amber-500 dark:text-amber-400' },
+                    ]).map(({ key, label, Icon, iconBg }) => (
+                      <div key={key} className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white border border-slate-100'}`}>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
+                            <Icon size={14} />
+                          </div>
+                          <p className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onToggleHeaderShortcutVisibility?.(key)}
+                            data-guide-anchor="settings.barraAtalhosExibir"
+                            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                          >
+                            <span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Exibir</span>
+                            <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutVisibility[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
+                              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutVisibility[key] ? 'left-4' : 'left-0.5'}`} />
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onToggleHeaderShortcutAnimated?.(key)}
+                            disabled={!headerShortcutVisibility[key]}
+                            data-guide-anchor="settings.barraAtalhosMovimento"
+                            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl disabled:opacity-40 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                          >
+                            <span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Movimento</span>
+                            <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutAnimated[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
+                              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutAnimated[key] ? 'left-4' : 'left-0.5'}`} />
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-[10px] font-medium text-slate-400 leading-relaxed px-1">
+                      "Exibir" mostra ou esconde o atalho no cabeçalho. "Movimento" liga o balancinho de animação; desligado, o ícone fica parado até você tocar.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
