@@ -102,6 +102,7 @@ import { BADGE_COLOR_OPTIONS, BADGE_COLOR_CLASSES, DEFAULT_BADGE_COLOR } from '.
 import ConsumptionCalculatorModal from '../components/ConsumptionCalculatorModal';
 import { toast } from '../utils/toast';
 import { getTotalMaterialStock } from '../utils/materialStock';
+import { generateId } from '../utils/id';
 
 // Trava de ordenação das numerações (ex: "34", "38-39", "40-41") para que a grade de
 // tamanhos sempre apareça na mesma ordem numérica crescente, independente da ordem em
@@ -1652,13 +1653,13 @@ function GenericConfigList({
   // etc.), só que salva/aplica GridType.EMBALAGEM em vez de SOLADO, e escreve em sizeQuantities
   // (não sizeWeights). Duplicado em vez de generalizado pra não arriscar mexer no fluxo do Molde,
   // que já está em produção.
-  const [isPackGridSearchOpen, setIsPackGridSearchOpen] = useState(false);
-  const [packGridSearchTerm, setPackGridSearchTerm] = useState('');
-  const [isCreatingPackGridInline, setIsCreatingPackGridInline] = useState(false);
-  const [editingPackGridId, setEditingPackGridId] = useState<string | null>(null);
-  const [newPackGridName, setNewPackGridName] = useState('');
-  const [newPackGridSizes, setNewPackGridSizes] = useState<string[]>([]);
-  const [newPackGridSizeInput, setNewPackGridSizeInput] = useState('');
+  const [isProductionGradeSearchOpen, setIsProductionGradeSearchOpen] = useState(false);
+  const [productionGradeSearchTerm, setProductionGradeSearchTerm] = useState('');
+  const [isCreatingProductionGradeInline, setIsCreatingProductionGradeInline] = useState(false);
+  const [editingProductionGradeId, setEditingProductionGradeId] = useState<string | null>(null);
+  const [newProductionGradeName, setNewProductionGradeName] = useState('');
+  const [newProductionGradeSizes, setNewProductionGradeSizes] = useState<string[]>([]);
+  const [newProductionGradeSizeInput, setNewProductionGradeSizeInput] = useState('');
   const [isFlowTagPickerOpen, setIsFlowTagPickerOpen] = useState(false);
   const [flowTagSearch, setFlowTagSearch] = useState('');
   const [isCreatingFlowTagInline, setIsCreatingFlowTagInline] = useState(false);
@@ -2152,61 +2153,73 @@ function GenericConfigList({
     setNewToolCategoryName('');
   };
 
-  const applyGridToPack = (grid: Grid, sizesOverride?: string[]) => {
+  // Escolher uma Grade de Produção Padrão agora faz 2 coisas de uma vez: grava
+  // productionGradeId (usado de verdade no PCP pra converter pares em caixas — ver
+  // computeStockProjection) E já preenche as numerações/distribuição aqui mesmo, substituindo
+  // o antigo "Buscar Padrão de Embalagem" (que só fazia a segunda parte, sem o vínculo real).
+  // Em modo Livre não existe distribuição por tamanho — só grava o vínculo, sem mexer em sizes.
+  const applyProductionGradeToPack = (grid: Grid, sizesOverride?: string[]) => {
     const gridSizes = sizesOverride || grid.sizes || [];
     setEditingItem(prev => {
       if (!prev) return null;
+      if (prev.metadata?.mode === 'FREE') {
+        return { ...prev, metadata: { ...prev.metadata, productionGradeId: grid.id || undefined } };
+      }
       const quantities: Record<string, number> = { ...(prev.metadata?.sizeQuantities || {}) };
       gridSizes.forEach((s: string) => { if (quantities[s] === undefined) quantities[s] = 0; });
-      return { ...prev, metadata: { ...prev.metadata, sizes: gridSizes, sizeQuantities: quantities } };
+      return { ...prev, metadata: { ...prev.metadata, sizes: gridSizes, sizeQuantities: quantities, productionGradeId: grid.id || undefined } };
     });
-    setIsPackGridSearchOpen(false);
-    setIsCreatingPackGridInline(false);
-    setEditingPackGridId(null);
-    setPackGridSearchTerm('');
-    setNewPackGridName('');
-    setNewPackGridSizes([]);
-    setNewPackGridSizeInput('');
+    setIsProductionGradeSearchOpen(false);
+    setIsCreatingProductionGradeInline(false);
+    setEditingProductionGradeId(null);
+    setProductionGradeSearchTerm('');
+    setNewProductionGradeName('');
+    setNewProductionGradeSizes([]);
+    setNewProductionGradeSizeInput('');
   };
 
-  const addNewPackGridSize = () => {
-    const trimmed = newPackGridSizeInput.trim();
-    if (trimmed !== '' && !newPackGridSizes.includes(trimmed)) {
-      setNewPackGridSizes(prev => [...prev, trimmed]);
-      setNewPackGridSizeInput('');
+  const addNewProductionGradeSize = () => {
+    const trimmed = newProductionGradeSizeInput.trim();
+    if (trimmed !== '' && !newProductionGradeSizes.includes(trimmed)) {
+      setNewProductionGradeSizes(prev => [...prev, trimmed]);
+      setNewProductionGradeSizeInput('');
     }
   };
 
-  const removeNewPackGridSize = (size: string) => {
-    setNewPackGridSizes(prev => prev.filter(s => s !== size));
+  const removeNewProductionGradeSize = (size: string) => {
+    setNewProductionGradeSizes(prev => prev.filter(s => s !== size));
   };
 
-  const startCreatePackGrid = () => {
-    setEditingPackGridId(null);
-    setNewPackGridName('');
-    setNewPackGridSizes([]);
-    setIsCreatingPackGridInline(true);
+  const startCreateProductionGrade = () => {
+    setEditingProductionGradeId(null);
+    setNewProductionGradeName('');
+    setNewProductionGradeSizes([]);
+    setIsCreatingProductionGradeInline(true);
   };
 
-  const startEditPackGrid = (grid: Grid) => {
-    setEditingPackGridId(grid.id);
-    setNewPackGridName(grid.name);
-    setNewPackGridSizes(grid.sizes || []);
-    setIsCreatingPackGridInline(true);
+  const startEditProductionGrade = (grid: Grid) => {
+    setEditingProductionGradeId(grid.id);
+    setNewProductionGradeName(grid.name);
+    setNewProductionGradeSizes(grid.sizes || []);
+    setIsCreatingProductionGradeInline(true);
   };
 
-  const handleSaveInlinePackGrid = async () => {
-    if (!newPackGridName.trim() || newPackGridSizes.length === 0) return;
-    if (editingPackGridId) {
+  const handleSaveInlineProductionGrade = async () => {
+    if (!newProductionGradeName.trim() || newProductionGradeSizes.length === 0) return;
+    if (editingProductionGradeId) {
       if (!onUpdateGrid) return;
-      const existing = grids.find(g => g.id === editingPackGridId);
-      const updated = { name: newPackGridName.trim(), type: GridType.EMBALAGEM, sizes: newPackGridSizes, configuration: existing?.configuration || {} };
-      await onUpdateGrid(editingPackGridId, updated);
-      applyGridToPack({ id: editingPackGridId, ...updated });
+      const existing = grids.find(g => g.id === editingProductionGradeId);
+      const updated = { name: newProductionGradeName.trim(), type: GridType.FORMA, sizes: newProductionGradeSizes, configuration: existing?.configuration || {} };
+      await onUpdateGrid(editingProductionGradeId, updated);
+      applyProductionGradeToPack({ id: editingProductionGradeId, ...updated });
     } else {
       if (!onCreateGrid) return;
-      await onCreateGrid({ name: newPackGridName.trim(), type: GridType.EMBALAGEM, sizes: newPackGridSizes, configuration: {} });
-      applyGridToPack({ id: '', name: newPackGridName.trim(), type: GridType.EMBALAGEM, sizes: newPackGridSizes, configuration: {} });
+      // Gera o ID aqui (em vez de deixar o Firestore decidir) porque precisamos dele JÁ na
+      // hora de gravar productionGradeId — onCreateGrid não devolve o id da criação.
+      const newId = generateId();
+      const newGrid = { id: newId, name: newProductionGradeName.trim(), type: GridType.FORMA, sizes: newProductionGradeSizes, configuration: {} };
+      await onCreateGrid(newGrid as any);
+      applyProductionGradeToPack(newGrid);
     }
   };
 
@@ -4381,37 +4394,37 @@ function GenericConfigList({
             </div>
           ) : type === 'PACKAGING' ? (
             <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Grid3X3 size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Grades e<br />Tamanhos para Embalagens</p></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Grid3X3 size={32} /></div><p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest leading-relaxed">Configuração de Grades e<br />Tamanhos para Embalagens</p></div>
+              <div className="flex flex-col gap-2"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label>
+                <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tipo de Grade</label>
                 <div data-guide-anchor="pkg.tipoGradeToggle" className="flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)}
                     className={`flex flex-col gap-1 p-4 rounded-2xl border-2 text-left transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}
                   >
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>Grade Fixa</span>
-                    <span className="text-[10px] font-medium normal-case text-slate-400 leading-relaxed">Use quando toda caixa desse padrão sempre leva a mesma quantidade de pares de cada numeração (ex.: 1 par de cada tamanho, do 34 ao 40). Você define essa distribuição abaixo.</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'text-indigo-600 dark:text-indigo-400' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>Grade Fixa</span>
+                    <span className="text-[10px] font-medium normal-case text-blue-900 dark:text-blue-300 leading-relaxed">Use quando toda caixa desse padrão sempre leva a mesma quantidade de pares de cada numeração (ex.: 1 par de cada tamanho, do 34 ao 40). Você define essa distribuição abaixo.</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)}
                     className={`flex flex-col gap-1 p-4 rounded-2xl border-2 text-left transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}
                   >
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${editingItem?.metadata?.mode === 'FREE' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>Grade Livre</span>
-                    <span className="text-[10px] font-medium normal-case text-slate-400 leading-relaxed">Use quando a mistura de numerações dentro da caixa varia a cada vez — só a capacidade total de pares importa, sem uma distribuição fixa por tamanho.</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${editingItem?.metadata?.mode === 'FREE' ? 'text-indigo-600 dark:text-indigo-400' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>Grade Livre</span>
+                    <span className="text-[10px] font-medium normal-case text-blue-900 dark:text-blue-300 leading-relaxed">Use quando a mistura de numerações dentro da caixa varia a cada vez — só a capacidade total de pares importa, sem uma distribuição fixa por tamanho.</span>
                   </button>
                 </div>
               </div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div>
-                <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-2">Quantos pares cabem nessa embalagem?</p>
+              <div className="flex flex-col gap-2"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div>
+                <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares cabem nessa embalagem?</p>
               </div>
 
               {/* Cor do badge de estoque (ex.: "12P") — escolhida aqui pra diferenciar de
                   relance, no Estoque, caixas de padrões diferentes (12 pares x 15 pares...). */}
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cor do Badge no Estoque</label>
+                <label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Cor do Badge no Estoque</label>
                 <div className="flex flex-wrap gap-2 px-2">
                   {BADGE_COLOR_OPTIONS.map(color => {
                     const active = (editingItem?.metadata?.badgeColor || DEFAULT_BADGE_COLOR) === color;
@@ -4435,148 +4448,139 @@ function GenericConfigList({
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2 ml-2">
                   <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-500"><Factory size={16} /></div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Grade de Produção Padrão</label>
+                  <label className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Grade de Produção Padrão</label>
                 </div>
-                <select
-                  value={editingItem?.metadata?.productionGradeId || ''}
-                  onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, productionGradeId: e.target.value || undefined } } : null)}
+                <button
+                  type="button"
+                  onClick={() => { setIsProductionGradeSearchOpen(true); setIsCreatingProductionGradeInline(false); setEditingProductionGradeId(null); setProductionGradeSearchTerm(''); }}
+                  data-guide-anchor="pkg.buscarGrade"
                   title="Grade de Produção Padrão"
                   aria-label="Selecionar grade de produção padrão"
-                  className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                  className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none flex items-center justify-between border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
                 >
-                  <option value="">Nenhuma</option>
-                  {grids.filter(g => g.type === GridType.FORMA || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-                <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-2">
-                  Qual a numeração (grade) que vai nessa embalagem? Escolha a Grade de Produção (Escalonamento) que esta embalagem representa — produtos cadastrados com essa grade de produção usarão automaticamente esta embalagem para converter os pares produzidos em caixas no Estoque.
+                  <span>{grids.find(g => g.id === editingItem?.metadata?.productionGradeId)?.name || 'Nenhuma'}</span>
+                  <ChevronDown size={18} className="text-blue-500 shrink-0" />
+                </button>
+                <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 leading-relaxed px-2">
+                  Qual a numeração (grade) que vai nessa embalagem? Toque acima pra escolher entre as grades já cadastradas ou criar uma nova — produtos cadastrados com essa grade de produção usarão automaticamente esta embalagem para converter os pares produzidos em caixas no Estoque.
                 </p>
               </div>
 
-              {editingItem?.metadata?.mode !== 'FREE' && (
-                <div className="flex flex-col gap-6">
-                  <button
-                    type="button"
-                    onClick={() => { setIsPackGridSearchOpen(true); setIsCreatingPackGridInline(false); setEditingPackGridId(null); setPackGridSearchTerm(''); }}
-                    data-guide-anchor="pkg.buscarGrade"
-                    className={`w-full py-4 px-6 rounded-2xl flex items-center justify-between transition-all active:scale-[0.98] border-2 ${isDarkMode ? 'bg-amber-900/20 text-amber-400 border-amber-500/30 hover:bg-amber-900/40' : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100/50'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <TableCellsMerge size={20} />
-                      <div className="text-left">
-                        <span className="text-xs font-black uppercase tracking-widest block">Buscar Padrão de Embalagem</span>
-                        <span className="text-xs font-bold uppercase tracking-widest opacity-70">Usar um padrão já cadastrado ou criar um novo</span>
-                      </div>
+              {/* Único popup pra Grade de Produção — antes existia também "Buscar Padrão de
+                  Embalagem" separado, fazendo quase a mesma coisa (só preenchia numerações, sem
+                  gravar o vínculo real usado no PCP). Consolidado num só, pra não ter duas ações
+                  parecidas fazendo coisas diferentes. Fora do "mode !== FREE" de propósito — o
+                  vínculo com a grade de produção faz sentido em qualquer modo, só o preenchimento
+                  automático de numerações é pulado em modo Livre (ver applyProductionGradeToPack). */}
+              <Modal isOpen={isProductionGradeSearchOpen} onClose={() => { setIsProductionGradeSearchOpen(false); setIsCreatingProductionGradeInline(false); setEditingProductionGradeId(null); }} title="Grade de Produção Padrão" icon={<Factory size={20} />} maxWidth="max-w-md" zIndex={80000}>
+                {!isCreatingProductionGradeInline ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text"
+                        value={productionGradeSearchTerm}
+                        onChange={(e) => setProductionGradeSearchTerm(e.target.value)}
+                        placeholder="Buscar grade de produção..."
+                        className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
                     </div>
-                    <ChevronRight size={18} />
-                  </button>
-
-                  <Modal isOpen={isPackGridSearchOpen} onClose={() => { setIsPackGridSearchOpen(false); setIsCreatingPackGridInline(false); setEditingPackGridId(null); }} title="Buscar Padrão de Embalagem" icon={<TableCellsMerge size={20} />} maxWidth="max-w-md" zIndex={80000}>
-                    {!isCreatingPackGridInline ? (
-                      <div className="flex flex-col gap-4">
-                        <div className="relative">
-                          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
-                          <input
-                            type="text"
-                            value={packGridSearchTerm}
-                            onChange={(e) => setPackGridSearchTerm(e.target.value)}
-                            placeholder="Buscar padrão de embalagem..."
-                            className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
-                          />
-                        </div>
-                        <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
-                          {grids.filter(g => g.type === GridType.EMBALAGEM && g.name.toLowerCase().includes(packGridSearchTerm.toLowerCase())).map(g => (
-                            <div
-                              key={g.id}
-                              className={`w-full flex items-center gap-2 p-4 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
-                            >
-                              <div className="flex flex-col flex-1 min-w-0">
-                                <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
-                                  {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
-                                </span>
-                              </div>
-                              <button type="button" title="Usar este Padrão" aria-label={`Usar o padrão ${g.name}`} onClick={() => applyGridToPack(g)} className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0">
-                                <Check size={14} strokeWidth={3} />
-                              </button>
-                              <button type="button" title="Editar Padrão" aria-label={`Editar o padrão ${g.name}`} onClick={() => startEditPackGrid(g)} className={`p-2.5 rounded-xl transition-colors shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-700'}`}>
-                                <Edit3 size={14} />
-                              </button>
-                              <button type="button" title="Excluir Padrão" aria-label={`Excluir o padrão ${g.name}`} onClick={() => handleDeleteGrid(g)} className="p-2.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
-                          {grids.filter(g => g.type === GridType.EMBALAGEM && g.name.toLowerCase().includes(packGridSearchTerm.toLowerCase())).length === 0 && (
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Não encontrou um padrão de embalagem? Crie um aqui.</p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={startCreatePackGrid}
-                          data-guide-anchor="pkg.buscarGrade.criar"
-                          className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                    <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                      {grids.filter(g => (g.type === GridType.FORMA || !g.type) && g.name.toLowerCase().includes(productionGradeSearchTerm.toLowerCase())).map(g => (
+                        <div
+                          key={g.id}
+                          className={`w-full flex items-center gap-2 p-4 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
                         >
-                          <Plus size={14} strokeWidth={3} /> Não encontrou? Criar Novo Padrão
+                          <div className="flex flex-col flex-1 min-w-0">
+                            <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                              {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
+                            </span>
+                          </div>
+                          <button type="button" title="Usar esta Grade" aria-label={`Usar a grade ${g.name}`} onClick={() => applyProductionGradeToPack(g)} className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0">
+                            <Check size={14} strokeWidth={3} />
+                          </button>
+                          <button type="button" title="Editar Grade" aria-label={`Editar a grade ${g.name}`} onClick={() => startEditProductionGrade(g)} className={`p-2.5 rounded-xl transition-colors shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-700'}`}>
+                            <Edit3 size={14} />
+                          </button>
+                          <button type="button" title="Excluir Grade" aria-label={`Excluir a grade ${g.name}`} onClick={() => handleDeleteGrid(g)} className="p-2.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {grids.filter(g => (g.type === GridType.FORMA || !g.type) && g.name.toLowerCase().includes(productionGradeSearchTerm.toLowerCase())).length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade encontrada. Crie aqui uma grade de sua necessidade.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startCreateProductionGrade}
+                      data-guide-anchor="pkg.buscarGrade.criar"
+                      className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Plus size={14} strokeWidth={3} /> Criar uma Grade de Sua Necessidade
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingProductionGradeId ? 'Editando Grade' : 'Nova Grade de Produção'}</p>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Grade</label>
+                      <input
+                        type="text"
+                        value={newProductionGradeName}
+                        onChange={(e) => setNewProductionGradeName(e.target.value)}
+                        placeholder="Ex: Adulto 34 ao 39"
+                        className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newProductionGradeSizeInput}
+                          onChange={(e) => setNewProductionGradeSizeInput(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNewProductionGradeSize())}
+                          placeholder="Ex: 38"
+                          className={`flex-1 px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                        />
+                        <button type="button" onClick={addNewProductionGradeSize} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black transition-colors">
+                          <Plus size={16} />
                         </button>
                       </div>
-                    ) : (
-                      <div className="flex flex-col gap-4">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingPackGridId ? 'Editando Padrão' : 'Novo Padrão de Embalagem'}</p>
-                        <div>
-                          <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome do Padrão</label>
-                          <input
-                            type="text"
-                            value={newPackGridName}
-                            onChange={(e) => setNewPackGridName(e.target.value)}
-                            placeholder="Ex: Caixa 12 Pares"
-                            className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={newPackGridSizeInput}
-                              onChange={(e) => setNewPackGridSizeInput(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNewPackGridSize())}
-                              placeholder="Ex: 38"
-                              className={`flex-1 px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
-                            />
-                            <button type="button" onClick={addNewPackGridSize} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black transition-colors">
-                              <Plus size={16} />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="min-h-[50px] flex flex-wrap gap-2 p-3 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
-                          {newPackGridSizes.map(size => (
-                            <span key={size} className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
-                              {size}
-                              <button type="button" onClick={() => removeNewPackGridSize(size)} className="text-rose-400 hover:text-rose-600">×</button>
-                            </span>
-                          ))}
-                          {newPackGridSizes.length === 0 && <span className="text-[10px] text-slate-300 dark:text-slate-700 font-bold italic self-center">Adicione numerações acima</span>}
-                        </div>
-                        <div className="flex gap-2 pt-1">
-                          <button type="button" onClick={() => { setIsCreatingPackGridInline(false); setEditingPackGridId(null); }} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
-                            Voltar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSaveInlinePackGrid}
-                            data-guide-anchor="pkg.gradeInlineSalvar"
-                            disabled={!newPackGridName.trim() || newPackGridSizes.length === 0}
-                            className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
-                          >
-                            {editingPackGridId ? 'Salvar Alterações e Usar' : 'Salvar e Usar'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </Modal>
+                    </div>
+                    <div className="min-h-[50px] flex flex-wrap gap-2 p-3 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
+                      {newProductionGradeSizes.map(size => (
+                        <span key={size} className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
+                          {size}
+                          <button type="button" onClick={() => removeNewProductionGradeSize(size)} className="text-rose-400 hover:text-rose-600">×</button>
+                        </span>
+                      ))}
+                      {newProductionGradeSizes.length === 0 && <span className="text-[10px] text-slate-300 dark:text-slate-700 font-bold italic self-center">Adicione numerações acima</span>}
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button type="button" onClick={() => { setIsCreatingProductionGradeInline(false); setEditingProductionGradeId(null); }} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveInlineProductionGrade}
+                        data-guide-anchor="pkg.gradeInlineSalvar"
+                        disabled={!newProductionGradeName.trim() || newProductionGradeSizes.length === 0}
+                        className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                      >
+                        {editingProductionGradeId ? 'Salvar Alterações e Usar' : 'Salvar e Usar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Modal>
 
+              {editingItem?.metadata?.mode !== 'FREE' && (
+                <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-4">
-                    <label htmlFor="pack-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Adicionar Numerações</label>
+                    <label htmlFor="pack-new-size" className={`text-[10px] font-black uppercase tracking-widest px-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Adicionar Numerações</label>
                     <div className="flex gap-2">
                       <input id="pack-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
                       <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} data-guide-anchor="pkg.numeracaoAdicionar" className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
@@ -4598,10 +4602,10 @@ function GenericConfigList({
                     <div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}>
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-between px-2">
-                          <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4>
+                          <h4 className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Distribuição da Grade</h4>
                           <span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span>
                         </div>
-                        <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-2">Quantos pares de cada número vão nessa embalagem — a soma precisa bater com a Capacidade Total.</p>
+                        <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares de cada número vão nessa embalagem — a soma precisa bater com a Capacidade Total.</p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {(editingItem?.metadata?.sizes || []).map(size => (
