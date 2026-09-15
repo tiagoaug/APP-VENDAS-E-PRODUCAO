@@ -641,7 +641,7 @@ export default function SettingsView({
                 title="O que são Módulos do Sistema?"
                 aria-label="O que são Módulos do Sistema?"
                 data-guide-anchor="settings.modulosInfo"
-                className={`p-2 rounded-xl shrink-0 transition-colors ${isDarkMode ? 'text-slate-600 hover:text-slate-400 hover:bg-slate-800' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-50'}`}
+                className={`p-2 rounded-xl shrink-0 transition-all active:scale-90 ${isDarkMode ? 'text-slate-600 hover:text-slate-400 hover:bg-slate-800 active:bg-slate-700 active:text-slate-300' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-50 active:bg-slate-200 active:text-slate-600'}`}
               >
                 <Info size={18} />
               </button>
@@ -824,7 +824,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.19.6</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.19.7</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
