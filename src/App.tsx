@@ -8,6 +8,8 @@ import {
   ShoppingCart,
   ShoppingBag,
   ArrowLeft,
+  ArrowRight,
+  Check,
   Settings,
   DollarSign,
   Shield,
@@ -2418,6 +2420,15 @@ export default function App() {
   };
 
   const goBack = () => {
+    // Durante o Assistente de Configuração, o "←" de cabeçalho de cada tela (ex.: Equipe,
+    // Categorias) normalmente pularia pra tela anterior no histórico — o que podia levar direto
+    // pro Dashboard e sair do fluxo da etapa atual sem passar pela confirmação de sair (mesmo
+    // cuidado já tomado no "Menu"/X minimizados, ver showExitConfigConfirm). Em vez de deixar
+    // sair direto, abre a mesma confirmação.
+    if (onboardingActive) {
+      setShowExitConfigConfirm(true);
+      return;
+    }
     if (history.length > 1) {
       const newHistory = [...history];
       newHistory.pop();
@@ -9529,26 +9540,11 @@ export default function App() {
             transition={{ duration: 0.15 }}
             className="px-3 py-5 min-h-full"
           >
-            {/* Mesmo chrome de Configuração Inicial usado dentro do Modal global (ver mais
-                abaixo) — duplicado aqui pra cobrir etapas cujo alvo NÃO é um MODAL_VIEWS (ex.:
-                Personalizar Empresa, Equipe/Colaboradores, que têm cabeçalho próprio com "←" em
-                vez do "X" do Modal — colocá-los em MODAL_VIEWS mudaria a navegação deles pra
-                todo mundo, não só no onboarding). */}
-            {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (
-              <StepWizardBar
-                isDarkMode={isDarkMode}
-                title="Configuração Inicial"
-                stepIndex={onboardingStepIndex + 1}
-                totalSteps={onboardingSteps.length}
-                isComplete={onboardingSteps[onboardingStepIndex].isComplete}
-                onContinue={handleOnboardingAdvance}
-                onSkipStep={handleOnboardingAdvance}
-                onDismiss={handleOnboardingDismiss}
-                onBack={handleOnboardingBack}
-                canGoBack={onboardingStepIndex > 0}
-                topOffsetPx={12 + headerTopSpacePx}
-              />
-            )}
+            {/* A barra de etapas do Assistente (Etapa X de N, Voltar/Pular/Continuar) morou
+                aqui em cima como StepWizardBar flutuante até o Tiago reportar sobreposição com
+                o próprio cabeçalho em iPhones de tela menor — agora vive embaixo, no lugar do
+                menu de navegação minimizado (ver <nav> mais abaixo, bloco onboardingActive
+                dentro de navMinimized). */}
             {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === lastNonModalView && !MODAL_VIEWS.includes(lastNonModalView) && (
               onboardingSteps[onboardingStepIndex].intro ? (
                 <OnboardingStepIntroPopup
@@ -9604,21 +9600,6 @@ export default function App() {
         }
       >
         <Suspense fallback={<ViewLoadingFallback />}>
-          {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
-            <StepWizardBar
-              isDarkMode={isDarkMode}
-              title="Configuração Inicial"
-              stepIndex={onboardingStepIndex + 1}
-              totalSteps={onboardingSteps.length}
-              isComplete={onboardingSteps[onboardingStepIndex].isComplete}
-              onContinue={handleOnboardingAdvance}
-              onSkipStep={handleOnboardingAdvance}
-              onDismiss={handleOnboardingDismiss}
-              onBack={handleOnboardingBack}
-              canGoBack={onboardingStepIndex > 0}
-              topOffsetPx={12 + headerTopSpacePx}
-            />
-          )}
           {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
             onboardingSteps[onboardingStepIndex].intro ? (
               <OnboardingStepIntroPopup
@@ -9877,13 +9858,102 @@ export default function App() {
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
         <div className="relative w-full max-w-md pointer-events-auto">
           {navMinimized ? (
+            onboardingActive ? (
+              // Barra de etapas do Assistente movida pra CÁ (embaixo, no lugar do menu
+              // minimizado) — antes ficava flutuando fixa no topo (StepWizardBar), mas em
+              // iPhones com tela menor/notch grande ela sobrepunha o próprio cabeçalho do app
+              // (relatado pelo Tiago com prints). Embaixo já é território garantido: o <nav>
+              // sempre reserva esse espaço, e como o menu já fica minimizado durante o
+              // Assistente mesmo, não tem conflito nenhum em ocupá-lo com os controles de etapa.
+              <div className={`relative w-full flex flex-col gap-2 px-4 py-3 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.18)] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium tracking-wide uppercase truncate text-blue-900 dark:text-blue-300">
+                    Configuração Inicial · Etapa {onboardingStepIndex + 1} de {onboardingSteps.length}
+                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {onboardingSteps[onboardingStepIndex]?.intro && (
+                      <button
+                        type="button"
+                        onClick={() => setOnboardingIntroOpen(true)}
+                        title="O que estou fazendo aqui?"
+                        aria-label="O que estou fazendo aqui? Toque para ver a explicação desta etapa de novo."
+                        className="relative w-7 h-7 rounded-full bg-indigo-600 text-white shadow flex items-center justify-center shrink-0"
+                      >
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" style={{ animationDuration: '3s' }} />
+                        <HelpCircle size={13} strokeWidth={2.5} className="relative" />
+                      </button>
+                    )}
+                    {/* Mesmo cuidado de antes: não sai do Assistente sem confirmar — abre
+                        showExitConfigConfirm em vez de encerrar direto. */}
+                    <button
+                      type="button"
+                      onClick={() => setShowExitConfigConfirm(true)}
+                      aria-label="Encerrar assistente"
+                      title="Encerrar assistente"
+                      className="w-8 h-8 -m-1 flex items-center justify-center rounded-full text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 active:scale-90 transition-all shrink-0"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {Array.from({ length: onboardingSteps.length }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        i < onboardingStepIndex ? 'bg-indigo-500' : i === onboardingStepIndex ? 'bg-indigo-400' : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={handleOnboardingBack}
+                      disabled={onboardingStepIndex === 0}
+                      aria-label="Voltar etapa"
+                      title="Voltar etapa"
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-black transition-colors shrink-0 ${
+                        onboardingStepIndex > 0
+                          ? (isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                          : `${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'} cursor-not-allowed`
+                      }`}
+                    >
+                      <ArrowLeft size={14} />
+                      Voltar Etapa
+                    </button>
+                    {onboardingSteps[onboardingStepIndex]?.isComplete && <Check size={16} className="text-emerald-500 shrink-0" />}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleOnboardingAdvance}
+                      className={`text-[11px] font-bold uppercase tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                    >
+                      Pular
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOnboardingAdvance}
+                      disabled={!onboardingSteps[onboardingStepIndex]?.isComplete}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-black transition-colors ${
+                        onboardingSteps[onboardingStepIndex]?.isComplete ? 'bg-indigo-600 text-white' : `${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'} cursor-not-allowed`
+                      }`}
+                    >
+                      Continuar
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="relative w-full flex items-center justify-center">
-              {/* Com o Assistente de Configuração ativo, tocar aqui NÃO expande o menu direto —
-                  abre uma confirmação (ver showExitConfigConfirm) perguntando se é pra continuar
-                  no formulário ou sair de vez, evitando sair da etapa atual sem querer. */}
               <button
                 type="button"
-                onClick={() => { if (onboardingActive) setShowExitConfigConfirm(true); else setNavMinimized(false); }}
+                onClick={() => setNavMinimized(false)}
                 title="Mostrar menu de navegação"
                 aria-label="Mostrar menu de navegação"
                 data-guide-anchor="nav.restaurar"
@@ -9892,19 +9962,8 @@ export default function App() {
                 <ChevronUp size={16} strokeWidth={3} className={isDarkMode ? 'text-white' : 'text-slate-700'} />
                 <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Menu</span>
               </button>
-              {onboardingActive && onboardingSteps[onboardingStepIndex]?.intro && (
-                <button
-                  type="button"
-                  onClick={() => setOnboardingIntroOpen(true)}
-                  title="O que estou fazendo aqui?"
-                  aria-label="O que estou fazendo aqui? Toque para ver a explicação desta etapa de novo."
-                  className="absolute right-0 w-9 h-9 rounded-full bg-indigo-600 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border-2 border-white dark:border-slate-800 shrink-0"
-                >
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-60" />
-                  <HelpCircle size={14} strokeWidth={2.5} className="relative" />
-                </button>
-              )}
             </div>
+            )
           ) : (
           <>
           <div ref={navPillRef} className={`relative flex items-center w-full px-2 py-2.5 rounded-[2rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>

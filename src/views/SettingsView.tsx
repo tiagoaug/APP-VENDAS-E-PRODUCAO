@@ -189,17 +189,22 @@ export default function SettingsView({
   const [headerSpaceEditorOpen, setHeaderSpaceEditorOpen] = useState(false);
   const [draftHeaderTopSpacePx, setDraftHeaderTopSpacePx] = useState(headerTopSpacePx);
   const HEADER_SPACE_MAX = 80;
+  // Negativo permite LEVANTAR o cabeçalho um pouco (não só abaixar) — pedido pelo Tiago pra
+  // corrigir o caso oposto, um aparelho onde o espaço padrão já é grande demais.
+  const HEADER_SPACE_MIN = -15;
+  const HEADER_SPACE_RANGE = HEADER_SPACE_MAX - HEADER_SPACE_MIN;
   const headerSpaceTrackRef = useRef<HTMLDivElement>(null);
   const headerSpaceDraggingRef = useRef(false);
 
-  // Arrasto vertical do cursor — a trilha vai de cima (0px) a baixo (HEADER_SPACE_MAX), então a
-  // posição do toque é invertida em relação ao valor (mais pra baixo na trilha = mais espaço).
+  // Arrasto vertical do cursor — a trilha vai de cima (HEADER_SPACE_MIN) a baixo
+  // (HEADER_SPACE_MAX), então a posição do toque é invertida em relação ao valor (mais pra
+  // baixo na trilha = mais espaço).
   const updateHeaderSpaceFromPointer = (clientY: number) => {
     const track = headerSpaceTrackRef.current;
     if (!track) return;
     const rect = track.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
-    setDraftHeaderTopSpacePx(Math.round(ratio * HEADER_SPACE_MAX));
+    setDraftHeaderTopSpacePx(Math.round(HEADER_SPACE_MIN + ratio * HEADER_SPACE_RANGE));
   };
   const handleHeaderSpacePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     headerSpaceDraggingRef.current = true;
@@ -783,7 +788,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.14.2</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.15.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1335,16 +1340,18 @@ export default function SettingsView({
               <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
                 Arraste o cursor até o cabeçalho parar exatamente abaixo da câmera/notch/barra de
                 status do seu aparelho — funciona tanto no Android quanto no iPhone, já que a
-                altura do recorte varia de modelo pra modelo. Toque em "Salvar" quando estiver bom.
+                altura do recorte varia de modelo pra modelo. Também aceita valores negativos, pra
+                LEVANTAR o cabeçalho se o espaço padrão já for grande demais no seu aparelho.
+                Toque em "Salvar" quando estiver bom.
               </p>
             </div>
 
             {/* Prévia ao vivo — a barrinha se move junto com o cursor, no MESMO valor em pixels
                 que será aplicado no cabeçalho de verdade. */}
-            <div className={`relative rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`} style={{ height: HEADER_SPACE_MAX + 56 }}>
+            <div className={`relative rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`} style={{ height: HEADER_SPACE_RANGE + 56 }}>
               <div
                 className="absolute inset-x-2 h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg flex items-center justify-center transition-[top] duration-75"
-                style={{ top: draftHeaderTopSpacePx + 8 }}
+                style={{ top: (draftHeaderTopSpacePx - HEADER_SPACE_MIN) + 8 }}
               >
                 <span className="text-white text-[9px] font-black uppercase tracking-widest">Cabeçalho</span>
               </div>
@@ -1365,7 +1372,7 @@ export default function SettingsView({
                 <div className={`absolute left-1/2 -translate-x-1/2 top-2 bottom-2 w-1.5 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
                 <div
                   className="absolute left-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-indigo-600 shadow-lg border-4 border-white dark:border-slate-900 transition-[top] duration-75"
-                  style={{ top: `calc(${(draftHeaderTopSpacePx / HEADER_SPACE_MAX) * 100}% - ${(draftHeaderTopSpacePx / HEADER_SPACE_MAX) * 36}px)` }}
+                  style={{ top: `calc(${((draftHeaderTopSpacePx - HEADER_SPACE_MIN) / HEADER_SPACE_RANGE) * 100}% - ${((draftHeaderTopSpacePx - HEADER_SPACE_MIN) / HEADER_SPACE_RANGE) * 36}px)` }}
                 />
               </div>
               <div className="flex-1 flex flex-col gap-1">
