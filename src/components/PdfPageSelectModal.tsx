@@ -230,6 +230,9 @@ export default function PdfPageSelectModal({
   // aberto (é o caminho mais comum: abrir a área e ajustar); Automático fechado.
   const [manualCropSectionOpen, setManualCropSectionOpen] = useState(true);
   const [autoCropSectionOpen, setAutoCropSectionOpen] = useState(false);
+  // Acordeão das 3 formas de agrupar o recorte (Mesmo pra todas/Ímpar-par/Página a página) —
+  // é a primeira decisão do card, então começa aberto.
+  const [cropModeSectionOpen, setCropModeSectionOpen] = useState(true);
   // A área de visualização/ajuste do recorte (arrastar, alças) vive num popup à parte — todas
   // as OPÇÕES que influenciam o recorte (grupo, página específica, presets, conter/cobrir)
   // ficam juntas no card principal, fora do popup.
@@ -597,21 +600,56 @@ export default function PdfPageSelectModal({
               <span className="text-[9px] font-black uppercase tracking-widest text-rose-500">Recorte</span>
 
               {allowOddEven && (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-rose-500">Opções de Recorte</span>
-                  <p className={captionCls}>
-                    Escolha se todas as etiquetas usam o mesmo recorte, ou se ímpares e pares (comum em PDFs com 2 modelos por folha) precisam de ajustes diferentes.
-                  </p>
-                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); }} data-guide-anchor="pdfPageSelect.recorteUnico" className={stackedCls(!splitOddEven)}>
-                    Mesmo recorte pra todas
+                <div className={`flex flex-col gap-2 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setCropModeSectionOpen(v => !v)}
+                    data-guide-anchor="pdfPageSelect.acordeaoOpcoesRecorte"
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-rose-500">
+                      <Scissors size={12} /> Opções de Recorte
+                    </span>
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${cropModeSectionOpen ? 'rotate-180' : ''}`} />
                   </button>
-                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); }} data-guide-anchor="pdfPageSelect.recorteSeparado" className={stackedCls(splitOddEven)}>
-                    Recorte diferente ímpar/par
-                  </button>
+                  {cropModeSectionOpen && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className={captionCls}>
+                        Escolha se todas as etiquetas usam o mesmo recorte, se ímpares e pares (comum em PDFs com 2 modelos por folha) precisam de ajustes diferentes, ou se prefere ajustar página por página.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); setPageSpecificMode(false); }}
+                        data-guide-anchor="pdfPageSelect.recorteUnico"
+                        className={stackedCls(!splitOddEven && !pageSpecificMode)}
+                      >
+                        Mesmo recorte pra todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); setPageSpecificMode(false); }}
+                        data-guide-anchor="pdfPageSelect.recorteSeparado"
+                        className={stackedCls(splitOddEven)}
+                      >
+                        Recorte diferente ímpar/par
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); setPageSpecificMode(true); }}
+                        data-guide-anchor="pdfPageSelect.recortePaginaAPagina"
+                        className={stackedCls(!splitOddEven && pageSpecificMode)}
+                      >
+                        Recorte página a página
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {allowOddEven && splitOddEven && (
                 <>
+                  <p className={captionCls}>
+                    Escolha qual grupo você está ajustando agora — ímpares e pares têm recorte independente.
+                  </p>
                   <span className="text-[8px] font-black uppercase tracking-widest text-rose-500">Lado sendo editado</span>
                   <div className="flex gap-1.5">
                     <button type="button" onClick={() => setEditingGroup('odd')} data-guide-anchor="pdfPageSelect.editarImpares" className={quickCls(editingGroup === 'odd')}>
@@ -626,31 +664,43 @@ export default function PdfPageSelectModal({
 
               {referencePage ? (
                 <>
-                  {groupIndexes.length > 1 && (
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        disabled={refPos <= 0}
-                        onClick={() => setManualRefIndex(groupIndexes[refPos - 1])}
-                        data-guide-anchor="pdfPageSelect.paginaAnterior"
-                        className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-                      >
-                        <ChevronLeft size={13} /> Anterior
-                      </button>
+                  {pageSpecificMode && !splitOddEven && (
+                    <p className={captionCls}>
+                      Escolha qual página você está ajustando agora — cada uma pode ter seu próprio recorte.
+                    </p>
+                  )}
+                  {/* Anterior/Próxima — antes só aparecia com 2+ páginas no grupo; agora fica
+                      sempre visível (os botões desabilitam sozinhos nas pontas, inclusive quando
+                      só há 1 página no grupo) pra não sumir a navegação, e ganhou uma segunda
+                      linha embaixo da contagem mostrando se a página atual é Ímpar ou Par. */}
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      disabled={refPos <= 0}
+                      onClick={() => setManualRefIndex(groupIndexes[refPos - 1])}
+                      data-guide-anchor="pdfPageSelect.paginaAnterior"
+                      className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      <ChevronLeft size={13} /> Voltar Página
+                    </button>
+                    <div className="flex flex-col items-center gap-1">
                       <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                         Vendo pág. {referenceIndex! + 1} ({refPos + 1}/{groupIndexes.length})
                       </span>
-                      <button
-                        type="button"
-                        disabled={refPos >= groupIndexes.length - 1}
-                        onClick={() => setManualRefIndex(groupIndexes[refPos + 1])}
-                        data-guide-anchor="pdfPageSelect.proximaPagina"
-                        className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-                      >
-                        Próxima <ChevronRight size={13} />
-                      </button>
+                      <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${referenceIndex! % 2 === 0 ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                        {referenceIndex! % 2 === 0 ? 'Ímpar' : 'Par'}
+                      </span>
                     </div>
-                  )}
+                    <button
+                      type="button"
+                      disabled={refPos >= groupIndexes.length - 1}
+                      onClick={() => setManualRefIndex(groupIndexes[refPos + 1])}
+                      data-guide-anchor="pdfPageSelect.proximaPagina"
+                      className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      Avançar Página <ChevronRight size={13} />
+                    </button>
+                  </div>
 
                   {/* Miniatura da página de referência (a que "Vendo pág." mostra) — já mostra
                       SÓ a área recortada (o resultado de verdade), atualiza na hora com
