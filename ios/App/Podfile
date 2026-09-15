@@ -14,7 +14,14 @@ def capacitor_pods
   pod 'AparajitaCapacitorBiometricAuth', :path => '../../node_modules/@aparajita/capacitor-biometric-auth'
   pod 'CapacitorCommunityContacts', :path => '../../node_modules/@capacitor-community/contacts'
   pod 'CapacitorCommunitySpeechRecognition', :path => '../../node_modules/@capacitor-community/speech-recognition'
-  pod 'CapacitorFirebaseAuthentication', :path => '../../node_modules/@capacitor-firebase/authentication'
+  # :subspecs => ['Google'] é OBRIGATÓRIO — o default do plugin é o subspec "Lite" (sem Google/
+  # Facebook), que compila FirebaseAuthentication.signInWithGoogle() como uma função VAZIA (todo
+  # o corpo fica atrás de "#if RGCFA_INCLUDE_GOOGLE", só definido pelo subspec "Google"). Sem
+  # isso, a Promise do lado JS nunca resolve nem rejeita — trava até o timeout de 15s do
+  # resolveAuthCall ("Tempo esgotado ao conectar"), mesmo com login/senha do Firebase corretos.
+  # Sign in with Apple não precisa de subspec (não depende de SDK de terceiros), por isso
+  # funcionava normalmente enquanto Google travava.
+  pod 'CapacitorFirebaseAuthentication', :path => '../../node_modules/@capacitor-firebase/authentication', :subspecs => ['Google']
   pod 'CapacitorMlkitBarcodeScanning', :path => '../../node_modules/@capacitor-mlkit/barcode-scanning'
   pod 'CapacitorMlkitTextRecognition', :path => '../../node_modules/@capacitor-mlkit/text-recognition'
   pod 'CapacitorCamera', :path => '../../node_modules/@capacitor/camera'
