@@ -50,9 +50,19 @@ export const googleProvider = new GoogleAuthProvider();
 // própria tipo GoogleAuthProvider) — mesmo padrão usado pra qualquer provider OAuth custom.
 export const appleProvider = new OAuthProvider('apple.com');
 
+// `skipNativeAuth: true` é OBRIGATÓRIO aqui pelo mesmo motivo do Apple logo abaixo: com o
+// padrão `skipNativeAuth: false` do capacitor.config.ts, o plugin nativo JÁ loga no Firebase
+// sozinho ao terminar o Google Sign-In — daí o código abaixo tentava logar DE NOVO via
+// signInWithCredential com o mesmo idToken, uma segunda troca de credencial competindo com a
+// que o nativo acabou de fazer. No Android isso às vezes só duplicava trabalho sem quebrar
+// nada visível, mas no WKWebView do iOS caía direto no bug conhecido do SDK JS do Firebase Auth
+// (a Promise de signInWithCredential nunca resolve NEM rejeita, ver resolveAuthCall acima) —
+// reportado como "Tempo esgotado ao conectar" mesmo com o login do Google concluído com sucesso
+// do lado nativo. Com skipNativeAuth:true o nativo só devolve o idToken, sem logar sozinho, e a
+// troca no Firebase acontece uma única vez, aqui.
 export const signInWithGoogle = async () => {
   if (Capacitor.isNativePlatform()) {
-    const result = await FirebaseAuthentication.signInWithGoogle();
+    const result = await FirebaseAuthentication.signInWithGoogle({ skipNativeAuth: true });
     const credential = GoogleAuthProvider.credential(result.credential?.idToken);
     return signInWithCredential(auth, credential);
   } else {
