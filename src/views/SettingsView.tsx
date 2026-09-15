@@ -191,7 +191,7 @@ export default function SettingsView({
   const HEADER_SPACE_MAX = 80;
   // Negativo permite LEVANTAR o cabeçalho um pouco (não só abaixar) — pedido pelo Tiago pra
   // corrigir o caso oposto, um aparelho onde o espaço padrão já é grande demais.
-  const HEADER_SPACE_MIN = -15;
+  const HEADER_SPACE_MIN = -40;
   const HEADER_SPACE_RANGE = HEADER_SPACE_MAX - HEADER_SPACE_MIN;
   const headerSpaceTrackRef = useRef<HTMLDivElement>(null);
   const headerSpaceDraggingRef = useRef(false);
@@ -788,7 +788,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.15.1</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.15.2</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
