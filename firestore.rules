@@ -238,6 +238,18 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
     }
 
+    // Modelos de Padrão de Embalagem compartilhados ENTRE CONTAS — mesmo desenho de
+    // categoryTemplates acima, mas guarda mode/capacity/sizeQuantities pra dar prévia real.
+    match /packagingTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow create: if isTemplateAdmin()
+        && incoming().createdBy == request.auth.uid
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
+        && incoming().mode is string
+        && incoming().createdAt is number;
+      allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+    }
+
     // Modelos de flow tag compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
     match /flowTagTemplates/{templateId} {
       allow read: if isSignedIn();

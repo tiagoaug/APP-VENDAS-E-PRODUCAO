@@ -2087,13 +2087,18 @@ export default function App() {
           group: 'fabricacao' as const,
           why: 'Define quantos pares cabem em cada caixa — usado pra calcular a separação de estoque certinho.',
           productionSubScreen: 'EMBALAGENS' as ProductionScreenType,
-          guideSteps: [
-            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.carregarPadrao', text: 'Toque aqui pra carregar padrões prontos (6 e 12 pares) — são só um ponto de partida, dá pra ajustar a capacidade depois.' },
-            { type: 'message' as const, text: 'Se nenhum desses servir, toque em "Adicionar Novo Registro" e cadastre do seu jeito.' },
-            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar um padrão de embalagem do zero.' },
-            { type: 'message' as const, text: 'Preencha o nome, a capacidade e a composição por tamanho.' },
-            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.salvarRegistro', text: 'Toque aqui para salvar.' },
-          ],
+          intro: {
+            paragraphs: [
+              'Aqui você cadastra os padrões de embalagem (caixas) que sua empresa usa — quantos pares cabem em cada uma e como os tamanhos se distribuem dentro dela.',
+              'Toque em "Modelos Disponíveis" pra ver padrões já prontos e adicionar com um toque, sem digitar nada. Se nenhum servir, é só cadastrar do seu jeito em "Adicionar Novo Registro".',
+            ],
+            fullParagraphs: [
+              'Padrão de Embalagem representa uma caixa: tem um nome, uma capacidade total de pares e, se quiser, uma distribuição fixa de quantos pares de cada numeração ela leva.',
+              'Existem 2 tipos de grade: "Grade Fixa" (toda caixa desse padrão sempre leva a mesma composição por tamanho, ex.: 1 par de cada do 34 ao 40) e "Grade Livre" (só a capacidade total importa, a mistura de numerações varia a cada caixa).',
+              'Toque em "Modelos Disponíveis" pra ver padrões já configurados — com capacidade e distribuição prontas, prévia inclusa — e adicionar com 1 toque. Se nenhum servir, toque em "Adicionar Novo Registro" e cadastre do seu jeito.',
+              'Dentro do cadastro, o campo "Grade de Produção Padrão" vincula essa embalagem a uma grade de numeração — isso é o que permite ao programa converter automaticamente os pares produzidos em caixas fechadas no Estoque.',
+            ],
+          },
         }]
       : []),
     ...(onboardingStatus?.businessType !== 'REVENDA'
@@ -7905,6 +7910,7 @@ export default function App() {
             soleStock={soleStockEntries}
             restrictToPackaging={!modulesConfig.production}
             onStartJourney={handleStartJourney}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.PRODUCTION_CONFIG && onboardingSteps[onboardingStepIndex]?.productionSubScreen === 'EMBALAGENS'}
           />
         );
       case ViewType.PRODUCT_SHEET:

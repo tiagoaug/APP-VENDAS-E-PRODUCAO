@@ -85,9 +85,10 @@ import {
   Bookmark,
   BookmarkCheck
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot, FlowTagTemplate, SectorTemplate } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot, FlowTagTemplate, SectorTemplate, PackagingTemplate } from '../types';
 import { subscribeToFlowTagTemplates, saveFlowTagTemplate } from '../services/flowTagTemplatesService';
 import { subscribeToSectorTemplates, saveSectorTemplate } from '../services/sectorTemplatesService';
+import { subscribeToPackagingTemplates, savePackagingTemplate, deletePackagingTemplate } from '../services/packagingTemplatesService';
 import { isTemplateAdmin } from '../utils/templateAdmin';
 import { DefaultUnitItem } from '../services/defaultUnitsService';
 import Modal from '../components/Modal';
@@ -103,6 +104,7 @@ import ConsumptionCalculatorModal from '../components/ConsumptionCalculatorModal
 import { toast } from '../utils/toast';
 import { getTotalMaterialStock } from '../utils/materialStock';
 import { generateId } from '../utils/id';
+import GuidePulseDot from '../components/GuidePulseDot';
 
 // Trava de ordenação das numerações (ex: "34", "38-39", "40-41") para que a grade de
 // tamanhos sempre apareça na mesma ordem numérica crescente, independente da ordem em
@@ -534,6 +536,9 @@ interface ProductionConfigViewProps {
   // acontece. onSaveDefaultUnits só aparece pra quem já é dev (ver isTemplateAdmin()).
   defaultUnits?: DefaultUnitItem[] | null;
   onSaveDefaultUnits?: (items: DefaultUnitItem[]) => void | Promise<void>;
+  // Bolinha pulsante em "Modelos Disponíveis" de Embalagens, ver Etapa 6 do Assistente de
+  // Configuração (mesmo mecanismo de CategoriesView/ColorsView/GradesView).
+  guideActive?: boolean;
 }
 
 // Quando a conjugação é < 1, a faca precisa de mais de 1 batida para formar 1 par
@@ -583,6 +588,7 @@ export default function ProductionConfigView({
   onStartJourney,
   defaultUnits,
   onSaveDefaultUnits,
+  guideActive,
 }: ProductionConfigViewProps) {
 
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
@@ -1243,8 +1249,12 @@ export default function ProductionConfigView({
           productionConfigs={productionConfigs}
           people={people}
           grids={grids}
+          onCreateGrid={onCreateGrid}
+          onUpdateGrid={onUpdateGrid}
+          onDeleteGrid={onDeleteGrid}
           onNavigateToScreen={restrictToPackaging ? undefined : handleNavigateShortcut}
           zIndex={60000}
+          guideActive={guideActive && currentScreen === 'EMBALAGENS'}
         />
       </Modal>
 
@@ -1576,7 +1586,8 @@ function GenericConfigList({
   zIndex = 60000,
   soleStock = [],
   purchaseNeeds = {},
-  sectors = []
+  sectors = [],
+  guideActive = false,
 }: {
   title: string;
   label: string;
@@ -1620,6 +1631,7 @@ function GenericConfigList({
   soleStock?: SoleStockEntry[];
   purchaseNeeds?: Record<string, number>;
   sectors?: Sector[];
+  guideActive?: boolean;
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
@@ -1632,6 +1644,53 @@ function GenericConfigList({
       if (next.has(cat)) next.delete(cat); else next.add(cat);
       return next;
     });
+  };
+
+  // "Modelos Disponíveis" de Padrão de Embalagem (só type === 'PACKAGING') — mesmo desenho de
+  // GradesView.tsx (templates compartilhados entre contas, com prévia expansível), mas carrega
+  // mode/capacity/sizeQuantities pra já nascer utilizável (embalagem sem isso é um registro
+  // vazio, diferente de uma grade que só precisa das numerações).
+  const [packagingTemplates, setPackagingTemplates] = useState<PackagingTemplate[]>([]);
+  const [packagingTemplatesOpen, setPackagingTemplatesOpen] = useState(false);
+  const [expandedPackagingTemplateId, setExpandedPackagingTemplateId] = useState<string | null>(null);
+  useEffect(() => {
+    if (type !== 'PACKAGING') return;
+    const unsub = subscribeToPackagingTemplates(setPackagingTemplates);
+    return () => unsub();
+  }, [type]);
+
+  const findPackagingTemplateFor = (item: ProductionConfigItem) =>
+    packagingTemplates.find(t => t.name.toUpperCase() === item.name.toUpperCase());
+  const isSavedAsPackagingTemplate = (item: ProductionConfigItem) => !!findPackagingTemplateFor(item);
+
+  // Toggle real — igual handleToggleTemplate de GradesView: tocar de novo numa já marcada
+  // desmarca (apaga o modelo compartilhado).
+  const handleTogglePackagingTemplate = (item: ProductionConfigItem) => {
+    const existing = findPackagingTemplateFor(item);
+    if (existing) {
+      deletePackagingTemplate(existing.id);
+    } else {
+      savePackagingTemplate({
+        name: item.name,
+        mode: item.metadata?.mode === 'FREE' ? 'FREE' : 'FIXED',
+        capacity: item.metadata?.capacity || 0,
+        sizes: item.metadata?.sizes || [],
+        sizeQuantities: item.metadata?.sizeQuantities || {},
+      });
+    }
+  };
+
+  const handleAddFromPackagingTemplate = (template: PackagingTemplate) => {
+    const exists = items.some(i => i.type === 'PACKAGING' && i.name.toUpperCase() === template.name.toUpperCase());
+    if (exists) return;
+    onSave({
+      id: '',
+      name: template.name,
+      description: '',
+      type: 'PACKAGING',
+      createdAt: Date.now(),
+      metadata: { mode: template.mode, capacity: template.capacity, sizes: template.sizes, sizeQuantities: template.sizeQuantities },
+    } as any);
   };
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [search, setSearch] = useState('');
@@ -2435,6 +2494,93 @@ function GenericConfigList({
         />
       </div>
 
+      {type === 'PACKAGING' && (
+        <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+          <button
+            type="button"
+            onClick={() => setPackagingTemplatesOpen(o => !o)}
+            data-guide-anchor="prodcfg.alternarModelosEmbalagem"
+            className="relative w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+          >
+            {guideActive && <span className="absolute top-2 right-9"><GuidePulseDot show /></span>}
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} />
+              <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
+            </div>
+            <ChevronDown size={16} className={`transition-transform duration-200 ${packagingTemplatesOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {packagingTemplatesOpen && (
+            <div className="px-4 pb-4 flex flex-col gap-2">
+              <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 leading-snug">
+                Toque num modelo abaixo pra adicioná-lo já com a capacidade e a distribuição por numeração prontas.
+              </p>
+              {packagingTemplates.length === 0 && (
+                <p className="text-[10px] font-bold text-slate-400 italic py-2">Nenhum modelo disponível ainda. Toque em "Adicionar Novo Registro" acima e cadastre um padrão de embalagem do seu jeito.</p>
+              )}
+              {packagingTemplates.map(template => {
+                const exists = items.some(i => i.type === 'PACKAGING' && i.name.toUpperCase() === template.name.toUpperCase());
+                const isExpanded = expandedPackagingTemplateId === template.id;
+                return (
+                  <div
+                    key={template.id}
+                    className={`rounded-xl border-2 overflow-hidden ${
+                      exists
+                        ? 'bg-slate-100 dark:bg-slate-800 border-transparent'
+                        : 'bg-white dark:bg-slate-900 border-violet-100 dark:border-violet-900 shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => handleAddFromPackagingTemplate(template)}
+                        disabled={exists}
+                        title={`Adicionar modelo: ${template.name}`}
+                        className={`flex-1 text-left px-3 py-2.5 text-[11px] font-black uppercase tracking-widest active:scale-[0.98] ${
+                          exists ? 'text-slate-300 dark:text-slate-600' : 'text-violet-600 dark:text-violet-400'
+                        }`}
+                      >
+                        {template.name} {exists && '✓'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedPackagingTemplateId(isExpanded ? null : template.id)}
+                        title={isExpanded ? 'Ocultar prévia da configuração' : 'Mostrar prévia da configuração'}
+                        aria-label={isExpanded ? 'Ocultar prévia da configuração' : 'Mostrar prévia da configuração'}
+                        className={`px-3 py-2.5 shrink-0 ${exists ? 'text-slate-300 dark:text-slate-600' : 'text-violet-400 hover:text-violet-600'}`}
+                      >
+                        <ChevronDown size={14} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <div className="px-3 pb-3 pt-1 flex flex-col gap-2 border-t border-violet-100/60 dark:border-violet-900/40">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 pt-2">
+                          {template.mode === 'FREE' ? `Grade Livre — Capacidade Total: ${template.capacity} pares` : `Grade Fixa — ${template.capacity} pares por caixa`}
+                        </span>
+                        {template.mode !== 'FREE' && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {(template.sizes || []).map(size => (
+                              <span
+                                key={size}
+                                className={`px-2 py-1 rounded-lg border text-[9px] font-black ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
+                              >
+                                {size}: {template.sizeQuantities?.[size] || 0}
+                              </span>
+                            ))}
+                            {(template.sizes || []).length === 0 && (
+                              <span className="text-[9px] text-slate-300 dark:text-slate-700 font-bold italic">Sem numerações</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {onSaveAsDefault && isTemplateAdmin() && (
         <button
           type="button"
@@ -2658,6 +2804,21 @@ function GenericConfigList({
                               </div>
                             ))}
                           </div>
+                        )}
+                        {isTemplateAdmin() && (
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePackagingTemplate(item)}
+                            title={isSavedAsPackagingTemplate(item) ? 'Toque pra desmarcar como exemplo' : 'Usar como exemplo pra novas contas'}
+                            className={`self-start flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.97] ${
+                              isSavedAsPackagingTemplate(item)
+                                ? 'bg-violet-100 border-violet-200 text-violet-700 dark:bg-violet-500/20 dark:border-violet-500/40 dark:text-violet-300'
+                                : 'bg-slate-200 border-slate-200 text-slate-600 dark:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {isSavedAsPackagingTemplate(item) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+                            {isSavedAsPackagingTemplate(item) ? 'Usado como exemplo' : 'Marcar como modelo'}
+                          </button>
                         )}
                       </div>
                     ) : item.description ? (

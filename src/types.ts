@@ -92,6 +92,20 @@ export type GridTemplate = {
   createdAt: number;
 };
 
+// Modelo de Padrão de Embalagem compartilhado ENTRE CONTAS — mesmo desenho de GridTemplate,
+// mas guarda a composição real (modo + capacidade + distribuição por numeração) pra dar uma
+// prévia de verdade antes de adicionar, já que embalagem sem isso nasce vazia e inutilizável.
+export type PackagingTemplate = {
+  id: string;
+  name: string;
+  mode: 'FIXED' | 'FREE';
+  capacity: number;
+  sizes: string[];
+  sizeQuantities: { [size: string]: number };
+  createdBy: string;
+  createdAt: number;
+};
+
 // Tamanho de papel/etiqueta pra impressão térmica (Print Studio Ablemark). Não reaproveita
 // `Grid` — aqueles campos (sizes/configuration) são pra grade de numeração, não fazem sentido
 // pra dimensão de papel. Presets fixos (THERMAL_SIZES) não viram documento — só os cadastrados
