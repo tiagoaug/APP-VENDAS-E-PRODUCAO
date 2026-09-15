@@ -71,7 +71,12 @@ export async function isLoginUnlockEnabled(): Promise<boolean> {
   try {
     const { isSaved } = await NativeBiometric.isCredentialsSaved({ server: LOGIN_UNLOCK_SERVER });
     return isSaved;
-  } catch {
+  } catch (err) {
+    // Engolir esse erro em silêncio (antes) fazia o app cair direto na tela normal de
+    // login sem AVISO nenhum de que o desbloqueio rápido devia ter entrado — logado aqui pra
+    // dar pra diagnosticar via Safari Web Inspector/adb logcat quando alguém reportar que
+    // "marquei e não funcionou".
+    console.error('[biometricAuth] isLoginUnlockEnabled falhou:', err);
     return false;
   }
 }

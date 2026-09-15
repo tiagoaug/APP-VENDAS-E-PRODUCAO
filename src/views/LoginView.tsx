@@ -4,6 +4,7 @@ import { auth, signInWithGoogle, signInWithApple, resolveAuthCall } from "../lib
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { Eye, EyeOff, Mail, Lock, Fingerprint } from "lucide-react";
 import { isNativeBiometricAvailable, getBiometryLabel, saveLoginUnlockCredentials } from "../utils/biometricAuth";
+import { toast } from "../utils/toast";
 
 interface RecentAccount {
   name: string;
@@ -90,8 +91,16 @@ export default function LoginView() {
       saveRecentAccount(userCredential.user);
       // Melhor esforço: se salvar no Keychain falhar por algum motivo, não deve derrubar um
       // login que já deu certo — só o desbloqueio rápido na próxima vez que fica indisponível.
+      // O erro real, antes, era engolido em silêncio (catch vazio) — quem reportasse "marquei e
+      // não funcionou" não tinha como saber o motivo. Agora loga no console (visível via Safari
+      // Web Inspector/adb logcat) e avisa com um toast que some sozinho, sem travar o login.
       if (biometricLabel && enableFaceIdUnlock) {
-        try { await saveLoginUnlockCredentials(email, password); } catch { }
+        try {
+          await saveLoginUnlockCredentials(email, password);
+        } catch (biometricErr: any) {
+          console.error('[LoginView] Falha ao salvar credenciais pro desbloqueio rápido:', biometricErr);
+          toast.show(`Login ok, mas não deu pra ativar o ${biometricLabel}: ${biometricErr?.message || biometricErr}`);
+        }
       }
     } catch (err: any) {
       setError(err.message || String(err));
