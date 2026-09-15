@@ -914,7 +914,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                               />
                             </label>
                           </div>
-                          <p className={`text-[9px] font-bold leading-relaxed px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                          <p className="text-[11px] font-medium tracking-wide leading-relaxed px-1 text-blue-950 dark:text-blue-300">
                             Opcional — fotos extras desta cor (outros ângulos, detalhes) que o cliente vê ao abrir o Link de Pedido.
                           </p>
                         </div>
@@ -958,7 +958,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           {/* Cor Sincronizada (Sola) */}
                           {modulesConfig.production && !restrictedProductMode && module === 'PRODUCTION' && (
                             <div className="flex flex-col gap-3">
-                              <label htmlFor="sole-color-select" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz)</label>
+                              <label htmlFor="sole-color-select" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz) {engineeringGuideTarget === 'solado' && <GuidePulseDot show />}</label>
                               <div className="relative group">
                                 <select
                                   id="sole-color-select"
@@ -1053,10 +1053,11 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                 <Factory size={12} className="text-indigo-600 dark:text-indigo-400" />
                               </div>
                               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Instruções por Setor</span>
+                              {engineeringGuideTarget === 'instrucoesSetor' && <GuidePulseDot show />}
                             </div>
                             <div className={`flex items-start gap-2.5 px-4 py-3 border-b ${isDarkMode ? 'border-slate-800 bg-slate-800/20' : 'border-slate-100 bg-slate-50/60'}`}>
                               <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
-                              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-relaxed">
+                              <p className="text-[11px] font-medium tracking-wide leading-relaxed text-blue-950 dark:text-blue-300">
                                 Essas instruções são impressas nas etiquetas térmicas e fichas de produção de cada setor — use pra avisar o que precisa ser feito em Corte, Bordado, Costura, etc.
                               </p>
                             </div>
@@ -1950,7 +1951,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     zIndex={97000}
                   >
                     <div className="flex flex-col gap-4 p-1">
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                      <p className="text-[11px] font-medium tracking-wide leading-relaxed text-blue-950 dark:text-blue-300">
                         Crie categorias adicionais para organizar a ficha técnica além de Embalagens, Químicos e Aviamentos.
                       </p>
                       <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
@@ -2405,7 +2406,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 block">Grade de Produção (Escalonamento)</label>
-                    <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 leading-relaxed">
+                    <p className="text-[11px] font-medium tracking-wide leading-relaxed mb-1 text-blue-950 dark:text-blue-300">
                       As numerações em que este modelo é produzido — junto com a Matriz de Solado (base) ao lado, define quais formas de calçado existem pra cada numeração.
                     </p>
                     <div className="relative group">
@@ -2456,7 +2457,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 </div>
 
                 {/* Mapeamento de Grade de Solados — Card dedicado */}
-                <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1 mt-4 leading-relaxed">
+                <p className="text-[11px] font-medium tracking-wide leading-relaxed mt-4 text-blue-950 dark:text-blue-300">
                   Qual numeração da sola casa com cada numeração da forma (cabedal) — útil quando o número gravado na sola não é igual ao número do calçado pronto.
                 </p>
                 <div className={`mt-2 rounded-[2rem] border-2 overflow-hidden ${isDarkMode ? 'border-emerald-500/20' : 'border-emerald-100'}`}>
@@ -2922,7 +2923,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           zIndex={97000}
         >
           <div className="flex flex-col gap-1">
-            <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1 mb-4">
+            <p className="text-[11px] font-medium tracking-wide leading-relaxed px-1 mb-4 text-blue-950 dark:text-blue-300">
               Roteiro de produção são os setores de serviço aos quais esse modelo percorre.
             </p>
             {/* Lista selecionável de setores */}
@@ -3068,7 +3069,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           zIndex={97000}
         >
           <div className="flex flex-col gap-4">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest -mt-2">
+            <p className="text-[11px] font-medium tracking-wide leading-relaxed -mt-2 text-blue-950 dark:text-blue-300">
               R$/par sugerido pra cada setor deste modelo — preenche o valor automaticamente ao emitir uma OS terceirizada, sem travar edição manual.
             </p>
             <div className="flex flex-col gap-2">
@@ -3220,15 +3221,16 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         };
                         setEngineeringClipboard(clip);
                         try { localStorage.setItem('engineering_clipboard', JSON.stringify(clip)); } catch {}
-                        setCopySuccess(`Engenharia e instruções de "${v.colorName}" COPIADAS!`);
-                        setTimeout(() => setCopySuccess(null), 2000);
+                        setCopySuccess(`Engenharia e instruções de "${v.colorName}" copiadas! Agora abra outra cor e toque em "Colar de ${v.colorName}" pra aplicar.`);
+                        setTimeout(() => setCopySuccess(null), 4000);
                       }}
                       data-guide-anchor="productForm.copiarEngenharia"
-                      className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                      className={`relative shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                       title="Copiar ficha técnica e instruções por setor desta cor"
                       aria-label={`Copiar engenharia e instruções da cor ${v.colorName}`}
                     >
                       <Copy size={12} /> Copiar
+                      {engineeringGuideTarget === 'copiarColar' && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
                     </button>
                   )}
 
@@ -3250,7 +3252,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         setTimeout(() => setCopySuccess(null), 3000);
                       }}
                       data-guide-anchor="productForm.colarEngenharia"
-                      className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all truncate max-w-[40%] ${
+                      className={`relative shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all truncate max-w-[40%] ${
                         (v.consumptions || []).length === 0 && Object.keys(v.sectorNotes || {}).length === 0
                           ? `animate-pulse ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`
                           : isDarkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -3259,6 +3261,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       aria-label={`Colar engenharia e instruções de ${engineeringClipboard.sourceName} nesta variação`}
                     >
                       <Sparkles size={12} className="shrink-0" /> <span className="truncate">Colar de {engineeringClipboard.sourceName}</span>
+                      {/* Feedback permanente (não só durante o tutorial) — sempre que existe algo
+                          copiado pra colar aqui, pisca pra chamar atenção pro próximo passo. */}
+                      <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>
                     </button>
                   )}
                 </div>
@@ -3460,12 +3465,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               initial={{ opacity: 0, y: 50, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[30000] px-8 py-4 bg-emerald-600 text-white rounded-[2rem] shadow-2xl flex items-center gap-3 border-2 border-emerald-400/30 backdrop-blur-md"
+              className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[30000] w-[calc(100%-2rem)] max-w-sm px-6 py-4 bg-emerald-600 text-white rounded-[2rem] shadow-2xl flex items-center gap-3 border-2 border-emerald-400/30 backdrop-blur-md"
             >
-              <CheckCircle2 size={24} className="text-emerald-200" />
-              <div className="flex flex-col">
+              <CheckCircle2 size={24} className="text-emerald-200 shrink-0" />
+              <div className="flex flex-col min-w-0">
                 <span className="text-xs font-black uppercase tracking-widest leading-none">Sucesso!</span>
-                <span className="text-[10px] font-bold text-emerald-100 mt-1 uppercase tracking-wider">{copySuccess}</span>
+                <span className="text-[10px] font-bold text-emerald-100 mt-1 leading-relaxed">{copySuccess}</span>
               </div>
             </motion.div>
           )}

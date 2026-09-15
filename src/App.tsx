@@ -389,7 +389,7 @@ interface EngineeringGuideStep {
   label: string;
   // Onde a bolinha vermelha pulsante aponta nesta etapa — 'selecionarModelo' vive em
   // ProductionEngineeringView, os demais em ProductFormView (ver engineeringGuideTarget).
-  target: 'selecionarModelo' | 'grade' | 'cor' | 'fichaTecnica' | 'roteiro';
+  target: 'selecionarModelo' | 'grade' | 'cor' | 'solado' | 'instrucoesSetor' | 'fichaTecnica' | 'roteiro' | 'copiarColar';
   paragraphs: string[];
   fullParagraphs?: string[];
 }
@@ -428,7 +428,31 @@ const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
     fullParagraphs: [
       'Cada cor do modelo tem sua própria Ficha Técnica, independente das outras — um mesmo modelo pode gastar mais material numa cor do que noutra (ex.: um material que só uma cor usa), então cada cor precisa da sua ficha própria.',
       'Já tem a ficha pronta numa cor e quer aplicar a mesma coisa noutra cor do mesmo modelo? Use "Copiar Engenharia" na cor de origem e "Colar Engenharia" na cor de destino, em vez de refazer tudo — só use quando as duas cores realmente consomem os mesmos materiais.',
-      'Dentro da cor, dois modos: "Cores & Info" (foto, cor do solado, instruções por setor) e "Ficha Técnica" (a aba da próxima etapa deste tutorial) — a aba Ficha Técnica só aparece com o Módulo de Produção ativo.',
+      'Dentro da cor, dois modos: "Cores & Info" (foto, cor do solado, instruções por setor) e "Ficha Técnica" (a etapa depois desta) — a aba Ficha Técnica só aparece com o Módulo de Produção ativo.',
+    ],
+  },
+  {
+    label: 'Escolha a Cor do Solado',
+    target: 'solado',
+    paragraphs: [
+      'Ainda em "Cores & Info", escolha a Cor do Solado (Matriz) pra combinar com a cor do cabedal desta variação — é isso que a produção usa pra saber qual sola bater com qual cor de calçado.',
+    ],
+    fullParagraphs: [
+      'Esse campo só existe com o Módulo de Produção ativo e liga a cor do cabedal (a cor desta variação) a uma das cores já cadastradas na Matriz de Solado escolhida lá em "Configurações de Produção" — nem toda matriz tem a mesma cor do cabedal, por isso é uma escolha manual, não automática.',
+      'Se a matriz de solado ainda não tiver a cor que você precisa cadastrada, volte em Configurações de Produção → Matriz de Solado pra adicionar essa cor antes de continuar.',
+      'Essa escolha é por COR (variação) — cada cor do modelo pode combinar com uma sola diferente, então repita esse passo em cada cor que você cadastrar.',
+    ],
+  },
+  {
+    label: 'Instruções por Setor',
+    target: 'instrucoesSetor',
+    paragraphs: [
+      'Ainda em "Cores & Info", use "Instruções por Setor" pra avisar detalhes que só fazem sentido pra quem produz — ex.: cor da linha de costura, cor do silk, informação da palmilha — cada instrução aparece na etiqueta térmica e na ficha de produção do setor certo.',
+    ],
+    fullParagraphs: [
+      'Cada setor (Corte, Bordado, Silk, Costura, Palmilha etc.) tem seu próprio espaço de instruções — toque em "+ Adicionar" no setor certo e escreva o que a pessoa daquele setor precisa saber, por exemplo: "SILK 330AX BEGE: curvin marrom, silk branco" ou "BORDADO: linha marrom".',
+      'Não precisa digitar tudo aqui do zero: se você já escreveu uma instrução dentro de um item da Ficha Técnica (no "Fluxo de Setores/Serviços" de uma peça de corte, ou num Serviço do Conjunto), ela aparece automaticamente aqui também — editar ou remover a instrução original atualiza os dois lugares juntos.',
+      'Só setores que já têm alguma instrução aparecem com a contagem ao lado (ex.: "2") — os outros ficam disponíveis, só sem nada lançado ainda.',
     ],
   },
   {
@@ -458,6 +482,17 @@ const ENGINEERING_GUIDE_STEPS: EngineeringGuideStep[] = [
     fullParagraphs: [
       'O Roteiro de Produção (lista ordenável de setores) também restringe quais setores aparecem como opção depois, tanto em "Instruções por Setor" (dentro de cada cor) quanto no "Fluxo de Setores/Serviços" de cada item da Ficha Técnica — cadastre o roteiro antes de tentar anexar um serviço a um setor que ainda não está na lista.',
       '"Valores de Serviço por Setor" só aparece depois que o Roteiro tiver pelo menos 1 setor. Serve de valor sugerido (não obrigatório) na hora de emitir uma Ordem de Serviço pra um prestador terceirizado desse setor.',
+    ],
+  },
+  {
+    label: 'Copiar Engenharia entre Cores',
+    target: 'copiarColar',
+    paragraphs: [
+      'Já montou a Ficha Técnica de uma cor e outra cor do mesmo modelo consome os mesmos materiais? Toque em "Copiar" na cor de origem e depois em "Colar de..." na cor de destino, em "Cores e Variações" — evita refazer tudo do zero.',
+    ],
+    fullParagraphs: [
+      'O "Copiar" pega TUDO da cor de origem: Ficha Técnica (consumos), Mapeamento de Solados e Instruções por Setor — junto de uma vez, não item por item.',
+      '"Colar de..." SUBSTITUI o que já existir na cor de destino (com uma confirmação antes) — use só quando as duas cores realmente consomem os mesmos materiais; se uma cor tiver alguma peça diferente (ex.: um bordado só nessa cor), copie e depois ajuste manualmente só a diferença, em vez de montar tudo de novo.',
       'Esta é a última etapa deste tutorial — pode rodar de novo a qualquer momento pelo botão "Engenharia Guiada". Nenhuma etapa aqui apaga ou altera dados: é só uma explicação, o que você já lançou continua salvo do jeito que estava.',
     ],
   },
@@ -9947,25 +9982,6 @@ export default function App() {
                 onClose={() => setVisualSetupIntroOpen(false)}
               />
             )}
-            {/* Etapa 1 da Engenharia Guiada mira em PRODUCTION_ENGINEERING, que NÃO é uma
-                MODAL_VIEWS — o bloco irmão deste (mais abaixo, dentro do <Modal>) só monta
-                quando currentView é uma tela modal, então essa etapa nunca aparecia sozinha
-                (bug real: popup e dica sumiam na Etapa 1). engineeringGuideStepIndex === 0
-                evita duplicar o popup quando o usuário avança pra dentro do Cadastro de
-                Produto (Etapas 2-5, aí sim MODAL_VIEWS) enquanto lastNonModalView ainda
-                aponta pra Engenharia por baixo do Modal aberto. */}
-            {engineeringGuideActive && engineeringGuideStepIndex === 0 && lastNonModalView === ViewType.PRODUCTION_ENGINEERING && (
-              <OnboardingStepIntroPopup
-                isDarkMode={isDarkMode}
-                stepIndex={1}
-                totalSteps={ENGINEERING_GUIDE_STEPS.length}
-                title={ENGINEERING_GUIDE_STEPS[0].label}
-                paragraphs={ENGINEERING_GUIDE_STEPS[0].paragraphs}
-                fullParagraphs={ENGINEERING_GUIDE_STEPS[0].fullParagraphs}
-                isOpen={engineeringGuideIntroOpen}
-                onClose={() => setEngineeringGuideIntroOpen(false)}
-              />
-            )}
             <Suspense fallback={<ViewLoadingFallback />}>
               {renderView(lastNonModalView)}
             </Suspense>
@@ -10021,26 +10037,30 @@ export default function App() {
               </>
             )
           )}
-          {/* A barra de etapas do Cadastro Guiado e da Engenharia Guiada mora no <nav>
-              minimizado agora (ver render do <nav> mais abaixo), mesmo mecanismo da
-              Configuração Inicial/Personalização Visual — StepWizardBar flutuante saiu de uso
-              (sobrepunha o cabeçalho em telas menores). Aqui só o popup de explicação por
-              etapa da Engenharia Guiada. */}
-          {engineeringGuideActive && (
-            <OnboardingStepIntroPopup
-              isDarkMode={isDarkMode}
-              stepIndex={engineeringGuideStepIndex + 1}
-              totalSteps={ENGINEERING_GUIDE_STEPS.length}
-              title={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].label}
-              paragraphs={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].paragraphs}
-              fullParagraphs={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].fullParagraphs}
-              isOpen={engineeringGuideIntroOpen}
-              onClose={() => setEngineeringGuideIntroOpen(false)}
-            />
-          )}
           {renderView(currentView)}
         </Suspense>
       </Modal>
+
+      {/* Popup de explicação por etapa da Engenharia Guiada — fica FORA das duas regiões de
+          render (o <main> não-modal e o <Modal> global) de propósito: as etapas 2+ mostram
+          conceitos de telas dentro do Cadastro de Produto (MODAL_VIEWS), mas a pessoa pode
+          avançar pelas etapas ("Continuar" na barra do <nav>) sem sair da lista de Engenharia
+          (PRODUCTION_ENGINEERING, NÃO modal) — bug real reportado: popups das Etapas 2 a 7
+          sumiam porque só existiam dentro do <Modal>, que só monta filhos quando currentView
+          é uma tela modal. Incondicional aqui, sempre visível enquanto o tutorial está ativo,
+          não importa a tela por baixo. */}
+      {engineeringGuideActive && (
+        <OnboardingStepIntroPopup
+          isDarkMode={isDarkMode}
+          stepIndex={engineeringGuideStepIndex + 1}
+          totalSteps={ENGINEERING_GUIDE_STEPS.length}
+          title={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].label}
+          paragraphs={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].paragraphs}
+          fullParagraphs={ENGINEERING_GUIDE_STEPS[engineeringGuideStepIndex].fullParagraphs}
+          isOpen={engineeringGuideIntroOpen}
+          onClose={() => setEngineeringGuideIntroOpen(false)}
+        />
+      )}
 
       {/* Popup "Assistente de Configuração" — pergunta continuar vs. refazer do zero, mesmo
           com a configuração já completa (ver handleOpenOnboardingWizard). */}
