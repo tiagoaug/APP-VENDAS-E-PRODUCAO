@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth, Image as ImageIcon } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth, Image as ImageIcon, Download } from 'lucide-react';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
+import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
+import { toast } from '../utils/toast';
 
 
 export interface ExportProfile {
@@ -166,6 +170,7 @@ export default function ExportNoteModal({
   const [previewPages, setPreviewPages] = useState<string[]>([]);
   const [previewPageIdx, setPreviewPageIdx] = useState(0);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [savingGallery, setSavingGallery] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -293,6 +298,27 @@ export default function ExportNoteModal({
       console.error("Preview failed", e);
     } finally {
       setIsPreviewLoading(false);
+    }
+  };
+
+  // Salva TODAS as páginas da pré-visualização JPG na galeria de uma vez — mesmo padrão de
+  // LabelPrintPreviewModal.tsx (write no cache + saveImageToGallery por página). Só existe pra
+  // JPG: PDF não tem uma "imagem" única pra soltar na galeria do aparelho.
+  const handleSaveGallery = async () => {
+    setSavingGallery(true);
+    try {
+      let savedCount = 0;
+      for (let i = 0; i < previewPages.length; i++) {
+        const base64 = previewPages[i].split('base64,')[1] || previewPages[i];
+        const written = await Filesystem.writeFile({ path: `export_gallery_${Date.now()}_${i}.png`, data: base64, directory: Directory.Cache });
+        const { saved } = await saveImageToGallery(written.uri);
+        if (saved) savedCount++;
+      }
+      toast.show(savedCount > 0 ? `${savedCount} ${savedCount > 1 ? 'imagens salvas' : 'imagem salva'} na galeria!` : 'Falha ao salvar na galeria.');
+    } catch (err: any) {
+      toast.show('Erro ao salvar na galeria: ' + (err?.message || err));
+    } finally {
+      setSavingGallery(false);
     }
   };
 
@@ -798,7 +824,10 @@ export default function ExportNoteModal({
                 Gerar {selectedFormat.toUpperCase()}
               </button>
 
-              {onPrintLabels && (
+              {/* Impressão Bluetooth (Ablemark) só existe no Android — no iOS o botão nem
+                  aparece, em vez de levar o usuário até o picker de etiquetas pra só então
+                  descobrir lá que não tem como imprimir. */}
+              {onPrintLabels && isAblemarkPlatform() && (
                 <button
                   type="button"
                   onClick={onPrintLabels}
@@ -1648,6 +1677,21 @@ export default function ExportNoteModal({
           onClick={() => setPreviewPages([])}
           data-guide-anchor="export.previewPopup"
         >
+          {/* "Salvar na Galeria" só existe pra JPG e só no Android (mesmo limite de
+              gallerySaver.ts) — no iOS ou em PDF, esse botão simplesmente não aparece. */}
+          {selectedFormat === 'jpg' && isGallerySaverPlatform() && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleSaveGallery(); }}
+              disabled={savingGallery}
+              data-guide-anchor="export.previewSalvarGaleria"
+              aria-label="Salvar na galeria"
+              className="absolute top-4 left-4 h-10 px-4 rounded-full flex items-center gap-2 bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all z-10 disabled:opacity-50 text-[10px] font-black uppercase tracking-widest"
+            >
+              <Download size={16} /> {savingGallery ? 'Salvando...' : 'Galeria'}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setPreviewPages([])}
