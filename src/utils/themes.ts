@@ -55,7 +55,7 @@ export const FONT_OPTIONS: { value: string; label: string }[] = [
   { value: "'Courier New', Courier, monospace", label: 'Courier New' },
 ];
 
-export const FONT_SCALE_OPTIONS = [80, 90, 100, 110, 125, 140, 160] as const;
+export const FONT_SCALE_OPTIONS = [80, 90, 100, 105, 110] as const;
 
 // ── Ícones do menu inferior (Home/Compras/Vendas/...) ───────────────────────
 export type NavIconMode = 'mono' | 'colored';

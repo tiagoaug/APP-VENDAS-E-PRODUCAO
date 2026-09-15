@@ -692,7 +692,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.11.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.11.1</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -929,7 +929,7 @@ export default function SettingsView({
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontScaleSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {fontScaleSectionOpen && (
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-5 gap-2">
                     {FONT_SCALE_OPTIONS.map(pct => {
                       const active = fontScale === pct;
                       return (

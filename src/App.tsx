@@ -480,7 +480,9 @@ export default function App() {
   const [fontScale, setFontScale] = useState<number>(() => {
     const saved = localStorage.getItem('font_size_pref');
     const parsed = saved ? parseInt(saved, 10) : NaN;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+    // Teto de 110% (era 160%) — contas antigas com um valor salvo acima disso são
+    // reduzidas ao abrir, não só escondidas da lista de opções.
+    return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 110) : 100;
   });
   const [fontFamily, setFontFamily] = useState<string>(() => {
     return localStorage.getItem('font_family_pref') || FONT_OPTIONS[0].value;
@@ -644,7 +646,7 @@ export default function App() {
   useEffect(() => {
     if (!activeCollaborator) return;
     if (activeCollaborator.themePref) setAppTheme(activeCollaborator.themePref as ThemeId);
-    if (activeCollaborator.fontScalePref) setFontScale(activeCollaborator.fontScalePref);
+    if (activeCollaborator.fontScalePref) setFontScale(Math.min(activeCollaborator.fontScalePref, 110));
     if (activeCollaborator.fontFamilyPref) setFontFamily(activeCollaborator.fontFamilyPref);
     if (activeCollaborator.navIconModePref) setNavIconMode(activeCollaborator.navIconModePref as NavIconMode);
     if (activeCollaborator.navMonoColorPref) setNavMonoColor(activeCollaborator.navMonoColorPref);
