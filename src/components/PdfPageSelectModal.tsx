@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, FileStack, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Crop, Scissors, RotateCcw, CheckCircle2, Save, Trash2, X } from 'lucide-react';
+import { Check, FileStack, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Crop, Scissors, RotateCcw, CheckCircle2, Save, Trash2, X, Hand, Wand2 } from 'lucide-react';
 import Modal from './Modal';
 import { toast } from '../utils/toast';
 import CropEditor, { CropRect, FULL_CROP, CENTER_CROP, loadImageEl } from './CropEditor';
@@ -225,6 +225,11 @@ export default function PdfPageSelectModal({
   // Acordeão de seleção de páginas fica fechado por padrão — a escolha já foi feita no passo 1,
   // então o foco natural do passo 2 é o recorte; abre só quem quiser reajustar a seleção aqui.
   const [pagesExpanded, setPagesExpanded] = useState(false);
+  // Card de Recorte virou 2 acordeões — Manual (arrastar as alças no popup) e Automático
+  // (presets prontos) — pra separar visualmente os dois jeitos de recortar. Manual começa
+  // aberto (é o caminho mais comum: abrir a área e ajustar); Automático fechado.
+  const [manualCropSectionOpen, setManualCropSectionOpen] = useState(true);
+  const [autoCropSectionOpen, setAutoCropSectionOpen] = useState(false);
   // A área de visualização/ajuste do recorte (arrastar, alças) vive num popup à parte — todas
   // as OPÇÕES que influenciam o recorte (grupo, página específica, presets, conter/cobrir)
   // ficam juntas no card principal, fora do popup.
@@ -354,6 +359,17 @@ export default function PdfPageSelectModal({
     `flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
       active ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
     }`;
+
+  // Botões empilhados (um abaixo do outro, em vez de lado a lado) — usados nos grupos "Opções
+  // de Recorte" e "Recorte Automático". `w-full` (não `flex-1`) porque dentro de flex-col
+  // flex-1 esticaria a ALTURA de cada um pra dividir o espaço, não a largura.
+  const stackedCls = (active: boolean) =>
+    `w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left transition-all ${
+      active ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+    }`;
+  // Legenda de 1 linha explicando cada função — mesmo padrão de subtítulo (11px, azul escuro)
+  // já usado nos popups do Assistente de Configuração.
+  const captionCls = 'text-[11px] font-medium tracking-wide leading-relaxed text-blue-950 dark:text-blue-300';
 
   const selectedIndexes = Array.from(selected).sort((a, b) => a - b);
 
@@ -581,11 +597,15 @@ export default function PdfPageSelectModal({
               <span className="text-[9px] font-black uppercase tracking-widest text-rose-500">Recorte</span>
 
               {allowOddEven && (
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); }} data-guide-anchor="pdfPageSelect.recorteUnico" className={quickCls(!splitOddEven)}>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-rose-500">Opções de Recorte</span>
+                  <p className={captionCls}>
+                    Escolha se todas as etiquetas usam o mesmo recorte, ou se ímpares e pares (comum em PDFs com 2 modelos por folha) precisam de ajustes diferentes.
+                  </p>
+                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); }} data-guide-anchor="pdfPageSelect.recorteUnico" className={stackedCls(!splitOddEven)}>
                     Mesmo recorte pra todas
                   </button>
-                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); }} data-guide-anchor="pdfPageSelect.recorteSeparado" className={quickCls(splitOddEven)}>
+                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); }} data-guide-anchor="pdfPageSelect.recorteSeparado" className={stackedCls(splitOddEven)}>
                     Recorte diferente ímpar/par
                   </button>
                 </div>
@@ -685,30 +705,85 @@ export default function PdfPageSelectModal({
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setShowCropPopup(true)}
-                    data-guide-anchor="pdfPageSelect.abrirAreaRecorte"
-                    className="flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white"
-                  >
-                    <Crop size={14} /> Abrir área de recorte
-                  </button>
-
-                  <div className="flex gap-1.5">
-                    <button type="button" onClick={() => { setLastCropPreset('full'); setAppliedPresetId(null); setEditingCrop(FULL_CROP); }} data-guide-anchor="pdfPageSelect.presetPaginaInteira" className={quickCls(lastCropPreset === 'full')}>
-                      Página inteira
-                    </button>
-                    <button type="button" onClick={() => { setLastCropPreset('center'); setAppliedPresetId(null); setEditingCrop(CENTER_CROP); }} data-guide-anchor="pdfPageSelect.presetRecorteCentral" className={quickCls(lastCropPreset === 'center')}>
-                      Recorte central
-                    </button>
+                  {/* Recorte Manual e Recorte Automático — antes eram um botão + uma fileira de
+                      3 presets soltos no meio do card; viraram 2 acordeões (fechável) com
+                      legenda explicando cada função, a pedido do Tiago, pra ficar claro o que
+                      cada caminho faz antes de escolher. */}
+                  <div className={`flex flex-col gap-2 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-100'}`}>
                     <button
                       type="button"
-                      onClick={() => { setLastCropPreset('fit'); setAppliedPresetId(null); applyFitToLabel(referencePage, setEditingCrop); }}
-                      data-guide-anchor="pdfPageSelect.presetAjustarEtiqueta"
-                      className={quickCls(lastCropPreset === 'fit')}
+                      onClick={() => setManualCropSectionOpen(v => !v)}
+                      data-guide-anchor="pdfPageSelect.acordeaoManual"
+                      className="flex items-center justify-between gap-2"
                     >
-                      Ajustar à etiqueta
+                      <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-rose-500">
+                        <Hand size={12} /> Recorte Manual
+                      </span>
+                      <ChevronDown size={14} className={`text-slate-400 transition-transform ${manualCropSectionOpen ? 'rotate-180' : ''}`} />
                     </button>
+                    {manualCropSectionOpen && (
+                      <>
+                        <p className={captionCls}>
+                          Recorte Livre: abra a área de recorte e arraste as alças pra marcar exatamente a região da etiqueta na página — use quando os presets automáticos abaixo não encaixam certinho.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowCropPopup(true)}
+                          data-guide-anchor="pdfPageSelect.abrirAreaRecorte"
+                          className="flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white"
+                        >
+                          <Crop size={14} /> Abrir área de recorte
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  <div className={`flex flex-col gap-2 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setAutoCropSectionOpen(v => !v)}
+                      data-guide-anchor="pdfPageSelect.acordeaoAutomatico"
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-rose-500">
+                        <Wand2 size={12} /> Recorte Automático
+                      </span>
+                      <ChevronDown size={14} className={`text-slate-400 transition-transform ${autoCropSectionOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {autoCropSectionOpen && (
+                      <div className="flex flex-col gap-1.5">
+                        <p className={captionCls}>
+                          Modo Automático: presets prontos que recortam a página sem precisar arrastar nada.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { setLastCropPreset('full'); setAppliedPresetId(null); setEditingCrop(FULL_CROP); }}
+                          data-guide-anchor="pdfPageSelect.presetPaginaInteira"
+                          className={`w-full flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-xl text-left transition-all ${lastCropPreset === 'full' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                        >
+                          <span className="text-[9px] font-black uppercase tracking-widest">Página inteira</span>
+                          <span className={`text-[8px] font-bold normal-case ${lastCropPreset === 'full' ? 'text-white/80' : 'text-slate-400'}`}>Mostra a página inteira, sem cortar nada.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setLastCropPreset('center'); setAppliedPresetId(null); setEditingCrop(CENTER_CROP); }}
+                          data-guide-anchor="pdfPageSelect.presetRecorteCentral"
+                          className={`w-full flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-xl text-left transition-all ${lastCropPreset === 'center' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                        >
+                          <span className="text-[9px] font-black uppercase tracking-widest">Recorte central</span>
+                          <span className={`text-[8px] font-bold normal-case ${lastCropPreset === 'center' ? 'text-white/80' : 'text-slate-400'}`}>Corta uma margem igual nas 4 bordas, mantendo o miolo da página.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setLastCropPreset('fit'); setAppliedPresetId(null); applyFitToLabel(referencePage, setEditingCrop); }}
+                          data-guide-anchor="pdfPageSelect.presetAjustarEtiqueta"
+                          className={`w-full flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-xl text-left transition-all ${lastCropPreset === 'fit' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                        >
+                          <span className="text-[9px] font-black uppercase tracking-widest">Ajustar à etiqueta</span>
+                          <span className={`text-[8px] font-bold normal-case ${lastCropPreset === 'fit' ? 'text-white/80' : 'text-slate-400'}`}>Detecta e recorta só o bloco impresso, ignorando a margem em branco ao redor.</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Ajuste ao tamanho da etiqueta — vale pra TODAS as páginas do lote de uma
