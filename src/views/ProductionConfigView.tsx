@@ -4769,7 +4769,7 @@ function GenericConfigList({
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {(editingItem?.metadata?.sizes || []).map(size => (
                           <div key={size} className="flex flex-col gap-2 items-center">
-                            <label htmlFor={`pack-qty-${size}`} className={`text-[9px] font-black uppercase ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{size}</label>
+                            <label htmlFor={`pack-qty-${size}`} className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${isDarkMode ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}`}>{size}</label>
                             <input
                               id={`pack-qty-${size}`}
                               type="number"
