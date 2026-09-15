@@ -4418,7 +4418,7 @@ function GenericConfigList({
                 </div>
               </div>
               <div className="flex flex-col gap-2"><label className={`text-[10px] font-black uppercase tracking-widest ml-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div>
-                <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares cabem nessa embalagem?</p>
+                <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares cabem nessa embalagem?</p>
               </div>
 
               {/* Cor do badge de estoque (ex.: "12P") — escolhida aqui pra diferenciar de
@@ -4461,7 +4461,7 @@ function GenericConfigList({
                   <span>{grids.find(g => g.id === editingItem?.metadata?.productionGradeId)?.name || 'Nenhuma'}</span>
                   <ChevronDown size={18} className="text-blue-500 shrink-0" />
                 </button>
-                <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 leading-relaxed px-2">
+                <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-2">
                   Qual a numeração (grade) que vai nessa embalagem? Toque acima pra escolher entre as grades já cadastradas ou criar uma nova — produtos cadastrados com essa grade de produção usarão automaticamente esta embalagem para converter os pares produzidos em caixas no Estoque.
                 </p>
               </div>
@@ -4605,7 +4605,7 @@ function GenericConfigList({
                           <h4 className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Distribuição da Grade</h4>
                           <span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span>
                         </div>
-                        <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares de cada número vão nessa embalagem — a soma precisa bater com a Capacidade Total.</p>
+                        <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-2">Quantos pares de cada número vão nessa embalagem — a soma precisa bater com a Capacidade Total.</p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {(editingItem?.metadata?.sizes || []).map(size => (
