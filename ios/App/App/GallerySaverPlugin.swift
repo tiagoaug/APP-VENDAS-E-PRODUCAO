@@ -56,7 +56,7 @@ public class GallerySaverPlugin: CAPPlugin, CAPBridgedPlugin {
             }, completionHandler: { success, error in
                 DispatchQueue.main.async {
                     if success {
-                        let result = JSObject()
+                        var result = JSObject()
                         result["saved"] = true
                         result["uri"] = placeholder?.localIdentifier ?? ""
                         call.resolve(result)
