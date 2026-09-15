@@ -52,7 +52,10 @@ import {
   Fingerprint
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { isLoginUnlockEnabled, clearLoginUnlockCredentials } from '../utils/biometricAuth';
+import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import { isLoginUnlockEnabled, clearLoginUnlockCredentials, isNativeBiometricAvailable, getBiometryLabel, saveLoginUnlockCredentials } from '../utils/biometricAuth';
+import { toast } from '../utils/toast';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator, BottomNavConfig } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
@@ -183,10 +186,46 @@ export default function SettingsView({
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [faceIdUnlockEnabled, setFaceIdUnlockEnabled] = useState(false);
   const [showDisableFaceIdConfirm, setShowDisableFaceIdConfirm] = useState(false);
+  // Rótulo da biometria do aparelho (ex.: "Face ID") — null quando indisponível/sem cadastro
+  // no sistema, ou quando a conta não é de e-mail/senha (Google/Apple não têm senha pra
+  // guardar, ver comentário em biometricAuth.ts). Controla se o botão "Ativar" aparece aqui —
+  // antes disso, a ÚNICA forma de ativar era marcar uma caixinha no instante do login (LoginView),
+  // fácil de perder e sem outro jeito de voltar atrás depois.
+  const [enableFaceIdLabel, setEnableFaceIdLabel] = useState<string | null>(null);
+  const [showEnableFaceId, setShowEnableFaceId] = useState(false);
+  const [enableFaceIdPassword, setEnableFaceIdPassword] = useState('');
+  const [showEnableFaceIdPassword, setShowEnableFaceIdPassword] = useState(false);
+  const [enableFaceIdError, setEnableFaceIdError] = useState<string | null>(null);
+  const [enableFaceIdBusy, setEnableFaceIdBusy] = useState(false);
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     isLoginUnlockEnabled().then(setFaceIdUnlockEnabled);
+    const isPasswordAccount = !!auth.currentUser?.providerData.some(p => p.providerId === 'password');
+    if (isPasswordAccount) {
+      Promise.all([isNativeBiometricAvailable(), getBiometryLabel()]).then(([available, label]) => {
+        if (available && label) setEnableFaceIdLabel(label);
+      });
+    }
   }, []);
+
+  const handleConfirmEnableFaceId = async () => {
+    if (!auth.currentUser?.email || !enableFaceIdPassword) return;
+    setEnableFaceIdBusy(true);
+    setEnableFaceIdError(null);
+    try {
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, enableFaceIdPassword);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      await saveLoginUnlockCredentials(auth.currentUser.email, enableFaceIdPassword);
+      setFaceIdUnlockEnabled(true);
+      setShowEnableFaceId(false);
+      setEnableFaceIdPassword('');
+      toast.show(`Desbloqueio rápido com ${enableFaceIdLabel} ativado!`);
+    } catch (err: any) {
+      setEnableFaceIdError(err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential' ? 'Senha incorreta.' : 'Não foi possível confirmar. Tente de novo.');
+    } finally {
+      setEnableFaceIdBusy(false);
+    }
+  };
   const [showCollabSwitcher, setShowCollabSwitcher] = useState(false);
   const [switchTargetId, setSwitchTargetId] = useState<string | null>(null);
   const [pinInput, setPinInput] = useState('');
@@ -650,7 +689,7 @@ export default function SettingsView({
         <div className="flex flex-col gap-3">
           <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Conta</h3>
           <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            {faceIdUnlockEnabled && (
+            {faceIdUnlockEnabled ? (
               <button
                 onClick={() => setShowDisableFaceIdConfirm(true)}
                 title="Desativar Desbloqueio por Face ID"
@@ -664,6 +703,25 @@ export default function SettingsView({
                   <div className="text-left">
                     <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Desativar Desbloqueio Rápido</p>
                     <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Esquece a senha guardada pra Face ID/Touch ID</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
+            ) : enableFaceIdLabel && (
+              <button
+                onClick={() => { setEnableFaceIdError(null); setEnableFaceIdPassword(''); setShowEnableFaceId(true); }}
+                title={`Ativar Desbloqueio por ${enableFaceIdLabel}`}
+                aria-label={`Ativar desbloqueio por ${enableFaceIdLabel}`}
+                data-guide-anchor="settings.ativarFaceId"
+                className={`w-full flex items-center justify-between p-4 border-b transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/50' : 'border-slate-100 hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                    <Fingerprint size={22} />
+                  </div>
+                  <div className="text-left">
+                    <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ativar Desbloqueio Rápido</p>
+                    <p className="text-[11px] text-slate-400 font-bold tracking-wide mt-0.5">Entrar direto com {enableFaceIdLabel}, sem digitar a senha</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
@@ -692,7 +750,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.12.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.13.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1218,6 +1276,66 @@ export default function SettingsView({
                 className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95"
               >
                 Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ATIVAR DESBLOQUEIO POR FACE ID (pede a senha atual pra confirmar antes de guardar
+          no Keychain/Keystore, mesma exigência do Firebase pra reautenticar) ── */}
+      {showEnableFaceId && (
+        <div className="fixed inset-0 z-[65000] flex items-end justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-sm rounded-[2rem] p-6 shadow-2xl flex flex-col items-center gap-4 animate-in slide-in-from-bottom-4 duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
+              <Fingerprint size={32} className="text-indigo-600 dark:text-indigo-400" strokeWidth={2} />
+            </div>
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                Ativar Desbloqueio Rápido?
+              </h3>
+              <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
+                Confirme sua senha atual pra guardar o acesso com {enableFaceIdLabel} neste aparelho.
+              </p>
+            </div>
+            <div className="w-full relative">
+              <input
+                type={showEnableFaceIdPassword ? 'text' : 'password'}
+                value={enableFaceIdPassword}
+                onChange={(e) => { setEnableFaceIdPassword(e.target.value); setEnableFaceIdError(null); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && enableFaceIdPassword && !enableFaceIdBusy) handleConfirmEnableFaceId(); }}
+                placeholder="Sua senha"
+                autoFocus
+                className={`w-full h-14 px-5 pr-12 rounded-2xl font-bold text-base outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-800/50 border-transparent focus:border-indigo-500 text-white' : 'bg-slate-50 border-transparent focus:border-indigo-500 text-slate-900'}`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowEnableFaceIdPassword(v => !v)}
+                aria-label={showEnableFaceIdPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+              >
+                {showEnableFaceIdPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            {enableFaceIdError && (
+              <p className="text-rose-500 text-xs font-bold text-center -mt-1">{enableFaceIdError}</p>
+            )}
+            <div className="flex gap-3 w-full mt-1">
+              <button
+                onClick={() => setShowEnableFaceId(false)}
+                disabled={enableFaceIdBusy}
+                className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 ${
+                  isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmEnableFaceId}
+                disabled={enableFaceIdBusy || !enableFaceIdPassword}
+                className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {enableFaceIdBusy ? 'Confirmando...' : 'Ativar'}
               </button>
             </div>
           </div>

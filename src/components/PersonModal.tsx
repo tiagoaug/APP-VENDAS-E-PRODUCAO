@@ -79,6 +79,15 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
     try {
       const perm = await Contacts.checkPermissions();
       if (perm.contacts !== 'granted') {
+        // No iOS, depois da primeira negativa o sistema NUNCA mais mostra o popup de
+        // permissão de novo — requestPermissions() simplesmente devolve "denied" direto, sem
+        // perguntar nada. Por isso a mensagem já manda pra Ajustes em vez de insistir/repetir
+        // "negada" sem dar um jeito de resolver.
+        if (perm.contacts === 'denied') {
+          const settingsPath = Capacitor.getPlatform() === 'ios' ? 'Ajustes do iPhone → LIM.O APP → Contatos' : 'Configurações do Android → Apps → LIM.O APP → Permissões → Contatos';
+          toast.show(`Acesso aos contatos bloqueado. Ative em ${settingsPath}.`);
+          return;
+        }
         const req = await Contacts.requestPermissions();
         if (req.contacts !== 'granted') {
           toast.show('Permissão de acesso aos contatos negada.');
