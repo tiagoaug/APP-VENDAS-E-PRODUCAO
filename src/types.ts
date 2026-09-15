@@ -92,6 +92,16 @@ export type GridTemplate = {
   createdAt: number;
 };
 
+// Modelo de Unidade de Medida compartilhado ENTRE CONTAS — mesmo desenho de CategoryTemplate
+// (name + description, sem "type" porque Unidades não têm subtipos como Categorias).
+export type UnitTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  createdBy: string;
+  createdAt: number;
+};
+
 // Modelo de Padrão de Embalagem compartilhado ENTRE CONTAS — mesmo desenho de GridTemplate,
 // mas guarda a composição real (modo + capacidade + distribuição por numeração) pra dar uma
 // prévia de verdade antes de adicionar, já que embalagem sem isso nasce vazia e inutilizável.

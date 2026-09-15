@@ -85,10 +85,11 @@ import {
   Bookmark,
   BookmarkCheck
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot, FlowTagTemplate, SectorTemplate, PackagingTemplate } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot, FlowTagTemplate, SectorTemplate, PackagingTemplate, UnitTemplate } from '../types';
 import { subscribeToFlowTagTemplates, saveFlowTagTemplate } from '../services/flowTagTemplatesService';
 import { subscribeToSectorTemplates, saveSectorTemplate } from '../services/sectorTemplatesService';
 import { subscribeToPackagingTemplates, savePackagingTemplate, deletePackagingTemplate } from '../services/packagingTemplatesService';
+import { subscribeToUnitTemplates, saveUnitTemplate, deleteUnitTemplate } from '../services/unitTemplatesService';
 import { isTemplateAdmin } from '../utils/templateAdmin';
 import { DefaultUnitItem } from '../services/defaultUnitsService';
 import Modal from '../components/Modal';
@@ -1165,6 +1166,7 @@ export default function ProductionConfigView({
           productionConfigs={productionConfigs}
           people={people}
           onNavigateToScreen={handleNavigateShortcut}
+          guideActive={guideActive && currentScreen === 'UNIDADES'}
         />
       </Modal>
 
@@ -1691,6 +1693,34 @@ function GenericConfigList({
       createdAt: Date.now(),
       metadata: { mode: template.mode, capacity: template.capacity, sizes: template.sizes, sizeQuantities: template.sizeQuantities },
     } as any);
+  };
+
+  // "Modelos Disponíveis" de Unidade de Medida (só type === 'UNIT') — mesmo desenho de
+  // CategoriesView.tsx (chips simples, sem prévia expansível, já que unidade é só nome +
+  // descrição). Complementa "Carregar Unidades Padrão" (seedDefaults/DEFAULT_UNITS), que
+  // carrega um conjunto fixo de uma vez só — aqui dá pra ir adicionando modelo a modelo.
+  const [unitTemplates, setUnitTemplates] = useState<UnitTemplate[]>([]);
+  const [unitTemplatesOpen, setUnitTemplatesOpen] = useState(false);
+  useEffect(() => {
+    if (type !== 'UNIT') return;
+    const unsub = subscribeToUnitTemplates(setUnitTemplates);
+    return () => unsub();
+  }, [type]);
+
+  const findUnitTemplateFor = (item: ProductionConfigItem) =>
+    unitTemplates.find(t => t.name.toUpperCase() === item.name.toUpperCase());
+  const isSavedAsUnitTemplate = (item: ProductionConfigItem) => !!findUnitTemplateFor(item);
+
+  const handleToggleUnitTemplate = (item: ProductionConfigItem) => {
+    const existing = findUnitTemplateFor(item);
+    if (existing) deleteUnitTemplate(existing.id);
+    else saveUnitTemplate({ name: item.name, description: item.description || '' });
+  };
+
+  const handleAddFromUnitTemplate = (template: UnitTemplate) => {
+    const exists = items.some(i => i.type === 'UNIT' && i.name.toUpperCase() === template.name.toUpperCase());
+    if (exists) return;
+    onSave({ id: '', name: template.name, description: template.description, type: 'UNIT', createdAt: Date.now(), metadata: {} } as any);
   };
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [search, setSearch] = useState('');
@@ -2498,6 +2528,62 @@ function GenericConfigList({
         />
       </div>
 
+      {type === 'UNIT' && (
+        <div className={`p-4 rounded-2xl border flex items-start gap-3 ${isDarkMode ? 'bg-indigo-900/10 border-indigo-900/30' : 'bg-indigo-50/50 border-indigo-100'}`}>
+          <Scale size={18} className="text-indigo-500 mt-0.5 shrink-0" />
+          <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wider leading-relaxed">
+            Unidades de Medida servem pra medir materiais na Ficha Técnica dos produtos — ex.: <span className="text-indigo-600 dark:text-indigo-400 font-black">KG</span>, <span className="text-indigo-600 dark:text-indigo-400 font-black">MT</span>, <span className="text-indigo-600 dark:text-indigo-400 font-black">UN</span>. Cada insumo cadastrado usa uma delas.
+          </p>
+        </div>
+      )}
+
+      {type === 'UNIT' && (
+        <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+          <button
+            type="button"
+            onClick={() => setUnitTemplatesOpen(o => !o)}
+            data-guide-anchor="prodcfg.alternarModelosUnidade"
+            className="relative w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+          >
+            {guideActive && <span className="absolute top-2 right-9"><GuidePulseDot show /></span>}
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} />
+              <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
+            </div>
+            <ChevronDown size={16} className={`transition-transform duration-200 ${unitTemplatesOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {unitTemplatesOpen && (
+            <div className="px-4 pb-4 flex flex-wrap gap-2">
+              <p className="w-full text-[10px] font-bold text-rose-600 dark:text-rose-400 leading-snug">
+                Toque num modelo abaixo pra adicioná-lo às suas unidades.
+              </p>
+              {unitTemplates.length === 0 && (
+                <p className="text-[10px] font-bold text-slate-400 italic py-2">Nenhum modelo disponível ainda.</p>
+              )}
+              {unitTemplates.map(template => {
+                const exists = items.some(i => i.type === 'UNIT' && i.name.toUpperCase() === template.name.toUpperCase());
+                return (
+                  <button
+                    type="button"
+                    key={template.id}
+                    onClick={() => handleAddFromUnitTemplate(template)}
+                    disabled={exists}
+                    title={`Adicionar modelo: ${template.name}`}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
+                      exists
+                        ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-transparent'
+                        : 'bg-white dark:bg-slate-900 text-violet-600 border-violet-100 hover:border-violet-500 dark:text-violet-400 dark:border-violet-900 shadow-sm active:scale-95'
+                    }`}
+                  >
+                    {template.name} {exists && '✓'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {type === 'PACKAGING' && (
         <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
           <button
@@ -2822,6 +2908,25 @@ function GenericConfigList({
                           >
                             {isSavedAsPackagingTemplate(item) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
                             {isSavedAsPackagingTemplate(item) ? 'Usado como exemplo' : 'Marcar como modelo'}
+                          </button>
+                        )}
+                      </div>
+                    ) : type === 'UNIT' ? (
+                      <div className="flex flex-col gap-2 mt-0.5">
+                        {item.description && <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{item.description}</p>}
+                        {isTemplateAdmin() && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleUnitTemplate(item)}
+                            title={isSavedAsUnitTemplate(item) ? 'Toque pra desmarcar como exemplo' : 'Usar como exemplo pra novas contas'}
+                            className={`self-start flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.97] ${
+                              isSavedAsUnitTemplate(item)
+                                ? 'bg-violet-100 border-violet-200 text-violet-700 dark:bg-violet-500/20 dark:border-violet-500/40 dark:text-violet-300'
+                                : 'bg-slate-200 border-slate-200 text-slate-600 dark:bg-slate-700 dark:border-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {isSavedAsUnitTemplate(item) ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+                            {isSavedAsUnitTemplate(item) ? 'Usado como exemplo' : 'Marcar como modelo'}
                           </button>
                         )}
                       </div>

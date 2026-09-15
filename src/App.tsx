@@ -2107,12 +2107,18 @@ export default function App() {
           group: 'fabricacao' as const,
           why: 'Usada pra medir materiais na Ficha Técnica dos produtos (ex.: kg, metro, unidade).',
           productionSubScreen: 'UNIDADES' as ProductionScreenType,
-          guideSteps: [
-            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.carregarPadrao', text: 'Toque aqui pra carregar as unidades mais usadas (UN, PR, KG, MT...) de uma vez, sem digitar nada.' },
-            { type: 'message' as const, text: 'Se faltar alguma, toque em "Adicionar Novo Registro" e cadastre a que precisar.' },
-            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.addRegistro', text: 'Toque aqui para cadastrar uma unidade de medida (ex.: kg, metro, unidade).' },
-            { type: 'highlight_tap' as const, anchorKey: 'prodcfg.salvarRegistro', text: 'Digite a sigla e toque aqui para salvar.' },
-          ],
+          intro: {
+            paragraphs: [
+              'Unidades de Medida servem pra medir os materiais usados na Ficha Técnica dos produtos — ex.: KG, MT, UN. Cada insumo cadastrado usa uma delas.',
+              'Toque em "Carregar Unidades Padrão" pra já trazer as mais usadas de uma vez, ou em "Modelos Disponíveis" pra adicionar uma de cada vez. Se faltar alguma, cadastre em "Adicionar Novo Registro".',
+            ],
+            fullParagraphs: [
+              'Toda vez que você cadastra um insumo (material) na Ficha Técnica, precisa escolher em qual unidade ele é medido — daí a importância de já ter as unidades certas cadastradas antes.',
+              '"Carregar Unidades Padrão" traz de uma vez as mais comuns (UN, PR, KG, MT...), sem digitar nada — ideal pra já sair com o básico coberto.',
+              '"Modelos Disponíveis" é um jeito complementar: um pool de unidades prontas que você pode ir adicionando uma de cada vez, conforme a necessidade.',
+              'Se nenhuma servir, toque em "Adicionar Novo Registro" e cadastre a unidade do seu jeito (nome + sigla).',
+            ],
+          },
         }]
       : []),
     {
@@ -7910,7 +7916,7 @@ export default function App() {
             soleStock={soleStockEntries}
             restrictToPackaging={!modulesConfig.production}
             onStartJourney={handleStartJourney}
-            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.PRODUCTION_CONFIG && onboardingSteps[onboardingStepIndex]?.productionSubScreen === 'EMBALAGENS'}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.PRODUCTION_CONFIG}
           />
         );
       case ViewType.PRODUCT_SHEET:
