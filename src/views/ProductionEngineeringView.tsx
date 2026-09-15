@@ -139,20 +139,10 @@ export default function ProductionEngineeringView({
         </div>
       </div>
 
-
-      <button
-        type="button"
-        onClick={onAdd}
-        data-guide-anchor="prodEng.novaEngenharia"
-        className={`relative mt-2 rounded-[1.5rem] py-4 flex items-center justify-center gap-3 font-black tracking-widest transition-all cursor-pointer active:scale-[0.98] text-[11px] uppercase overflow-hidden ${
-          isDarkMode
-            ? 'bg-gradient-to-b from-slate-700 to-slate-900 border border-slate-600/40 text-white'
-            : 'bg-gradient-to-b from-white to-slate-100 border border-slate-200/60 text-slate-700'
-        } shadow-[0_6px_24px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.07)]`}
-      >
-        <div className="absolute top-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-80 pointer-events-none" />
-        <Plus size={16} strokeWidth={3} /> Iniciar Nova Engenharia de Produção
-      </button>
+      {/* "Iniciar Nova Engenharia de Produção" removido — criar um modelo do zero por aqui não
+          faz sentido: a Ficha Técnica é montada sobre um modelo JÁ EXISTENTE (com cores/
+          variações cadastradas), nunca sobre um produto em branco sem nada pra sustentar o
+          lançamento de consumos. Cadastro de modelo novo continua em Produtos. */}
 
       {filteredProducts.length === 0 ? (
         <div
