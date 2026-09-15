@@ -2232,33 +2232,46 @@ export default function App() {
       view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Cadastre um Fornecedor', isComplete: people.some(p => p.isSupplier),
       group: 'shared',
       why: 'De quem você compra materiais ou produtos prontos — usado nas Compras e Ordens de Serviço.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'people.novo', text: 'Toque aqui para cadastrar um fornecedor novo.' },
-        { type: 'message', text: "Marque a opção \"Fornecedor\" e preencha nome e telefone." },
-        { type: 'highlight_tap', anchorKey: 'person.salvar', text: 'Toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Fornecedor é quem vende matéria-prima, produtos prontos ou serviços pra você — a mesma tela de Cadastros da etapa anterior, só que marcando "Fornecedor" em vez de "Cliente".',
+          'Toque em "Adicionar Novo Registro", marque "Fornecedor" e preencha nome e telefone. A mesma pessoa pode ser Cliente e Fornecedor ao mesmo tempo, sem problema.',
+        ],
+        fullParagraphs: [
+          'Fornecedores cadastrados aqui aparecem como opção na tela de Compras (pra registrar o que você comprou de matéria-prima ou produto pronto) e na Ordem de Serviço (quando o "fornecedor" é na verdade quem terceiriza um serviço pra você, ex.: costura, corte).',
+          'Se essa pessoa/empresa também compra de você, marque "Cliente" junto — não precisa cadastrar duas vezes.',
+        ],
+      },
     },
     {
       view: ViewType.ACCOUNTS, label: 'Cadastre uma Conta de Movimentação', isComplete: accounts.length > 0,
       group: 'vendas',
       why: 'Toda venda, compra ou pagamento precisa de uma conta (ex.: "Caixa", "Banco") pra entrar no financeiro.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'account.atalhos', text: 'Toque em "Caixa" ou "Banco" pra criar direto, sem digitar nada.' },
-        { type: 'message', text: 'Se preferir um nome diferente, toque em "Nova Conta" e cadastre do seu jeito.' },
-        { type: 'highlight_tap', anchorKey: 'account.novo', text: 'Toque aqui para cadastrar uma conta nova.' },
-        { type: 'highlight_tap', anchorKey: 'account.salvar', text: 'Digite o nome e toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Conta de Movimentação é onde o dinheiro entra e sai — "Caixa" (dinheiro físico) ou "Banco" (conta bancária), por exemplo.',
+          'Toque em "Caixa" ou "Banco" nos atalhos pra criar na hora, sem digitar nada. Se quiser um nome diferente, toque em "Nova Conta".',
+        ],
+        fullParagraphs: [
+          'Toda Venda, Compra ou pagamento precisa apontar pra uma conta — é o que alimenta o Financeiro e o saldo consolidado que você vê no topo desta tela.',
+          'Pode cadastrar quantas quiser (ex.: "Caixa Loja", "Banco Principal", "Poupança") e transferir saldo entre elas a qualquer momento pelo botão "Transferir".',
+        ],
+      },
     },
     {
       view: ViewType.PAYMENT_METHODS, label: 'Cadastre um Meio de Recebimento', isComplete: paymentMethods.length > 0,
       group: 'vendas',
       why: 'Como o cliente paga (Pix, Dinheiro, Cartão...) — escolhido na hora de fechar cada venda.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'paymethod.atalhos', text: 'Toque em "Dinheiro" ou "Cartão" pra criar direto — pra "Chave Pix" só falta digitar sua chave de verdade.' },
-        { type: 'message', text: 'Se preferir outro nome, toque em "Adicionar Método" e cadastre do seu jeito.' },
-        { type: 'highlight_tap', anchorKey: 'paymethod.novo', text: 'Toque aqui para cadastrar um meio de recebimento novo.' },
-        { type: 'highlight_tap', anchorKey: 'paymethod.salvar', text: 'Digite o nome e toque aqui para salvar.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Meio de Recebimento é como o cliente paga — Pix, Dinheiro, Cartão. Escolhido na hora de fechar cada Venda.',
+          'Toque em "Dinheiro" ou "Cartão" nos atalhos pra criar na hora. Pra "Chave Pix", só falta digitar sua chave de verdade depois.',
+        ],
+        fullParagraphs: [
+          'Cada Venda pede um Meio de Recebimento antes de fechar — sem pelo menos um cadastrado, não dá pra concluir a primeira venda de teste (próxima etapa).',
+          'Pode cadastrar quantos precisar (ex.: "Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto") com nomes do seu jeito, tocando em "Adicionar Método".',
+        ],
+      },
     },
     // ProductFormView já tem seu próprio modo guiado campo-a-campo (isGuided/GUIDED_SECTIONS) —
     // só precisa ser ativado por este parâmetro, sem GuidedTourOverlay nenhum aqui.
@@ -2266,16 +2279,31 @@ export default function App() {
       view: ViewType.PRODUCT_FORM, params: { guided: true }, label: 'Crie seu primeiro Produto', isComplete: products.length > 0,
       group: 'shared',
       why: 'O cadastro guiado te leva campo a campo — referência, nome, cor, tamanhos e preço.',
+      intro: {
+        paragraphs: [
+          'Produto é o modelo que você vende — referência, nome, categoria, cor(es), tamanhos e preço.',
+          'Essa tela já tem um modo guiado próprio: vai te levando campo a campo, então é só seguir o que aparece na tela.',
+        ],
+        fullParagraphs: [
+          'O cadastro guiado usa as Categorias, Cores e Grades que você já cadastrou nas etapas anteriores — se pulou alguma delas, ainda dá pra criar uma nova direto daqui, sem precisar voltar.',
+          'Depois de criado, esse Produto já aparece como opção pra escolher na próxima etapa (Venda) e em qualquer Compra ou Ordem de Serviço futura.',
+        ],
+      },
     },
     {
       view: ViewType.SALE_FORM, label: 'Cadastre uma Venda', isComplete: sales.length > 0,
       group: 'vendas',
       why: 'A prova de que está tudo funcionando: escolher cliente, produto e forma de pagamento, do jeito que você vai fazer todo dia.',
-      guideSteps: [
-        { type: 'highlight_tap', anchorKey: 'saleForm.cliente', text: 'Selecione o cliente. Não tem nenhum ainda? Toque em "Cadastrar agora" logo abaixo do campo.' },
-        { type: 'message', text: 'Adicione os produtos tocando em "+ Modelo" e defina a forma de pagamento.' },
-        { type: 'highlight_tap', anchorKey: 'saleForm.finalizar', text: 'Toque aqui para concluir a venda. O estoque baixa automaticamente e a receita entra no financeiro.' },
-      ],
+      intro: {
+        paragraphs: [
+          'Essa é a última etapa — uma Venda de teste, pra confirmar que Cliente, Produto, Conta e Meio de Recebimento (das etapas anteriores) estão todos funcionando juntos.',
+          'Selecione o Cliente, toque em "Adicionar Produtos" pra escolher o modelo e a quantidade, defina a forma de pagamento e toque em "Concluir".',
+        ],
+        fullParagraphs: [
+          'Ao concluir, o estoque do produto baixa automaticamente e a receita entra no Financeiro na conta escolhida — é a prova de que o ciclo completo (cadastro → venda → financeiro) está funcionando.',
+          'Se não tiver nenhum Cliente/Produto cadastrado ainda, dá pra criar um novo sem sair desta tela, tocando em "Cadastrar agora" logo abaixo do campo correspondente.',
+        ],
+      },
     },
   ];
 
@@ -6229,6 +6257,7 @@ export default function App() {
               firebaseService.deleteDocument("paymentMethods", id);
             }}
             isDarkMode={isDarkMode}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.PAYMENT_METHODS}
           />
         );
       case ViewType.REPORTS:
@@ -7548,6 +7577,7 @@ export default function App() {
             }}
             isDarkMode={isDarkMode}
             modulesConfig={modulesConfig}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.ACCOUNTS}
           />
         );
       case ViewType.STOCK:
@@ -7858,6 +7888,7 @@ export default function App() {
             onCancel={goBack}
             modulesConfig={modulesConfig}
             isDarkMode={isDarkMode}
+            guideActive={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.SALE_FORM}
           />
         );
       case ViewType.PRODUCTION_MENU:
@@ -9124,9 +9155,29 @@ export default function App() {
   // "Menu" pra expandir de novo continua funcionando normalmente — é a própria forma de
   // "decidir abandonar a configuração e sair" descrita pelo Tiago. Termina/abandona o
   // assistente → onboardingActive vira false → volta a minimizar como estava antes sozinho.
+  // Etapa "Crie seu primeiro Produto" é exceção: em vez da barra do Assistente, entrega o
+  // usuário pro tutorial próprio de 9 passos que o ProductFormView já tem (Foto → Tipo de Venda
+  // → ... → Variações, ver isGuided/GUIDED_SECTIONS lá) — "um tutorial à parte", como pediu o
+  // Tiago, em vez de duas barras de progresso empilhadas (a do Assistente embaixo + a do
+  // Cadastro Guiado em cima) competindo pela mesma etapa. Por isso o <nav> NÃO minimiza aqui —
+  // ver handleOnboardingAdvance mais abaixo, que avança sozinho pra Etapa 13 assim que o
+  // produto é salvo, sem precisar do botão "Continuar" do Assistente (que fica escondido).
+  const isOnboardingOnProductStep = onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.PRODUCT_FORM;
   useEffect(() => {
-    setNavMinimized(onboardingActive || visualSetupActive);
-  }, [onboardingActive, visualSetupActive]);
+    setNavMinimized((onboardingActive && !isOnboardingOnProductStep) || visualSetupActive);
+  }, [onboardingActive, visualSetupActive, isOnboardingOnProductStep]);
+
+  // Sem o botão "Continuar" do Assistente visível nesta etapa (ver acima), o avanço pra Etapa 13
+  // precisa ser automático: assim que o tutorial de 9 passos salva o primeiro produto (borda de
+  // subida 0 → >0, só enquanto essa etapa está ativa), segue sozinho pra próxima.
+  const prevProductsCountRef = useRef(products.length);
+  useEffect(() => {
+    const wasEmpty = prevProductsCountRef.current === 0;
+    prevProductsCountRef.current = products.length;
+    if (isOnboardingOnProductStep && wasEmpty && products.length > 0) {
+      handleOnboardingAdvance();
+    }
+  }, [products.length, isOnboardingOnProductStep]);
 
   // Popup de introdução da etapa (OnboardingStepIntroPopup) — controlado aqui em vez de estado
   // interno do componente, porque o gatilho "?" que reabre a explicação mora dentro do pill

@@ -51,7 +51,7 @@ export default function OnboardingStepIntroPopup({ isDarkMode, stepIndex, totalS
 
         <div className="flex flex-col gap-3">
           {activeParagraphs.map((p, i) => (
-            <p key={i} className={`text-sm font-medium leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{p}</p>
+            <p key={i} className="text-[11px] font-medium tracking-wide leading-relaxed text-blue-950 dark:text-blue-300">{p}</p>
           ))}
         </div>
 

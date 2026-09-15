@@ -811,7 +811,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.17.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.18.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1362,7 +1362,7 @@ export default function SettingsView({
               <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 Encerrar Sessão?
               </h3>
-              <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
                 Você será desconectado. Seus dados ficam salvos na nuvem e estarão disponíveis no próximo acesso.
               </p>
             </div>
@@ -1405,7 +1405,7 @@ export default function SettingsView({
           >
             <div className="text-center">
               <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo</h3>
-              <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
                 Arraste o cursor até o cabeçalho parar exatamente abaixo da câmera/notch/barra de
                 status do seu aparelho — funciona tanto no Android quanto no iPhone, já que a
                 altura do recorte varia de modelo pra modelo. Também aceita valores negativos, pra
@@ -1489,7 +1489,7 @@ export default function SettingsView({
               <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 Ativar Desbloqueio Rápido?
               </h3>
-              <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
                 Confirme sua senha atual pra guardar o acesso com {enableFaceIdLabel} neste aparelho.
               </p>
             </div>
@@ -1548,7 +1548,7 @@ export default function SettingsView({
               <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 Desativar Desbloqueio Rápido?
               </h3>
-              <p className="text-xs text-slate-400 font-bold mt-2 leading-relaxed">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
                 A senha guardada neste aparelho pra Face ID/Touch ID será esquecida. Você pode ativar de novo a qualquer momento na tela de login.
               </p>
             </div>

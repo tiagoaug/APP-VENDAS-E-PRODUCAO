@@ -18,6 +18,7 @@ import { Camera } from 'lucide-react';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
+import GuidePulseDot from '../components/GuidePulseDot';
 import { toast } from '../utils/toast';
 import { mergeProductionOrderItems } from '../utils/productionOrderMerge';
 import { reconcileLineIds } from '../utils/lineIdentity';
@@ -77,9 +78,11 @@ interface SaleFormViewProps {
   // (firebaseService.saveDocument('people', ...)), só que aqui o id retornado é usado pra
   // selecionar o cliente recém-criado automaticamente.
   onQuickAddPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
+  // Bolinha pulsante em Cliente/"+ Modelo"/Finalizar, ver Etapa 13 do Assistente de Configuração.
+  guideActive?: boolean;
 }
 
-export default function SaleFormView({ saleId, initialParams, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, onSepararCaixas, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [], onQuickAddPerson }: SaleFormViewProps) {
+export default function SaleFormView({ saleId, initialParams, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, onSepararCaixas, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [], onQuickAddPerson, guideActive }: SaleFormViewProps) {
   const sellerCollaborators = useMemo(() => collaborators.filter(c => c.isSeller), [collaborators]);
   const hasProduction = modulesConfig.production;
   // Refinamento por função dentro do setor Vendas (ver taskPermissions em Collaborator) — 'Vender'
@@ -1506,7 +1509,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
 
           {/* Cliente */}
           <div className="relative">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Cliente</label>
+            <label className="flex items-center gap-1.5 text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 tracking-widest leading-none">Cliente {guideActive && <GuidePulseDot show />}</label>
             <div data-guide-anchor="saleForm.cliente">
               <ComboBox
                 options={people.filter(p => p.isCustomer).map(p => ({ id: p.id, name: p.name }))}
@@ -1814,7 +1817,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
         )}
 
         <div className="mb-4 px-2">
-            <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">Cesta de Itens</h3>
+            <h3 className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">Cesta de Itens {guideActive && <GuidePulseDot show />}</h3>
             <p className="text-[8px] text-slate-300 font-bold uppercase tracking-widest mt-1">Selecione os produtos e variações</p>
         </div>
 
@@ -3548,6 +3551,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
               className={`w-full xl:flex-1 h-12 px-2 rounded-full text-white font-black uppercase tracking-tight text-[11px] flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 ${isSaving ? 'bg-slate-500 cursor-wait' : 'bg-indigo-600 active:bg-indigo-700 hover:bg-indigo-500'}`}
             >
               <Save size={16} strokeWidth={3} className={`shrink-0 ${isSaving ? 'animate-spin' : ''}`} /> <span className="text-center leading-none mt-0.5">{isSaving ? 'Salvando...' : status === SaleStatus.QUOTE ? 'Salvar' : 'Concluir'}</span>
+              {guideActive && <span className="ml-0.5"><GuidePulseDot show /></span>}
             </button>
             {hasProduction && saleId && status === SaleStatus.SALE && (
               <button

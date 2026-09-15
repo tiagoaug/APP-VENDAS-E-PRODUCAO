@@ -6,6 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import PaymentCardModal from '../components/PaymentCardModal';
 import PixIcon from '../components/icons/PixIcon';
 import { toast } from '../utils/toast';
+import GuidePulseDot from '../components/GuidePulseDot';
 
 interface PaymentMethodsViewProps {
   methods: PaymentMethod[];
@@ -18,9 +19,11 @@ interface PaymentMethodsViewProps {
   // (Dinheiro, Cartão); Pix sempre precisa da chave de verdade, então abre o modal (onAdd).
   onQuickAdd: (name: string) => void;
   isDarkMode: boolean;
+  // Bolinha pulsante nos atalhos "Dinheiro"/"Cartão", ver Etapa 11 do Assistente de Configuração.
+  guideActive?: boolean;
 }
 
-export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, onQuickAdd, isDarkMode }: PaymentMethodsViewProps) {
+export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, onQuickAdd, isDarkMode, guideActive }: PaymentMethodsViewProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [viewingMethod, setViewingMethod] = useState<PaymentMethod | null>(null);
@@ -79,7 +82,7 @@ export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, o
         </div>
         {methods.length === 0 && (
           <div data-guide-anchor="paymethod.atalhos" className="flex flex-col gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Atalhos — sem digitar nada</span>
+            <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Atalhos — sem digitar nada {guideActive && <GuidePulseDot show />}</span>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"

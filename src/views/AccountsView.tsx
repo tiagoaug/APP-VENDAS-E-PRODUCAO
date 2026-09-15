@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Account, AccountType, AppModulesConfig } from '../types';
 import { Plus, Wallet, Edit, Trash2, ArrowRightLeft, Search, RefreshCcw, DollarSign, Building2, Landmark, Banknote, User, Star } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
+import GuidePulseDot from '../components/GuidePulseDot';
 
 interface AccountsViewProps {
   accounts: Account[];
@@ -15,9 +16,11 @@ interface AccountsViewProps {
   onTransfer: () => void;
   isDarkMode: boolean;
   modulesConfig: AppModulesConfig;
+  // Bolinha pulsante nos atalhos "Caixa"/"Banco", ver Etapa 10 do Assistente de Configuração.
+  guideActive?: boolean;
 }
 
-export default function AccountsView({ accounts, onAdd, onQuickAdd, onEdit, onDelete, onAdjust, onTransfer, isDarkMode, modulesConfig }: AccountsViewProps) {
+export default function AccountsView({ accounts, onAdd, onQuickAdd, onEdit, onDelete, onAdjust, onTransfer, isDarkMode, modulesConfig, guideActive }: AccountsViewProps) {
   const visibleAccounts = accounts.filter(a => {
     if (a.type === AccountType.PERSONAL && !modulesConfig?.personal) return false;
     return true;
@@ -93,7 +96,7 @@ export default function AccountsView({ accounts, onAdd, onQuickAdd, onEdit, onDe
           a pessoa já entendeu o fluxo e prefere o botão normal (evita poluir a tela). */}
       {accounts.length === 0 && (
         <div data-guide-anchor="account.atalhos" className="flex flex-col gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Atalhos — sem digitar nada</span>
+          <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Atalhos — sem digitar nada {guideActive && <GuidePulseDot show />}</span>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

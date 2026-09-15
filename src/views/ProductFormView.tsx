@@ -14,7 +14,7 @@ import EngineeringEditor from '../components/EngineeringEditor';
 import ProductCostSummaryModal from '../components/ProductCostSummaryModal';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
-import StepWizardBar from '../components/StepWizardBar';
+import GuidePulseDot from '../components/GuidePulseDot';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import { uploadProductPhoto } from '../utils/uploadProductPhoto';
@@ -301,9 +301,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [wholesaleSizeFrom, setWholesaleSizeFrom] = useState<string>(existingProduct?.wholesaleSizeFrom || '');
   const [wholesaleSizeTo, setWholesaleSizeTo] = useState<string>(existingProduct?.wholesaleSizeTo || '');
 
-  // Cadastro Guiado — só faz sentido criando um modelo do zero (nunca editando um já
-  // existente); "Encerrar assistente" na barra só sai do modo guiado, não do formulário.
-  const [guidedDismissed, setGuidedDismissed] = useState(false);
   // Dica de "Componentes do Cabedal" — some com o X e não volta mais neste aparelho (mesmo
   // padrão de preferência local já usado noutras telas, ex.: StockGlanceView).
   const [showCuttingPiecesHint, setShowCuttingPiecesHint] = useState(() => {
@@ -313,9 +310,13 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     setShowCuttingPiecesHint(false);
     try { localStorage.setItem('hint_cutting_pieces_dismissed', '1'); } catch { /* ignore */ }
   };
-  const [guidedStepIndex, setGuidedStepIndex] = useState(0);
-  const isGuided = guided && !existingProduct && !guidedDismissed;
-  const showSection = (key: GuidedSectionKey) => !isGuided || GUIDED_SECTIONS[guidedStepIndex] === key;
+  // Cadastro Guiado — antes escondia seção por seção (só mostrava uma de cada vez, atrás de
+  // uma barra própria "Cadastro Guiado · Etapa X de 9" com Voltar/Pular/Continuar). Tiago pediu
+  // pra tirar essa barra (duplicava a do Assistente de Configuração, que já cobre essa etapa
+  // por fora) e guiar só com bolinha vermelha pulsante nos campos, igual o resto do app — o
+  // formulário inteiro aparece de uma vez, `showSection` sempre libera tudo agora.
+  const isGuided = guided && !existingProduct;
+  const showSection = (_key: GuidedSectionKey) => true;
 
   // Scroll to top when variation is opened or modal toggled
   useEffect(() => {
@@ -666,69 +667,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
     updateVariation(variationIdx, { consumptions: newConsumptions });
   };
-
-  const guidedSteps: { key: GuidedSectionKey; label: string; description: string; isComplete: boolean }[] = [
-    {
-      key: 'foto', label: 'Adicione uma foto (opcional)',
-      description: 'Uma foto ajuda a reconhecer o modelo rapidinho na lista de produtos. Pode pular esse passo e adicionar depois, a qualquer momento.',
-      isComplete: true,
-    },
-    {
-      key: 'tipoVenda', label: 'Como você vende esse modelo?',
-      description: 'Escolha se esse modelo é vendido no Atacado (caixa fechada, com grade de tamanhos), no Varejo (par avulso) ou nos dois formatos.',
-      isComplete: saleTypes.length > 0,
-    },
-    {
-      key: 'status', label: 'Esse modelo está em uso?',
-      description: 'Diz se esse modelo está disponível pra compra e venda agora, ou se já saiu de linha / parou de ser vendido.',
-      isComplete: true,
-    },
-    {
-      key: 'referencia', label: 'Referência interna',
-      description: 'O código curto que você usa pra identificar esse modelo — geralmente o mesmo código do fornecedor. Nomes curtos funcionam melhor em telas pequenas.',
-      isComplete: reference.trim() !== '',
-    },
-    {
-      key: 'nome', label: 'Marca e Modelo',
-      description: 'Opcional — escolha a marca e o modelo (cadastros em Ficha do Produto > Marcas/Modelos). O nome que aparece nas listas e relatórios vem do Modelo escolhido; sem modelo, usa a referência.',
-      isComplete: true,
-    },
-    {
-      key: 'preco', label: 'Precificação de compra e venda',
-      description: 'Quanto você paga (custo) e quanto cobra (venda) por esse modelo — por caixa e por par, no caso de Atacado. Todos os valores aqui são obrigatórios.',
-      isComplete: (parseFloat(costPrice as string) || 0) > 0 && (parseFloat(salePrice as string) || 0) > 0
-        && (type !== SaleType.WHOLESALE || ((parseFloat(unitCostPrice as string) || 0) > 0 && (parseFloat(unitSalePrice as string) || 0) > 0)),
-    },
-    {
-      key: 'categoria', label: 'Categoria do produto',
-      description: 'Agrupa esse modelo dentro de uma categoria já cadastrada, pra facilitar filtros e relatórios depois.',
-      isComplete: true,
-    },
-    {
-      key: 'fornecedor', label: 'Fornecedor principal',
-      description: 'De quem você compra esse modelo — usado nos relatórios de compra e na ficha do produto.',
-      isComplete: true,
-    },
-    {
-      key: 'variacoes', label: 'Cores e variações',
-      description: 'Cadastre cada cor que esse modelo tem disponível, uma de cada vez. Toque em "Adicionar Cor" pra cada nova variação.',
-      isComplete: variations.length > 0,
-    },
-  ];
-
-  const handleGuidedAdvance = () => {
-    const next = guidedStepIndex + 1;
-    // Último passo: sem "Continuar" — o cadastro se conclui pelos botões de Salvar do rodapé.
-    if (next >= guidedSteps.length) return;
-    setGuidedStepIndex(next);
-  };
-
-  const handleGuidedBack = () => {
-    if (guidedStepIndex === 0) return;
-    setGuidedStepIndex(guidedStepIndex - 1);
-  };
-
-  const handleGuidedDismiss = () => setGuidedDismissed(true);
 
   if (activeVariationIndex !== null) {
     const v = variations[activeVariationIndex];
@@ -2193,25 +2131,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         <div className={`p-4 sm:p-6 rounded-[2rem] border flex flex-col gap-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
 
           {isGuided && (
-            <StepWizardBar
-              isDarkMode={isDarkMode}
-              title="Cadastro Guiado"
-              stepIndex={guidedStepIndex + 1}
-              totalSteps={guidedSteps.length}
-              isComplete={guidedSteps[guidedStepIndex].isComplete}
-              onContinue={handleGuidedAdvance}
-              onSkipStep={handleGuidedAdvance}
-              onDismiss={handleGuidedDismiss}
-              onBack={handleGuidedBack}
-              canGoBack={guidedStepIndex > 0}
-            />
-          )}
-
-          {isGuided && (
-            <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-500 text-white">
-              <Info size={18} className="shrink-0 mt-0.5" />
-              <p className="text-xs font-bold leading-relaxed">
-                {guidedSteps[guidedStepIndex].description}
+            <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-rose-50 dark:bg-rose-500/10">
+              <span className="mt-0.5"><GuidePulseDot show /></span>
+              <p className="text-xs font-medium leading-relaxed text-rose-700 dark:text-rose-300">
+                Cadastro Guiado: siga as bolinhas vermelhas pulsantes — elas marcam os campos sugeridos pra criar seu primeiro produto, na ordem que faz mais sentido preencher.
               </p>
             </div>
           )}
@@ -2220,6 +2143,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           {showSection('foto') && (
           <div className="flex justify-center">
             <label className="relative cursor-pointer group" title="Toque para adicionar foto do produto">
+              {isGuided && <span className="absolute -top-1 -right-1 z-10"><GuidePulseDot show /></span>}
               <div className={`w-24 h-24 rounded-3xl overflow-hidden border-2 flex items-center justify-center transition-all ${photoUrl ? 'border-indigo-300 dark:border-indigo-600' : 'border-dashed border-slate-200 dark:border-slate-700'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 {photoUrl
                   ? <img src={photoUrl} alt="Foto do produto" className="w-full h-full object-cover" />
@@ -2340,7 +2264,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               pro produto inteiro (senão misturava fotos de cores diferentes no catálogo). */}
 
           {module === 'SALES' && showSection('tipoVenda') && (
-            <p className="text-[10px] font-bold text-slate-400 px-1 -mb-1">Como você vende esse produto? Escolha como desejar — pode escolher mais de uma opção.</p>
+            <p className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 px-1 -mb-1">Como você vende esse produto? Escolha como desejar — pode escolher mais de uma opção. {isGuided && <GuidePulseDot show />}</p>
           )}
 
           {module === 'SALES' && showSection('tipoVenda') && (
@@ -2408,7 +2332,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
             {module === 'SALES' && showSection('referencia') && (
               <div>
-                <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
+                <label className="flex items-center gap-1.5 text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 tracking-wider">Referência Interna {isGuided && <GuidePulseDot show />}</label>
                 <input
                   type="text"
                   placeholder="Ex: SNK-102"
@@ -2563,8 +2487,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     {saleTypes.includes(SaleType.WHOLESALE) ? <Package size={24} strokeWidth={2.5} /> : <Tag size={24} strokeWidth={2.5} />}
                   </div>
                   <div>
-                    <h4 className={`text-[11px] font-black uppercase tracking-[0.2em] ${saleTypes.includes(SaleType.WHOLESALE) ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
-                      Área de Precificação de Compra e Venda
+                    <h4 className={`flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.2em] ${saleTypes.includes(SaleType.WHOLESALE) ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                      Área de Precificação de Compra e Venda {isGuided && <GuidePulseDot show />}
                     </h4>
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
                       {saleTypes.includes(SaleType.WHOLESALE) ? 'Precificação por grade fechada' : 'Precificação por par individual'}
@@ -2852,7 +2776,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {showSection('fornecedor') && (
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Fornecedor Principal</label>
+                    <label className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 tracking-wider">Fornecedor Principal {isGuided && <GuidePulseDot show />}</label>
                     <ComboBox
                       options={suppliers.map(s => ({ id: s.id, name: s.name }))}
                       value={supplierId}
@@ -2865,7 +2789,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   )}
                   {showSection('categoria') && (
                   <div>
-                    <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria do Produto</label>
+                    <label className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 tracking-wider">Categoria do Produto {isGuided && <GuidePulseDot show />}</label>
                     <ComboBox
                       options={[{ id: '', name: 'Nenhum' }, ...productCategories.map(c => ({ id: c.id, name: c.name }))]}
                       value={categoryId}
@@ -3217,10 +3141,11 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             <button
               onClick={addVariation}
               data-guide-anchor="productForm.adicionarCor"
-              className="flex items-center justify-center gap-2 text-[10px] bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+              className="relative flex items-center justify-center gap-2 text-[10px] bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
               aria-label="Adicionar nova variação de cor"
               title="Adicionar Cor"
             >
+              {isGuided && <span className="absolute -top-1 -right-1"><GuidePulseDot show /></span>}
               <Plus size={16} strokeWidth={3} /> Adicionar Cor
             </button>
           </div>
