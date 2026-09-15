@@ -339,7 +339,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
           </div>
           <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Central de Módulos</h2>
         </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed italic">
+        <p className="text-[11px] font-medium tracking-wide leading-relaxed text-blue-950 dark:text-blue-300">
           Configure quais áreas do sistema estarão ativas. O programa se adapta automaticamente para ocultar o que você não usa.
         </p>
       </header>
@@ -374,7 +374,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
               <TrialCountdownBadge endsAt={module.trialEndsAt} isDarkMode={isDarkMode} />
             )}
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed mb-6 flex-1">
+            <p className="text-[11px] font-medium tracking-wide leading-relaxed mb-6 flex-1 text-blue-950 dark:text-blue-300">
               {module.description}
             </p>
 
@@ -431,7 +431,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
 
       <div className={`p-8 rounded-[3rem] border-2 border-dashed ${isDarkMode ? 'border-slate-800' : 'border-slate-100'} text-center`}>
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Configuração do Sistema</p>
-        <p className="text-xs text-slate-400 font-medium italic max-w-md mx-auto leading-relaxed">
+        <p className="text-[11px] font-medium tracking-wide max-w-md mx-auto leading-relaxed text-blue-950 dark:text-blue-300">
           As alterações feitas aqui são aplicadas instantaneamente e sincronizadas com sua conta em todos os dispositivos.
         </p>
       </div>
