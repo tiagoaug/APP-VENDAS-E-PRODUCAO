@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { Check, X, ArrowLeft, ArrowRight } from 'lucide-react';
 
@@ -14,14 +15,20 @@ interface StepWizardBarProps {
   canGoBack?: boolean;
 }
 
+// Telas como Embalagens/Unidades (dentro de Configuração de Produção) abrem um Modal PRÓPRIO
+// por cima (zIndex 60000) quando o passo do Assistente aponta pra elas — como este componente
+// antes renderizava dentro do Modal global do Assistente (zIndex 50000), esse Modal interno
+// cobria a barra inteira e escondia o "Continuar" depois de completar a etapa (usuário ficava
+// sem noção de como avançar). Virou um portal fixo com zIndex bem alto, sempre visível por cima
+// de qualquer modal aninhado, independente da tela do passo atual.
 export default function StepWizardBar({
   isDarkMode, title, stepIndex, totalSteps, isComplete, onContinue, onSkipStep, onDismiss, onBack, canGoBack,
 }: StepWizardBarProps) {
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0, y: -12 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`rounded-3xl border shadow-sm mb-4 overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+      className={`fixed top-3 inset-x-0 z-[90000] mx-auto w-[calc(100%-1.5rem)] max-w-md rounded-3xl border shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
     >
       <div className="flex items-center justify-between px-4 pt-3">
         <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -84,6 +91,7 @@ export default function StepWizardBar({
           </button>
         </div>
       </div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 }
