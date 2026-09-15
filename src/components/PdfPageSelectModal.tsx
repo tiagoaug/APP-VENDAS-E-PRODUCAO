@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, FileStack, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Crop, Scissors, RotateCcw, CheckCircle2, Save, Trash2, X, Hand, Wand2 } from 'lucide-react';
+import { Check, FileStack, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Crop, Scissors, RotateCcw, CheckCircle2, Save, Trash2, X, Hand, Wand2, SplitSquareHorizontal, File } from 'lucide-react';
 import Modal from './Modal';
 import { toast } from '../utils/toast';
 import CropEditor, { CropRect, FULL_CROP, CENTER_CROP, loadImageEl } from './CropEditor';
+import GuidePulseDot from './GuidePulseDot';
 import { PDF_RENDER_SCALE } from '../utils/labelFileImport';
 
 export type { CropRect };
@@ -229,7 +230,7 @@ export default function PdfPageSelectModal({
   // (presets prontos) — pra separar visualmente os dois jeitos de recortar. Manual começa
   // aberto (é o caminho mais comum: abrir a área e ajustar); Automático fechado.
   const [manualCropSectionOpen, setManualCropSectionOpen] = useState(true);
-  const [autoCropSectionOpen, setAutoCropSectionOpen] = useState(false);
+  const [autoCropSectionOpen, setAutoCropSectionOpen] = useState(true);
   // Acordeão das 3 formas de agrupar o recorte (Mesmo pra todas/Ímpar-par/Página a página) —
   // é a primeira decisão do card, então começa aberto.
   const [cropModeSectionOpen, setCropModeSectionOpen] = useState(true);
@@ -363,11 +364,13 @@ export default function PdfPageSelectModal({
       active ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
     }`;
 
-  // Botões empilhados (um abaixo do outro, em vez de lado a lado) — usados nos grupos "Opções
-  // de Recorte" e "Recorte Automático". `w-full` (não `flex-1`) porque dentro de flex-col
-  // flex-1 esticaria a ALTURA de cada um pra dividir o espaço, não a largura.
+  // Botões empilhados (um abaixo do outro, em vez de lado a lado) — usados no grupo "Opções
+  // de Recorte". `w-full` (não `flex-1`) porque dentro de flex-col flex-1 esticaria a ALTURA de
+  // cada um pra dividir o espaço, não a largura. Grid de 3 colunas (ícone | texto | espaçador
+  // do mesmo tamanho do ícone) — o ícone fica preso na lateral do card, mas o texto continua
+  // centralizado de verdade (a coluna vazia da direita compensa a largura do ícone à esquerda).
   const stackedCls = (active: boolean) =>
-    `w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left transition-all ${
+    `w-full grid grid-cols-[16px_1fr_16px] items-center gap-2 px-3 py-2.5 rounded-xl transition-all ${
       active ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
     }`;
   // Legenda de 1 linha explicando cada função — mesmo padrão de subtítulo (11px, azul escuro)
@@ -623,7 +626,9 @@ export default function PdfPageSelectModal({
                         data-guide-anchor="pdfPageSelect.recorteUnico"
                         className={stackedCls(!splitOddEven && !pageSpecificMode)}
                       >
-                        Mesmo recorte pra todas
+                        <FileStack size={16} className={!splitOddEven && !pageSpecificMode ? 'text-white' : 'text-indigo-500'} />
+                        <span className="text-center text-[11px] font-bold">Mesmo recorte pra todas</span>
+                        <span />
                       </button>
                       <button
                         type="button"
@@ -631,7 +636,9 @@ export default function PdfPageSelectModal({
                         data-guide-anchor="pdfPageSelect.recorteSeparado"
                         className={stackedCls(splitOddEven)}
                       >
-                        Recorte diferente ímpar/par
+                        <SplitSquareHorizontal size={16} className={splitOddEven ? 'text-white' : 'text-amber-500'} />
+                        <span className="text-center text-[11px] font-bold">Recorte diferente ímpar/par</span>
+                        <span />
                       </button>
                       <button
                         type="button"
@@ -639,7 +646,9 @@ export default function PdfPageSelectModal({
                         data-guide-anchor="pdfPageSelect.recortePaginaAPagina"
                         className={stackedCls(!splitOddEven && pageSpecificMode)}
                       >
-                        Recorte página a página
+                        <File size={16} className={!splitOddEven && pageSpecificMode ? 'text-white' : 'text-emerald-500'} />
+                        <span className="text-center text-[11px] font-bold">Recorte página a página</span>
+                        <span />
                       </button>
                     </div>
                   )}
@@ -672,8 +681,9 @@ export default function PdfPageSelectModal({
                   {/* Anterior/Próxima — antes só aparecia com 2+ páginas no grupo; agora fica
                       sempre visível (os botões desabilitam sozinhos nas pontas, inclusive quando
                       só há 1 página no grupo) pra não sumir a navegação, e ganhou uma segunda
-                      linha embaixo da contagem mostrando se a página atual é Ímpar ou Par. */}
-                  <div className="flex items-center justify-between gap-2">
+                      linha embaixo da contagem mostrando se a página atual é Ímpar ou Par.
+                      Virou card próprio (antes era só a fileira solta) pra destacar do resto. */}
+                  <div className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-white border-slate-100'}`}>
                     <button
                       type="button"
                       disabled={refPos <= 0}
@@ -827,10 +837,14 @@ export default function PdfPageSelectModal({
                           type="button"
                           onClick={() => { setLastCropPreset('fit'); setAppliedPresetId(null); applyFitToLabel(referencePage, setEditingCrop); }}
                           data-guide-anchor="pdfPageSelect.presetAjustarEtiqueta"
-                          className={`w-full flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-xl text-left transition-all ${lastCropPreset === 'fit' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                          className={`relative w-full flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-xl text-left transition-all ${lastCropPreset === 'fit' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                         >
+                          <span className="absolute -top-1.5 right-3">
+                            <GuidePulseDot show />
+                          </span>
                           <span className="text-[9px] font-black uppercase tracking-widest">Ajustar à etiqueta</span>
                           <span className={`text-[8px] font-bold normal-case ${lastCropPreset === 'fit' ? 'text-white/80' : 'text-slate-400'}`}>Detecta e recorta só o bloco impresso, ignorando a margem em branco ao redor.</span>
+                          <span className={`text-[8px] font-bold normal-case animate-pulse ${lastCropPreset === 'fit' ? 'text-white' : 'text-emerald-500'}`}>Sugestão: comece por aqui — resolve a maioria das etiquetas sem precisar arrastar nada.</span>
                         </button>
                       </div>
                     )}
