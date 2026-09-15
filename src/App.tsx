@@ -1992,7 +1992,7 @@ export default function App() {
   // GuidePulseDot.tsx) nos campos daquele passo específico — cada view interpreta as chaves à
   // sua maneira (CompanyProfileView usa 'name'/'phone'). Passos que ainda não foram convertidos
   // continuam em guideSteps (GuidedTourOverlay) normalmente.
-  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; intro?: { paragraphs: string[]; fullParagraphs?: string[] }; guidePulseFields?: string[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas' }[] = [
+  const onboardingSteps: { view: ViewType; label: string; why: string; isComplete: boolean; params?: any; guideSteps?: JourneyStep[]; intro?: { paragraphs: string[]; fullParagraphs?: string[] }; guidePulseFields?: string[]; productionSubScreen?: ProductionScreenType; group: 'shared' | 'fabricacao' | 'vendas'; visualGuideTarget?: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones' }[] = [
     {
       // Todos os campos do CompanyProfile são opcionais (até o CNPJ/CPF é marcado como tal na
       // tela) — completo assim que qualquer um deles for preenchido, sem exigir um campo
@@ -2200,6 +2200,89 @@ export default function App() {
         { type: 'message', text: 'Adicione os produtos tocando em "+ Modelo" e defina a forma de pagamento.' },
         { type: 'highlight_tap', anchorKey: 'saleForm.finalizar', text: 'Toque aqui para concluir a venda. O estoque baixa automaticamente e a receita entra no financeiro.' },
       ],
+    },
+    // ── Configurações Visuais — continuação do mesmo Assistente depois dos 13 passos de
+    // cadastro, a pedido do Tiago ("além de configurações iniciais, vamos fazer as
+    // configurações visuais"). Sempre completos (isComplete: true) porque são só um tour
+    // guiado pelas opções de aparência, não um cadastro obrigatório — "Continuar" nunca fica
+    // travado aqui. Todos vivem dentro do mesmo popup "Acessibilidade" em Mais Opções
+    // (showA11y em SettingsView.tsx); `visualGuideTarget` diz qual seção abrir/pulsar em cada
+    // passo (ver useEffect de visualGuideTarget em SettingsView.tsx).
+    {
+      view: ViewType.SETTINGS, label: 'Ajuste o Espaço no Topo', isComplete: true,
+      group: 'shared',
+      why: 'Corrige o cabeçalho ficando atrás da câmera/notch em alguns aparelhos — um ajuste que só quem usa o app no dia a dia percebe se precisa.',
+      visualGuideTarget: 'topo',
+      intro: {
+        paragraphs: [
+          'Em Mais Opções → Acessibilidade e Personalização, toque em "Espaço no Topo" pra abrir um cursor de ajuste fino.',
+          'Se o cabeçalho do app estiver cobrindo a câmera/notch (ou sobrando espaço demais em cima), arraste até ficar certo pro SEU aparelho e toque em Salvar.',
+        ],
+        fullParagraphs: [
+          'Cada aparelho tem uma altura diferente de área de status (notch, Dynamic Island, câmera furo-na-tela) — não dá pra acertar um valor único que sirva pra todo mundo, por isso esse ajuste é manual.',
+          'O cursor vai de -40px (levanta o cabeçalho, pra quando o espaço padrão já é grande demais) até 80px (abaixa o cabeçalho, pra quando a área de status cobre parte dele). O valor em pixels aparece ao vivo numa prévia, junto com o botão "Salvar" pra travar o ajuste.',
+          'Se não notar nada de errado no seu aparelho, pode deixar como está (0px) e seguir em frente — é opcional.',
+        ],
+      },
+    },
+    {
+      view: ViewType.SETTINGS, label: 'Escolha um Tema', isComplete: true,
+      group: 'shared',
+      why: 'Muda a cor de destaque usada em botões, ícones e cabeçalhos por todo o app.',
+      visualGuideTarget: 'tema',
+      intro: {
+        paragraphs: [
+          'Dentro da Acessibilidade, toque em "Tema" pra abrir as opções de cor e escolher a que combina com sua marca.',
+        ],
+        fullParagraphs: [
+          'O Tema muda a cor de destaque usada em botões principais, ícones ativos e no gradiente do cabeçalho/menu — não muda o Modo Escuro/Claro, que é um ajuste separado (o botão de sol/lua no topo desta mesma tela).',
+          'Pode trocar quantas vezes quiser, sem afetar nenhum dado cadastrado — é só uma preferência visual, salva neste aparelho.',
+        ],
+      },
+    },
+    {
+      view: ViewType.SETTINGS, label: 'Escolha uma Fonte', isComplete: true,
+      group: 'shared',
+      why: 'Muda a fonte usada em todo o app — só uma questão de gosto/legibilidade.',
+      visualGuideTarget: 'fonte',
+      intro: {
+        paragraphs: [
+          'Toque em "Fonte" pra escolher a fonte usada em todo o app.',
+        ],
+        fullParagraphs: [
+          'Só muda a aparência do texto (tipo de letra) — não afeta nada nos cadastros ou relatórios. Escolha a que for mais confortável de ler no seu aparelho.',
+        ],
+      },
+    },
+    {
+      view: ViewType.SETTINGS, label: 'Ajuste o Tamanho da Fonte', isComplete: true,
+      group: 'shared',
+      why: 'Deixa o texto maior ou menor em todo o app, sem precisar mexer na configuração de acessibilidade do próprio celular.',
+      visualGuideTarget: 'tamanho',
+      intro: {
+        paragraphs: [
+          'Toque em "Tamanho da Fonte" e escolha entre 80% e 110% — ajuda quem prefere um texto maior ou quer caber mais informação na tela.',
+        ],
+        fullParagraphs: [
+          'Esse ajuste é independente do tamanho de fonte do sistema operacional do celular — muda só dentro do app, sem afetar outros aplicativos.',
+          '100% é o padrão. Valores acima aumentam o texto (mais fácil de ler, cabe menos coisa por tela); valores abaixo diminuem (cabe mais informação, texto menor).',
+        ],
+      },
+    },
+    {
+      view: ViewType.SETTINGS, label: 'Personalize os Ícones do Menu', isComplete: true,
+      group: 'shared',
+      why: 'Escolhe entre ícones coloridos ou monocromáticos na barra de navegação de baixo.',
+      visualGuideTarget: 'icones',
+      intro: {
+        paragraphs: [
+          'Toque em "Ícones do Menu" pra escolher entre ícones coloridos (cada um com sua cor) ou monocromáticos (uma cor só, mais discreto).',
+        ],
+        fullParagraphs: [
+          'Esse é o último passo do Assistente de Configuração — depois dele, o app já está pronto do jeito que você preferir, tanto nos cadastros quanto na aparência.',
+          'Pode voltar em Mais Opções → Acessibilidade e Personalização a qualquer momento pra mudar qualquer uma dessas escolhas de novo.',
+        ],
+      },
     },
   ];
 
@@ -5752,6 +5835,7 @@ export default function App() {
             setHideFinancialValues={setHideFinancialValues}
             headerTopSpacePx={headerTopSpacePx}
             setHeaderTopSpacePx={setHeaderTopSpacePx}
+            visualGuideTarget={onboardingActive && onboardingSteps[onboardingStepIndex]?.view === ViewType.SETTINGS ? onboardingSteps[onboardingStepIndex]?.visualGuideTarget : undefined}
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
             onOpenProductCreationChoice={handleOpenProductCreationChoice}
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}

@@ -61,6 +61,7 @@ import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, 
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
 import { SALES_TRIAL_DAYS, PRODUCTION_TRIAL_DAYS, PERSONAL_TRIAL_DAYS } from '../constants';
 import AIAssistantSettings from '../components/AIAssistantSettings';
+import GuidePulseDot from '../components/GuidePulseDot';
 import BottomNavConfigModal from '../components/BottomNavConfigModal';
 import CustomPinKeypad from '../components/CustomPinKeypad';
 import { PIN_LENGTH } from '../utils/pinKeypad';
@@ -112,6 +113,10 @@ interface SettingsViewProps {
   // ajustado por um cursor, pra acertar a altura exata em qualquer aparelho.
   headerTopSpacePx?: number;
   setHeaderTopSpacePx?: (v: number) => void;
+  // Etapas de Configurações Visuais do Assistente de Configuração (continuação depois dos 13
+  // passos de cadastro, ver onboardingSteps em App.tsx) — diz qual seção de Acessibilidade
+  // abrir/pulsar automaticamente. undefined/null = Assistente não está numa dessas etapas.
+  visualGuideTarget?: 'topo' | 'tema' | 'fonte' | 'tamanho' | 'icones' | null;
   onOpenOnboardingWizard: () => void;
   onOpenProductCreationChoice: () => void;
   // Abre a Impressão de Etiquetas (Ablemark) — antes era um ícone fixo no topo do app; agora
@@ -148,6 +153,7 @@ export default function SettingsView({
   setHideFinancialValues,
   headerTopSpacePx = 0,
   setHeaderTopSpacePx,
+  visualGuideTarget,
   onOpenOnboardingWizard,
   onOpenProductCreationChoice,
   onOpenLabelPrintStudio,
@@ -220,6 +226,17 @@ export default function SettingsView({
   };
   const [showNavConfig, setShowNavConfig] = useState(false);
   const [showA11y, setShowA11y] = useState(false);
+  // Etapas de Configurações Visuais do Assistente — abre o popup de Acessibilidade sozinho e já
+  // expande a seção certa, em vez de depender da pessoa achar "Mais Opções → Acessibilidade"
+  // sozinha no meio do tour guiado.
+  useEffect(() => {
+    if (!visualGuideTarget) return;
+    setShowA11y(true);
+    if (visualGuideTarget === 'tema') setThemeSectionOpen(true);
+    if (visualGuideTarget === 'fonte') setFontSectionOpen(true);
+    if (visualGuideTarget === 'tamanho') setFontScaleSectionOpen(true);
+    if (visualGuideTarget === 'icones') setNavIconsSectionOpen(true);
+  }, [visualGuideTarget]);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [faceIdUnlockEnabled, setFaceIdUnlockEnabled] = useState(false);
@@ -788,7 +805,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.15.2</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.16.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -918,7 +935,7 @@ export default function SettingsView({
                       <Layout size={18} />
                     </div>
                     <div className="min-w-0">
-                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo</p>
+                      <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo {visualGuideTarget === 'topo' && <GuidePulseDot show />}</p>
                       <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Ajuste fino pra não ficar atrás da câmera/notch</p>
                     </div>
                   </div>
@@ -940,7 +957,7 @@ export default function SettingsView({
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-pink-400' : 'bg-pink-50 text-pink-500'}`}>
                       <Palette size={18} />
                     </div>
-                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tema</p>
+                    <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tema {visualGuideTarget === 'tema' && <GuidePulseDot show />}</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${themeSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -985,7 +1002,7 @@ export default function SettingsView({
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-blue-400' : 'bg-blue-50 text-blue-500'}`}>
                       <Type size={18} />
                     </div>
-                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fonte</p>
+                    <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fonte {visualGuideTarget === 'fonte' && <GuidePulseDot show />}</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -1023,7 +1040,7 @@ export default function SettingsView({
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-teal-400' : 'bg-teal-50 text-teal-500'}`}>
                       <Type size={18} />
                     </div>
-                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tamanho da Fonte ({fontScale}%)</p>
+                    <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tamanho da Fonte ({fontScale}%) {visualGuideTarget === 'tamanho' && <GuidePulseDot show />}</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontScaleSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -1061,7 +1078,7 @@ export default function SettingsView({
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
                       <Layout size={18} />
                     </div>
-                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ícones do Menu</p>
+                    <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ícones do Menu {visualGuideTarget === 'icones' && <GuidePulseDot show />}</p>
                   </div>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform ${navIconsSectionOpen ? 'rotate-180' : ''}`} />
                 </button>
