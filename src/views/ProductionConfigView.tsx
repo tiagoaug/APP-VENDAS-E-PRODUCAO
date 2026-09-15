@@ -4404,7 +4404,9 @@ function GenericConfigList({
                   </button>
                 </div>
               </div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} data-guide-anchor="pkg.capacidadeCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div>
+                <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-2">Quantos pares cabem nessa embalagem?</p>
+              </div>
 
               {/* Cor do badge de estoque (ex.: "12P") — escolhida aqui pra diferenciar de
                   relance, no Estoque, caixas de padrões diferentes (12 pares x 15 pares...). */}
@@ -4446,7 +4448,7 @@ function GenericConfigList({
                   {grids.filter(g => g.type === GridType.FORMA || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
                 <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-2">
-                  Escolha para qual Grade de Produção (Escalonamento) esta embalagem é o padrão de fabricação dos estoques. Produtos cadastrados com essa grade de produção usarão automaticamente esta embalagem para converter os pares produzidos em caixas no Estoque.
+                  Qual a numeração (grade) que vai nessa embalagem? Escolha a Grade de Produção (Escalonamento) que esta embalagem representa — produtos cadastrados com essa grade de produção usarão automaticamente esta embalagem para converter os pares produzidos em caixas no Estoque.
                 </p>
               </div>
 
@@ -4594,9 +4596,12 @@ function GenericConfigList({
                   </div>
                   {(editingItem?.metadata?.sizes || []).length > 0 && (
                     <div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}>
-                      <div className="flex items-center justify-between px-2">
-                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4>
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between px-2">
+                          <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4>
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span>
+                        </div>
+                        <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-2">Quantos pares de cada número vão nessa embalagem — a soma precisa bater com a Capacidade Total.</p>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                         {(editingItem?.metadata?.sizes || []).map(size => (
