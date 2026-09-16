@@ -9,6 +9,7 @@ import {
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { capacitorPreferencesPersistence } from './capacitorPreferencesPersistence';
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -25,15 +26,17 @@ export const storage = getStorage(app);
 // a tentar a próxima opção. Isso trava não só a checagem inicial de sessão, mas QUALQUER
 // operação de auth que dependa de persistência — inclusive um login ativo (e-mail/senha ou
 // Google), travando o botão sem erro nenhum (ver [[project_ios_wkwebview_auth_hang]] na
-// memória). Por isso, no iOS especificamente, usamos só `inMemoryPersistence` — não depende de
-// nenhuma API de storage do WebView, então não tem como travar dessa forma. O custo é não
-// lembrar o login entre reinícios do app no iOS (o usuário loga de novo a cada abertura), mas
-// isso é bem melhor que não conseguir logar de jeito nenhum. Android usa Chromium (sem esse
-// bug) e mantém a cadeia normal de fallback.
+// memória). Por isso, no iOS especificamente, usamos `capacitorPreferencesPersistence` (ver
+// capacitorPreferencesPersistence.ts) — uma persistência custom que salva a sessão via
+// `@capacitor/preferences` (ponte nativa direta, UserDefaults no iOS), sem tocar em NENHUMA API
+// de storage do WebView, então não tem como reproduzir o mesmo travamento, e ainda assim
+// sobrevive ao fechamento do app. `inMemoryPersistence` continua na cadeia só como último
+// fallback, caso a ponte nativa falhe por algum motivo. Android usa Chromium (sem esse bug) e
+// mantém a cadeia normal de fallback.
 const platform = Capacitor.getPlatform();
 export const auth = initializeAuth(app, {
   persistence: platform === 'ios'
-    ? [inMemoryPersistence]
+    ? [capacitorPreferencesPersistence, inMemoryPersistence]
     : platform === 'android'
       ? [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence]
       : [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
