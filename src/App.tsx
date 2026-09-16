@@ -1733,13 +1733,41 @@ export default function App() {
     // passo). Sem isso, `loading` fica true pra sempre e a tela de login nunca aparece. 8s é
     // tempo de sobra pro caso normal (Auth local, sem round-trip de rede) sem deixar quem cair
     // nesse bug esperando indefinidamente — pior caso, a pessoa só loga de novo.
+    // Diagnóstico temporário do bug "precisa logar de novo toda vez no iOS" — sem isso não dá
+    // pra saber, sem um Mac/Xcode plugado no aparelho, se (a) a sessão nem chegou a ser salva
+    // (bug na escrita, ver capacitorPreferencesPersistence.ts) ou (b) foi salva mas
+    // onAuthStateChanged nunca conseguiu restaurá-la a tempo (bug na leitura/refresh do token,
+    // possivelmente o mesmo tipo de travamento em rede/indexedDB do WKWebView já visto antes).
+    // Toast só no iOS, só nesse boot — remover depois de identificar a causa real.
+    const hasSavedSession = () => {
+      try {
+        return Object.keys(window.localStorage).some((k) => k.startsWith('firebase:authUser:'));
+      } catch {
+        return false;
+      }
+    };
+
     const timeoutId = setTimeout(() => {
       console.warn('[App] onAuthStateChanged não respondeu em 8s — liberando a tela de login mesmo assim.');
+      if (Capacitor.getPlatform() === 'ios') {
+        toast.show(
+          hasSavedSession()
+            ? 'DIAGNÓSTICO: sessão salva foi encontrada, mas travou ao restaurar (timeout 8s).'
+            : 'DIAGNÓSTICO: nenhuma sessão salva foi encontrada no aparelho.'
+        );
+      }
       setLoading(false);
     }, 8000);
 
     const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
       clearTimeout(timeoutId);
+      if (Capacitor.getPlatform() === 'ios' && !u) {
+        toast.show(
+          hasSavedSession()
+            ? 'DIAGNÓSTICO: sessão salva foi encontrada, mas o Firebase concluiu que não há usuário logado.'
+            : 'DIAGNÓSTICO: nenhuma sessão salva — login normal necessário.'
+        );
+      }
       setUser(u);
       setLoading(false);
     });

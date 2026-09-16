@@ -123,6 +123,19 @@ export default function LoginView() {
       } else if (auth.currentUser) {
         saveRecentAccount(auth.currentUser);
       }
+      // Diagnóstico temporário do bug "precisa logar de novo toda vez no iOS" — confirma se a
+      // escrita da sessão persistida realmente aconteceu logo após o login (ver
+      // capacitorPreferencesPersistence.ts / firebase.ts). Remover depois de identificar a causa.
+      if (Capacitor.getPlatform() === 'ios') {
+        setTimeout(() => {
+          try {
+            const found = Object.keys(window.localStorage).some((k) => k.startsWith('firebase:authUser:'));
+            toast.show(found ? 'DIAGNÓSTICO: sessão gravada com sucesso após login.' : 'DIAGNÓSTICO: login OK, mas sessão NÃO foi gravada no localStorage.');
+          } catch (e: any) {
+            toast.show('DIAGNÓSTICO: erro ao checar localStorage: ' + (e?.message || e));
+          }
+        }, 500);
+      }
     } catch (err: any) {
       if (err.code === 'auth/cancelled-popup-request') {
         setError('Login cancelado.');
