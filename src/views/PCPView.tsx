@@ -6615,7 +6615,7 @@ export default function PCPView({
                                           {/* Grade */}
                                           {szEntries.length > 0 && (
                                             <div className="flex flex-col gap-2">
-                                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Grade de Produção</p>
+                                              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Grade de Produção</p>
                                               <div className="flex flex-wrap gap-1.5 justify-center sm:justify-start px-2 py-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
                                                 {szEntries.map(([sz, s]) => (
                                                   <div key={sz} className={`flex flex-col items-center justify-center min-w-[32px] sm:min-w-[40px] px-2 py-1.5 rounded-xl border ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
@@ -6630,17 +6630,17 @@ export default function PCPView({
                                           {/* Infos do Pedido */}
                                           <div className="grid grid-cols-3 gap-4 px-2">
                                             <div>
-                                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Cliente</p>
+                                              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Cliente</p>
                                               <p className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase truncate">{f.order?.customerName || 'Estoque'}</p>
                                             </div>
                                             <div>
-                                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Entrega</p>
+                                              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Entrega</p>
                                               <p className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase">
                                                 {f.order?.deliveryDate ? new Date(f.order.deliveryDate).toLocaleDateString('pt-BR') : '-'}
                                               </p>
                                             </div>
                                             <div>
-                                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Total</p>
+                                              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Total</p>
                                               <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{f.si.qty} pares</p>
                                             </div>
                                           </div>
@@ -6715,7 +6715,7 @@ export default function PCPView({
                                           {/* Ordens de Serviço Vinculadas */}
                                           {linkedOSList.length > 0 && (
                                             <div className="flex flex-col gap-2">
-                                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Histórico de OS</p>
+                                              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Histórico de OS</p>
                                               <div className="flex flex-wrap gap-1.5 px-2 py-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
                                                 {linkedOSList.map((os: any) => {
                                                   const sec = sectors.find(s => s.id === os.sectorId);
@@ -6741,10 +6741,6 @@ export default function PCPView({
                                             label+botão que apertava/sobrepunha os botões lado a lado em
                                             telas estreitas). */}
                                           <div className="flex flex-col gap-2">
-                                            <div className="flex items-center justify-center gap-1.5">
-                                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Etiqueta Deste Pedido</span>
-                                            </div>
                                             <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
                                               <button type="button"
                                                 onClick={() => {
@@ -6752,31 +6748,32 @@ export default function PCPView({
                                                   if (batch.length > 0) openLabelPicker(batch, f.lot, null);
                                                 }}
                                                 data-guide-anchor="pcp.pedidoFichaImprimirEtiqueta"
-                                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 transition-all active:scale-95"
+                                                className="flex-1 grid grid-cols-[20px_1fr_20px] items-center gap-2 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 transition-all active:scale-95"
                                               >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-                                                Imprimir / Compartilhar
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                                <span className="text-center">Compartilhar Etiquetas</span>
+                                                <span />
                                               </button>
                                             </div>
 
-                                            <div className="flex items-center justify-center gap-1.5 mt-1">
-                                              <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-                                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ficha &amp; Setor</span>
-                                            </div>
-                                            <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                                            <div className="flex flex-col gap-1.5 mt-1">
                                               <button type="button"
                                                 onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: [f] })}
                                                 data-guide-anchor="pcp.pedidoFichaCompartilhar"
-                                                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-600 text-white hover:bg-slate-700'}`}
+                                                className={`w-full grid grid-cols-[20px_1fr_20px] items-center gap-2 py-3 px-3 rounded-xl shadow-sm border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
                                               >
-                                                <Share2 size={14} /> Compartilhar Ficha
+                                                <Share2 size={16} className="text-sky-600 dark:text-sky-400" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-center text-slate-700 dark:text-slate-200">Compartilhar Ficha</span>
+                                                <span />
                                               </button>
                                               <button type="button"
                                                 onClick={() => setManualSectorPicker({ fichas: [f] })}
                                                 data-guide-anchor="pcp.pedidoFichaMudarSetor"
-                                                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-violet-700 text-violet-100 hover:bg-violet-600' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
+                                                className={`w-full grid grid-cols-[20px_1fr_20px] items-center gap-2 py-3 px-3 rounded-xl shadow-sm border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
                                               >
-                                                <ArrowLeftRight size={14} /> Mudar Setor
+                                                <ArrowLeftRight size={16} className="text-violet-600 dark:text-violet-400" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-center text-slate-700 dark:text-slate-200">Mover de Setor</span>
+                                                <span />
                                               </button>
                                             </div>
                                             {/* Fracionar Pedido — só pra fichas sem OS pendente (fracionar uma
@@ -6785,9 +6782,11 @@ export default function PCPView({
                                               <button type="button"
                                                 onClick={() => handleOpenFractionModal({ lot: f.lot, si: f.si, siIdx: f.siIdx, product: f.product, variation: f.variation, orderItem: f.orderItem })}
                                                 data-guide-anchor="pcp.pedidoFichaFracionar"
-                                                className={`w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border ${isDarkMode ? 'border-amber-700/50 bg-amber-900/20 text-amber-400 hover:bg-amber-900/35' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                                                className={`w-full grid grid-cols-[20px_1fr_20px] items-center gap-2 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border ${isDarkMode ? 'border-amber-700/50 bg-amber-900/20 text-amber-400 hover:bg-amber-900/35' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
                                               >
-                                                <Scissors size={14} /> Fracionar Pedido
+                                                <Scissors size={16} />
+                                                <span className="text-center">Fracionar Pedido</span>
+                                                <span />
                                               </button>
                                             )}
                                           </div>
@@ -12843,7 +12842,7 @@ export default function PCPView({
               <span className="text-[9px] font-black uppercase tracking-widest shrink-0 px-2 py-0.5 rounded-full bg-amber-500 text-white">
                 {fractionModal.mode === 'grade' ? 'Múltiplos da Embalagem' : 'Livre (Varejo)'}
               </span>
-              <span className={`text-[8px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              <span className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300">
                 {fractionModal.mode === 'grade' ? 'Pedido em grade padrão — só caixas cheias' : 'Pedido de varejo — quantidade livre por tamanho'}
               </span>
             </div>
@@ -12878,12 +12877,12 @@ export default function PCPView({
 
                     {fractionModal.mode === 'grade' && fractionModal.gridConfig ? (
                       isLast ? (
-                        <p className={`text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                        <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300">
                           {fr.multiplier > 0 ? `${fr.multiplier}× grade` : 'calculado automaticamente'}
                         </p>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>× Grade</span>
+                          <span className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 shrink-0">× Grade</span>
                           <button type="button" onClick={() => updateFractionMultiplier(idx, fr.multiplier - 1)}
                             data-guide-anchor="pcp.fracionarMultiplicador"
                             className={`w-7 h-7 rounded-lg text-sm font-black ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>−</button>
@@ -12919,7 +12918,7 @@ export default function PCPView({
                     {/* Setor de destino desta fração — cápsula com <select> nativo invisível por
                         cima, mesmo padrão usado no painel de baixa de OS. */}
                     <div className="flex items-center gap-2 pt-1">
-                      <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Setor</span>
+                      <span className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 shrink-0">Setor</span>
                       <div className="relative flex-1 min-w-0">
                         <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-all ${isDarkMode ? 'border-orange-700/50 bg-orange-900/20' : 'border-orange-300 bg-orange-50'}`}>
                           <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 truncate">

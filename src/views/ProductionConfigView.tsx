@@ -5078,52 +5078,56 @@ function SectorCard({ sector, flowTags, isDarkMode, pendingCount, isSavedAsTempl
           </div>
         </div>
 
-        <div className="flex gap-2">
-          {isTemplateAdmin() && (
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
             <button
-              onClick={onSaveAsTemplate}
-              data-guide-anchor="sector.salvarModelo"
-              disabled={isSavedAsTemplate}
-              title={isSavedAsTemplate ? 'Usado como exemplo pra novas contas' : 'Usar como exemplo pra novas contas'}
-              aria-label={isSavedAsTemplate ? `${sector.name} já é um modelo disponível` : `Usar ${sector.name} como exemplo pra novas contas`}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                isSavedAsTemplate
-                  ? 'text-violet-500'
-                  : isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-violet-400' : 'bg-slate-50 text-slate-400 hover:text-violet-600'
-              }`}
+              onClick={onEdit}
+              data-guide-anchor="sector.editar"
+              title="Editar Setor"
+              aria-label="Editar Setor"
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
             >
-              {isSavedAsTemplate ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
+              <Edit3 size={18} />
             </button>
-          )}
-          <button
-            onClick={onToggleHidden}
-            data-guide-anchor="sector.ocultarToggle"
-            title={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
-            aria-label={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
-          >
-            {sector.hidden ? <EyeOff size={18} /> : <Eye size={18} />}
-          </button>
-          <button
-            onClick={onEdit}
-            data-guide-anchor="sector.editar"
-            title="Editar Setor"
-            aria-label="Editar Setor"
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
-          >
-            <Edit3 size={18} />
-          </button>
-          <button
-            onClick={() => {
-              if (confirm(`Deseja excluir o setor ${sector.name}?`)) onDelete();
-            }}
-            data-guide-anchor="sector.excluir"
-            title="Excluir Setor"
-            aria-label="Excluir Setor"
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
-          >
-            <Trash2 size={18} />
-          </button>
+            <button
+              onClick={() => {
+                if (confirm(`Deseja excluir o setor ${sector.name}?`)) onDelete();
+              }}
+              data-guide-anchor="sector.excluir"
+              title="Excluir Setor"
+              aria-label="Excluir Setor"
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onToggleHidden}
+              data-guide-anchor="sector.ocultarToggle"
+              title={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
+              aria-label={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
+            >
+              {sector.hidden ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+            {isTemplateAdmin() && (
+              <button
+                onClick={onSaveAsTemplate}
+                data-guide-anchor="sector.salvarModelo"
+                disabled={isSavedAsTemplate}
+                title={isSavedAsTemplate ? 'Usado como exemplo pra novas contas' : 'Usar como exemplo pra novas contas'}
+                aria-label={isSavedAsTemplate ? `${sector.name} já é um modelo disponível` : `Usar ${sector.name} como exemplo pra novas contas`}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                  isSavedAsTemplate
+                    ? 'text-violet-500'
+                    : isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-violet-400' : 'bg-slate-50 text-slate-400 hover:text-violet-600'
+                }`}
+              >
+                {isSavedAsTemplate ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

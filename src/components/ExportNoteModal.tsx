@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth, Image as ImageIcon, Download } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth, Image as ImageIcon, Download, Maximize2 } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
@@ -136,7 +136,7 @@ export default function ExportNoteModal({
   const [note, setNote] = useState('');
   const [isObservationOpen, setIsObservationOpen] = useState(false);
   const [selectedSectorIds, setSelectedSectorIds] = useState<string[]>([]);
-  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'profiles' | null>(null);
+  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'profiles' | 'share' | null>(null);
   
   // Profile State
   const [profiles, setProfiles] = useState<ExportProfile[]>(() => loadProfiles());
@@ -155,18 +155,25 @@ export default function ExportNoteModal({
   const [showItemGrid, setShowItemGrid] = useState(true);
   const [showSectorNotes, setShowSectorNotes] = useState(true);
   const [showOrderList, setShowOrderList] = useState(true);
-  const [splitPages, setSplitPages] = useState(false);
+  // Por padrão já vem ligado com 5 fichas por folha — é o tamanho mais usado pra
+  // não deixar a imagem gigante numa peça só.
+  const [splitPages, setSplitPages] = useState(true);
   // Quantas fichas forçar por folha/página — 0 = automático (encaixa o máximo que couber
   // sem nunca cortar uma ficha entre duas folhas). Aplica no PDF sempre; no JPG só quando
   // "Dividir em Páginas" está ligado.
-  const [itemsPerPage, setItemsPerPage] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+  // Acordeão de "Dividir em Páginas" no popup de Opções de Compartilhamento — fechado por
+  // padrão pra sobrar mais espaço de tela pra pré-visualização logo acima.
+  const [sharePagesOpen, setSharePagesOpen] = useState(false);
+  // Visualização em tela cheia (alta resolução) da pré-visualização inline do popup —
+  // a miniatura dentro do card é pequena demais pra conferir detalhe.
+  const [fullscreenPreviewOpen, setFullscreenPreviewOpen] = useState(false);
   const [showProvider, setShowProvider] = useState(true);
   const [showOSData, setShowOSData] = useState(true);
   const [showSoleGrid, setShowSoleGrid] = useState(false);
   const [showThumbnails, setShowThumbnails] = useState(true);
   // Subcards em acordeão — um por grupo de configurações (Valores, Resumo da
   // Grade, Agrupamento, Dados da OS, Detalhes de Setor). Recolhidos por padrão.
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [previewPages, setPreviewPages] = useState<string[]>([]);
   const [previewPageIdx, setPreviewPageIdx] = useState(0);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -196,12 +203,13 @@ export default function ExportNoteModal({
       // UI resets
       setIsObservationOpen(false);
       setActivePopup(null);
-      setSplitPages(false);
-      setItemsPerPage(0);
+      setSplitPages(true);
+      setItemsPerPage(5);
+      setSharePagesOpen(false);
+      setFullscreenPreviewOpen(false);
       setShowProvider(true);
       setShowOSData(true);
       setShowThumbnails(true);
-      setOpenSections(new Set());
       setPreviewPages([]);
       setPreviewPageIdx(0);
       setIsPreviewLoading(false);
@@ -301,6 +309,16 @@ export default function ExportNoteModal({
     }
   };
 
+  // Dispara a pré-visualização sozinha assim que o popup de Opções de Compartilhamento
+  // abre — o popup já nasce aberto (ver reset de activePopup no efeito de isOpen), então
+  // isso substitui o antigo botão manual "Visualizar Arquivo".
+  React.useEffect(() => {
+    if (activePopup === 'share' && onPreview) {
+      handlePreview();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePopup]);
+
   // Salva TODAS as páginas da pré-visualização JPG na galeria de uma vez — mesmo padrão de
   // LabelPrintPreviewModal.tsx (write no cache + saveImageToGallery por página). Só existe pra
   // JPG: PDF não tem uma "imagem" única pra soltar na galeria do aparelho.
@@ -332,39 +350,6 @@ export default function ExportNoteModal({
   };
 
   if (!isOpen) return null;
-
-  const toggleSection = (id: string) => {
-    setOpenSections(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const SectionCard = ({ id, icon, label, children }: { id: string; icon: React.ReactNode; label: string; children: React.ReactNode }) => {
-    const sectionOpen = openSections.has(id);
-    return (
-      <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-        <button
-          type="button"
-          onClick={() => toggleSection(id)}
-          data-guide-anchor="export.abrirSecao"
-          className={`w-full flex items-center justify-between gap-2 px-3 py-3 transition-all ${isDarkMode ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`}
-        >
-          <span className="flex items-center gap-2">
-            {icon}
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">{label}</span>
-          </span>
-          <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${sectionOpen ? 'rotate-180' : ''}`} />
-        </button>
-        {sectionOpen && (
-          <div className={`p-3 flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-            {children}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const handlePredefinedClick = (text: string) => {
     if (note.includes(text)) {
@@ -435,7 +420,7 @@ export default function ExportNoteModal({
             </div>
             <div>
               <h3 className={`text-lg font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{title}</h3>
-              <p className="text-[11px] text-slate-600 dark:text-slate-300 font-bold uppercase tracking-widest mt-1">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1">
                 Gerando arquivo em formato {selectedFormat.toUpperCase()}
               </p>
             </div>
@@ -567,7 +552,7 @@ export default function ExportNoteModal({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Valores Financeiros</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                    <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
                       {showFinancialValues ? 'Exibir valores e total' : 'Ocultar valores'}
                     </p>
                   </div>
@@ -592,7 +577,7 @@ export default function ExportNoteModal({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Miniaturas dos Produtos</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                    <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
                       {showThumbnails ? 'Com foto de cada item' : 'Sem foto'}
                     </p>
                   </div>
@@ -619,7 +604,7 @@ export default function ExportNoteModal({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Resumo da Grade</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                    <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
                       {gridSubtitle}
                     </p>
                   </div>
@@ -644,7 +629,7 @@ export default function ExportNoteModal({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Agrupamento de Itens</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                    <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
                       {groupSubtitle}
                     </p>
                   </div>
@@ -669,7 +654,7 @@ export default function ExportNoteModal({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Dados da OS</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                    <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
                       {osSubtitle}
                     </p>
                   </div>
@@ -694,7 +679,7 @@ export default function ExportNoteModal({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Detalhes de Setor</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                    <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
                       {sectorSubtitle}
                     </p>
                   </div>
@@ -718,8 +703,34 @@ export default function ExportNoteModal({
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Perfis de Exportação</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                  <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
                     {profileSubtitle}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown size={16} className="text-slate-400 -rotate-90 shrink-0" />
+            </button>
+
+            {/* 7. Opções de Compartilhamento Card — último da lista; ao clicar abre um único
+                popup com a pré-visualização já carregando no topo e todas as opções de
+                exportação/impressão logo abaixo (ver efeito ligado a activePopup que
+                dispara handlePreview sozinho). */}
+            <button
+              type="button"
+              onClick={() => setActivePopup('share')}
+              data-guide-anchor="export.cardOpcoesCompartilhamento"
+              className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
+                isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`w-8.5 h-8.5 rounded-xl flex items-center justify-center shrink-0 animate-pulse-cyan-ring ${isDarkMode ? 'bg-cyan-500/20 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}>
+                  <Send size={16} strokeWidth={2.5} className="rotate-45" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Opções de Compartilhamento</p>
+                  <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-tight truncate">
+                    {selectedFormat.toUpperCase()}{splitPages ? ` · Dividido${itemsPerPage > 0 ? ` (${itemsPerPage})` : ''}` : ''}
                   </p>
                 </div>
               </div>
@@ -729,187 +740,7 @@ export default function ExportNoteModal({
         </div>
                 {/* Footer Actions */}
         <div className={`p-4 flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50/50'}`}>
-          {/* Cards Actions — agrupadas num acordeão (igual aos demais SectionCard da tela);
-              só "Cancelar" fica sempre visível, fora do acordeão. */}
           <div className="flex flex-col gap-2">
-            <SectionCard id="share_actions" icon={
-              <span className={`flex items-center justify-center w-6 h-6 rounded-full animate-pulse-cyan-ring ${isDarkMode ? 'bg-cyan-500/15' : 'bg-cyan-100'}`}>
-                <Send size={13} className="text-cyan-500" />
-              </span>
-            } label="Opções de Compartilhamento">
-              {/* Visualizar / Dividir em Páginas — fica perto de "Gerar", que é onde faz
-                  mais sentido decidir se o JPG sai como imagem única ou em folhas. */}
-              {(onPreview || (showSplitPagesToggle && selectedFormat === 'jpg')) && (
-                <div className="flex gap-1.5">
-                  {onPreview && (
-                    <button
-                      type="button"
-                      onClick={handlePreview}
-                      disabled={isPreviewLoading}
-                      data-guide-anchor="export.visualizarArquivo"
-                      className={`flex-1 py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 shadow-slate-800/20`}
-                    >
-                      {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
-                    </button>
-                  )}
-                  {showSplitPagesToggle && selectedFormat === 'jpg' && (
-                    <button
-                      type="button"
-                      onClick={() => setSplitPages(prev => !prev)}
-                      data-guide-anchor="export.dividirPaginas"
-                      className={`flex-1 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 ${
-                        splitPages ? 'bg-cyan-600 text-white shadow-cyan-600/20' : isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      <Layers size={14} /> Dividir em Páginas
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Fichas por Folha — só relevante junto da geração: sempre vale no PDF
-                  (nunca corta uma ficha entre duas folhas) e no JPG só com "Dividir em
-                  Páginas" ligado. */}
-              {showSplitPagesToggle && (selectedFormat === 'pdf' || splitPages) && (
-                <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                  <div className="text-xs font-black uppercase tracking-wider text-slate-750 dark:text-slate-200 mb-0.5">Fichas por Folha</div>
-                  <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 leading-snug">
-                    Automático encaixa o máximo sem nunca cortar uma ficha entre duas folhas
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {[0, 3, 5, 8, 10, 15].map(n => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setItemsPerPage(n)}
-                        data-guide-anchor="export.fichasPorFolha"
-                        className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
-                          itemsPerPage === n
-                            ? 'bg-cyan-500 text-white'
-                            : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'
-                        }`}
-                      >
-                        {n === 0 ? 'Automático' : n}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outra:</span>
-                    <input
-                      type="number"
-                      min={1}
-                      placeholder="Ex: 7"
-                      value={itemsPerPage > 0 && ![3, 5, 8, 10, 15].includes(itemsPerPage) ? itemsPerPage : ''}
-                      onChange={(e) => {
-                        const n = Math.max(1, parseInt(e.target.value, 10) || 0);
-                        if (n > 0) setItemsPerPage(n);
-                      }}
-                      className={`w-16 py-1.5 px-2 rounded-lg text-xs font-black text-center ${isDarkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
-                      aria-label="Quantidade personalizada de fichas por folha"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Generate */}
-              <button
-                type="button"
-                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage, showThumbnails)}
-                data-guide-anchor="export.gerar"
-                className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
-                  selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
-                }`}
-              >
-                {selectedFormat === 'pdf' ? <FileText size={16} /> : <Send size={16} className="rotate-45" />}
-                Gerar {selectedFormat.toUpperCase()}
-              </button>
-
-              {/* Impressão Bluetooth (Ablemark) só existe no Android — no iOS o botão nem
-                  aparece, em vez de levar o usuário até o picker de etiquetas pra só então
-                  descobrir lá que não tem como imprimir. */}
-              {onPrintLabels && isAblemarkPlatform() && (
-                <button
-                  type="button"
-                  onClick={onPrintLabels}
-                  data-guide-anchor="export.imprimirEtiquetas"
-                  className="w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-sky-600 text-white"
-                >
-                  <Bluetooth size={16} /> Imprimir Etiquetas na Impressora
-                </button>
-              )}
-
-              {/* Format Toggles */}
-              <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFormat('pdf')}
-                  data-guide-anchor="export.selecionarFormato"
-                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                    selectedFormat === 'pdf' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  Formato PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFormat('jpg')}
-                  data-guide-anchor="export.selecionarFormato"
-                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                    selectedFormat === 'jpg' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  Formato JPG
-                </button>
-              </div>
-
-              {/* Page Size Selection */}
-              {(() => {
-                const pageSizeActive = selectedFormat === 'pdf' || splitPages;
-                return (
-                  <div className="flex flex-col gap-1.5 mt-0.5">
-                    <div className="flex items-center gap-2 px-1">
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${pageSizeActive ? 'text-slate-400 dark:text-slate-500' : 'text-slate-300 dark:text-slate-600'}`}>
-                        Tamanho de Exportação
-                      </span>
-                      {!pageSizeActive && (
-                        <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400'}`}>
-                          Inativo
-                        </span>
-                      )}
-                    </div>
-                    <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 transition-opacity ${pageSizeActive ? 'opacity-100' : 'opacity-40 pointer-events-none'} ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
-                      <button
-                        type="button"
-                        onClick={() => setPageSize('a4')}
-                        data-guide-anchor="export.selecionarTamanhoPagina"
-                        className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                          pageSize === 'a4' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        Papel A4
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPageSize('marketplace')}
-                        data-guide-anchor="export.selecionarTamanhoPagina"
-                        className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                          pageSize === 'marketplace' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        Marketplace (100x150)
-                      </button>
-                    </div>
-                    {!pageSizeActive && (
-                      <p className={`text-[8px] font-bold px-1 leading-relaxed ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
-                        Ativo apenas com <span className="font-black">Formato PDF</span> ou <span className="font-black">Dividir em Páginas</span> ligado. Em JPG simples o canvas cresce livremente e o tamanho não muda o resultado.
-                      </p>
-                    )}
-                  </div>
-                );
-              })()}
-            </SectionCard>
-
-            {/* Cancelar — única ação que fica fora do acordeão, sempre visível */}
             <button
               type="button"
               onClick={onClose}
@@ -931,9 +762,9 @@ export default function ExportNoteModal({
           className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setActivePopup(null)}
         >
-          <div 
+          <div
             onClick={e => e.stopPropagation()}
-            className={`w-full max-w-[340px] max-h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border ${
+            className={`w-full ${activePopup === 'share' ? 'max-w-[420px]' : 'max-w-[340px]'} max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border ${
               isDarkMode ? 'bg-slate-900 border border-slate-850 text-white' : 'bg-white border-slate-100 text-slate-900'
             }`}
           >
@@ -946,6 +777,7 @@ export default function ExportNoteModal({
                 {activePopup === 'os' && 'Dados da OS'}
                 {activePopup === 'sector' && 'Detalhes de Setor'}
                 {activePopup === 'profiles' && 'Perfis de Exportação'}
+                {activePopup === 'share' && 'Opções de Compartilhamento'}
               </span>
               <button
                 onClick={() => setActivePopup(null)}
@@ -1537,6 +1369,323 @@ export default function ExportNoteModal({
                   </div>
                 </div>
               )}
+
+              {/* Opções de Compartilhamento Popup Content — pré-visualização em cima (dispara
+                  sozinha ao abrir este popup, ver efeito ligado a activePopup) e todas as
+                  opções de exportação/impressão logo abaixo, tudo no mesmo popup. */}
+              {activePopup === 'share' && (
+                <div className="flex flex-col gap-3">
+                  {/* Pré-visualização */}
+                  <div className={`relative rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                    {isPreviewLoading ? (
+                      <div className="h-40 flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Gerando pré-visualização...
+                      </div>
+                    ) : previewPages.length > 0 ? (
+                      <>
+                        {selectedFormat === 'jpg' && isGallerySaverPlatform() && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleSaveGallery(); }}
+                            disabled={savingGallery}
+                            data-guide-anchor="export.previewSalvarGaleria"
+                            aria-label="Salvar na galeria"
+                            className="absolute top-2 left-2 h-8 px-3 rounded-full flex items-center gap-1.5 bg-black/50 text-white hover:bg-black/70 active:scale-95 transition-all z-10 disabled:opacity-50 text-[9px] font-black uppercase tracking-widest"
+                          >
+                            <Download size={13} /> {savingGallery ? 'Salvando...' : 'Galeria'}
+                          </button>
+                        )}
+                        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+                          {previewPages.length > 1 && (
+                            <span className="text-white text-[9px] font-black uppercase tracking-widest bg-black/50 px-2 py-1 rounded-full">
+                              {previewPageIdx + 1}/{previewPages.length}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setFullscreenPreviewOpen(true); }}
+                            data-guide-anchor="export.previewTelaCheia"
+                            aria-label="Ver em tela cheia, alta resolução"
+                            title="Ver em tela cheia, alta resolução"
+                            className="w-8 h-8 rounded-full flex items-center justify-center bg-black/50 text-white hover:bg-black/70 active:scale-95 transition-all"
+                          >
+                            <Maximize2 size={14} />
+                          </button>
+                        </div>
+                        <div
+                          className="w-full h-56 flex items-center justify-center p-2 cursor-zoom-in"
+                          onClick={() => setFullscreenPreviewOpen(true)}
+                        >
+                          {selectedFormat === 'pdf' ? (
+                            <iframe src={previewPages[previewPageIdx] + "#toolbar=0"} className="w-full h-full rounded-xl bg-white pointer-events-none" />
+                          ) : (
+                            <img
+                              src={previewPages[previewPageIdx]}
+                              alt="Pré-visualização do arquivo exportado"
+                              className="max-w-full max-h-full object-contain rounded-xl"
+                            />
+                          )}
+                        </div>
+                        {previewPages.length > 1 && (
+                          <div className={`flex items-center justify-center gap-2 py-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                            <button
+                              type="button"
+                              disabled={previewPageIdx === 0}
+                              onClick={() => setPreviewPageIdx(p => Math.max(0, p - 1))}
+                              data-guide-anchor="export.previewAnterior"
+                              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${previewPageIdx === 0 ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200')}`}
+                            >
+                              <ChevronLeft size={16} />
+                            </button>
+                            <div className="flex items-center gap-1">
+                              {previewPages.map((_, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => setPreviewPageIdx(idx)}
+                                  aria-label={`Ir para página ${idx + 1}`}
+                                  className={`w-1.5 h-1.5 rounded-full transition-all ${idx === previewPageIdx ? 'bg-cyan-500 w-4' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
+                                />
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={previewPageIdx === previewPages.length - 1}
+                              onClick={() => setPreviewPageIdx(p => Math.min(previewPages.length - 1, p + 1))}
+                              data-guide-anchor="export.previewProxima"
+                              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${previewPageIdx === previewPages.length - 1 ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200')}`}
+                            >
+                              <ChevronRight size={16} />
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="h-40 flex items-center justify-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Sem pré-visualização
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Dividir em Páginas — acordeão fechado por padrão pra sobrar mais espaço
+                      pra área de pré-visualização logo acima. */}
+                  {showSplitPagesToggle && selectedFormat === 'jpg' && (
+                    <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <button
+                        type="button"
+                        onClick={() => setSharePagesOpen(v => !v)}
+                        data-guide-anchor="export.dividirPaginas"
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-3 transition-all ${isDarkMode ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Layers size={14} className={splitPages ? 'text-cyan-500' : 'text-slate-400'} />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Dividir em Páginas</span>
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-widest ${splitPages ? 'bg-cyan-500/15 text-cyan-500' : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500')}`}>
+                            {splitPages ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </span>
+                        <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${sharePagesOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {sharePagesOpen && (
+                        <div className={`p-3 flex flex-col gap-2.5 border-t ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                          <button
+                            type="button"
+                            onClick={() => setSplitPages(prev => !prev)}
+                            className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 ${
+                              splitPages ? 'bg-cyan-600 text-white shadow-cyan-600/20' : isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            <Layers size={13} /> {splitPages ? 'Desativar Divisão' : 'Ativar Divisão'}
+                          </button>
+
+                          {/* Fichas por Folha — aqui dentro só se aplica ao JPG (PDF sempre
+                              pagina, tem seu próprio painel fixo logo abaixo do acordeão). */}
+                          {splitPages && (
+                            <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                              <div className="text-xs font-black uppercase tracking-wider text-slate-750 dark:text-slate-200 mb-0.5">Fichas por Folha</div>
+                              <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 leading-snug">
+                                Automático encaixa o máximo sem nunca cortar uma ficha entre duas folhas
+                              </div>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {[0, 3, 5, 8, 10, 15].map(n => (
+                                  <button
+                                    key={n}
+                                    type="button"
+                                    onClick={() => setItemsPerPage(n)}
+                                    data-guide-anchor="export.fichasPorFolha"
+                                    className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
+                                      itemsPerPage === n
+                                        ? 'bg-cyan-500 text-white'
+                                        : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'
+                                    }`}
+                                  >
+                                    {n === 0 ? 'Automático' : n}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outra:</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  placeholder="Ex: 7"
+                                  value={itemsPerPage > 0 && ![3, 5, 8, 10, 15].includes(itemsPerPage) ? itemsPerPage : ''}
+                                  onChange={(e) => {
+                                    const n = Math.max(1, parseInt(e.target.value, 10) || 0);
+                                    if (n > 0) setItemsPerPage(n);
+                                  }}
+                                  className={`w-16 py-1.5 px-2 rounded-lg text-xs font-black text-center ${isDarkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
+                                  aria-label="Quantidade personalizada de fichas por folha"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Fichas por Folha (PDF) — PDF sempre pagina, então esse painel fica
+                      sempre visível pra esse formato, fora do acordeão do JPG. */}
+                  {showSplitPagesToggle && selectedFormat === 'pdf' && (
+                    <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className="text-xs font-black uppercase tracking-wider text-slate-750 dark:text-slate-200 mb-0.5">Fichas por Folha</div>
+                      <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 leading-snug">
+                        Automático encaixa o máximo sem nunca cortar uma ficha entre duas folhas
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[0, 3, 5, 8, 10, 15].map(n => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setItemsPerPage(n)}
+                            data-guide-anchor="export.fichasPorFolha"
+                            className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
+                              itemsPerPage === n
+                                ? 'bg-cyan-500 text-white'
+                                : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'
+                            }`}
+                          >
+                            {n === 0 ? 'Automático' : n}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outra:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          placeholder="Ex: 7"
+                          value={itemsPerPage > 0 && ![3, 5, 8, 10, 15].includes(itemsPerPage) ? itemsPerPage : ''}
+                          onChange={(e) => {
+                            const n = Math.max(1, parseInt(e.target.value, 10) || 0);
+                            if (n > 0) setItemsPerPage(n);
+                          }}
+                          className={`w-16 py-1.5 px-2 rounded-lg text-xs font-black text-center ${isDarkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
+                          aria-label="Quantidade personalizada de fichas por folha"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Generate */}
+                  <button
+                    type="button"
+                    onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage, showThumbnails)}
+                    data-guide-anchor="export.gerar"
+                    className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
+                      selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
+                    }`}
+                  >
+                    {selectedFormat === 'pdf' ? <FileText size={16} /> : <Send size={16} className="rotate-45" />}
+                    Gerar {selectedFormat.toUpperCase()}
+                  </button>
+
+                  {/* Impressão Bluetooth (Ablemark) só existe no Android — no iOS o botão nem
+                      aparece, em vez de levar o usuário até o picker de etiquetas pra só então
+                      descobrir lá que não tem como imprimir. */}
+                  {onPrintLabels && isAblemarkPlatform() && (
+                    <button
+                      type="button"
+                      onClick={onPrintLabels}
+                      data-guide-anchor="export.imprimirEtiquetas"
+                      className="w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-sky-600 text-white"
+                    >
+                      <Bluetooth size={16} /> Imprimir Etiquetas na Impressora
+                    </button>
+                  )}
+
+                  {/* Format Toggles */}
+                  <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFormat('pdf')}
+                      data-guide-anchor="export.selecionarFormato"
+                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        selectedFormat === 'pdf' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Formato PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFormat('jpg')}
+                      data-guide-anchor="export.selecionarFormato"
+                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        selectedFormat === 'jpg' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Formato JPG
+                    </button>
+                  </div>
+
+                  {/* Page Size Selection */}
+                  {(() => {
+                    const pageSizeActive = selectedFormat === 'pdf' || splitPages;
+                    return (
+                      <div className="flex flex-col gap-1.5 mt-0.5">
+                        <div className="flex items-center gap-2 px-1">
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${pageSizeActive ? 'text-slate-400 dark:text-slate-500' : 'text-slate-300 dark:text-slate-600'}`}>
+                            Tamanho de Exportação
+                          </span>
+                          {!pageSizeActive && (
+                            <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400'}`}>
+                              Inativo
+                            </span>
+                          )}
+                        </div>
+                        <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 transition-opacity ${pageSizeActive ? 'opacity-100' : 'opacity-40 pointer-events-none'} ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                          <button
+                            type="button"
+                            onClick={() => setPageSize('a4')}
+                            data-guide-anchor="export.selecionarTamanhoPagina"
+                            className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                              pageSize === 'a4' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            Papel A4
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPageSize('marketplace')}
+                            data-guide-anchor="export.selecionarTamanhoPagina"
+                            className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                              pageSize === 'marketplace' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            Marketplace (100x150)
+                          </button>
+                        </div>
+                        {!pageSizeActive && (
+                          <p className={`text-[8px] font-bold px-1 leading-relaxed ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                            Ativo apenas com <span className="font-black">Formato PDF</span> ou <span className="font-black">Dividir em Páginas</span> ligado. Em JPG simples o canvas cresce livremente e o tamanho não muda o resultado.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Pop-up Footer */}
@@ -1669,16 +1818,14 @@ export default function ExportNoteModal({
         </div>
       )}
 
-      {/* Popup de Pré-visualização — imagem/PDF gerado em tela cheia, fecha ao tocar nela
-          mesma ou no X (não é mais uma caixinha dentro do modal de configuração). */}
-      {previewPages.length > 0 && (
+      {/* Visualização em tela cheia, alta resolução — a miniatura dentro do popup de
+          Opções de Compartilhamento é pequena demais pra conferir detalhe. */}
+      {fullscreenPreviewOpen && previewPages.length > 0 && (
         <div
           className="fixed inset-0 z-[310000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setPreviewPages([])}
+          onClick={() => setFullscreenPreviewOpen(false)}
           data-guide-anchor="export.previewPopup"
         >
-          {/* "Salvar na Galeria" só existe pra JPG e só no Android (mesmo limite de
-              gallerySaver.ts) — no iOS ou em PDF, esse botão simplesmente não aparece. */}
           {selectedFormat === 'jpg' && isGallerySaverPlatform() && (
             <button
               type="button"
@@ -1694,9 +1841,9 @@ export default function ExportNoteModal({
 
           <button
             type="button"
-            onClick={() => setPreviewPages([])}
+            onClick={() => setFullscreenPreviewOpen(false)}
             data-guide-anchor="export.previewFechar"
-            aria-label="Fechar pré-visualização"
+            aria-label="Fechar visualização em tela cheia"
             className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all z-10"
           >
             <X size={20} strokeWidth={2.5} />
@@ -1714,7 +1861,7 @@ export default function ExportNoteModal({
             ) : (
               <img
                 src={previewPages[previewPageIdx]}
-                onClick={() => setPreviewPages([])}
+                onClick={() => setFullscreenPreviewOpen(false)}
                 alt="Pré-visualização do arquivo exportado"
                 className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl cursor-zoom-out"
               />
