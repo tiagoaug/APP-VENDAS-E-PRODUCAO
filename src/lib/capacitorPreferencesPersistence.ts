@@ -9,54 +9,69 @@ import { logAuthDiag } from './authDiagLog';
 // [[project_ios_wkwebview_auth_hang]] na memória).
 //
 // Uma primeira tentativa de corrigir isso usou `@capacitor/preferences` (ponte nativa via
-// plugin) — mas isso reproduziu o MESMO tipo de travamento por outro canal: chamar um plugin
-// Capacitor bem no boot do app (antes da ponte nativa estar 100% pronta pra rotear a resposta)
-// nunca resolvia, e a sessão nunca persistia (sempre caía no fallback de timeout).
+// plugin) — mas isso reproduziu o MESMO tipo de travamento por outro canal.
 //
-// A saída de verdade: usar `window.localStorage` DIRETAMENTE (não a classe
-// `browserLocalPersistence` do Firebase, que teria a mesma lógica extra problemática) —
-// `getItem`/`setItem`/`removeItem` são chamadas SÍNCRONAS da própria JavaScriptCore do
-// WKWebView, sem round-trip pra nenhuma ponte nativa e sem nenhum mecanismo de evento/listener
-// esperando algo que nunca chega. Não tem como travar: ou retorna na hora, ou lança na hora (e
-// aí o try/catch abaixo cobre). O WKWebView do Capacitor usa um WKWebsiteDataStore persistente
-// por padrão, então esse localStorage sobrevive normalmente ao fechamento do app.
+// A saída de verdade: usar `window.localStorage` DIRETAMENTE (chamadas SÍNCRONAS da própria
+// JavaScriptCore do WKWebView, sem round-trip pra nenhuma ponte nativa e sem nenhum mecanismo
+// de evento/listener esperando algo que nunca chega — não tem como travar).
 //
-// Diagnóstico: ver authDiagLog.ts — essas funções rodam ANTES de qualquer componente montar,
-// então usam logAuthDiag() (fila lida depois por App.tsx) em vez de toast.show() direto (que
-// se perderia, disparado sem ninguém ouvindo ainda). Remover depois de achar a causa real.
-export const capacitorPreferencesPersistence: Persistence = {
-  type: 'LOCAL',
-  _isAvailable: async () => {
+// CAUSA REAL do "sessão nunca é gravada" (achada via diagnóstico em localStorage, ver
+// authDiagLog.ts): initializeAuth() lançava "INTERNAL ASSERTION FAILED: Expected a class
+// definition" de forma SÍNCRONA — capturado pelo try/catch em firebase.ts, que caía pro
+// fallback `[inMemoryPersistence]` pra SESSÃO INTEIRA, sem eu nunca saber (o catch só logava no
+// console, invisível sem Xcode). O motivo: `_getInstance()` internamente faz
+// `debugAssert(cls instanceof Function, 'Expected a class definition')` — a SDK exige que cada
+// persistência seja uma CLASSE (ela mesma instancia com `new cls()` e cacheia o singleton), não
+// um objeto literal como este arquivo tentava usar antes. `inMemoryPersistence`/
+// `browserLocalPersistence` são exportadas como a CLASSE em si, nunca uma instância pronta —
+// daí o formato abaixo, espelhando exatamente `InMemoryPersistence` do próprio SDK
+// (@firebase/auth, função `_getInstance`).
+class CapacitorPreferencesPersistence {
+  type = 'LOCAL' as const;
+
+  async _isAvailable(): Promise<boolean> {
     try {
       const testKey = '__persistence_test__';
       window.localStorage.setItem(testKey, '1');
       window.localStorage.removeItem(testKey);
-      logAuthDiag('DIAGNÓSTICO: _isAvailable() = true');
+      logAuthDiag('_isAvailable() = true');
       return true;
     } catch (e) {
-      logAuthDiag('DIAGNÓSTICO: _isAvailable() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
+      logAuthDiag('_isAvailable() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
       return false;
     }
-  },
-  _set: async (key: string, value: unknown) => {
+  }
+
+  async _set(key: string, value: unknown): Promise<void> {
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
-      logAuthDiag('DIAGNÓSTICO: _set() gravou em ' + key);
+      logAuthDiag('_set() gravou em ' + key);
     } catch (e) {
-      logAuthDiag('DIAGNÓSTICO: _set() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
+      logAuthDiag('_set() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
       throw e;
     }
-  },
-  _get: async (key: string) => {
+  }
+
+  async _get(key: string): Promise<unknown> {
     const value = window.localStorage.getItem(key);
-    logAuthDiag('DIAGNÓSTICO: _get(' + key + ') = ' + (value ? 'encontrado' : 'vazio'));
+    logAuthDiag('_get(' + key + ') = ' + (value ? 'encontrado' : 'vazio'));
     return value ? JSON.parse(value) : null;
-  },
-  _remove: async (key: string) => {
+  }
+
+  async _remove(key: string): Promise<void> {
     window.localStorage.removeItem(key);
-  },
+  }
+
   // Só pra sincronizar sessão entre abas de um navegador de verdade — sem sentido numa WebView
-  // isolada de um app nativo, então ficam como no-op.
-  _addListener: () => { /* no-op */ },
-  _removeListener: () => { /* no-op */ },
-} as unknown as Persistence;
+  // isolada de um app nativo, então ficam como no-op (mesmo padrão de InMemoryPersistence).
+  _addListener(): void { /* no-op */ }
+  _removeListener(): void { /* no-op */ }
+}
+// Propriedade estática, mesmo padrão de `InMemoryPersistence.type = 'NONE'` no SDK — algumas
+// checagens internas leem `cls.type` sem instanciar.
+(CapacitorPreferencesPersistence as unknown as { type: string }).type = 'LOCAL';
+
+// Exporta a CLASSE em si (não `new CapacitorPreferencesPersistence()`) — é isso que
+// `_getInstance()` espera, e é exatamente como `inMemoryPersistence`/`browserLocalPersistence`
+// são exportadas pelo próprio firebase/auth.
+export const capacitorPreferencesPersistence = CapacitorPreferencesPersistence as unknown as Persistence;
