@@ -133,6 +133,21 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+              {onCreateNew && (
+                <button
+                  type="button"
+                  onClick={() => { onCreateNew(); closePopup(); }}
+                  data-guide-anchor="comboBox.cadastrarNovo"
+                  className={`w-full mt-2 flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left font-black text-[13px] transition-all border-2 border-dashed ${
+                    isDarkMode ? 'text-violet-400 border-violet-500/30 hover:bg-violet-500/10' : 'text-violet-600 border-violet-200 hover:bg-violet-50'
+                  }`}
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/10' : 'bg-violet-100'}`}>
+                    <UserPlus size={16} strokeWidth={2.5} />
+                  </div>
+                  <span className="truncate">{createNewLabel}</span>
+                </button>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto px-3 pb-3">
               {filteredOptions.length > 0 ? (
@@ -151,21 +166,6 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
                 ))
               ) : (
                 <div className="px-4 py-3 text-[12px] text-slate-400 italic">Nenhum resultado encontrado</div>
-              )}
-              {onCreateNew && (
-                <button
-                  type="button"
-                  onClick={() => { onCreateNew(); closePopup(); }}
-                  data-guide-anchor="comboBox.cadastrarNovo"
-                  className={`w-full mt-2 flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left font-black text-[13px] transition-all border-2 border-dashed ${
-                    isDarkMode ? 'text-violet-400 border-violet-500/30 hover:bg-violet-500/10' : 'text-violet-600 border-violet-200 hover:bg-violet-50'
-                  }`}
-                >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/10' : 'bg-violet-100'}`}>
-                    <UserPlus size={16} strokeWidth={2.5} />
-                  </div>
-                  <span className="truncate">{createNewLabel}</span>
-                </button>
               )}
             </div>
           </div>

@@ -179,7 +179,13 @@ export default function PublicCatalogApp() {
   }, [now, expiresAt, status]);
 
   const setQty = (productId: string, variationId: string, size: string | undefined, available: number, value: number) => {
-    const clamped = Math.max(0, Math.min(available, Math.floor(value) || 0));
+    // `available === 0` só chega aqui quando o link tem "Incluir Produtos Sem Estoque" ligado
+    // (ver getPublicCatalog: tamanho/caixa zerado é filtrado fora da resposta quando essa opção
+    // está desligada) — ou seja, essa entrada só existe pra permitir encomenda sob fabricação.
+    // Sem esse caso especial, o clamp em `available` travava a quantidade em 0 pra sempre,
+    // deixando os botões +/- visualmente ativos mas sem efeito nenhum.
+    const max = available > 0 ? available : 999;
+    const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
     setCart((prev) => {
       const next = { ...prev };
       const key = cartKey(productId, variationId, size);
