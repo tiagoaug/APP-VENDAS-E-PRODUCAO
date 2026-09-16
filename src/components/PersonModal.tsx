@@ -73,9 +73,17 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
 
   if (!isOpen) return null;
 
+  // Trava contra toque duplo — sem isso, dois toques rápidos disparam duas chamadas de
+  // requestPermissions() concorrentes; o iOS só mostra UM diálogo nativo por vez, então a
+  // segunda chamada acaba resolvendo como "negada" sem nunca ter perguntado nada, duplicando o
+  // toast de erro mesmo numa única tentativa real do usuário.
+  const [importingContact, setImportingContact] = useState(false);
+
   // Importa nome/telefone/e-mail direto da agenda nativa do aparelho (Android/iOS) — evita
   // digitar de novo um contato que a pessoa já tem salvo no celular.
   const handleImportFromContacts = async () => {
+    if (importingContact) return;
+    setImportingContact(true);
     try {
       const perm = await Contacts.checkPermissions();
       if (perm.contacts !== 'granted') {
@@ -90,7 +98,10 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
         }
         const req = await Contacts.requestPermissions();
         if (req.contacts !== 'granted') {
-          toast.show('Permissão de acesso aos contatos negada.');
+          // Diagnóstico temporário — mostra o status exato que o iOS devolveu (ex.: "prompt",
+          // "restricted") em vez de só "negada", pra descobrir se é uma negativa real do
+          // usuário no diálogo nativo ou algo bloqueando o diálogo de aparecer.
+          toast.show(`Permissão de acesso aos contatos negada. (${perm.contacts} → ${req.contacts})`);
           return;
         }
       }
@@ -104,6 +115,8 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       if (primaryEmail?.address) setEmail(primaryEmail.address);
     } catch (e) {
       toast.show('Não foi possível importar o contato: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setImportingContact(false);
     }
   };
 
@@ -177,11 +190,12 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
           <button
             type="button"
             onClick={handleImportFromContacts}
+            disabled={importingContact}
             data-guide-anchor="person.importarAgenda"
-            className="w-full mb-6 flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 text-[11px] font-black uppercase tracking-widest hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors active:scale-[0.98]"
+            className="w-full mb-6 flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 text-[11px] font-black uppercase tracking-widest hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors active:scale-[0.98] disabled:opacity-50"
           >
             <ContactIcon size={16} />
-            Importar da Agenda
+            {importingContact ? 'Abrindo...' : 'Importar da Agenda'}
           </button>
         )}
 
