@@ -1,9 +1,10 @@
 ﻿import React, { useState, useMemo } from 'react';
 import { Account, PaymentHistory } from '../types';
-import { X, DollarSign, Calendar, Wallet, History, Clipboard, CheckCircle2, ChevronRight, AlertCircle, Copy } from 'lucide-react';
+import { X, DollarSign, Calendar, Wallet, History, Clipboard, CheckCircle2, ChevronRight, AlertCircle, Copy, Calculator } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '../utils/toast';
+import CalculatorModal from './CalculatorModal';
 
 /** Forma estrutural mínima — funciona tanto pra Purchase (id/total/paymentHistory) quanto
  * pra Transaction (usando `amount` como `total`), sem acoplar este modal a nenhum dos dois. */
@@ -43,6 +44,7 @@ export default function PartialPaymentModal({
   const [accountId, setAccountId] = useState(accounts[0]?.id || '');
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
 
   const totalPaid = useMemo(() => {
     return (entity.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
@@ -173,16 +175,26 @@ export default function PartialPaymentModal({
                   </div>
                   <div className="relative">
                     <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input 
+                    <input
                       type="number"
                       step="0.01"
                       required
                       autoFocus
                       placeholder="0,00"
-                      className={`w-full border-none rounded-2xl py-4 pl-12 pr-4 text-xl font-black font-mono tracking-tight focus:ring-4 focus:ring-indigo-500/10 ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-700' : 'bg-slate-50 text-slate-900 placeholder:text-slate-200'}`}
+                      className={`w-full border-none rounded-2xl py-4 pl-12 pr-14 text-xl font-black font-mono tracking-tight focus:ring-4 focus:ring-indigo-500/10 ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-700' : 'bg-slate-50 text-slate-900 placeholder:text-slate-200'}`}
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setCalcOpen(true)}
+                      data-guide-anchor="partialPayment.calculadora"
+                      title="Abrir calculadora"
+                      aria-label="Abrir calculadora"
+                      className={`absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400 hover:bg-indigo-900/60' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                    >
+                      <Calculator size={18} strokeWidth={2.5} />
+                    </button>
                   </div>
                 </div>
 
@@ -290,6 +302,14 @@ export default function PartialPaymentModal({
           )}
         </div>
       </div>
+
+      <CalculatorModal
+        isOpen={calcOpen}
+        onClose={() => setCalcOpen(false)}
+        onResult={(result) => { setAmount(result.toFixed(2)); setCalcOpen(false); }}
+        isDarkMode={isDarkMode}
+        initialValue={parseFloat(amount) || 0}
+      />
     </div>
   );
 }
