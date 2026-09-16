@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, Plus, Check } from "lucide-react";
+import { X, Search, Plus, Check, UserPlus } from "lucide-react";
 
 export interface EngineeringPickerOption {
   id: string;
@@ -24,6 +24,12 @@ interface EngineeringPickerModalProps {
    * busca não corresponde a nenhum item existente. */
   onCreateNew?: (searchTerm: string) => void;
   createLabel?: (searchTerm: string) => string;
+  /** Linha roxa fixa "Não encontrou? Cadastre aqui" ao final da lista — diferente de
+   * `onCreateNew` (que só aparece com um texto digitado sem correspondência e usa esse texto
+   * livre, sem cadastro de verdade). Essa aqui abre um cadastro completo (ex.: PersonModal) e
+   * fica sempre visível, mesmo com a lista cheia ou sem nada digitado. */
+  onRegisterNew?: () => void;
+  registerNewLabel?: string;
   zIndex?: number;
 }
 
@@ -40,6 +46,8 @@ export default function EngineeringPickerModal({
   emptyHint,
   onCreateNew,
   createLabel,
+  onRegisterNew,
+  registerNewLabel = "Não encontrou? Cadastre aqui",
   zIndex = 100000,
 }: EngineeringPickerModalProps) {
   const [search, setSearch] = useState("");
@@ -153,6 +161,22 @@ export default function EngineeringPickerModal({
                 <Plus size={16} strokeWidth={3} />
               </div>
               <span className="truncate">{createLabel ? createLabel(search.trim()) : `Cadastrar novo: "${search.trim()}"`}</span>
+            </button>
+          )}
+
+          {onRegisterNew && (
+            <button
+              type="button"
+              onClick={() => onRegisterNew()}
+              data-guide-anchor="engPicker.cadastrarNovo"
+              className={`w-full mt-2 flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left font-black text-sm transition-all border-2 border-dashed ${
+                isDarkMode ? "text-violet-400 border-violet-500/30 hover:bg-violet-500/10" : "text-violet-600 border-violet-200 hover:bg-violet-50"
+              }`}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDarkMode ? "bg-violet-500/10" : "bg-violet-100"}`}>
+                <UserPlus size={16} strokeWidth={2.5} />
+              </div>
+              <span className="truncate">{registerNewLabel}</span>
             </button>
           )}
         </div>

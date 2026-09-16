@@ -8422,6 +8422,11 @@ export default function App() {
             onBack={goBack}
             onNavigate={navigateTo}
             initialParams={currentParams}
+            onQuickAddPerson={async (person: any) => {
+              const result = await firebaseService.saveDocument("people", person);
+              toast.show('Prestador cadastrado!');
+              return result as Person;
+            }}
           />
         );
       case ViewType.BLING_CONNECTION:

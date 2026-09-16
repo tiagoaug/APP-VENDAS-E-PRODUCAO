@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Search, X } from "lucide-react";
+import { ChevronDown, Search, X, UserPlus } from "lucide-react";
 
 interface ComboBoxProps {
   options: { id: string; name: string; disabled?: boolean }[];
@@ -24,9 +24,16 @@ interface ComboBoxProps {
   /** z-index do popup centralizado (usePopupModal). Precisa ficar acima do modal que
    * contém o ComboBox — sobe o padrão quando esse modal já usa um z-index alto. */
   popupZIndex?: number;
+  /** Quando informado, exibe uma linha roxa fixa "Não encontrou? Cadastre aqui" ao final da
+   * lista (só no popup centralizado, `usePopupModal`) — pra cadastrar direto sem sair da tela
+   * de origem (ex.: fornecedor/cliente novo no meio de uma compra/venda). Sempre visível
+   * (não só quando a busca não bate com nada), já que o cadastro é um caminho válido mesmo
+   * com a lista cheia. */
+  onCreateNew?: () => void;
+  createNewLabel?: string;
 }
 
-export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon, compact = false, variant = 'filled', arrowColor = 'indigo', usePopupModal = false, popupZIndex = 65000 }: ComboBoxProps) {
+export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon, compact = false, variant = 'filled', arrowColor = 'indigo', usePopupModal = false, popupZIndex = 65000, onCreateNew, createNewLabel = "Não encontrou? Cadastre aqui" }: ComboBoxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -144,6 +151,21 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
                 ))
               ) : (
                 <div className="px-4 py-3 text-[12px] text-slate-400 italic">Nenhum resultado encontrado</div>
+              )}
+              {onCreateNew && (
+                <button
+                  type="button"
+                  onClick={() => { onCreateNew(); closePopup(); }}
+                  data-guide-anchor="comboBox.cadastrarNovo"
+                  className={`w-full mt-2 flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left font-black text-[13px] transition-all border-2 border-dashed ${
+                    isDarkMode ? 'text-violet-400 border-violet-500/30 hover:bg-violet-500/10' : 'text-violet-600 border-violet-200 hover:bg-violet-50'
+                  }`}
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/10' : 'bg-violet-100'}`}>
+                    <UserPlus size={16} strokeWidth={2.5} />
+                  </div>
+                  <span className="truncate">{createNewLabel}</span>
+                </button>
               )}
             </div>
           </div>

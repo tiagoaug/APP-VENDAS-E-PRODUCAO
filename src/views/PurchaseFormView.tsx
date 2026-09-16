@@ -230,8 +230,11 @@ export default function PurchaseFormView({
     return "";
   });
   const [sellerId, setSellerId] = useState(existing?.sellerId || '');
-  // Cadastro rápido de Fornecedor sem sair da tela de compra — ver onQuickAddPerson.
+  // Cadastro rápido de Fornecedor sem sair da tela de compra — ver onQuickAddPerson. `null` =
+  // cadastro veio do campo Fornecedor do topo (afeta supplierId); um índice = veio do campo
+  // Fornecedor/Terceirizado de um item específico da lista (afeta aquele item.personId).
   const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
+  const [quickPersonItemIndex, setQuickPersonItemIndex] = useState<number | null>(null);
   interface PurchaseBlock {
     id: string;
     productId: string;
@@ -1435,6 +1438,7 @@ export default function PurchaseFormView({
                 variant="outline"
                 arrowColor="red"
                 usePopupModal
+                onCreateNew={() => { setQuickPersonItemIndex(null); setIsQuickPersonModalOpen(true); }}
               />
             </div>
             {availableThirdParties.length === 0 && (
@@ -1730,6 +1734,7 @@ export default function PurchaseFormView({
                             placeholder="Pesquisar fornecedor ou terceirizado..."
                             isDarkMode={isDarkMode}
                             usePopupModal
+                            onCreateNew={() => { setQuickPersonItemIndex(index); setIsQuickPersonModalOpen(true); }}
                           />
                           <input
                             type="text"
@@ -3084,15 +3089,20 @@ export default function PurchaseFormView({
 
       <PersonModal
         isOpen={isQuickPersonModalOpen}
-        onClose={() => setIsQuickPersonModalOpen(false)}
+        onClose={() => { setIsQuickPersonModalOpen(false); setQuickPersonItemIndex(null); }}
         onSave={async (p) => {
           const created = await onQuickAddPerson(p);
-          setSupplierId(created.id);
+          if (quickPersonItemIndex !== null) {
+            updateGeneralItem(quickPersonItemIndex, { personId: created.id, description: created.name });
+          } else {
+            setSupplierId(created.id);
+          }
           setIsQuickPersonModalOpen(false);
+          setQuickPersonItemIndex(null);
         }}
         sellers={people.filter(p => p.isSeller)}
         allPeople={people}
-        initialData={{ isSupplier: true }}
+        initialData={{ isSupplier: true, isServiceProvider: true }}
         isDarkMode={isDarkMode}
       />
 

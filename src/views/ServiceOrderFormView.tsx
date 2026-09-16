@@ -15,6 +15,7 @@ import { seedServiceOrderSequence } from '../utils/sequenceSeeds';
 import { toast } from '../utils/toast';
 import ComboBox from '../components/ComboBox';
 import EngineeringPickerModal from '../components/EngineeringPickerModal';
+import PersonModal from '../components/PersonModal';
 import DatePicker from '../components/DatePicker';
 import PrintOSModal from '../components/PrintOSModal';
 import { getOrderEffectiveSector, getSourceItemKey, resolveCorrectSectorForProduct } from '../utils/productionRoute';
@@ -35,6 +36,7 @@ interface ServiceOrderFormViewProps {
   onBack: () => void;
   onNavigate: (view: ViewType, idOrParams?: any, maybeParams?: any) => void;
   initialParams?: any;
+  onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
 }
 
 interface BasketItem {
@@ -64,9 +66,13 @@ export default function ServiceOrderFormView({
   grids,
   onBack,
   onNavigate,
-  initialParams
+  initialParams,
+  onQuickAddPerson
 }: ServiceOrderFormViewProps) {
   const isEditing = !!serviceOrderId;
+  // Cadastro rápido de Prestador de Serviço sem sair da emissão da OS — mesmo padrão de
+  // PurchaseFormView/SaleFormView (PersonModal + onQuickAddPerson).
+  const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
 
   // Existing OS (if editing)
   const existingOS = useMemo(() => {
@@ -783,9 +789,26 @@ export default function ServiceOrderFormView({
                 onSelect={(id) => { setProviderId(id); setProviderManualName(''); }}
                 onCreateNew={(term) => { setProviderId(''); setProviderManualName(term); setIsProviderPickerOpen(false); }}
                 createLabel={(term) => `Usar "${term}" (não cadastrado)`}
+                onRegisterNew={onQuickAddPerson ? () => { setIsProviderPickerOpen(false); setIsQuickPersonModalOpen(true); } : undefined}
                 isDarkMode={isDarkMode}
                 searchPlaceholder="Pesquisar ou digitar nome do prestador..."
                 emptyHint="Nenhum prestador cadastrado"
+              />
+
+              <PersonModal
+                isOpen={isQuickPersonModalOpen}
+                onClose={() => setIsQuickPersonModalOpen(false)}
+                onSave={async (p) => {
+                  if (!onQuickAddPerson) return;
+                  const created = await onQuickAddPerson(p);
+                  setProviderId(created.id);
+                  setProviderManualName('');
+                  setIsQuickPersonModalOpen(false);
+                }}
+                sellers={people.filter(p => p.isSeller)}
+                allPeople={people}
+                initialData={{ isServiceProvider: true }}
+                isDarkMode={isDarkMode}
               />
 
               {/* Value per pair & Notes */}

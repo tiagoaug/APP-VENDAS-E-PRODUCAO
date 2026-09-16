@@ -1518,6 +1518,7 @@ export default function SaleFormView({ saleId, initialParams, sales, products, g
                 placeholder="SELECIONE O CLIENTE"
                 isDarkMode={isDarkMode}
                 usePopupModal
+                onCreateNew={() => setIsQuickPersonModalOpen(true)}
               />
             </div>
             {people.filter(p => p.isCustomer).length === 0 && (
