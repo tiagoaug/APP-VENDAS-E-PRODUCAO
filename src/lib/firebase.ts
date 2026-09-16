@@ -34,7 +34,7 @@ export const storage = getStorage(app);
 // fallback, caso a ponte nativa falhe por algum motivo. Android usa Chromium (sem esse bug) e
 // mantém a cadeia normal de fallback.
 const platform = Capacitor.getPlatform();
-export const auth = initializeAuth(app, {
+const authOptions = {
   persistence: platform === 'ios'
     ? [capacitorPreferencesPersistence, inMemoryPersistence]
     : platform === 'android'
@@ -47,7 +47,20 @@ export const auth = initializeAuth(app, {
   // `signInWithCredential`, nunca popup — e evita mais uma inicialização baseada em storage do
   // WebView no iOS.
   ...(platform === 'web' ? { popupRedirectResolver: browserPopupRedirectResolver } : {}),
-});
+};
+// `initializeAuth` roda na carga do módulo, antes de qualquer outra coisa no app — um erro
+// síncrono aqui (ex.: algo na persistência custom do iOS que a SDK não aceite numa versão
+// futura do Firebase) travaria o app inteiro numa tela branca, sem nem chegar a renderizar.
+// Fallback pra só inMemoryPersistence garante que o app sempre abre, mesmo que sem lembrar
+// login nesse cenário extremo.
+export const auth = (() => {
+  try {
+    return initializeAuth(app, authOptions);
+  } catch (err) {
+    console.error('initializeAuth falhou com a config normal, caindo pra inMemoryPersistence:', err);
+    return initializeAuth(app, { ...authOptions, persistence: [inMemoryPersistence] });
+  }
+})();
 export const googleProvider = new GoogleAuthProvider();
 // 'apple.com' é tratado pelo SDK do Firebase como um OAuthProvider genérico (não tem uma classe
 // própria tipo GoogleAuthProvider) — mesmo padrão usado pra qualquer provider OAuth custom.
