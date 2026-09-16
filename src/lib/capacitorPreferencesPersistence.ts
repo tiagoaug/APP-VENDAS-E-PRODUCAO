@@ -1,54 +1,48 @@
-import { Preferences } from '@capacitor/preferences';
 import type { Persistence } from 'firebase/auth';
 
 // Persistência custom do Firebase Auth pro iOS — ver comentário grande em firebase.ts sobre o
-// bug do WKWebView: QUALQUER persistência baseada em storage do próprio WebView (IndexedDB,
-// localStorage, sessionStorage) trava a Promise pra sempre em vez de rejeitar, então a SDK do
-// Firebase Auth nunca cai pro próximo item da cadeia de fallback. `inMemoryPersistence` evita o
-// travamento mas não sobrevive ao fechamento do app — daí o "precisa logar de novo toda vez".
+// bug do WKWebView: as CLASSES de persistência do próprio SDK (`indexedDBLocalPersistence`,
+// `browserLocalPersistence`) fazem checagens internas extras (ex.: IndexedDB como mecanismo de
+// sincronização multi-aba, mesmo pro tipo "local") que nunca resolvem nem rejeitam nesse
+// WebView, travando não só o login como o boot inteiro do app (ver
+// [[project_ios_wkwebview_auth_hang]] na memória).
 //
-// A saída é uma persistência que não usa NENHUMA API de storage do WebView: `@capacitor/preferences`
-// é uma ponte nativa direta (UserDefaults no iOS, SharedPreferences no Android), nunca toca em
-// IndexedDB/localStorage, então não tem como reproduzir o MESMO travamento. O Firebase Auth só
-// exige que o objeto tenha essas funções (a interface completa — `_isAvailable`, `_set`, `_get`,
-// `_remove`, `_addListener`, `_removeListener` — é interna, não exportada publicamente pelo SDK,
-// por isso o cast final `as Persistence`). `_addListener`/`_removeListener` existem só pra
-// sincronizar sessão entre abas de um navegador de verdade — sem sentido numa WebView isolada de
-// um app nativo, então ficam como no-op.
+// Uma primeira tentativa de corrigir isso usou `@capacitor/preferences` (ponte nativa via
+// plugin) — mas isso reproduziu o MESMO tipo de travamento por outro canal: chamar um plugin
+// Capacitor bem no boot do app (antes da ponte nativa estar 100% pronta pra rotear a resposta)
+// nunca resolvia, e a sessão nunca persistia (sempre caía no fallback de timeout).
 //
-// Toda chamada nativa aqui passa por `withTimeout`: uma ponte de plugin Capacitor que nunca
-// resolve (por qualquer motivo — bug de inicialização, versão de plugin, etc.) reproduziria
-// EXATAMENTE o mesmo tipo de travamento eterno que motivou abandonar IndexedDB/localStorage aqui,
-// só que por outro canal — e trava não só o login, mas o boot inteiro do app (tela branca), já
-// que `initializeAuth` roda antes de qualquer outra coisa. Com o timeout, na pior das hipóteses a
-// sessão simplesmente não persiste (mesmo comportamento de antes, com inMemoryPersistence), nunca
-// trava o app.
-function withTimeout<T>(promise: Promise<T>, fallback: T, ms = 3000): Promise<T> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms);
-    promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      () => { clearTimeout(timer); resolve(fallback); },
-    );
-  });
-}
-
+// A saída de verdade: usar `window.localStorage` DIRETAMENTE (não a classe
+// `browserLocalPersistence` do Firebase, que teria a mesma lógica extra problemática) —
+// `getItem`/`setItem`/`removeItem` são chamadas SÍNCRONAS da própria JavaScriptCore do
+// WKWebView, sem round-trip pra nenhuma ponte nativa e sem nenhum mecanismo de evento/listener
+// esperando algo que nunca chega. Não tem como travar: ou retorna na hora, ou lança na hora (e
+// aí o try/catch abaixo cobre). O WKWebView do Capacitor usa um WKWebsiteDataStore persistente
+// por padrão, então esse localStorage sobrevive normalmente ao fechamento do app.
 export const capacitorPreferencesPersistence: Persistence = {
   type: 'LOCAL',
-  _isAvailable: async () => withTimeout(
-    Preferences.get({ key: '__persistence_probe__' }).then(() => true),
-    false,
-  ),
+  _isAvailable: async () => {
+    try {
+      const testKey = '__persistence_test__';
+      window.localStorage.setItem(testKey, '1');
+      window.localStorage.removeItem(testKey);
+      return true;
+    } catch {
+      return false;
+    }
+  },
   _set: async (key: string, value: unknown) => {
-    await withTimeout(Preferences.set({ key, value: JSON.stringify(value) }), undefined);
+    window.localStorage.setItem(key, JSON.stringify(value));
   },
   _get: async (key: string) => {
-    const result = await withTimeout(Preferences.get({ key }), { value: null } as { value: string | null });
-    return result.value ? JSON.parse(result.value) : null;
+    const value = window.localStorage.getItem(key);
+    return value ? JSON.parse(value) : null;
   },
   _remove: async (key: string) => {
-    await withTimeout(Preferences.remove({ key }), undefined);
+    window.localStorage.removeItem(key);
   },
-  _addListener: () => { /* sem multi-aba pra sincronizar dentro do app nativo */ },
-  _removeListener: () => { /* idem */ },
+  // Só pra sincronizar sessão entre abas de um navegador de verdade — sem sentido numa WebView
+  // isolada de um app nativo, então ficam como no-op.
+  _addListener: () => { /* no-op */ },
+  _removeListener: () => { /* no-op */ },
 } as unknown as Persistence;

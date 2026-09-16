@@ -28,11 +28,13 @@ export const storage = getStorage(app);
 // Google), travando o botão sem erro nenhum (ver [[project_ios_wkwebview_auth_hang]] na
 // memória). Por isso, no iOS especificamente, usamos `capacitorPreferencesPersistence` (ver
 // capacitorPreferencesPersistence.ts) — uma persistência custom que salva a sessão via
-// `@capacitor/preferences` (ponte nativa direta, UserDefaults no iOS), sem tocar em NENHUMA API
-// de storage do WebView, então não tem como reproduzir o mesmo travamento, e ainda assim
-// sobrevive ao fechamento do app. `inMemoryPersistence` continua na cadeia só como último
-// fallback, caso a ponte nativa falhe por algum motivo. Android usa Chromium (sem esse bug) e
-// mantém a cadeia normal de fallback.
+// `window.localStorage` DIRETO (chamadas síncronas, sem round-trip de ponte nativa nem
+// mecanismo de evento/listener — só a CLASSE `browserLocalPersistence` do próprio Firebase tem
+// a lógica extra que trava; localStorage puro não tem como travar). Uma tentativa anterior
+// usou `@capacitor/preferences` (ponte de plugin nativo) e reproduziu o MESMO tipo de
+// travamento por outro canal — motivo pelo qual não é isso que essa persistência usa.
+// `inMemoryPersistence` continua na cadeia só como último fallback. Android usa Chromium (sem
+// esse bug) e mantém a cadeia normal de fallback.
 const platform = Capacitor.getPlatform();
 const authOptions = {
   persistence: platform === 'ios'
