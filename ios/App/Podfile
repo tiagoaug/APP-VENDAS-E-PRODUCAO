@@ -8,21 +8,27 @@ use_frameworks!
 # Requires CocoaPods 1.6 or newer
 install! 'cocoapods', :disable_input_output_paths => true
 
-# ATENÇÃO: tudo dentro de `def capacitor_pods ... end` é REESCRITO automaticamente pelo
-# `npx cap sync ios` toda vez que roda (ver node_modules/@capacitor/cli/dist/ios/update.js,
-# updatePodfile() — o regex `/(def capacitor_pods)[\s\S]+?(\nend)/` substitui esse bloco
-# inteiro por uma lista gerada de `pod 'Nome', :path => '...'` simples, SEM subspecs). Foi
-# exatamente por isso que adicionar `:subspecs => ['Google']` direto na linha do
-# CapacitorFirebaseAuthentication aqui dentro nunca funcionava: o "Sincronizar Capacitor iOS"
-# do Codemagic roda ANTES do "Instalar CocoaPods" e apagava essa edição a cada build, sem
-# nenhum erro visível — o pod install seguinte sempre resolvia o subspec "Lite" (padrão), que
-# compila FirebaseAuthentication.signInWithGoogle() como uma função VAZIA (todo o corpo Swift
-# fica atrás de "#if RGCFA_INCLUDE_GOOGLE", só definida pelo subspec "Google" — ver
-# node_modules/@capacitor-firebase/authentication/ios/Plugin/Handlers/GoogleAuthProviderHandler.swift
-# e CapacitorFirebaseAuthentication.podspec). A Promise do lado JS nunca resolvia nem
-# rejeitava — travava até o timeout de 15s do resolveAuthCall ("Tempo esgotado ao conectar"),
-# mesmo com skipNativeAuth:true já correto. Sign in with Apple não depende de subspec (não usa
-# SDK de terceiros), por isso sempre funcionou normalmente enquanto Google travava.
+# ATENCAO PARA QUEM FOR EDITAR: nunca escreva, nem em comentario, a palavra "def" logo antes
+# do nome da funcao de pods do Capacitor (a que vem logo abaixo) - o "npx cap sync ios" acha
+# esse bloco com um regex simples que nao entende comentario Ruby (ver
+# node_modules/@capacitor/cli/dist/ios/update.js, updatePodfile()) e reescreve TUDO a partir
+# dali. Foi exatamente isso que quebrou o build: um comentario anterior citava essa mesma
+# combinacao de palavras, o regex casou a partir do comentario em vez da funcao de verdade, e
+# corrompeu o arquivo inteiro (erro "unexpected end" no Codemagic).
+#
+# O bloco logo abaixo e reescrito automaticamente a cada sync com uma lista simples de
+# pod + path, SEM suporte a subspecs - foi por isso que declarar CapacitorFirebaseAuthentication
+# com subspecs => ['Google'] ali dentro nunca sobrevivia (o "Sincronizar Capacitor iOS" do
+# Codemagic roda ANTES do "Instalar CocoaPods", apagando a edicao sem nenhum aviso). Sem o
+# subspec Google, FirebaseAuthentication.signInWithGoogle() compila como uma funcao Swift
+# VAZIA (o corpo real fica atras de "#if RGCFA_INCLUDE_GOOGLE", so definida por esse subspec -
+# ver .../authentication/ios/Plugin/Handlers/GoogleAuthProviderHandler.swift e
+# CapacitorFirebaseAuthentication.podspec) - a Promise do lado JS nunca resolve nem rejeita,
+# trava ate o timeout de 15s do resolveAuthCall ("Tempo esgotado ao conectar"). Sign in with
+# Apple nao depende de subspec, por isso sempre funcionou normalmente.
+#
+# A correcao mora FORA deste bloco (ver target 'App' logo abaixo) - essa parte sobrevive ao
+# sync normalmente, sem risco de ser apagada.
 def capacitor_pods
   pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
@@ -45,10 +51,10 @@ end
 
 target 'App' do
   capacitor_pods
-  # Fica FORA de capacitor_pods de propósito (ver aviso grande no topo do arquivo) — essa linha
-  # sobrevive ao `cap sync ios`. Só declara o subspec ADICIONAL "Google"; a declaração "Lite"
-  # (padrão, vazia) continua vindo de capacitor_pods acima — CocoaPods aceita múltiplas linhas
-  # `pod` pro mesmo nome com subspecs diferentes no mesmo target, mesclando os requisitos.
+  # Fica FORA do bloco acima de proposito (ver aviso no topo do arquivo) - esta linha sobrevive
+  # ao sync. So declara o subspec ADICIONAL "Google"; a declaracao padrao ("Lite", vazia)
+  # continua vindo do bloco acima - CocoaPods aceita multiplas linhas pod pro mesmo nome com
+  # subspecs diferentes no mesmo target, mesclando os requisitos.
   pod 'CapacitorFirebaseAuthentication/Google', :path => '../../node_modules/@capacitor-firebase/authentication'
 end
 
