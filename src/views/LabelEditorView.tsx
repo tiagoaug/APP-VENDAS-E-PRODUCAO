@@ -232,7 +232,9 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   // Travado = a área do editor para de capturar o toque pra arrastar elemento, e o arrasto em
   // cima dela volta a rolar a tela normalmente (o mesmo gesto de sempre no celular) — sem isso,
   // dá pra ficar "preso" dentro do editor sem conseguir rolar até Ferramentas/Salvar embaixo.
-  const [canvasLocked, setCanvasLocked] = useState(false);
+  // Começa travada por padrão — evita mexer sem querer num elemento ao só rolar a tela; quem
+  // quiser editar destrava com 1 toque.
+  const [canvasLocked, setCanvasLocked] = useState(true);
   const [name, setName] = useState(session.name || 'Nova etiqueta');
   // Marca o modelo salvo como reutilizável no popup de impressão de Vendas (ver
   // LabelPrintStudioView "filterSalesTemplates"). Pré-marcado quando o editor já abriu vindo de
