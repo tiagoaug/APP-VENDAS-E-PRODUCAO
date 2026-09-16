@@ -89,6 +89,10 @@ export default function PublicCatalogApp() {
   // livremente a quantidade, sempre a partir de zero — nunca pré-marcado como se fosse levar
   // tudo). Ver CatalogLink.useStockQuantities.
   const [showStockQuantities, setShowStockQuantities] = useState(false);
+  // Link configurado pra permitir pedido de fabricação sob encomenda (CatalogLink.
+  // includeOutOfStock) — quando ligado, NENHUM tamanho/caixa trava a quantidade no estoque
+  // real, nem os que já têm saldo (o cliente pode pedir além do disponível).
+  const [allowUnlimitedQty, setAllowUnlimitedQty] = useState(false);
   const [showOrderSummary, setShowOrderSummary] = useState(false);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
@@ -136,6 +140,7 @@ export default function PublicCatalogApp() {
         // Mostra quanto tem em estoque, só como referência — o cliente sempre começa do zero
         // e escolhe livremente a quantidade (o clamp em setQty já limita ao disponível).
         setShowStockQuantities(!!res.data.useStockQuantities);
+        setAllowUnlimitedQty(!!res.data.includeOutOfStock);
         setIsGeneric(!!res.data.isGeneric);
         setExpiresAt(res.data.expiresAt ?? null);
         setErrorMessage('');
@@ -179,12 +184,12 @@ export default function PublicCatalogApp() {
   }, [now, expiresAt, status]);
 
   const setQty = (productId: string, variationId: string, size: string | undefined, available: number, value: number) => {
-    // `available === 0` só chega aqui quando o link tem "Incluir Produtos Sem Estoque" ligado
-    // (ver getPublicCatalog: tamanho/caixa zerado é filtrado fora da resposta quando essa opção
-    // está desligada) — ou seja, essa entrada só existe pra permitir encomenda sob fabricação.
-    // Sem esse caso especial, o clamp em `available` travava a quantidade em 0 pra sempre,
-    // deixando os botões +/- visualmente ativos mas sem efeito nenhum.
-    const max = available > 0 ? available : 999;
+    // Com "Incluir Produtos Sem Estoque" ligado (allowUnlimitedQty), NADA trava no estoque real
+    // — nem os tamanhos/caixas que já têm saldo (o cliente pode pedir além do disponível, pra
+    // fabricação sob encomenda). Sem esse caso especial, o clamp em `available` travava a
+    // quantidade nesse número pra sempre, deixando os botões +/- visualmente ativos mas sem
+    // efeito depois de bater no estoque.
+    const max = allowUnlimitedQty ? 999 : available;
     const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
     setCart((prev) => {
       const next = { ...prev };

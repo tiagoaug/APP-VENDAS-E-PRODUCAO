@@ -35,6 +35,7 @@ export const getPublicCatalogRequest = httpsCallable<{ token: string }, {
     }[];
   }[];
   useStockQuantities: boolean;
+  includeOutOfStock: boolean;
 }>(functions, 'getPublicCatalogRequest');
 
 export const submitCatalogRequestCall = httpsCallable<{

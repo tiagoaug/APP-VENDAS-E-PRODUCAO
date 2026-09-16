@@ -98,6 +98,12 @@ export interface GetPublicCatalogResult {
   // true = a página deve abrir cada tamanho/caixa já com a quantidade disponível marcada (ver
   // CatalogLink.useStockQuantities) — em vez de o cliente montar o pedido do zero.
   useStockQuantities: boolean;
+  // true = a página NÃO deve travar a quantidade no estoque real de NENHUM tamanho/caixa (nem
+  // os que já têm estoque) — o cliente pode pedir além do disponível pra fabricação sob
+  // encomenda. Sem isso, a página só liberava a quantidade nos itens que chegam com
+  // available: 0 (só possível quando esse toggle está ligado — ver mais abaixo), mas continuava
+  // travando itens com ALGUM estoque no próprio saldo, mesmo com o link permitindo encomenda.
+  includeOutOfStock: boolean;
 }
 
 /** Catálogo público e curado pra um token de Link de Pedido — só campos seguros de mostrar a
@@ -210,6 +216,7 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
     expiresAt: link.expiresAt ?? null,
     products,
     useStockQuantities: !!link.useStockQuantities,
+    includeOutOfStock,
   };
 }
 
