@@ -67,7 +67,8 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { auth, db, logout, authInitError } from "./lib/firebase";
+import { auth, db, logout } from "./lib/firebase";
+import { registerAuthDiagFlush } from "./lib/authDiagLog";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
 import { firebaseService, deepClean } from "./services/firebaseService";
@@ -1724,15 +1725,14 @@ export default function App() {
     return () => unsubAIEnabled();
   }, [user]);
 
-  // Diagnóstico temporário — ver authInitError em lib/firebase.ts: se initializeAuth() caiu no
-  // catch (persistência custom rejeitada pela SDK), esse era o candidato mais provável pra
-  // explicar por que _isAvailable()/_get()/_set() de capacitorPreferencesPersistence.ts nunca
-  // disparam nenhum toast. Mostra assim que o app monta (primeiro momento com o
-  // ToastContainer já escutando).
+  // Diagnóstico temporário — ver authDiagLog.ts: capacitorPreferencesPersistence.ts e
+  // firebase.ts enfileiram mensagens em vez de usar toast.show() direto, porque rodam na carga
+  // do módulo/bem cedo na inicialização do Firebase, ANTES do ToastContainer montar e passar a
+  // escutar o evento. Registra o "flush" assim que o app monta — mostra de uma vez tudo que já
+  // estava na fila E passa a mostrar ao vivo qualquer mensagem posterior (ex.: _set() durante o
+  // login, bem depois do mount).
   useEffect(() => {
-    if (authInitError) {
-      toast.show('DIAGNÓSTICO: initializeAuth falhou com persistência custom — ' + authInitError);
-    }
+    registerAuthDiagFlush((msg) => toast.show(msg));
   }, []);
 
   // Firebase Subscriptions

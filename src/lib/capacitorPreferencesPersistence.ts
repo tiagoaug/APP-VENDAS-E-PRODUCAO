@@ -1,5 +1,5 @@
 import type { Persistence } from 'firebase/auth';
-import { toast } from '../utils/toast';
+import { logAuthDiag } from './authDiagLog';
 
 // Persistência custom do Firebase Auth pro iOS — ver comentário grande em firebase.ts sobre o
 // bug do WKWebView: as CLASSES de persistência do próprio SDK (`indexedDBLocalPersistence`,
@@ -21,22 +21,9 @@ import { toast } from '../utils/toast';
 // aí o try/catch abaixo cobre). O WKWebView do Capacitor usa um WKWebsiteDataStore persistente
 // por padrão, então esse localStorage sobrevive normalmente ao fechamento do app.
 //
-// Ainda assim, um teste real no iOS mostrou "login OK, mas sessão NÃO gravada" — ou seja, esse
-// objeto não está sendo de fato usado pra escrever (a SDK deve estar caindo pro fallback
-// inMemoryPersistence sem eu saber o motivo, ver PersistenceUserManager.create() em
-// @firebase/auth: `selectedPersistence = availablePersistences[0] || inMemoryPersistence`,
-// decidido a partir de `_isAvailable()`). Os toasts de diagnóstico abaixo (só no iOS) mostram
-// exatamente quando cada função daqui é chamada e o que ela retorna, pra confirmar se o
-// problema é _isAvailable() nunca resolvendo true, ou outra coisa. Remover depois de achar a
-// causa real.
-const isIOS = () => {
-  try {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-  } catch {
-    return false;
-  }
-};
-
+// Diagnóstico: ver authDiagLog.ts — essas funções rodam ANTES de qualquer componente montar,
+// então usam logAuthDiag() (fila lida depois por App.tsx) em vez de toast.show() direto (que
+// se perderia, disparado sem ninguém ouvindo ainda). Remover depois de achar a causa real.
 export const capacitorPreferencesPersistence: Persistence = {
   type: 'LOCAL',
   _isAvailable: async () => {
@@ -44,25 +31,25 @@ export const capacitorPreferencesPersistence: Persistence = {
       const testKey = '__persistence_test__';
       window.localStorage.setItem(testKey, '1');
       window.localStorage.removeItem(testKey);
-      if (isIOS()) toast.show('DIAGNÓSTICO: _isAvailable() = true');
+      logAuthDiag('DIAGNÓSTICO: _isAvailable() = true');
       return true;
     } catch (e) {
-      if (isIOS()) toast.show('DIAGNÓSTICO: _isAvailable() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
+      logAuthDiag('DIAGNÓSTICO: _isAvailable() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
       return false;
     }
   },
   _set: async (key: string, value: unknown) => {
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
-      if (isIOS()) toast.show('DIAGNÓSTICO: _set() gravou em ' + key);
+      logAuthDiag('DIAGNÓSTICO: _set() gravou em ' + key);
     } catch (e) {
-      if (isIOS()) toast.show('DIAGNÓSTICO: _set() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
+      logAuthDiag('DIAGNÓSTICO: _set() FALHOU: ' + (e instanceof Error ? e.message : String(e)));
       throw e;
     }
   },
   _get: async (key: string) => {
     const value = window.localStorage.getItem(key);
-    if (isIOS()) toast.show('DIAGNÓSTICO: _get(' + key + ') = ' + (value ? 'encontrado' : 'vazio'));
+    logAuthDiag('DIAGNÓSTICO: _get(' + key + ') = ' + (value ? 'encontrado' : 'vazio'));
     return value ? JSON.parse(value) : null;
   },
   _remove: async (key: string) => {
