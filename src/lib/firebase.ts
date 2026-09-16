@@ -55,10 +55,20 @@ const authOptions = {
 // futura do Firebase) travaria o app inteiro numa tela branca, sem nem chegar a renderizar.
 // Fallback pra só inMemoryPersistence garante que o app sempre abre, mesmo que sem lembrar
 // login nesse cenário extremo.
+// Diagnóstico temporário do bug "sessão nunca é gravada no iOS" — os toasts DENTRO de
+// capacitorPreferencesPersistence.ts (_isAvailable/_get/_set) nunca aparecem, o que só faz
+// sentido se initializeAuth() estivesse caindo pro catch abaixo, síncrono, ANTES de a SDK
+// sequer chegar a chamar essas funções. Não dá pra usar toast.show() AQUI direto — este código
+// roda na carga do módulo, antes de qualquer componente (inclusive o ToastContainer que ESCUTA
+// o evento) montar, então o evento seria disparado no vazio. Exporta o erro pra App.tsx (já
+// montado, já com o listener ativo) mostrar assim que puder. Remover depois de achar a causa.
+export let authInitError: string | null = null;
+
 export const auth = (() => {
   try {
     return initializeAuth(app, authOptions);
   } catch (err) {
+    authInitError = err instanceof Error ? err.message : String(err);
     console.error('initializeAuth falhou com a config normal, caindo pra inMemoryPersistence:', err);
     return initializeAuth(app, { ...authOptions, persistence: [inMemoryPersistence] });
   }

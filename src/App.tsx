@@ -67,7 +67,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { auth, db, logout } from "./lib/firebase";
+import { auth, db, logout, authInitError } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
 import { firebaseService, deepClean } from "./services/firebaseService";
@@ -1723,6 +1723,17 @@ export default function App() {
     const unsubAIEnabled = subscribeToAIGeneralSettings((s) => setAiEnabled(s.enabled));
     return () => unsubAIEnabled();
   }, [user]);
+
+  // Diagnóstico temporário — ver authInitError em lib/firebase.ts: se initializeAuth() caiu no
+  // catch (persistência custom rejeitada pela SDK), esse era o candidato mais provável pra
+  // explicar por que _isAvailable()/_get()/_set() de capacitorPreferencesPersistence.ts nunca
+  // disparam nenhum toast. Mostra assim que o app monta (primeiro momento com o
+  // ToastContainer já escutando).
+  useEffect(() => {
+    if (authInitError) {
+      toast.show('DIAGNÓSTICO: initializeAuth falhou com persistência custom — ' + authInitError);
+    }
+  }, []);
 
   // Firebase Subscriptions
   useEffect(() => {
