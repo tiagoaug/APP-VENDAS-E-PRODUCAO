@@ -22,6 +22,30 @@ export function isAblemarkPlatform2(): boolean {
   return Capacitor.getPlatform() === 'android';
 }
 
+// Checagem/pedido de Bluetooth ligado — chamado só na hora de efetivamente conectar na
+// impressora (ver PrinterConnectionCard.tsx), não mais ao simplesmente abrir a tela de
+// Ajustes PDF, que tem outras configurações (tamanho de papel etc.) que não dependem disso.
+export async function isBluetoothEnabled2(): Promise<boolean> {
+  if (!isAblemarkPlatform2()) return false;
+  try {
+    const result = await AbleMarkPrinter2.isBluetoothEnabled();
+    return result.enabled;
+  } catch {
+    return false;
+  }
+}
+
+export async function requestEnableBluetooth2(): Promise<boolean> {
+  if (!isAblemarkPlatform2()) return false;
+  try {
+    const result = await AbleMarkPrinter2.requestEnableBluetooth();
+    return result.enabled;
+  } catch (err: any) {
+    toast.show('Erro ao pedir ativação do Bluetooth: ' + (err?.message || err));
+    return false;
+  }
+}
+
 export async function listAbleMarkPairedDevices2(): Promise<AbleMarkPairedDevice[]> {
   if (!isAblemarkPlatform2()) return [];
   try {

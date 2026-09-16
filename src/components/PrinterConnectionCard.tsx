@@ -7,6 +7,8 @@ import {
   disconnectAbleMarkPrinter2 as disconnectAbleMarkPrinter,
   isAbleMarkPrinterConnected2 as isAbleMarkPrinterConnected,
   resetAbleMarkPrinter2 as resetAbleMarkPrinter,
+  isBluetoothEnabled2 as isBluetoothEnabled,
+  requestEnableBluetooth2 as requestEnableBluetooth,
 } from '../lib/ablemarkPrinter2';
 import { EpsonDiscoveredPrinter, discoverEpsonPrinters } from '../lib/epsonPrinter';
 
@@ -59,9 +61,18 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
     }
   };
 
+  // Só pede pra ligar o Bluetooth aqui, na hora de efetivamente listar/conectar na
+  // impressora — não mais ao abrir a tela (que tem outras configurações que não dependem disso).
+  const ensureBluetoothEnabled = async (): Promise<boolean> => {
+    if (!isAblemarkPlatform()) return true;
+    if (await isBluetoothEnabled()) return true;
+    return requestEnableBluetooth();
+  };
+
   const handleListDevices = async () => {
     setLoadingDevices(true);
     try {
+      if (!(await ensureBluetoothEnabled())) return;
       const list = await listAbleMarkPairedDevices();
       setDevices(list);
     } finally {
@@ -73,6 +84,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
     setSelectedAddress(address);
     setConnecting(true);
     try {
+      if (!(await ensureBluetoothEnabled())) return;
       const { connected: ok } = await connectAbleMarkPrinter(address);
       setConnectedAndNotify(ok);
     } finally {

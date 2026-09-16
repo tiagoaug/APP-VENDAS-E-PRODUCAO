@@ -151,7 +151,6 @@ import {
   BusinessType,
 } from "./types";
 import { PRODUCTION_TRIAL_DAYS, SALES_TRIAL_DAYS, PERSONAL_TRIAL_DAYS } from "./constants";
-import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable, isAblemarkPlatform } from "./lib/ablemarkPrinter";
 import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 
 // Views — DashboardView e LoginView ficam estáticas (primeira tela vista por
@@ -2854,14 +2853,10 @@ export default function App() {
   // Inicial (DashboardView). Só faz sentido checar/pedir Bluetooth em quem tem impressora
   // Ablemark de verdade (Android) — fora disso a tela ainda serve pra criar/editar arquivos e
   // imprimir por outros meios, não pode ficar travada nesse pré-requisito.
-  const handleOpenLabelPrintStudio = async () => {
-    if (isAblemarkPlatform()) {
-      const enabled = await isPrinterBluetoothEnabled();
-      if (!enabled) {
-        const grantedNow = await requestPrinterBluetoothEnable();
-        if (!grantedNow) return;
-      }
-    }
+  // Não pede mais Bluetooth aqui — a tela de Ajustes PDF tem outras configurações (tamanho
+  // de papel etc.) que não dependem disso; o pedido agora só acontece na hora de efetivamente
+  // listar/conectar na impressora (ver PrinterConnectionCard.tsx).
+  const handleOpenLabelPrintStudio = () => {
     navigateTo(ViewType.LABEL_PRINT_STUDIO);
   };
 
