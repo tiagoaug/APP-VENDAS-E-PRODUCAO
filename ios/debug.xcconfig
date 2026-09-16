@@ -1,1 +1,11 @@
+// Sem este include, o CocoaPods detecta que a config de Debug já tem um xcconfig customizado
+// (este arquivo, gerado pelo Capacitor) e NÃO linka o próprio Pods-App.debug.xcconfig sozinho —
+// só avisa e espera que o include seja feito manualmente. Sem ele, PODS_PODFILE_DIR_PATH (e
+// outras variáveis PODS_*) ficam vazias, e a build phase "[CP] Check Pods Manifest.lock" quebra
+// com "diff: /Podfile.lock: No such file or directory" (comparação vira um path relativo à
+// raiz do sistema de arquivos em vez de dentro do projeto). Só afetava builds em configuração
+// Debug (ex.: o workflow de simulador) — Release nunca teve esse problema por não ter um
+// xcconfig customizado equivalente bloqueando o CocoaPods.
+#include "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"
+
 CAPACITOR_DEBUG = true
