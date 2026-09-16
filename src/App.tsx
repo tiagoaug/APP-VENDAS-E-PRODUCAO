@@ -2867,7 +2867,7 @@ export default function App() {
   // aleatório gerado no CLIENTE (não precisa de Cloud Function pra isso — quem cria é sempre
   // o dono autenticado, escrevendo no próprio dado). Ver functions/src/catalog/publicCatalog.ts
   // pro lado público que consome o token.
-  const handleGenerateCatalogLink = async (personId: string, productIds: string[] = [], hidePrices: boolean = false, useStockQuantities: boolean = false): Promise<string> => {
+  const handleGenerateCatalogLink = async (personId: string, productIds: string[] = [], hidePrices: boolean = false, useStockQuantities: boolean = false, includeOutOfStock: boolean = false): Promise<string> => {
     const bytes = new Uint8Array(24);
     window.crypto.getRandomValues(bytes);
     const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -2883,6 +2883,7 @@ export default function App() {
       productIds,
       hidePrices,
       useStockQuantities,
+      includeOutOfStock,
     });
     return token;
   };
@@ -2892,7 +2893,7 @@ export default function App() {
   // de enviar o pedido (ver src/publicCatalog/PublicCatalogApp.tsx). Expiração em MINUTOS (não
   // dias, diferente de catalogLinkExpirationDays) — link de grupo tende a ser usado numa janela
   // curta (ex.: durante uma promoção/liquidação), então Tiago pediu granularidade mais fina.
-  const handleGenerateGenericCatalogLink = async (productIds: string[] = [], hidePrices: boolean = false, useStockQuantities: boolean = false, expirationMinutes: number | null = null): Promise<string> => {
+  const handleGenerateGenericCatalogLink = async (productIds: string[] = [], hidePrices: boolean = false, useStockQuantities: boolean = false, expirationMinutes: number | null = null, includeOutOfStock: boolean = false): Promise<string> => {
     const bytes = new Uint8Array(24);
     window.crypto.getRandomValues(bytes);
     const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -2906,6 +2907,7 @@ export default function App() {
       productIds,
       hidePrices,
       useStockQuantities,
+      includeOutOfStock,
     });
     return token;
   };
@@ -2917,11 +2919,12 @@ export default function App() {
   // Atualiza quais produtos um Link de Pedido já existente mostra e se os preços ficam
   // ocultos, sem trocar o token (o cliente continua com o mesmo link, só muda o que aparece
   // pra ele da próxima vez que abrir).
-  const handleSetCatalogLinkProducts = async (linkId: string, productIds: string[], hidePrices?: boolean, useStockQuantities?: boolean) => {
+  const handleSetCatalogLinkProducts = async (linkId: string, productIds: string[], hidePrices?: boolean, useStockQuantities?: boolean, includeOutOfStock?: boolean) => {
     await firebaseService.updateDocument("catalogLinks", linkId, {
       productIds,
       ...(hidePrices !== undefined ? { hidePrices } : {}),
       ...(useStockQuantities !== undefined ? { useStockQuantities } : {}),
+      ...(includeOutOfStock !== undefined ? { includeOutOfStock } : {}),
     });
   };
 

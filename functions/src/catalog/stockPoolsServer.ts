@@ -24,12 +24,14 @@ export function getWholesaleBoxes(product: ProductLike | undefined, variation: V
   return variation?.stock?.["WHOLESALE"] || 0;
 }
 
-/** Pares disponíveis por tamanho (Varejo) — zero se o produto não vende em Varejo. */
-export function getRetailSizeAvailability(product: ProductLike | undefined, variation: VariationLike | undefined): { size: string; available: number }[] {
+/** Pares disponíveis por tamanho (Varejo) — zero se o produto não vende em Varejo.
+ * `includeZero` inclui também tamanhos com 0 pares (catálogo de pré-venda/fabricação, ver
+ * CatalogLink.includeOutOfStock) — sem isso, tamanho zerado nem aparece pro cliente. */
+export function getRetailSizeAvailability(product: ProductLike | undefined, variation: VariationLike | undefined, includeZero = false): { size: string; available: number }[] {
   if (!productHasSaleType(product, "RETAIL")) return [];
   if (!variation?.stock) return [];
   return Object.entries(variation.stock)
     .filter(([size]) => size !== "WHOLESALE")
     .map(([size, qty]) => ({ size, available: Number(qty) || 0 }))
-    .filter((s) => s.available > 0);
+    .filter((s) => includeZero || s.available > 0);
 }

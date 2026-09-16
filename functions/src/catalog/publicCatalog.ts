@@ -25,6 +25,7 @@ interface CatalogLinkDoc {
   productIds?: string[];
   hidePrices?: boolean;
   useStockQuantities?: boolean;
+  includeOutOfStock?: boolean;
 }
 
 /** Resolve um token público pro dono (uid) + o próprio doc do link, via Admin SDK — ignora
@@ -129,27 +130,32 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
     if (b?.name) brandNames.set(doc.id, b.name);
   });
 
+  // true = também manda produtos/tamanhos SEM estoque (available: 0) — pro cliente montar um
+  // pedido de itens ainda a fabricar, em vez de só ver o que já está pronto.
+  const includeOutOfStock = !!link.includeOutOfStock;
+
   const products: PublicCatalogProduct[] = [];
   productsSnap.forEach((doc) => {
     if (allowedIds && !allowedIds.has(doc.id)) return;
 
     const p = doc.data() as any;
     const productLike: ProductLike = { type: p.type, saleTypes: p.saleTypes };
+    const sellsWholesale = productHasSaleType(productLike, "WHOLESALE");
     const variations: PublicCatalogVariation[] = [];
     let hasRetail = false;
     let hasWholesale = false;
 
     for (const v of p.variations || []) {
       const variationLike: VariationLike = { stock: v.stock };
-      const retailSizes = getRetailSizeAvailability(productLike, variationLike);
+      const retailSizes = getRetailSizeAvailability(productLike, variationLike, includeOutOfStock);
       const boxes = getWholesaleBoxes(productLike, variationLike);
 
       const sizes: { size?: string; available: number }[] = [...retailSizes];
-      if (boxes > 0) sizes.push({ available: boxes });
+      if (boxes > 0 || (includeOutOfStock && sellsWholesale)) sizes.push({ available: boxes });
       if (sizes.length === 0) continue; // nada disponível nessa cor — não mostra
 
       if (retailSizes.length > 0) hasRetail = true;
-      if (boxes > 0) hasWholesale = true;
+      if (boxes > 0 || (includeOutOfStock && sellsWholesale)) hasWholesale = true;
 
       variations.push({
         variationId: v.id,
@@ -170,10 +176,9 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
     // com um resíduo do tempo em que era híbrido e o formulário nem mostra mais pra corrigir;
     // usar "unitSalePrice > 0" sozinho pegava esse valor velho em vez do salePrice atual (bug
     // real encontrado — corrigido junto com o mesmo padrão em SaleFormView, ver resolveUnitSalePrice).
-    const productSellsWholesale = productHasSaleType(productLike, "WHOLESALE");
     const pricePerBox = hasWholesale ? (p.salePrice || 0) : undefined;
     const pricePerPair = hasRetail
-      ? (productSellsWholesale && p.unitSalePrice > 0 ? p.unitSalePrice : p.salePrice || 0)
+      ? (sellsWholesale && p.unitSalePrice > 0 ? p.unitSalePrice : p.salePrice || 0)
       : undefined;
 
     products.push({
@@ -187,7 +192,7 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
       // Independente de ter estoque de caixa AGORA (hasWholesale é sobre estoque, isso aqui é só
       // informação estática de cadastro) — usa o tipo de venda configurado no produto, não o
       // saldo em estoque, senão a faixa some assim que a última caixa acaba.
-      ...(productHasSaleType(productLike, "WHOLESALE") && p.wholesaleSizeFrom && p.wholesaleSizeTo ? { wholesaleSizeRange: `${p.wholesaleSizeFrom} ao ${p.wholesaleSizeTo}` } : {}),
+      ...(sellsWholesale && p.wholesaleSizeFrom && p.wholesaleSizeTo ? { wholesaleSizeRange: `${p.wholesaleSizeFrom} ao ${p.wholesaleSizeTo}` } : {}),
       variations,
       ...(link.hidePrices ? {} : {
         ...(pricePerPair !== undefined ? { pricePerPair } : {}),

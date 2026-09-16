@@ -1873,6 +1873,11 @@ export type CatalogLink = {
   // vazio) — pra "vender o que já tem", o cliente só confirma ou ajusta pra baixo/cima em vez
   // de montar o pedido do zero.
   useStockQuantities?: boolean;
+  // true = o catálogo público também mostra produtos/tamanhos SEM estoque (available: 0) —
+  // pra o cliente conseguir montar um pedido de itens que ainda serão fabricados, em vez de só
+  // ver o que já está pronto. Sem isso (padrão), tamanho/produto zerado nem aparece pro
+  // cliente. Ver functions/src/catalog/publicCatalog.ts (getPublicCatalog).
+  includeOutOfStock?: boolean;
 };
 
 // Perfil de Envio de Catálogo — uma seleção de produtos salva com nome, pra reaproveitar ao

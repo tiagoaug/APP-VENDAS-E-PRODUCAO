@@ -117,13 +117,13 @@ interface SalesViewProps {
   // handleGenerateCatalogLink de App.tsx usado em PersonDetailView; aqui a diferença é que já
   // sai direto pro compartilhamento nativo em vez de só mostrar/copiar o link.
   catalogLinks?: CatalogLink[];
-  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean, useStockQuantities?: boolean) => Promise<string>;
+  onGenerateCatalogLink?: (personId: string, productIds?: string[], hidePrices?: boolean, useStockQuantities?: boolean, includeOutOfStock?: boolean) => Promise<string>;
   // "Link de Grupo" — variante genérica do Link de Pedido, sem cliente vinculado, pra
   // compartilhar uma vez só num grupo/lista de transmissão (ver App.tsx,
   // handleGenerateGenericCatalogLink). expirationMinutes é a escolha do popup "GRUPO" aqui
   // embaixo (minutos a horas), diferente de catalogLinkExpirationDays (dias, só do Exclusivo).
-  onGenerateGenericCatalogLink?: (productIds?: string[], hidePrices?: boolean, useStockQuantities?: boolean, expirationMinutes?: number | null) => Promise<string>;
-  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean, useStockQuantities?: boolean) => Promise<void>;
+  onGenerateGenericCatalogLink?: (productIds?: string[], hidePrices?: boolean, useStockQuantities?: boolean, expirationMinutes?: number | null, includeOutOfStock?: boolean) => Promise<string>;
+  onSetCatalogLinkProducts?: (linkId: string, productIds: string[], hidePrices?: boolean, useStockQuantities?: boolean, includeOutOfStock?: boolean) => Promise<void>;
   // Expiração do link Exclusivo (em dias, fração permitida pra caber duração menor que 1 dia) —
   // era um ajuste global em Configurações; movido pra cá (dentro do próprio popup de envio) pra
   // ficar junto do que ela afeta. Ver App.tsx handleGenerateCatalogLink/handleSetCatalogLinkExpirationDays.
@@ -395,6 +395,9 @@ export default function SalesView({
   const [catalogSendProductIds, setCatalogSendProductIds] = useState<string[]>([]);
   const [catalogSendHidePrices, setCatalogSendHidePrices] = useState(false);
   const [catalogSendUseStockQuantities, setCatalogSendUseStockQuantities] = useState(false);
+  // Manda também produtos/tamanhos SEM estoque — cliente monta um pedido de itens ainda a
+  // fabricar, em vez de só ver o que já está pronto (ver CatalogLink.includeOutOfStock).
+  const [catalogSendIncludeOutOfStock, setCatalogSendIncludeOutOfStock] = useState(false);
   const [catalogProductPickerOpen, setCatalogProductPickerOpen] = useState(false);
   // "Escolher Cliente" (modo Exclusivo) — antes era uma busca+lista sempre visível no fim da
   // tela; virou um card próprio que abre esse popup, mesmo padrão do "Escolher quais produtos
@@ -476,7 +479,7 @@ export default function SalesView({
     if (!onGenerateGenericCatalogLink || generatingGenericLink) return;
     setGeneratingGenericLink(true);
     try {
-      const token = await onGenerateGenericCatalogLink(productIdsOverride ?? catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities, genericLinkExpirationMinutes);
+      const token = await onGenerateGenericCatalogLink(productIdsOverride ?? catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities, genericLinkExpirationMinutes, catalogSendIncludeOutOfStock);
       const url = `${PUBLIC_CATALOG_BASE_URL}/pedido/${token}`;
       await CapacitorShare.share({
         title: 'Catálogo Digital',
@@ -518,9 +521,9 @@ export default function SalesView({
         // Sincroniza a seleção de produtos e a opção de ocultar preços escolhida agora no link
         // já existente — mesmo link/URL de sempre pro cliente, só muda o que ele vê da próxima
         // vez que abrir.
-        if (onSetCatalogLinkProducts) await onSetCatalogLinkProducts(existing.id, catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities);
+        if (onSetCatalogLinkProducts) await onSetCatalogLinkProducts(existing.id, catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities, catalogSendIncludeOutOfStock);
       } else {
-        token = await onGenerateCatalogLink(person.id, catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities);
+        token = await onGenerateCatalogLink(person.id, catalogSendProductIds, catalogSendHidePrices, catalogSendUseStockQuantities, catalogSendIncludeOutOfStock);
       }
       const url = `${PUBLIC_CATALOG_BASE_URL}/pedido/${token}`;
       await CapacitorShare.share({
@@ -3627,6 +3630,28 @@ export default function SalesView({
                   aria-label={catalogSendUseStockQuantities ? 'Esconder quantidade em estoque' : 'Mostrar quantidade em estoque'}
                 >
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${catalogSendUseStockQuantities ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+
+              {/* Card: Incluir Produtos Sem Estoque (toggle) — pro cliente montar um pedido de
+                  itens ainda a fabricar, em vez de só ver o que já está pronto (ver
+                  CatalogLink.includeOutOfStock em types.ts e getPublicCatalog na Cloud Function). */}
+              <div className={`flex items-center justify-between gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <Factory size={14} className="text-amber-500 shrink-0" />
+                  <div className="min-w-0">
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>Incluir Produtos Sem Estoque</p>
+                    <p className="text-[9px] font-bold text-slate-400 mt-0.5">Cliente também vê e pode pedir modelos/tamanhos zerados, pra você fabricar sob encomenda</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCatalogSendIncludeOutOfStock(v => !v)}
+                  data-guide-anchor="salesCatalog.incluirSemEstoqueToggle"
+                  className={`w-12 h-6 rounded-full relative shrink-0 transition-colors ${catalogSendIncludeOutOfStock ? 'bg-violet-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
+                  aria-label={catalogSendIncludeOutOfStock ? 'Não incluir produtos sem estoque' : 'Incluir produtos sem estoque'}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${catalogSendIncludeOutOfStock ? 'left-7' : 'left-1'}`} />
                 </button>
               </div>
 
