@@ -678,33 +678,37 @@ export default function App() {
     localStorage.setItem('hide_financial_values', String(hideFinancialValues));
   }, [hideFinancialValues]);
   // Controle da Barra de Atalhos do cabeçalho — Tiago pediu pra poder ocultar cada atalho
-  // (Privacidade/Ajuda/Modo Diurno) individualmente e escolher se ele fica parado ou com o
-  // "balancinho" de animação ociosa (ver scanAnim/aiAnim/themeAnim logo abaixo — mesmo padrão,
-  // só que agora opcional por atalho). Ver "Controle da Barra de Atalhos" em Acessibilidade
-  // (SettingsView.tsx).
-  const [headerShortcutVisibility, setHeaderShortcutVisibility] = useState<{ privacidade: boolean; ajuda: boolean; tema: boolean }>(() => {
+  // (Privacidade/Ajuda/Modo Diurno/Scanner/IA) individualmente e escolher se ele fica parado
+  // ou com o "balancinho" de animação ociosa (ver scanAnim/aiAnim/themeAnim logo abaixo — mesmo
+  // padrão, só que agora opcional por atalho). Scanner e IA aparecem aqui mesmo com o módulo
+  // (Produção/IA) desativado — a preferência já fica pronta e passa a valer assim que o
+  // usuário ativar o módulo correspondente, sem precisar configurar de novo depois. Ver
+  // "Controle da Barra de Atalhos" em Acessibilidade (SettingsView.tsx).
+  type HeaderShortcutKey = 'privacidade' | 'ajuda' | 'tema' | 'scanner' | 'ia';
+  const [headerShortcutVisibility, setHeaderShortcutVisibility] = useState<Record<HeaderShortcutKey, boolean>>(() => {
     const saved = localStorage.getItem('header_shortcut_visibility');
-    if (saved) { try { return { privacidade: true, ajuda: true, tema: true, ...JSON.parse(saved) }; } catch { /* ignora JSON corrompido */ } }
-    return { privacidade: true, ajuda: true, tema: true };
+    if (saved) { try { return { privacidade: true, ajuda: true, tema: true, scanner: true, ia: true, ...JSON.parse(saved) }; } catch { /* ignora JSON corrompido */ } }
+    return { privacidade: true, ajuda: true, tema: true, scanner: true, ia: true };
   });
   useEffect(() => {
     localStorage.setItem('header_shortcut_visibility', JSON.stringify(headerShortcutVisibility));
   }, [headerShortcutVisibility]);
-  const toggleHeaderShortcutVisibility = (key: 'privacidade' | 'ajuda' | 'tema') => {
+  const toggleHeaderShortcutVisibility = (key: HeaderShortcutKey) => {
     setHeaderShortcutVisibility(prev => ({ ...prev, [key]: !prev[key] }));
   };
-  // Animação por atalho é opt-in (default estático) pra Privacidade/Ajuda, que nunca tiveram
-  // o balancinho — só o Modo Diurno já vinha animado por padrão, então mantém true aqui pra
-  // não mudar o comportamento de quem já usa o app.
-  const [headerShortcutAnimated, setHeaderShortcutAnimated] = useState<{ privacidade: boolean; ajuda: boolean; tema: boolean }>(() => {
+  // Animação por atalho é opt-in (default estático) só pra Privacidade/Ajuda, que nunca
+  // tiveram o balancinho ligado por padrão — Modo Diurno, Scanner e IA já vinham SEMPRE
+  // animados antes deste controle existir, então mantêm true aqui pra não mudar o
+  // comportamento de quem já usa o app.
+  const [headerShortcutAnimated, setHeaderShortcutAnimated] = useState<Record<HeaderShortcutKey, boolean>>(() => {
     const saved = localStorage.getItem('header_shortcut_animated');
-    if (saved) { try { return { privacidade: false, ajuda: false, tema: true, ...JSON.parse(saved) }; } catch { /* ignora JSON corrompido */ } }
-    return { privacidade: false, ajuda: false, tema: true };
+    if (saved) { try { return { privacidade: false, ajuda: false, tema: true, scanner: true, ia: true, ...JSON.parse(saved) }; } catch { /* ignora JSON corrompido */ } }
+    return { privacidade: false, ajuda: false, tema: true, scanner: true, ia: true };
   });
   useEffect(() => {
     localStorage.setItem('header_shortcut_animated', JSON.stringify(headerShortcutAnimated));
   }, [headerShortcutAnimated]);
-  const toggleHeaderShortcutAnimated = (key: 'privacidade' | 'ajuda' | 'tema') => {
+  const toggleHeaderShortcutAnimated = (key: HeaderShortcutKey) => {
     setHeaderShortcutAnimated(prev => ({ ...prev, [key]: !prev[key] }));
   };
   // "Me guie" — modo de treinamento: toca sozinho o tour da tela atual (ver JOURNEYS) e libera
@@ -9849,7 +9853,7 @@ export default function App() {
             {hideFinancialValues ? <EyeOff size={20} /> : <Eye size={20} />}
           </motion.button>
           )}
-          {modulesConfig.production && (
+          {modulesConfig.production && headerShortcutVisibility.scanner && (
           <motion.button
             type="button"
             onClick={() => setIsHeaderScannerOpen(true)}
@@ -9858,7 +9862,7 @@ export default function App() {
             aria-label="Escanear Código"
             whileHover={{ scale: 1.15, rotate: -8 }}
             whileTap={{ scale: 0.9 }}
-            animate={scanAnim}
+            animate={headerShortcutAnimated.scanner ? scanAnim : undefined}
             transition={{ duration: 1.5, ease: "easeInOut" }}
             className="p-2 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 dark:text-emerald-400 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
           >
@@ -9887,7 +9891,7 @@ export default function App() {
             <HelpCircle size={20} />
           </motion.button>
           )}
-          {isTemplateAdmin() && modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
+          {isTemplateAdmin() && modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) && headerShortcutVisibility.ia && (
             <motion.button
               type="button"
               onClick={() => setIsAIAssistantOpen(true)}
@@ -9896,7 +9900,7 @@ export default function App() {
               aria-label="Abrir Assistente IA"
               whileHover={{ scale: 1.15, rotate: 8 }}
               whileTap={{ scale: 0.9 }}
-              animate={aiAnim}
+              animate={headerShortcutAnimated.ia ? aiAnim : undefined}
               transition={{ duration: 1.5, ease: "easeInOut" }}
               className="p-2 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-500 dark:text-violet-400 transition-colors hover:bg-violet-100 dark:hover:bg-violet-900/50"
             >

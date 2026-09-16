@@ -54,7 +54,8 @@ import {
   LayoutDashboard,
   ShoppingCart,
   ShoppingBag,
-  DollarSign
+  DollarSign,
+  ScanLine
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -121,10 +122,10 @@ interface SettingsViewProps {
   // Controle da Barra de Atalhos do cabeçalho (Privacidade/Ajuda/Modo Diurno) — visibilidade e
   // animação ociosa (o "balancinho") individual por atalho, ver App.tsx headerShortcutVisibility/
   // headerShortcutAnimated.
-  headerShortcutVisibility?: { privacidade: boolean; ajuda: boolean; tema: boolean };
-  onToggleHeaderShortcutVisibility?: (key: 'privacidade' | 'ajuda' | 'tema') => void;
-  headerShortcutAnimated?: { privacidade: boolean; ajuda: boolean; tema: boolean };
-  onToggleHeaderShortcutAnimated?: (key: 'privacidade' | 'ajuda' | 'tema') => void;
+  headerShortcutVisibility?: { privacidade: boolean; ajuda: boolean; tema: boolean; scanner: boolean; ia: boolean };
+  onToggleHeaderShortcutVisibility?: (key: 'privacidade' | 'ajuda' | 'tema' | 'scanner' | 'ia') => void;
+  headerShortcutAnimated?: { privacidade: boolean; ajuda: boolean; tema: boolean; scanner: boolean; ia: boolean };
+  onToggleHeaderShortcutAnimated?: (key: 'privacidade' | 'ajuda' | 'tema' | 'scanner' | 'ia') => void;
   // Assistente de Personalização Visual — separado do Assistente de Configuração Inicial (ver
   // VISUAL_SETUP_STEPS em App.tsx). `visualGuideTarget` diz qual seção de Acessibilidade
   // abrir/pulsar automaticamente enquanto ele está ativo; undefined/null = não está ativo.
@@ -166,9 +167,9 @@ export default function SettingsView({
   setHideFinancialValues,
   headerTopSpacePx = 0,
   setHeaderTopSpacePx,
-  headerShortcutVisibility = { privacidade: true, ajuda: true, tema: true },
+  headerShortcutVisibility = { privacidade: true, ajuda: true, tema: true, scanner: true, ia: true },
   onToggleHeaderShortcutVisibility,
-  headerShortcutAnimated = { privacidade: false, ajuda: false, tema: true },
+  headerShortcutAnimated = { privacidade: false, ajuda: false, tema: true, scanner: true, ia: true },
   onToggleHeaderShortcutAnimated,
   visualGuideTarget,
   onOpenVisualSetup,
@@ -831,7 +832,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.25.0</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.25.1</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1222,13 +1223,22 @@ export default function SettingsView({
                       { key: 'privacidade' as const, label: 'Privacidade', Icon: hideFinancialValues ? EyeOff : Eye, iconBg: 'bg-rose-50 dark:bg-slate-700 text-rose-500 dark:text-rose-400' },
                       { key: 'ajuda' as const, label: 'Ajuda', Icon: HelpCircle, iconBg: 'bg-sky-50 dark:bg-slate-700 text-sky-500 dark:text-sky-400' },
                       { key: 'tema' as const, label: isDarkMode ? 'Modo Noturno' : 'Modo Diurno', Icon: isDarkMode ? Moon : Sun, iconBg: 'bg-amber-50 dark:bg-slate-700 text-amber-500 dark:text-amber-400' },
-                    ]).map(({ key, label, Icon, iconBg }) => (
+                      // Scanner e IA continuam configuráveis aqui mesmo com o módulo (Produção/
+                      // IA) desativado — a preferência já fica pronta e passa a valer sozinha
+                      // assim que o módulo correspondente for ativado, sem precisar mexer aqui
+                      // de novo depois.
+                      { key: 'scanner' as const, label: 'Scanner', Icon: ScanLine, iconBg: 'bg-emerald-50 dark:bg-slate-700 text-emerald-500 dark:text-emerald-400', note: !modulesConfig.production ? 'Só aparece com o Módulo de Produção ativo' : undefined },
+                      { key: 'ia' as const, label: 'Assistente IA', Icon: Sparkles, iconBg: 'bg-violet-50 dark:bg-slate-700 text-violet-500 dark:text-violet-400', note: !modulesConfig.ai ? 'Só aparece com o Assistente de IA ativo' : undefined },
+                    ]).map(({ key, label, Icon, iconBg, note }) => (
                       <div key={key} className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white border border-slate-100'}`}>
                         <div className="flex items-center gap-2">
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
                             <Icon size={14} />
                           </div>
-                          <p className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
+                          <div className="min-w-0">
+                            <p className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
+                            {note && <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide truncate">{note}</p>}
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <button
