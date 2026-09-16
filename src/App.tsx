@@ -68,7 +68,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { auth, db, logout } from "./lib/firebase";
-import { registerAuthDiagFlush } from "./lib/authDiagLog";
+import { readAuthDiagLog, clearAuthDiagLog } from "./lib/authDiagLog";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
 import { firebaseService, deepClean } from "./services/firebaseService";
@@ -1725,14 +1725,15 @@ export default function App() {
     return () => unsubAIEnabled();
   }, [user]);
 
-  // Diagnóstico temporário — ver authDiagLog.ts: capacitorPreferencesPersistence.ts e
-  // firebase.ts enfileiram mensagens em vez de usar toast.show() direto, porque rodam na carga
-  // do módulo/bem cedo na inicialização do Firebase, ANTES do ToastContainer montar e passar a
-  // escutar o evento. Registra o "flush" assim que o app monta — mostra de uma vez tudo que já
-  // estava na fila E passa a mostrar ao vivo qualquer mensagem posterior (ex.: _set() durante o
-  // login, bem depois do mount).
+  // Diagnóstico temporário — ver authDiagLog.ts. Duas rodadas via toast (direto, depois com
+  // fila+flush) não mostraram nada além do aviso antigo de LoginView.tsx, o que já não fazia
+  // sentido pra timing de mount. Pra tirar qualquer dependência do sistema de toast, o log
+  // agora grava direto no localStorage; esse estado só lê e mostra num painel fixo na tela (ver
+  // renderização perto do ToastContainer), sem depender de CustomEvent/listener nenhum.
+  const [authDiagLines, setAuthDiagLines] = useState<string[]>(() => readAuthDiagLog());
   useEffect(() => {
-    registerAuthDiagFlush((msg) => toast.show(msg));
+    const id = setInterval(() => setAuthDiagLines(readAuthDiagLog()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   // Firebase Subscriptions
@@ -9766,26 +9767,52 @@ export default function App() {
     return viewTitle;
   }, [currentView, lastNonModalView, viewTitle]);
 
+  // Painel de diagnóstico temporário do bug "sessão nunca é gravada no iOS" — ver
+  // authDiagLog.ts. Extraído aqui pra entrar também nas telas de loading/login (onde a
+  // reprodução do bug — reabrir o app e cair de novo na tela de login — realmente acontece),
+  // não só depois de autenticado. Fixo, lê só o que já está no localStorage, não depende de
+  // nenhum sistema de evento/timing. Remover depois de achar a causa real do bug.
+  const authDiagPanel = authDiagLines.length > 0 && (
+    <div className="fixed left-2 right-2 bottom-2 z-[99999999] max-h-[40vh] overflow-y-auto rounded-2xl bg-black/90 text-white text-[10px] font-mono p-3 flex flex-col gap-1 pointer-events-auto">
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-black uppercase tracking-widest text-amber-400">Diagnóstico</span>
+        <button type="button" onClick={() => { clearAuthDiagLog(); setAuthDiagLines([]); }} className="text-white/60 underline">Limpar</button>
+      </div>
+      {authDiagLines.map((line, i) => <div key={i} className="break-words">{line}</div>)}
+    </div>
+  );
+
   if (loading) {
     return (
-      <div
-        className={`h-screen flex items-center justify-center ${isDarkMode ? "bg-slate-950" : "bg-slate-50"}`}
-      >
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
-      </div>
+      <>
+        <div
+          className={`h-screen flex items-center justify-center ${isDarkMode ? "bg-slate-950" : "bg-slate-50"}`}
+        >
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+        </div>
+        {authDiagPanel}
+      </>
     );
   }
 
   if (!user) {
     if (loginUnlockBiometricLabel && !showManualLoginInstead) {
       return (
-        <AppUnlockView
-          biometricLabel={loginUnlockBiometricLabel}
-          onUseAnotherAccount={() => setShowManualLoginInstead(true)}
-        />
+        <>
+          <AppUnlockView
+            biometricLabel={loginUnlockBiometricLabel}
+            onUseAnotherAccount={() => setShowManualLoginInstead(true)}
+          />
+          {authDiagPanel}
+        </>
       );
     }
-    return <LoginView />;
+    return (
+      <>
+        <LoginView />
+        {authDiagPanel}
+      </>
+    );
   }
 
   // Espera o primeiro snapshot de colaboradores decidir `needsCollabGate` antes de renderizar
@@ -9832,6 +9859,7 @@ export default function App() {
       className={`flex flex-col h-screen ${themeVisual.outerBg} font-sans ${themeVisual.baseText} overflow-hidden overflow-x-hidden`}
     >
       <ToastContainer topOffsetPx={headerTopSpacePx} />
+      {authDiagPanel}
       {/* Header — pt-10 base + env(safe-area-inset-top) (notch/Dynamic Island; só tem efeito
           com viewport-fit=cover no index.html) + um empurrão manual extra opcional (ver
           "Espaço no Topo (iPhone)" em Configurações > Aparência), pra quando o safe-area

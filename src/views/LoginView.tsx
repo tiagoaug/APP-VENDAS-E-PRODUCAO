@@ -5,6 +5,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "fire
 import { Eye, EyeOff, Mail, Lock, Fingerprint } from "lucide-react";
 import { isNativeBiometricAvailable, getBiometryLabel, saveLoginUnlockCredentials } from "../utils/biometricAuth";
 import { toast } from "../utils/toast";
+import { logAuthDiag } from "../lib/authDiagLog";
 
 interface RecentAccount {
   name: string;
@@ -130,9 +131,9 @@ export default function LoginView() {
         setTimeout(() => {
           try {
             const found = Object.keys(window.localStorage).some((k) => k.startsWith('firebase:authUser:'));
-            toast.show(found ? 'DIAGNÓSTICO: sessão gravada com sucesso após login.' : 'DIAGNÓSTICO: login OK, mas sessão NÃO foi gravada no localStorage.');
+            logAuthDiag(found ? 'login OK, sessão gravada com sucesso.' : 'login OK, mas sessão NÃO foi gravada no localStorage.');
           } catch (e: any) {
-            toast.show('DIAGNÓSTICO: erro ao checar localStorage: ' + (e?.message || e));
+            logAuthDiag('erro ao checar localStorage: ' + (e?.message || e));
           }
         }, 500);
       }

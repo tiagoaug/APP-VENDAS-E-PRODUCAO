@@ -37,6 +37,12 @@ export const storage = getStorage(app);
 // `inMemoryPersistence` continua na cadeia só como último fallback. Android usa Chromium (sem
 // esse bug) e mantém a cadeia normal de fallback.
 const platform = Capacitor.getPlatform();
+// Diagnóstico temporário — se isso NUNCA aparecer como "ios", nenhum dos avisos de
+// capacitorPreferencesPersistence.ts faz sentido mesmo: a persistência custom nunca entraria
+// na lista de opções, e o app cairia nas classes do próprio Firebase (indexedDBLocalPersistence
+// etc.), reproduzindo o bug original de travamento por outro caminho totalmente diferente do
+// que eu vinha investigando.
+logAuthDiag('DIAGNÓSTICO: platform = ' + platform);
 const authOptions = {
   persistence: platform === 'ios'
     ? [capacitorPreferencesPersistence, inMemoryPersistence]
