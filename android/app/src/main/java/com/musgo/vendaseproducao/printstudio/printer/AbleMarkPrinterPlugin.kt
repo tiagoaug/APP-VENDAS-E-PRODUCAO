@@ -97,9 +97,30 @@ class AbleMarkPrinterPlugin : Plugin() {
         call.resolve(result)
     }
 
-    /** Abre o diálogo nativo do Android pedindo pro usuário ligar o Bluetooth. */
+    /** Abre o diálogo nativo do Android pedindo pro usuário ligar o Bluetooth. No Android 12+
+     * (API 31+) disparar esse Intent sem BLUETOOTH_CONNECT concedido derruba o app inteiro com
+     * SecurityException não tratada — por isso checa/pede a permissão antes, igual a
+     * listPairedDevices()/connect(), em vez de ir direto pro startActivityForResult. */
     @PluginMethod
     fun requestEnableBluetooth(call: PluginCall) {
+        if (getPermissionState(PERM_BT) != com.getcapacitor.PermissionState.GRANTED) {
+            requestPermissionForAlias(PERM_BT, call, "requestEnableBluetoothPermCallback")
+            return
+        }
+        doRequestEnableBluetooth(call)
+    }
+
+    @PermissionCallback
+    private fun requestEnableBluetoothPermCallback(call: PluginCall) {
+        if (getPermissionState(PERM_BT) != com.getcapacitor.PermissionState.GRANTED) {
+            call.reject("Permissão de Bluetooth negada")
+            return
+        }
+        doRequestEnableBluetooth(call)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun doRequestEnableBluetooth(call: PluginCall) {
         val adapter = BluetoothAdapter.getDefaultAdapter()
         if (adapter == null) {
             call.reject("Bluetooth não disponível neste aparelho")
@@ -111,7 +132,11 @@ class AbleMarkPrinterPlugin : Plugin() {
             call.resolve(result)
             return
         }
-        startActivityForResult(call, Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), "requestEnableBluetoothResult")
+        try {
+            startActivityForResult(call, Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), "requestEnableBluetoothResult")
+        } catch (e: SecurityException) {
+            call.reject("Permissão de Bluetooth negada: " + e.message)
+        }
     }
 
     @ActivityCallback
