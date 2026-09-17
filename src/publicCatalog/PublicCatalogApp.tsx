@@ -529,7 +529,6 @@ export default function PublicCatalogApp() {
             ? 'Atacado e Varejo'
             : saleTypes.has('WHOLESALE') ? 'Atacado' : 'Varejo';
           const productOpen = !!openProducts[product.productId];
-          const totalSelectedInProduct = product.variations.reduce((sum, v) => sum + v.sizes.reduce((s2, sz) => s2 + (cart[cartKey(product.productId, v.variationId, sz.size)] || 0), 0), 0);
           // Faixa de numerações da referência (ex.: "38 ao 43") — junta os tamanhos de TODAS as
           // cores (nem toda cor tem a grade completa) e ordena numericamente pra mostrar já no
           // banner, sem precisar abrir o acordeão só pra saber se tem o tamanho desejado.
@@ -585,7 +584,7 @@ export default function PublicCatalogApp() {
                         </span>
                       )}
                       <span className={`text-[10px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-500' : 'text-indigo-600'}`}>
-                        Ver Numerações · Clique Aqui{totalSelectedInProduct > 0 ? ` · ${totalSelectedInProduct} sel.` : ''}
+                        Ver Numerações · Clique Aqui
                       </span>
                     </span>
                   </button>
