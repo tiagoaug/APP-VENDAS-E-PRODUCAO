@@ -530,9 +530,18 @@ export default function PublicCatalogApp() {
                     o preço alinhado com o fim da foto do banner, numeração logo acima dele. */}
                 <div className="flex flex-col items-end gap-1.5">
                   {sizeRangeLabel && (
-                    <span className="self-end px-2.5 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-700">
-                      Numeração {sizeRangeLabel}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: true }))}
+                      className="self-end flex flex-col items-end gap-0.5"
+                    >
+                      <span className="px-2.5 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-700">
+                        Numeração {sizeRangeLabel}
+                      </span>
+                      <span className="text-[9px] font-black text-indigo-600 underline underline-offset-2">
+                        Clique aqui e veja numerações
+                      </span>
+                    </button>
                   )}
                   {(product.pricePerPair !== undefined || product.pricePerBox !== undefined) && (
                     <div className="flex flex-wrap justify-end gap-1.5">
