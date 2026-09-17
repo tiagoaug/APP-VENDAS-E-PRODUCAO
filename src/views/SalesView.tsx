@@ -2313,56 +2313,37 @@ export default function SalesView({
               )}
             </div>
 
-            {/* Visualização */}
+            {/* Visualização — cada opção é um card branco 3D com ícone + rótulo numa linha só e
+                um toggle pequeno no final (liga/desliga), em vez do botão inteiro mudar de cor
+                de fundo como antes. */}
             <div className="flex flex-col gap-2 mt-2">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Visualização</p>
-              <div className="flex gap-2">
-                <button onClick={() => setExpandedCards(v => !v)}
-                  data-guide-anchor="sales.vizCardsExpandidos"
-                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${expandedCards ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                  {expandedCards ? 'Cards Expandidos' : 'Cards Compactos'}
+              {([
+                { key: 'expandedCards', label: expandedCards ? 'Cards Expandidos' : 'Cards Compactos', value: expandedCards, onToggle: () => setExpandedCards(v => !v), icon: expandedCards ? Maximize2 : Minimize2, anchor: 'sales.vizCardsExpandidos', color: 'text-sky-500' },
+                { key: 'showProducts', label: showProducts ? 'Mostrar Produtos' : 'Ocultar Produtos', value: showProducts, onToggle: () => setShowProducts(v => !v), icon: Package, anchor: 'sales.vizMostrarProdutos', color: 'text-emerald-500' },
+                { key: 'showGradeBreakdown', label: showGradeBreakdown ? 'Mostrar Padrão de Embalagem' : 'Ocultar Padrão de Embalagem', value: showGradeBreakdown, onToggle: () => setShowGradeBreakdown(v => !v), icon: Box, anchor: 'sales.vizPadraoEmbalagem', color: 'text-violet-500' },
+                { key: 'showSeparationInfo', label: showSeparationInfo ? 'Avisos de Separação Visíveis' : 'Avisos de Separação Ocultos', value: showSeparationInfo, onToggle: () => setShowSeparationInfo(v => !v), icon: Boxes, anchor: 'sales.vizAvisosSeparacao', color: 'text-indigo-500' },
+                { key: 'showSeparationThumbnails', label: showSeparationThumbnails ? 'Miniaturas na Separação Visíveis' : 'Miniaturas na Separação Ocultas', value: showSeparationThumbnails, onToggle: () => setShowSeparationThumbnails(v => !v), icon: Package, anchor: 'sales.vizMiniaturasSeparacao', color: 'text-amber-500' },
+                { key: 'showSummaryBar', label: showSummaryBar ? 'Barra de Valores Visível' : 'Barra de Valores Oculta', value: showSummaryBar, onToggle: () => setShowSummaryBar(v => !v), icon: DollarSign, anchor: 'sales.vizBarraValores', color: 'text-rose-500' },
+                { key: 'showStockGlanceCard', label: showStockGlanceCard ? 'Card Disponível em Estoque Visível' : 'Card Disponível em Estoque Oculto', value: showStockGlanceCard, onToggle: () => setShowStockGlanceCard(v => !v), icon: Eye, anchor: 'sales.vizCardDisponivel', color: 'text-cyan-500' },
+                { key: 'enableLabelSeparationControl', label: enableLabelSeparationControl ? 'Controle de Separação por Etiqueta Ativo' : 'Controle de Separação por Etiqueta Desativado', value: enableLabelSeparationControl, onToggle: () => setEnableLabelSeparationControl(v => !v), icon: Tag, anchor: 'sales.vizControleEtiquetaSeparacao', color: 'text-orange-500' },
+              ] as { key: string; label: string; value: boolean; onToggle: () => void; icon: typeof Boxes; anchor: string; color: string }[]).map(({ key, label, value, onToggle, icon: Icon, anchor, color }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={onToggle}
+                  data-guide-anchor={anchor}
+                  className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border-b-[3px] transition-shadow ${isDarkMode ? 'bg-gradient-to-b from-slate-800 to-slate-800/80 border-slate-950 shadow-[0_4px_10px_-4px_rgba(0,0,0,0.5)]' : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 shadow-[0_4px_10px_-6px_rgba(15,23,42,0.18)]'}`}
+                >
+                  <span className="flex items-center gap-2 text-[10px] font-medium tracking-wide normal-case text-left text-blue-950 dark:text-blue-300">
+                    <Icon size={14} className={`${color} shrink-0`} strokeWidth={2.5} />
+                    {label}
+                  </span>
+                  <div className={`w-11 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${value ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${value ? 'left-6' : 'left-1'}`} />
+                  </div>
                 </button>
-                <button onClick={() => setShowProducts(v => !v)}
-                  data-guide-anchor="sales.vizMostrarProdutos"
-                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showProducts ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                  {showProducts ? 'Mostrar Produtos' : 'Ocultar Produtos'}
-                </button>
-              </div>
-              <button onClick={() => setShowGradeBreakdown(v => !v)}
-                data-guide-anchor="sales.vizPadraoEmbalagem"
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showGradeBreakdown ? 'bg-gradient-to-b from-violet-500 to-violet-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(139,92,246,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                {showGradeBreakdown ? 'Ocultar Padrão de Embalagem' : 'Mostrar Padrão de Embalagem'}
-              </button>
-              <button onClick={() => setShowSeparationInfo(v => !v)}
-                data-guide-anchor="sales.vizAvisosSeparacao"
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationInfo ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(99,102,241,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                <Boxes size={14} strokeWidth={2.5} />
-                {showSeparationInfo ? 'Avisos de Separação Visíveis' : 'Avisos de Separação Ocultos'}
-              </button>
-              <button onClick={() => setShowSeparationThumbnails(v => !v)}
-                data-guide-anchor="sales.vizMiniaturasSeparacao"
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationThumbnails ? 'bg-gradient-to-b from-sky-500 to-sky-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(14,165,233,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                <Package size={14} strokeWidth={2.5} />
-                {showSeparationThumbnails ? 'Miniaturas na Separação Visíveis' : 'Miniaturas na Separação Ocultas'}
-              </button>
-              <button onClick={() => setShowSummaryBar(v => !v)}
-                data-guide-anchor="sales.vizBarraValores"
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSummaryBar ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                <DollarSign size={14} strokeWidth={2.5} />
-                {showSummaryBar ? 'Barra de Valores Visível' : 'Barra de Valores Oculta'}
-              </button>
-              <button onClick={() => setShowStockGlanceCard(v => !v)}
-                data-guide-anchor="sales.vizCardDisponivel"
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showStockGlanceCard ? 'bg-gradient-to-b from-sky-500 to-sky-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(14,165,233,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                <Eye size={14} strokeWidth={2.5} />
-                {showStockGlanceCard ? 'Card Disponível em Estoque Visível' : 'Card Disponível em Estoque Oculto'}
-              </button>
-              <button onClick={() => setEnableLabelSeparationControl(v => !v)}
-                data-guide-anchor="sales.vizControleEtiquetaSeparacao"
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${enableLabelSeparationControl ? 'bg-gradient-to-b from-amber-500 to-amber-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(217,119,6,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
-                <Tag size={14} strokeWidth={2.5} />
-                {enableLabelSeparationControl ? 'Controle de Separação por Etiqueta Ativo' : 'Controle de Separação por Etiqueta Desativado'}
-              </button>
+              ))}
             </div>
 
             <button
