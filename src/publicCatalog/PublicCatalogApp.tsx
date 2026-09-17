@@ -414,6 +414,18 @@ export default function PublicCatalogApp() {
     // combinações de navegador/CSS herdado do bundle principal do app).
     <div className="h-screen overflow-y-auto bg-slate-50 pb-32">
       <header className="bg-white border-b border-slate-100 px-4 py-3 sticky top-0 z-10 flex flex-col gap-2">
+        {/* Resumo do pedido em andamento, sempre visível no topo — sem precisar rolar até o
+            fundo da tela pra saber quantos produtos e quanto já foi selecionado. */}
+        {totalItems > 0 && (
+          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-100">
+            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
+              {totalItems} {totalItems === 1 ? 'produto selecionado' : 'produtos selecionados'}
+            </span>
+            {hasAnyPrice && (
+              <span className="text-sm font-black text-emerald-600">{formatPrice(totalValue)}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-base font-black uppercase tracking-tight text-slate-900">Catálogo</h1>
           {expiresAt && (
@@ -575,9 +587,6 @@ export default function PublicCatalogApp() {
                       <span className={`text-[10px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-500' : 'text-indigo-600'}`}>
                         Ver Numerações · Clique Aqui{totalSelectedInProduct > 0 ? ` · ${totalSelectedInProduct} sel.` : ''}
                       </span>
-                    </span>
-                    <span className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-white text-lg font-black transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500'}`}>
-                      ⌄
                     </span>
                   </button>
                   {(product.pricePerPair !== undefined || product.pricePerBox !== undefined) && (
