@@ -701,25 +701,36 @@ export default function FinancialView({
           </div>
 
           {/* Cápsula de lançamento manual — substitui os antigos botões "+" flutuantes; agora
-              do tamanho do card acima, com o nome de cada função, e confirma o que vai fazer
-              antes de abrir o formulário (ver `manualEntryConfirmType`). */}
-          <div className={`grid grid-cols-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-             <button
-               type="button"
-               onClick={() => setManualEntryConfirmType(TransactionType.INCOME)}
-               data-guide-anchor="financial.novaEntrada"
-               className={`flex items-center justify-center gap-2 py-4 border-r font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400 border-slate-800' : 'bg-emerald-50 text-emerald-600 border-slate-200'}`}
-             >
-               <TrendingUp size={16} strokeWidth={3} /> Nova Entrada
-             </button>
-             <button
-               type="button"
-               onClick={() => setManualEntryConfirmType(TransactionType.EXPENSE)}
-               data-guide-anchor="financial.novaSaida"
-               className={`flex items-center justify-center gap-2 py-4 font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-600'}`}
-             >
-               <TrendingDown size={16} strokeWidth={3} /> Nova Saída
-             </button>
+              como dois cards (não mais uma faixa plana), com um título explicando que é pra
+              lançamento AVULSO (Vendas/Compras já entram sozinhas — ver MANUAL_ENTRY_INFO) e um
+              círculo colorido atrás de cada seta pra dar mais destaque de "isto é um botão".
+              Confirma o que vai fazer antes de abrir o formulário (ver `manualEntryConfirmType`). */}
+          <div className={`p-4 flex flex-col gap-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+             <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Outras Entradas ou Saídas de Valores</p>
+             <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setManualEntryConfirmType(TransactionType.INCOME)}
+                  data-guide-anchor="financial.novaEntrada"
+                  className={`flex flex-col items-center gap-2 py-4 rounded-2xl border-2 active:scale-[0.98] transition-all ${isDarkMode ? 'bg-emerald-900/20 border-emerald-900/40 hover:bg-emerald-900/30' : 'bg-emerald-50 border-emerald-100 hover:bg-emerald-100'}`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-emerald-900/40 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+                    <TrendingUp size={18} strokeWidth={3} />
+                  </div>
+                  <span className={`font-black text-[10px] uppercase tracking-widest ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Nova Entrada</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManualEntryConfirmType(TransactionType.EXPENSE)}
+                  data-guide-anchor="financial.novaSaida"
+                  className={`flex flex-col items-center gap-2 py-4 rounded-2xl border-2 active:scale-[0.98] transition-all ${isDarkMode ? 'bg-rose-900/20 border-rose-900/40 hover:bg-rose-900/30' : 'bg-rose-50 border-rose-100 hover:bg-rose-100'}`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-rose-900/40 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
+                    <TrendingDown size={18} strokeWidth={3} />
+                  </div>
+                  <span className={`font-black text-[10px] uppercase tracking-widest ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>Nova Saída</span>
+                </button>
+             </div>
           </div>
 
           {/* Análise Detalhada — embutida no mesmo card (ver prop `embedded`), em vez

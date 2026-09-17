@@ -197,8 +197,16 @@ export default function TransactionModal({
 
   if (!isOpen) return null;
 
+  // Não existe campo de "Descrição" geral no formulário — só a descrição de cada item em
+  // Detalhamento de Itens. Sem isso, `description` (usado só ao editar um lançamento já
+  // existente, ver setDescription no efeito de carga) ficava vazio pra sempre em qualquer
+  // lançamento NOVO, travando o salvamento com "Preencha todos os campos obrigatórios" mesmo
+  // com valor, categoria e conta preenchidos — o "(valor deve ser maior que zero)" da mensagem
+  // é só um exemplo do que pode faltar, não indicava de verdade qual campo estava vazio.
+  const effectiveDescription = description || items.map(i => i.description).filter(Boolean).join(', ');
+
   const handleSave = async () => {
-    if (!description || !(Number(amount) > 0) || !categoryId || !accountId) {
+    if (!effectiveDescription || !(Number(amount) > 0) || !categoryId || !accountId) {
       toast.show('Preencha todos os campos obrigatórios (valor deve ser maior que zero)');
       return;
     }
@@ -217,7 +225,7 @@ export default function TransactionModal({
     const buildTx = (txDate: number, installmentNumber?: number, recurrenceGroupId?: string): Omit<Transaction, 'id'> => ({
       type,
       amount: Number(amount),
-      description,
+      description: effectiveDescription,
       categoryId,
       accountId,
       contactId: contactId || undefined,
@@ -252,8 +260,8 @@ export default function TransactionModal({
         if (occReminderAt) {
           notificationService.scheduleReminder({
             id: `transaction-${occId}`,
-            title: reminderTitle || description || 'Lançamento',
-            body: `${description || 'Lançamento'} · Parcela ${i + 1}/${totalInstallments}`,
+            title: reminderTitle || effectiveDescription || 'Lançamento',
+            body: `${effectiveDescription || 'Lançamento'} · Parcela ${i + 1}/${totalInstallments}`,
             at: occReminderAt,
             alarmMode: reminderAlarmMode,
             combineMode: reminderCombineMode,
@@ -406,8 +414,8 @@ export default function TransactionModal({
             </div>
             <div className="relative">
               <ComboBox
-                options={people.map(p => ({ 
-                  id: p.id, 
+                options={people.map(p => ({
+                  id: p.id,
                   name: `${p.name} ${p.isCustomer && p.isSupplier ? '(CLI/FOR)' : p.isCustomer ? '(CLI)' : '(FOR)'}`
                 }))}
                 value={contactId}
@@ -415,22 +423,9 @@ export default function TransactionModal({
                 placeholder="Sem vínculo"
                 isDarkMode={isDarkMode}
                 usePopupModal
+                onCreateNew={onRequestNewContact}
               />
             </div>
-            {onRequestNewContact && (
-              <button
-                type="button"
-                onClick={onRequestNewContact}
-                className={`flex items-center gap-1.5 self-start px-3 py-1.5 rounded-full border text-[9px] font-black uppercase tracking-widest transition-all active:scale-[0.97] ${
-                  isDarkMode
-                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20'
-                    : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100'
-                }`}
-              >
-                <Plus size={11} strokeWidth={3} />
-                Não encontrou? Cadastre aqui
-              </button>
-            )}
           </div>
 
           {/* Detalhamento Card */}
@@ -521,6 +516,35 @@ export default function TransactionModal({
               <span className="text-[10px] font-black uppercase tracking-widest">Adicionar Item</span>
             </button>
           </div>
+
+          {/* Descrição — só aparece sem Detalhamento de Itens, que nesse caso já vira a
+              descrição sozinho (ver effectiveDescription). Sem isso, um lançamento manual sem
+              nenhum item não tinha NENHUM jeito de preencher a descrição geral, travando o
+              salvamento sempre com "Preencha todos os campos obrigatórios". */}
+          {items.length === 0 && (
+            <div className={`p-3 rounded-[1.3rem] border transition-all duration-300 flex flex-col gap-2 ${
+              isDarkMode
+                ? 'bg-gradient-to-b from-slate-900 to-slate-950/80 border-slate-800/80 shadow-[0_10px_25px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.05)]'
+                : 'bg-white border-slate-200/60 shadow-[0_10px_25px_rgba(0,0,0,0.06)]'
+            } hover:scale-[1.01] hover:shadow-lg`}>
+              <div className="flex items-center gap-2">
+                <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                  isDarkMode ? 'bg-violet-500/10 text-violet-400 shadow-[0_4px_12px_rgba(139,92,246,0.15)]' : 'bg-violet-50 text-violet-600 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4)]'
+                }`}>
+                  <ClipboardList size={11} strokeWidth={2.5} />
+                </div>
+                <label className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Descrição</label>
+              </div>
+              <input
+                type="text"
+                placeholder="Ex: Aluguel, Comissão, Aporte..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                data-guide-anchor="transacao.descricao"
+                className={`w-full bg-transparent border-none outline-none text-xs font-black ${isDarkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-300'}`}
+              />
+            </div>
+          )}
 
           {/* Valor Card */}
           {items.length === 0 && (
@@ -834,7 +858,21 @@ export default function TransactionModal({
           )}
         </div>
 
-        <div className="p-5 pt-2 shrink-0">
+        <div className="p-5 pt-2 shrink-0 flex flex-col gap-3">
+          {/* Card de Valor Total — sempre reflete o campo "Valor" (que por sua vez é somado
+              automaticamente a partir do Detalhamento de Itens quando ele está em uso, ver
+              itemsTotal acima) — deixa claro, bem no fim do formulário, exatamente quanto vai
+              ser lançado antes de confirmar. */}
+          <div className={`flex items-center justify-between px-5 py-4 rounded-[1.5rem] border-2 ${
+            type === TransactionType.INCOME
+              ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-900/40' : 'bg-emerald-50 border-emerald-100')
+              : (isDarkMode ? 'bg-rose-950/20 border-rose-900/40' : 'bg-rose-50 border-rose-100')
+          }`}>
+            <span className={`text-[10px] font-medium tracking-wide ${isDarkMode ? 'text-blue-300' : 'text-blue-950'}`}>Valor Total</span>
+            <span className={`text-xl font-black tracking-tight ${type === TransactionType.INCOME ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}`}>
+              R$ {(Number(amount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
           <button
             type="button"
             onClick={handleSave}

@@ -2135,7 +2135,7 @@ export default function DashboardView({
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
                   <div className="flex flex-col gap-1">
                     <span className="inline-flex items-center w-fit px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-sm font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400">Análise de Lucro</span>
-                    <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Baseada em Receitas − Despesas do período</p>
+                    <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Baseada em Receitas − Despesas do período</p>
                   </div>
                   <button
                     title="Filtrar Período"
@@ -2178,7 +2178,7 @@ export default function DashboardView({
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="space-y-1.5">
-                            <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Período Atual</p>
+                            <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Período Atual</p>
                             <div className="flex gap-2">
                               <select 
                                 title="Tipo Período"
@@ -2213,7 +2213,7 @@ export default function DashboardView({
 
                           {profitComparisonMode === 'MANUAL' && (
                             <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="space-y-1.5">
-                              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Comparar com</p>
+                              <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Comparar com</p>
                               <div className="flex gap-2">
                                 <select 
                                   title="Tipo Período Comp"
@@ -2252,17 +2252,19 @@ export default function DashboardView({
                   )}
                 </AnimatePresence>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
-                    <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Receitas</p>
-                    <p className={`text-sm font-black text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.income.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
+                      <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Receitas</p>
+                      <p className={`text-sm font-black text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.income.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
+                      <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Despesas</p>
+                      <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.expenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
                   </div>
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
-                    <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Despesas</p>
-                    <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.expenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                  </div>
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
-                    <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Comparativo</p>
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col items-center gap-1 text-center">
+                    <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Comparativo</p>
                     <div className="flex items-center gap-1">
                       {profitAnalysis.profitDiff >= 0 ? <TrendingUp size={12} className="text-emerald-500" /> : <TrendingDown size={12} className="text-rose-500" />}
                       <p className={`text-sm font-black ${profitAnalysis.profitDiff >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
@@ -2281,8 +2283,8 @@ export default function DashboardView({
                       <Footprints size={18} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Lucro Real por Par</p>
-                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-tight mt-0.5">
+                      <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Lucro Real por Par</p>
+                      <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-tight mt-0.5">
                         (Receitas − Despesas) ÷ {profitAnalysis.producedPairs} {profitAnalysis.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} no período
                       </p>
                     </div>
@@ -2301,8 +2303,8 @@ export default function DashboardView({
                       <TrendingUp size={18} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Taxa de Lucro</p>
-                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-tight mt-0.5">
+                      <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Taxa de Lucro</p>
+                      <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-tight mt-0.5">
                         (Receitas − Despesas) ÷ Receitas do período
                       </p>
                     </div>
@@ -2313,7 +2315,7 @@ export default function DashboardView({
                 </div>
 
                 <div className={`p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? "border-slate-800" : "border-slate-50"} flex flex-col gap-3`}>
-                  <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">
+                  <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">
                     {profitComparisonMode === 'AUTO' ? 'Período Anterior Automático' : 'Comparação Manual Selecionada'}
                   </p>
                   <div className="space-y-2">
