@@ -9021,7 +9021,7 @@ export default function App() {
           <div className="flex flex-col gap-6">
             <header className="mb-4">
               <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Controle de Estoques</h2>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Materiais e Solados</p>
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1">Materiais e Solados</p>
             </header>
             
             <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
@@ -9043,7 +9043,7 @@ export default function App() {
                     </div>
                     <div className="text-left">
                       <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>{item.label}</p>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{item.description}</p>
+                      <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1">{item.description}</p>
                     </div>
                   </div>
                   <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
