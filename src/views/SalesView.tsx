@@ -334,6 +334,12 @@ export default function SalesView({
   // Miniatura do produto no popup "Pedido & Separação" — opcional pois nem toda base tem
   // foto cadastrada, e alguém pode preferir a lista mais compacta sem imagens.
   const [showSeparationThumbnails, setShowSeparationThumbnails] = usePersistedToggle('salesView_showSeparationThumbnails', true);
+  // Controle de separação de caixas por etiqueta de nome de cliente ("Separado (etiqueta
+  // colocada)" no popup "Pedido & Separação") — nem toda operação separa fisicamente com
+  // etiqueta de cliente na caixa, então é opcional. Quando ligado, a opção só aparece DEPOIS de
+  // reservada alguma quantidade daquele item (ver `qty > 0` nos dois pontos de uso abaixo) —
+  // antes disso fica oculta, pra não confirmar "separado" de algo que ainda nem foi reservado.
+  const [enableLabelSeparationControl, setEnableLabelSeparationControl] = usePersistedToggle('salesView_enableLabelSeparationControl', true);
 
   // Aplica o padrão publicado pela conta de desenvolvimento (ver defaultFiltersService.ts) só
   // pras chaves que essa conta ainda não tiver salvo localmente — nunca sobrescreve escolha de
@@ -359,6 +365,7 @@ export default function SalesView({
     applyIfUnset('salesView_showSeparationThumbnails', setShowSeparationThumbnails, defaultFilters.showSeparationThumbnails);
     applyIfUnset('salesView_showSummaryBar', setShowSummaryBar, defaultFilters.showSummaryBar);
     applyIfUnset('salesView_showStockGlanceCard', setShowStockGlanceCard, defaultFilters.showStockGlanceCard);
+    applyIfUnset('salesView_enableLabelSeparationControl', setEnableLabelSeparationControl, defaultFilters.enableLabelSeparationControl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultFilters]);
 
@@ -2350,10 +2357,16 @@ export default function SalesView({
                 <Eye size={14} strokeWidth={2.5} />
                 {showStockGlanceCard ? 'Card Disponível em Estoque Visível' : 'Card Disponível em Estoque Oculto'}
               </button>
+              <button onClick={() => setEnableLabelSeparationControl(v => !v)}
+                data-guide-anchor="sales.vizControleEtiquetaSeparacao"
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${enableLabelSeparationControl ? 'bg-gradient-to-b from-amber-500 to-amber-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(217,119,6,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                <Tag size={14} strokeWidth={2.5} />
+                {enableLabelSeparationControl ? 'Controle de Separação por Etiqueta Ativo' : 'Controle de Separação por Etiqueta Desativado'}
+              </button>
             </div>
 
             <button
-              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setDeliveryFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); setShowStockGlanceCard(true); }}
+              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setDeliveryFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); setShowStockGlanceCard(true); setEnableLabelSeparationControl(true); }}
               data-guide-anchor="sales.limparFiltros"
               className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all shadow-sm bg-white dark:bg-slate-900"
             >
@@ -2369,7 +2382,7 @@ export default function SalesView({
                 onClick={() => onSaveDefaultFilters?.({
                   filter, paymentFilter, deliveryFilter, periodPreset, periodStart, periodEnd, selectedStatuses,
                   expandedCards, showProducts, showGradeBreakdown, showSeparationInfo, showSeparationThumbnails,
-                  showSummaryBar, showStockGlanceCard,
+                  showSummaryBar, showStockGlanceCard, enableLabelSeparationControl,
                 })}
                 data-guide-anchor="sales.salvarFiltrosPadrao"
                 className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-white bg-gradient-to-b from-violet-500 to-violet-600 shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
@@ -4946,7 +4959,11 @@ export default function SalesView({
 
                       {/* "Separado" — confirmação manual do operador de estoque (colocou a
                           etiqueta física na caixa), independente da quantidade reservada
-                          acima. Salva na hora, sem precisar do botão "Reservar (N)" lá embaixo. */}
+                          acima. Salva na hora, sem precisar do botão "Reservar (N)" lá embaixo.
+                          Só aparece com o controle ligado (ver Filtros) E depois de reservar
+                          alguma quantidade (qty > 0) — antes disso não faz sentido confirmar
+                          "separado" de algo que ainda nem foi reservado. */}
+                      {enableLabelSeparationControl && qty > 0 && (
                       <button
                         type="button"
                         onClick={() => onToggleItemSeparated(s.id, row.idx, !row.item.manuallySeparated)}
@@ -4967,6 +4984,7 @@ export default function SalesView({
                         </span>
                         <span className="text-[9px] font-black uppercase tracking-widest">{row.item.manuallySeparated ? 'Sim' : 'Não'}</span>
                       </button>
+                      )}
                     </div>
                   );
                 })}
@@ -5029,8 +5047,10 @@ export default function SalesView({
                         </div>
                       </div>
 
-                      {/* "Separado" — mesma confirmação manual do operador, ver bloco pendente acima */}
-                      {revertChoiceMode !== 'partial' && (
+                      {/* "Separado" — mesma confirmação manual do operador, ver bloco pendente acima.
+                          Sem gate de qty aqui: chegar em doneRows já significa remaining === 0,
+                          ou seja, já está totalmente reservado. */}
+                      {enableLabelSeparationControl && revertChoiceMode !== 'partial' && (
                         <button
                           type="button"
                           onClick={() => onToggleItemSeparated(s.id, row.idx, !row.item.manuallySeparated)}

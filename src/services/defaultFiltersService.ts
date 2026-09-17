@@ -26,6 +26,7 @@ export interface SalesDefaultFilters {
   showSeparationThumbnails?: boolean;
   showSummaryBar?: boolean;
   showStockGlanceCard?: boolean;
+  enableLabelSeparationControl?: boolean;
 }
 
 export function subscribeToSalesDefaultFilters(callback: (data: SalesDefaultFilters | null) => void) {
