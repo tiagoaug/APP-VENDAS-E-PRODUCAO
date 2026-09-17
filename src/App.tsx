@@ -8410,6 +8410,12 @@ export default function App() {
             onDeleteLot={handleDeleteProductionLot}
             onDeleteProductionOrder={handleDeleteProductionOrder}
             onBack={goBack}
+            // Acesso direto pelo ícone "PCP" da navegação inferior usa resetTo (history vira
+            // [PRODUCTION_PCP], length 1) — nesse caso não tem "tela anterior" de verdade, então
+            // o botão Voltar nem aparece. Vindo de outro lugar (Engenharia, atalho do Dashboard
+            // etc.), navigateTo empilha no history normal (length > 1) e o Voltar aparece como
+            // cápsula abaixo da navegação do PCP, ver header do PCPView.
+            canGoBack={history.length > 1}
             userName={user?.displayName || user?.email || 'Usuário'}
             productionConfigs={productionConfigs}
             soleStock={soleStockEntries}

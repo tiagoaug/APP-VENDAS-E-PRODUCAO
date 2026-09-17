@@ -151,6 +151,11 @@ interface PCPViewProps {
   labelFiles: LabelFile[];
   onRequestPurchase?: (req: Omit<PurchaseRequest, 'id'>) => Promise<void>;
   onBack: () => void;
+  // true quando existe uma tela anterior de verdade no histórico (chegou aqui por navigateTo,
+  // ex.: Engenharia, atalho do Dashboard) — false quando é acesso direto pelo ícone "PCP" da
+  // navegação inferior (resetTo zera o histórico, não tem pra onde voltar). Controla se o botão
+  // Voltar aparece (ver header abaixo).
+  canGoBack?: boolean;
   userName?: string;
   initialTab?: 'monitor' | 'lots' | 'orders' | 'needs' | 'solados';
   initialSectorId?: string;
@@ -199,6 +204,7 @@ export default function PCPView({
   labelFiles,
   onRequestPurchase,
   onBack,
+  canGoBack = false,
   userName,
   initialTab = 'monitor',
   initialSectorId,
@@ -5534,20 +5540,9 @@ export default function PCPView({
         onCancel={() => setRemoveItemConfirm(null)}
       />
       <header className="flex flex-col gap-4">
-        {/* Linha 1: Voltar — o título "PCP Central" já vem no cabeçalho fixo do app logo
-            acima (ver App.tsx <header>), repeti-lo aqui de novo era redundante. */}
-        <div className="flex items-center gap-4 px-2">
-          <button
-            type="button"
-            onClick={onBack}
-            data-guide-anchor="pcp.voltar"
-            title="Voltar ao Painel"
-            aria-label="Voltar para a tela anterior"
-            className={`p-3 rounded-2xl transition-all flex-shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-white' : 'bg-white text-slate-400 hover:text-slate-900 shadow-sm border border-slate-100'}`}
-          >
-            <ChevronRight className="rotate-180" size={20} />
-          </button>
-        </div>
+        {/* O botão Voltar não fica mais aqui em cima (ver mais abaixo, depois da navegação do
+            PCP) — o título "PCP Central" já vem no cabeçalho fixo do app logo acima (ver
+            App.tsx <header>), repeti-lo aqui de novo era redundante. */}
 
         {/* As Ações Rápidas (Escanear, Filtros, Compartilhar, Mapas) ficam agora no
             popup do 6º ícone ("Ações") da navegação. */}
@@ -5754,6 +5749,20 @@ export default function PCPView({
             </button>
           </div>
         </div>
+
+        {/* Voltar — só aparece quando chegou aqui vindo de outra tela (Engenharia, atalho do
+            Dashboard etc., ver canGoBack em App.tsx). Acesso direto pelo ícone "PCP" da
+            navegação inferior não tem "tela anterior" de verdade, então some daqui. */}
+        {canGoBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            data-guide-anchor="pcp.voltar"
+            className={`w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-100 shadow-sm'}`}
+          >
+            <ChevronRight size={14} className="rotate-180" /> Voltar
+          </button>
+        )}
       </header>
 
       {/* Popup centralizado — Ações Rápidas */}
