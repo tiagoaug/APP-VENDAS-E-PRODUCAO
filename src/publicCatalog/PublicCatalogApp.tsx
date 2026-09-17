@@ -85,6 +85,36 @@ export default function PublicCatalogApp() {
     const index = Math.max(0, filtered.indexOf(startUrl));
     setLightbox({ images: filtered, index, productId });
   };
+  // Compartilha a foto ampliada — tenta mandar o arquivo de imagem em si (WhatsApp/Instagram
+  // mostram preview bonito assim); sem suporte a arquivo, compartilha só o link; sem Web Share
+  // API nenhuma (desktop), copia o link pra área de transferência como último recurso.
+  const handleShareLightboxPhoto = async (url: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const file = new File([blob], 'foto-catalogo.jpg', { type: blob.type || 'image/jpeg' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+    } catch {
+      // segue pro fallback abaixo
+    }
+    try {
+      if (navigator.share) {
+        await navigator.share({ url });
+        return;
+      }
+    } catch {
+      // segue pro fallback abaixo
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Link da foto copiado!');
+    } catch {
+      alert('Não foi possível compartilhar a foto.');
+    }
+  };
   // Link configurado pra mostrar quanto tem em estoque, só como referência (o cliente escolhe
   // livremente a quantidade, sempre a partir de zero — nunca pré-marcado como se fosse levar
   // tudo). Ver CatalogLink.useStockQuantities.
@@ -534,19 +564,19 @@ export default function PublicCatalogApp() {
                   <button
                     type="button"
                     onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: !prev[product.productId] }))}
-                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-all active:scale-[0.98] ${productOpen ? 'bg-white border-slate-200' : 'bg-indigo-50 border-indigo-200'}`}
+                    className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] ${productOpen ? 'bg-white border-slate-200' : 'bg-indigo-50 border-indigo-200 animate-pulse-indigo-ring-slow'}`}
                   >
                     <span className="flex flex-col items-start min-w-0">
                       {sizeRangeLabel && (
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 truncate">
+                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-700 truncate">
                           Numeração {sizeRangeLabel}
                         </span>
                       )}
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-500' : 'text-indigo-600'}`}>
-                        Ver Variações{totalSelectedInProduct > 0 ? ` · ${totalSelectedInProduct} sel.` : ''}
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-500' : 'text-indigo-600'}`}>
+                        Ver Numerações · Clique Aqui{totalSelectedInProduct > 0 ? ` · ${totalSelectedInProduct} sel.` : ''}
                       </span>
                     </span>
-                    <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-base font-black transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500'}`}>
+                    <span className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-white text-lg font-black transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500'}`}>
                       ⌄
                     </span>
                   </button>
@@ -564,17 +594,6 @@ export default function PublicCatalogApp() {
               </div>
             </div>
 
-            {/* Retângulo de descrição — nome + marca + texto, separado do resto do card */}
-            <div className="mx-3 mb-3 p-3 rounded-xl bg-slate-50">
-              <p className="text-base font-black text-slate-900 truncate">{product.name}</p>
-              {product.brandName && (
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{product.brandName}</p>
-              )}
-              {product.description && (
-                <p className="text-xs font-medium text-slate-500 leading-relaxed mt-2">{product.description}</p>
-              )}
-            </div>
-
             <div className="px-3 pb-3">
               {/* Acordeão POR REFERÊNCIA (não por cor) — todas as cores/numerações dessa
                   referência ficam escondidas atrás de um único gatilho, que só abre quando o
@@ -584,12 +603,12 @@ export default function PublicCatalogApp() {
                   duplicado aqui embaixo. */}
               {productOpen && (
                 <div
-                  className="fixed inset-0 z-20 bg-black/60 flex items-end sm:items-center justify-center"
+                  className="fixed inset-0 z-[25] bg-black/60 flex items-center justify-center p-4"
                   onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: false }))}
                 >
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[85vh] flex flex-col overflow-hidden"
+                    className="bg-white w-full max-w-md rounded-2xl max-h-[85vh] flex flex-col overflow-hidden"
                   >
                     <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
                       <div className="min-w-0">
@@ -606,6 +625,16 @@ export default function PublicCatalogApp() {
                       </button>
                     </div>
                     <div className="flex flex-col gap-3 p-3 overflow-y-auto">
+                  {(product.brandName || product.description) && (
+                    <div className="p-3 rounded-xl bg-slate-50">
+                      {product.brandName && (
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{product.brandName}</p>
+                      )}
+                      {product.description && (
+                        <p className="text-xs font-medium text-slate-500 leading-relaxed mt-1">{product.description}</p>
+                      )}
+                    </div>
+                  )}
                   {product.variations.map((variation) => {
                     const variationGallery = [variation.photoUrl, ...(variation.photoAlbum || [])].filter(Boolean) as string[];
                     const selectedInVariation = variation.sizes.reduce((sum, s) => sum + (cart[cartKey(product.productId, variation.variationId, s.size)] || 0), 0);
@@ -618,7 +647,7 @@ export default function PublicCatalogApp() {
                       ? `${variationSizes[0]} ao ${variationSizes[variationSizes.length - 1]}`
                       : variationSizes[0];
                     return (
-                    <div key={variation.variationId} className="rounded-xl bg-slate-50 p-3">
+                    <div key={variation.variationId} className="rounded-2xl bg-gradient-to-b from-white to-slate-50 border-b-[3px] border-slate-200 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)] p-3">
                       <div className="flex items-center gap-2 mb-2">
                         {variation.photoUrl && (
                           <img
@@ -672,7 +701,7 @@ export default function PublicCatalogApp() {
                             return (
                               <div
                                 key={key}
-                                className={`flex bg-white rounded-xl border border-slate-200 gap-2 ${wide ? 'flex-row items-center justify-between px-4 py-3' : 'flex-col items-center px-2 py-2.5'}`}
+                                className={`flex bg-gradient-to-b from-white to-slate-50 rounded-xl border-b-[3px] border-slate-200 shadow-[0_3px_8px_-4px_rgba(15,23,42,0.18)] gap-2 ${wide ? 'flex-row items-center justify-between px-4 py-3' : 'flex-col items-center px-2 py-2.5'}`}
                               >
                                 <div className={`flex leading-tight ${wide ? 'flex-row items-baseline gap-2' : 'flex-col items-center'}`}>
                                   <span className={`font-black text-slate-600 ${wide ? 'text-base' : 'text-xs'}`}>{s.size || 'Cx'}</span>
@@ -841,6 +870,14 @@ export default function PublicCatalogApp() {
           className="fixed inset-0 z-30 bg-black/90 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}
         >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleShareLightboxPhoto(lightbox.images[lightbox.index]); }}
+            aria-label="Compartilhar foto"
+            className="absolute top-4 right-[4.25rem] w-11 h-11 rounded-full bg-white/15 text-white flex items-center justify-center active:scale-90 transition-all"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+          </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setLightbox(null); }}

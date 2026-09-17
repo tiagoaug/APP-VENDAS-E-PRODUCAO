@@ -477,6 +477,24 @@
   .animate-pulse-blue-ring {
     animation: pulse-blue-ring 1.8s infinite;
   }
+
+  /* Pulso lento (a cada 4s) do card "Ver Variações" do Catálogo Público — mais espaçado que os
+     pulsos de alerta interno acima, pra chamar atenção sem parecer urgente/irritante numa tela
+     voltada pro cliente final. */
+  @keyframes pulse-indigo-ring-slow {
+    0% {
+      box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.5);
+    }
+    15% {
+      box-shadow: 0 0 0 10px rgba(79, 70, 229, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
+    }
+  }
+  .animate-pulse-indigo-ring-slow {
+    animation: pulse-indigo-ring-slow 4s infinite;
+  }
 }
 
 /* ── Global Print Rules ───────────────────────────────────────────────────── */

@@ -150,6 +150,10 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
     const variations: PublicCatalogVariation[] = [];
     let hasRetail = false;
     let hasWholesale = false;
+    // Cor marcada como preferida pra capa (ProductFormView > Variação > "Cor em Destaque para
+    // Capa") — só usada abaixo se ESSA cor realmente tiver saldo agora; sem saldo, cai pro
+    // fallback dinâmico normal.
+    let featuredCoverPhotoUrl: string | undefined;
 
     for (const v of p.variations || []) {
       const variationLike: VariationLike = { stock: v.stock };
@@ -163,6 +167,10 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
       if (retailSizes.length > 0) hasRetail = true;
       if (boxes > 0 || (includeOutOfStock && sellsWholesale)) hasWholesale = true;
 
+      if (v.isCatalogCoverColor && v.photoUrl && sizes.some((s) => s.available > 0)) {
+        featuredCoverPhotoUrl = v.photoUrl;
+      }
+
       variations.push({
         variationId: v.id,
         colorName: v.colorName,
@@ -174,6 +182,16 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
     }
 
     if (variations.length === 0) return; // produto sem nada disponível — não mostra
+
+    // Foto de capa DINÂMICA, recalculada a cada acesso ao catálogo — evita o cliente confundir a
+    // cor mostrada na capa com uma cor da MESMA referência que na verdade não está disponível no
+    // momento. Ordem de prioridade: 1) cor marcada como preferida, SE tiver saldo agora; 2)
+    // qualquer outra cor desta referência que tenha saldo agora; 3) primeira cor com foto (mesmo
+    // sem saldo); 4) foto de capa cadastrada manualmente no produto (Product.photoUrl), só como
+    // último recurso.
+    const inStockVariationWithPhoto = variations.find((v) => v.photoUrl && v.sizes.some((s) => s.available > 0));
+    const anyVariationWithPhoto = variations.find((v) => v.photoUrl);
+    const coverPhotoUrl = featuredCoverPhotoUrl || inStockVariationWithPhoto?.photoUrl || anyVariationWithPhoto?.photoUrl || p.photoUrl;
 
     // costPrice/salePrice são sempre por CAIXA; unitCostPrice/unitSalePrice são por PAR, só
     // preenchidos quando o produto vende no par (Varejo puro ou Híbrido) — ver ProductFormView.
@@ -191,7 +209,7 @@ export async function getPublicCatalog(db: firestore.Firestore, token: string): 
       productId: doc.id,
       reference: p.reference,
       name: p.name,
-      photoUrl: p.photoUrl,
+      photoUrl: coverPhotoUrl,
       ...(p.brandId && brandNames.has(p.brandId) ? { brandName: brandNames.get(p.brandId) } : {}),
       ...(p.categoryId ? { categoryId: p.categoryId, categoryName: categoryNames.get(p.categoryId) } : {}),
       ...(p.catalogDescription ? { description: p.catalogDescription } : {}),

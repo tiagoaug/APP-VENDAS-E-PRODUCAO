@@ -7,7 +7,7 @@ import {
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
   Layers, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake, PenTool, Bookmark, Share2, Edit3
+  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake, PenTool, Bookmark, Share2, Edit3, Star
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
@@ -284,10 +284,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [workDaysPerMonth, setWorkDaysPerMonth] = useState<number | string>(existingProduct?.workDaysPerMonth || 26);
   const [sectorPrices, setSectorPrices] = useState<Record<string, number>>(existingProduct?.sectorPrices || {});
   const [photoUrl, setPhotoUrl] = useState<string>(existingProduct?.photoUrl || '');
-  // Popup "Escolher foto de uma cor em estoque" — evita a foto de capa do Catálogo Público
-  // mostrar uma cor que o cliente confunde com uma que não tem em estoque (mesma referência,
-  // cor diferente); deixa reaproveitar a foto de uma cor que REALMENTE tem saldo agora.
-  const [showCoverFromVariation, setShowCoverFromVariation] = useState(false);
   // Enquanto a foto sobe pro Storage (ver src/utils/uploadProductPhoto.ts) — antes era
   // instantâneo (base64 local), agora precisa de um spinner porque depende de rede.
   const [uploadingProductPhoto, setUploadingProductPhoto] = useState(false);
@@ -478,6 +474,13 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     const newVars = [...variations];
     newVars[index] = { ...newVars[index], ...updates };
     setVariations(newVars);
+  };
+
+  // Marca esta cor como preferida pra capa do Catálogo Público, desmarcando qualquer outra —
+  // só uma variação por produto deve carregar isCatalogCoverColor (ver comentário em types.ts).
+  // Tocar de novo na já marcada desmarca (volta pro fallback automático do servidor).
+  const setCoverColor = (index: number) => {
+    setVariations(variations.map((v, i) => ({ ...v, isCatalogCoverColor: i === index ? !v.isCatalogCoverColor : false })));
   };
 
   const deleteVariation = (index: number) => {
@@ -868,6 +871,26 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             />
                           </label>
                         </div>
+
+                        {/* Cor preferida pra capa do Catálogo Público — o servidor ainda checa o
+                            estoque real na hora de servir o catálogo (ver publicCatalog.ts): se
+                            essa cor estiver sem saldo no momento, cai automaticamente pra outra
+                            cor que tenha. Só faz sentido com uma foto cadastrada nesta cor. */}
+                        {module === 'SALES' && v.photoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setCoverColor(activeVariationIndex)}
+                            data-guide-anchor="productForm.corDestaqueCapa"
+                            className={`self-center flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${
+                              v.isCatalogCoverColor
+                                ? 'bg-indigo-600 text-white'
+                                : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            <Star size={12} fill={v.isCatalogCoverColor ? 'currentColor' : 'none'} />
+                            {v.isCatalogCoverColor ? 'Cor em Destaque para Capa' : 'Usar como Cor em Destaque'}
+                          </button>
+                        )}
 
                         {/* Álbum de Fotos DESTA COR — só aparece no Catálogo Público (Link de
                             Pedido de Vendas). Por cor, não por referência: cada cor tem seu
@@ -2139,11 +2162,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     );
   }
 
-  // Cores com foto cadastrada E saldo em estoque agora (qualquer tamanho) — candidatas a virar
-  // a foto de capa do Catálogo Público, pra evitar mostrar uma cor que o cliente confunde com
-  // uma que na verdade não tem disponível (mesma referência, cor diferente).
-  const variationsWithStockPhoto = variations.filter(v => v.photoUrl && Object.values(v.stock || {}).some(qty => qty > 0));
-
   return (
     <>
       <div className="flex flex-col gap-4 pb-60 px-2 sm:px-4 pt-4 min-h-screen">
@@ -2214,20 +2232,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 }}
               />
             </label>
-            {/* Atalho pra usar a foto de uma cor que tem estoque agora como capa do Catálogo
-                Público, em vez de subir uma foto avulsa — evita o cliente confundir a cor da
-                capa com uma que não tem disponível (mesma referência, cor diferente). Só
-                aparece quando já existe pelo menos uma cor cadastrada com foto + saldo. */}
-            {variationsWithStockPhoto.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowCoverFromVariation(true)}
-                data-guide-anchor="productForm.capaDeCorEmEstoque"
-                className="text-[9px] font-black text-indigo-500 hover:text-indigo-600 uppercase tracking-widest"
-              >
-                Usar foto de uma cor em estoque
-              </button>
-            )}
           </div>
           )}
 
@@ -3498,25 +3502,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             </motion.div>
           )}
         </AnimatePresence>
-
-        <Modal isOpen={showCoverFromVariation} onClose={() => setShowCoverFromVariation(false)} title="Usar Foto de uma Cor em Estoque" icon={<Camera size={20} />} maxWidth="max-w-sm">
-          <div className="flex flex-col gap-2">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
-              Vira a foto de capa do Catálogo Público — só cores com saldo agora
-            </p>
-            {variationsWithStockPhoto.map((v, idx) => (
-              <button
-                key={v.id || idx}
-                type="button"
-                onClick={() => { setPhotoUrl(v.photoUrl!); setShowCoverFromVariation(false); }}
-                className={`flex items-center gap-3 p-2.5 rounded-xl border-2 transition-all ${isDarkMode ? 'border-slate-800 hover:bg-slate-800' : 'border-slate-100 hover:bg-slate-50'}`}
-              >
-                <img src={v.photoUrl} alt={v.colorName} className="w-14 h-14 rounded-xl object-cover shrink-0" />
-                <span className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{v.colorName}</span>
-              </button>
-            ))}
-          </div>
-        </Modal>
       </div>
     </>
   );

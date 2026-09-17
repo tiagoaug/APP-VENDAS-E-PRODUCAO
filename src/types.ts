@@ -359,6 +359,12 @@ export type Variation = {
   // de escolher. Por cor, não por referência, pra não misturar fotos de cores diferentes no
   // mesmo álbum. Opcional; não usado em etiqueta/PCP, só no catálogo.
   photoAlbum?: string[];
+  // Cor preferida pra virar a foto de capa do Catálogo Público (Link de Pedido) — só uma
+  // variação por produto deve ter isso marcado (ver toggleCoverColor em ProductFormView). O
+  // servidor (publicCatalog.ts) ainda checa o estoque real na hora de servir o catálogo: se
+  // essa cor estiver sem saldo, cai pra outra cor que tenha, e só usa Product.photoUrl como
+  // último recurso — a marcação aqui é preferência, não garantia de aparecer.
+  isCatalogCoverColor?: boolean;
   sectorNotes?: Record<string, SectorNote[]>; // sectorId → list of named notes for that sector
   // Serviços terceirizados que se aplicam ao cabedal inteiro (o conjunto), não a uma peça
   // de corte específica — ex: revisão geral, montagem completa.
