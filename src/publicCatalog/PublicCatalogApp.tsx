@@ -584,7 +584,7 @@ export default function PublicCatalogApp() {
                         </span>
                       )}
                       <span className={`text-[10px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-500' : 'text-indigo-600'}`}>
-                        Ver Numerações · Clique Aqui
+                        Ver Opções de Cores
                       </span>
                     </span>
                   </button>
