@@ -1596,10 +1596,10 @@ export default function DashboardView({
                 </div>
                 <div className="flex justify-between items-center">
                   <div className={`flex border p-0.5 rounded-xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <button onClick={() => setSupplierDashboardTab('DEBITS')} data-guide-anchor="dash.suppliers.tabs" className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                    <button onClick={() => setSupplierDashboardTab('DEBITS')} data-guide-anchor="dash.suppliers.tabs" className={`px-3 py-1.5 rounded-lg text-[10px] font-medium tracking-wide normal-case transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-blue-950 dark:text-blue-300 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       Pendentes {pendingPurchases.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{pendingPurchases.length}</span></span>}
                     </button>
-                    <button onClick={() => setSupplierDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                    <button onClick={() => setSupplierDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[10px] font-medium tracking-wide normal-case transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-blue-950 dark:text-blue-300 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       Créditos {suppliersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{suppliersWithCredits.length}</span></span>}
                     </button>
                   </div>
@@ -1607,7 +1607,7 @@ export default function DashboardView({
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={14} />
-                  <input type="text" placeholder="Buscar fornecedor..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-black tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-700" value={supplierDebtsSearch} onChange={(e) => setSupplierDebtsSearch(e.target.value)} />
+                  <input type="text" placeholder="Buscar fornecedor..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 placeholder:text-slate-300 dark:placeholder:text-slate-700" value={supplierDebtsSearch} onChange={(e) => setSupplierDebtsSearch(e.target.value)} />
                 </div>
                 <div className="h-[200px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                   {supplierDashboardTab === 'DEBITS' ? (
@@ -1619,12 +1619,12 @@ export default function DashboardView({
                             <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {purchase.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                           <div className="flex items-center justify-between mt-1">
-                            <p className="text-[10px] text-slate-600 dark:text-slate-400 tracking-widest font-bold">{format(purchase.date, 'dd/MM/yyyy')}</p>
+                            <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">{format(purchase.date, 'dd/MM/yyyy')}</p>
                             {purchase.batchNumber && <p className="text-[8px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest">#{purchase.batchNumber}</p>}
                           </div>
                         </div>
                       ))}
-                      {pendingPurchases.length === 0 && <p className="text-[10px] text-center text-slate-400 py-4">Nenhuma compra pendente.</p>}
+                      {pendingPurchases.length === 0 && <p className="text-[10px] font-medium tracking-wide text-center text-blue-950 dark:text-blue-300 py-4">Nenhuma compra pendente.</p>}
                     </>
                   ) : (
                     <>
@@ -1636,14 +1636,14 @@ export default function DashboardView({
                           </div>
                         </div>
                       ))}
-                      {suppliersWithCredits.length === 0 && <p className="text-[10px] text-center text-slate-400 py-4">Nenhum crédito com fornecedor.</p>}
+                      {suppliersWithCredits.length === 0 && <p className="text-[10px] font-medium tracking-wide text-center text-blue-950 dark:text-blue-300 py-4">Nenhum crédito com fornecedor.</p>}
                     </>
                   )}
                 </div>
 
                 {/* Footer com Somas */}
                 <div className={`mt-2 pt-3 border-t flex justify-between items-center ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                  <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest">Total do Período</p>
+                  <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Total do Período</p>
                   <p className={`text-[13px] font-black ${supplierDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                     R$ {(supplierDashboardTab === 'DEBITS'
                       ? pendingPurchases.reduce((acc, p) => acc + p.debt, 0)
