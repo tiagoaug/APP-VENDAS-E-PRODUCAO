@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { Product, Variation, ProductionLot, LabelLayout, ProductionConfigItem, ServiceOrder } from '../types';
 import { sharePDF } from '../utils/pdfExport';
-import { toDottedQRDataURL } from '../utils/dottedQRCode';
+import { toQRDataURL } from '../utils/qrCode';
 
 export const labelService = {
   getDefaultLayout(dimensions: [number, number]): LabelLayout {
@@ -29,9 +29,10 @@ export const labelService = {
   async generateQRCode(text: string): Promise<string> {
     try {
       // width alto (bem acima do tamanho físico impresso) pra a impressora térmica receber uma
-      // imagem de origem nítida e não precisar fazer upscale de um PNG pequeno — é isso que
-      // gera o serrilhado/perda de leitura em etiquetas pequenas, não o estilo do QR em si.
-      return await toDottedQRDataURL(text, { margin: 1, width: 800 });
+      // imagem de origem nítida e não precisar fazer upscale de um PNG pequeno. Módulo quadrado
+      // sólido (ver qrCode.ts) em vez do estilo "bolinhas" anterior — a impressora Ablemark
+      // tinha dificuldade em reproduzir pontos tão pequenos com nitidez.
+      return await toQRDataURL(text, { margin: 1, width: 800 });
     } catch (err) {
       console.error('Error generating QR Code', err);
       return '';

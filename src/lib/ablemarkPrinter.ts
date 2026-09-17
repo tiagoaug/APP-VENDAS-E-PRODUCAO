@@ -35,6 +35,14 @@ export function isAblemarkPlatform(): boolean {
   return Capacitor.getPlatform() === 'android';
 }
 
+// Gate do card "Impressão" (ver LabelEditorView.tsx) — mais permissivo que isAblemarkPlatform():
+// mostra em Android (impressão real) e também na Web (só pra ajustar layout/testar o fluxo sem
+// precisar reinstalar o app a cada mudança), mas nunca no iOS, onde nem Ablemark (bloqueio MFi)
+// nem Epson (ainda sem SDK integrado) têm como funcionar de verdade.
+export function isPrinterUiPlatform(): boolean {
+  return Capacitor.getPlatform() !== 'ios';
+}
+
 // `imagePath` precisa ser uma URI de arquivo já salva (ex.: retorno de Filesystem.writeFile),
 // nunca base64 bruto.
 // Checagem/pedido de Bluetooth ligado — usado antes de abrir a área de impressão, pra pedir

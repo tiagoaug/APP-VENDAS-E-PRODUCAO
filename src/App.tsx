@@ -239,6 +239,7 @@ import AIAssistantSettings from "./components/AIAssistantSettings";
 import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
 import TransactionModal from "./components/TransactionModal";
+import PersonModal from "./components/PersonModal";
 import SolePurchaseModal from "./components/SolePurchaseModal";
 import PalmilhaPurchaseModal from "./components/PalmilhaPurchaseModal";
 import AIAssistantModal from "./components/AIAssistantModal";
@@ -1052,6 +1053,7 @@ export default function App() {
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
+  const [isTxQuickPersonModalOpen, setIsTxQuickPersonModalOpen] = useState(false);
   const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   // Central de Ajuda — assistente local/offline (ver HelpCenterModal.tsx), distinto do
@@ -10945,9 +10947,25 @@ export default function App() {
         people={people}
         initialType={transactionModalType}
         isDarkMode={isDarkMode}
+        onRequestNewContact={() => setIsTxQuickPersonModalOpen(true)}
       />
-      
 
+      {isTxQuickPersonModalOpen && (
+        <PersonModal
+          isOpen={isTxQuickPersonModalOpen}
+          onClose={() => setIsTxQuickPersonModalOpen(false)}
+          onSave={async (person: any) => {
+            const created = await firebaseService.saveDocument("people", person);
+            toast.show('Fornecedor cadastrado!');
+            setIsTxQuickPersonModalOpen(false);
+            return created as Person;
+          }}
+          sellers={people.filter(p => p.isSeller)}
+          allPeople={people}
+          initialData={{ isSupplier: true }}
+          isDarkMode={isDarkMode}
+        />
+      )}
 
       <SolePurchaseModal
         isOpen={isSolePurchaseModalOpen}

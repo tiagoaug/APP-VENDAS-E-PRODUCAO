@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import jsPDF from 'jspdf';
 import {
-  Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, ChevronLeft, ChevronRight, Pencil,
-  Download, FileText, Image as ImageIcon,
+  Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, ChevronLeft, ChevronRight, ChevronDown, Pencil,
+  Download, FileText, Image as ImageIcon, Wifi,
 } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import Modal from './Modal';
 import PrinterConnectionCard from './PrinterConnectionCard';
-import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
+import { isAblemarkPlatform, isPrinterUiPlatform } from '../lib/ablemarkPrinter';
 import { isAbleMarkPrinterConnected2 } from '../lib/ablemarkPrinter2';
-import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
+import { saveImageToGallery } from '../lib/gallerySaver';
 import { shareImages, sharePDF } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
 
@@ -62,6 +62,12 @@ export default function LabelPrintPreviewModal({
   // card de conexão (PrinterConnectionCard) aparece aqui mesmo, dentro do preview. Ausente em
   // plataformas sem Ablemark (iOS) — lá não tem o que conectar.
   const [printerConnected, setPrinterConnected] = useState(true);
+  // Acordeão fechado por padrão — a conexão só precisa aparecer aberta quando a impressora
+  // Ablemark está desconectada (ver useEffect abaixo), fora isso fica de fora do caminho.
+  const [printerAccordionOpen, setPrinterAccordionOpen] = useState(false);
+  // Popup "Compartilhar Etiqueta" — escolhe JPG ou PDF num só botão em vez de deixar os dois
+  // sempre visíveis lado a lado.
+  const [showShareFormatChoice, setShowShareFormatChoice] = useState(false);
 
   // Volta pra primeira etiqueta só quando a modal ABRE — dependia antes também de
   // `previewDataUrls`, mas esse array é recriado (nova referência) a cada render do pai
@@ -70,7 +76,12 @@ export default function LabelPrintPreviewModal({
   // de volta pra página 1 no meio da conferência do usuário.
   useEffect(() => { if (isOpen) setPreviewIndex(0); }, [isOpen]);
   useEffect(() => {
-    if (isOpen && isAblemarkPlatform()) isAbleMarkPrinterConnected2().then(setPrinterConnected);
+    if (isOpen && isAblemarkPlatform()) {
+      isAbleMarkPrinterConnected2().then(connected => {
+        setPrinterConnected(connected);
+        if (!connected) setPrinterAccordionOpen(true);
+      });
+    }
   }, [isOpen]);
   // Se o lote encolher (ou o índice ficar inválido por qualquer motivo), não deixa a imagem
   // sumir silenciosamente — trava no último item válido.
@@ -145,8 +156,12 @@ export default function LabelPrintPreviewModal({
     }
   };
 
-  const rowCls = `flex items-center justify-between px-3 py-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`;
-  const labelCls = 'text-[10px] font-black uppercase tracking-widest text-slate-400';
+  const rowCls = `flex items-center justify-between px-3 py-2.5 rounded-xl border-b-[3px] transition-shadow ${
+    isDarkMode
+      ? 'bg-gradient-to-b from-slate-800 to-slate-800/80 border-slate-950 shadow-[0_4px_10px_-4px_rgba(0,0,0,0.5)]'
+      : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 shadow-[0_4px_10px_-6px_rgba(15,23,42,0.18)]'
+  }`;
+  const labelCls = 'text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300';
   const stepperBtnCls = `p-1.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`;
 
   const directionOptions: { value: PrintDirection; label: string; icon: typeof ArrowDown }[] = [
@@ -187,7 +202,7 @@ export default function LabelPrintPreviewModal({
               >
                 <ChevronLeft size={14} />
               </button>
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <span className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
                 Etiqueta {safePreviewIndex + 1} de {previewDataUrls.length}
               </span>
               <button
@@ -213,8 +228,8 @@ export default function LabelPrintPreviewModal({
                 type="button"
                 onClick={() => patch({ direction: d.value })}
                 data-guide-anchor="labelPrintPreview.selecionarDirecao"
-                className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest ${
-                  options.direction === d.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                className={`flex flex-col items-center gap-1 py-2 rounded-xl text-[10px] font-medium tracking-wide normal-case ${
+                  options.direction === d.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-blue-300' : 'bg-slate-100 text-blue-950'
                 }`}
               >
                 <d.icon size={14} /> {d.label}
@@ -274,28 +289,47 @@ export default function LabelPrintPreviewModal({
                 type="button"
                 onClick={() => patch({ paperType: p.value })}
                 data-guide-anchor="labelPrintPreview.selecionarTipoPapel"
-                className={`flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
-                  options.paperType === p.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                className={`flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-[10px] font-medium tracking-wide normal-case ${
+                  options.paperType === p.value ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-blue-300' : 'bg-slate-100 text-blue-950'
                 }`}
               >
                 {p.label}
-                {!p.confirmed && <span className="text-[7px] font-bold opacity-70 normal-case">não testado</span>}
+                {!p.confirmed && <span className="text-[8px] font-medium opacity-70 normal-case">não testado</span>}
               </button>
             ))}
           </div>
         </div>
 
         {totalLabelsNote && (
-          <p className="text-center text-[10px] font-bold text-slate-400">{totalLabelsNote}</p>
+          <p className="text-center text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300">{totalLabelsNote}</p>
         )}
 
-        {/* Impressora desconectada — conecta aqui mesmo, sem sair do preview. */}
-        {isAblemarkPlatform() && !printerConnected && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-center text-[10px] font-black uppercase tracking-widest text-rose-500">
-              Conecte a impressora pra imprimir
-            </p>
-            <PrinterConnectionCard isDarkMode={isDarkMode} onConnectedChange={setPrinterConnected} />
+        {/* Conexão da impressora (Ablemark/Epson) dentro do próprio card de impressão, junto da
+            pré-visualização acima — sem precisar sair pra outra tela só pra conectar. Sempre
+            visível aqui (não só quando desconectada), pra dar pra trocar de marca/reconectar a
+            qualquer momento antes de mandar imprimir. */}
+        {isPrinterUiPlatform() && (
+          <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+            <button
+              type="button"
+              onClick={() => setPrinterAccordionOpen(v => !v)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
+            >
+              <span className="flex items-center gap-2 text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
+                <Wifi size={13} className="text-indigo-500" /> Conexão com Impressoras
+              </span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform ${printerAccordionOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {printerAccordionOpen && (
+              <div className="p-3 flex flex-col gap-1.5">
+                {isAblemarkPlatform() && !printerConnected && (
+                  <p className="text-center text-[10px] font-black uppercase tracking-widest text-rose-500">
+                    Conecte a impressora pra imprimir
+                  </p>
+                )}
+                <PrinterConnectionCard isDarkMode={isDarkMode} onConnectedChange={setPrinterConnected} />
+              </div>
+            )}
           </div>
         )}
 
@@ -312,36 +346,48 @@ export default function LabelPrintPreviewModal({
         )}
 
         <div className="flex gap-2">
-          {isGallerySaverPlatform() && (
-            <button
-              type="button"
-              onClick={handleSaveGallery}
-              disabled={savingGallery}
-              data-guide-anchor="labelPrintPreview.salvarGaleria"
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-            >
-              <Download size={14} /> {savingGallery ? 'Salvando...' : 'Galeria'}
-            </button>
-          )}
           <button
             type="button"
-            onClick={handleShareJpg}
-            disabled={sharing}
-            data-guide-anchor="labelPrintPreview.compartilharJpg"
+            onClick={() => setShowShareFormatChoice(true)}
+            disabled={sharing || sharingPdf}
+            data-guide-anchor="labelPrintPreview.compartilharEtiqueta"
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
-            <ImageIcon size={14} /> {sharing ? '...' : 'JPG'}
+            <ImageIcon size={14} className="text-emerald-500" /> {sharing || sharingPdf ? '...' : 'Compartilhar'}
           </button>
           <button
             type="button"
-            onClick={handleSharePdf}
-            disabled={sharingPdf}
-            data-guide-anchor="labelPrintPreview.compartilharPdf"
+            onClick={handleSaveGallery}
+            disabled={savingGallery}
+            data-guide-anchor="labelPrintPreview.salvarGaleria"
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
           >
-            <FileText size={14} /> {sharingPdf ? '...' : 'PDF'}
+            <Download size={14} className="text-sky-500" /> {savingGallery ? 'Salvando...' : 'Salvar na Galeria'}
           </button>
         </div>
+
+        <Modal isOpen={showShareFormatChoice} onClose={() => setShowShareFormatChoice(false)} title="Compartilhar Etiqueta" icon={<ImageIcon size={20} />} maxWidth="max-w-xs" zIndex={97000}>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => { setShowShareFormatChoice(false); handleShareJpg(); }}
+              disabled={sharing}
+              data-guide-anchor="labelPrintPreview.compartilharJpg"
+              className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+            >
+              <ImageIcon size={14} className="text-emerald-500" /> {sharing ? '...' : 'Compartilhar JPG'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowShareFormatChoice(false); handleSharePdf(); }}
+              disabled={sharingPdf}
+              data-guide-anchor="labelPrintPreview.compartilharPdf"
+              className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+            >
+              <FileText size={14} className="text-rose-500" /> {sharingPdf ? '...' : 'Compartilhar PDF'}
+            </button>
+          </div>
+        </Modal>
 
         <button
           type="button"

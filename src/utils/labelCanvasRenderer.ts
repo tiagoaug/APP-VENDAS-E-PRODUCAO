@@ -1,5 +1,5 @@
 import { LabelElement } from '../types';
-import { toDottedQRDataURL } from './dottedQRCode';
+import { toQRDataURL } from './qrCode';
 import { resolveLabelBinding, LabelBindingContext, computeGradeLayout } from './labelFieldResolvers';
 
 // Renderização em canvas dos elementos de uma etiqueta do editor livre (Print Studio Ablemark) —
@@ -168,7 +168,7 @@ export async function renderLabelElementsToCanvas(
       });
     } else if (el.type === 'qr' && el.dataBinding === 'qr') {
       if (resolved?.kind === 'qr') {
-        const dataUrl = await toDottedQRDataURL(resolved.qrText, { margin: 1, width: 800 });
+        const dataUrl = await toQRDataURL(resolved.qrText, { margin: 1, width: 800 });
         const img = await loadImage(dataUrl);
         ctx.drawImage(img, -wPx / 2, -hPx / 2, wPx, hPx);
       }

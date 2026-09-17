@@ -1,9 +1,10 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator, CompanyProfile, ServiceOrder, GeneralPurchaseItem, CollaboratorLoan } from '../types';
 import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, ChevronRight, Tag, FileText, Repeat, Send, FileDown, Image as ImageIcon, Hammer, Factory, X, Layers, Download, Upload, MessageCircle, ArrowDownRight } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
+import PersonModal from '../components/PersonModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FinancialQueryModal from '../components/FinancialQueryModal';
 import PartialPaymentModal from '../components/PartialPaymentModal';
@@ -18,17 +19,22 @@ import FornecedoresView from './FornecedoresView';
 
 const STATS_PERIOD_PHRASE: Record<OverviewPeriodType, string> = { MONTH: 'no mês', QUARTER: 'no trimestre', SEMESTER: 'no semestre', YEAR: 'no ano' };
 
+// Fonte/cor padrão de subtítulo (ver convenção usada no resto do app) — sobrescreve o
+// uppercase/cinza padrão do texto de ConfirmDialog só nessas duas mensagens, sem mudar o
+// componente compartilhado (usado em vários outros lugares que ainda querem o estilo antigo).
+const SUBTITLE_MESSAGE_CLS = 'text-[11px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300';
+
 // Explica pra que serve cada lançamento manual antes de abrir o formulário — evita que alguém
 // lance uma Entrada/Saída avulsa achando que está registrando uma Venda/Compra (que têm telas
 // próprias e já mexem no financeiro sozinhas).
-const MANUAL_ENTRY_INFO: Record<TransactionType, { title: string; message: string }> = {
+const MANUAL_ENTRY_INFO: Record<TransactionType, { title: string; message: ReactNode }> = {
   [TransactionType.INCOME]: {
     title: 'Nova Entrada Manual',
-    message: 'Registra um valor recebido direto no financeiro, sem vínculo com uma Venda — use pra receitas avulsas (outros recebimentos, aportes, etc). Vendas já entram sozinhas ao serem fechadas.',
+    message: <span className={SUBTITLE_MESSAGE_CLS}>Registra um valor recebido direto no financeiro, sem vínculo com uma Venda — use pra receitas avulsas (outros recebimentos, aportes, etc). Vendas já entram sozinhas ao serem fechadas.</span>,
   },
   [TransactionType.EXPENSE]: {
     title: 'Nova Saída Manual',
-    message: 'Registra uma despesa paga direto no financeiro, sem vínculo com uma Compra — use pra saídas avulsas (contas, taxas, retiradas, etc). Compras já entram sozinhas ao serem pagas.',
+    message: <span className={SUBTITLE_MESSAGE_CLS}>Registra uma despesa paga direto no financeiro, sem vínculo com uma Compra — use pra saídas avulsas (contas, taxas, retiradas, etc). Compras já entram sozinhas ao serem pagas.</span>,
   },
 };
 
@@ -144,6 +150,9 @@ export default function FinancialView({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialType, setModalInitialType] = useState<TransactionType>(TransactionType.INCOME);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | undefined>();
+  // Cadastro rápido de Fornecedor/Contato direto do popup de Vínculo do Lançamento (ver
+  // onRequestNewContact no TransactionModal abaixo) — evita ter que sair pro cadastro completo.
+  const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
@@ -569,7 +578,25 @@ export default function FinancialView({
           initialType={modalInitialType}
           transaction={editingTransaction}
           isDarkMode={isDarkMode}
+          onRequestNewContact={() => setIsQuickPersonModalOpen(true)}
         />
+
+      {isQuickPersonModalOpen && (
+        <PersonModal
+          isOpen={isQuickPersonModalOpen}
+          onClose={() => setIsQuickPersonModalOpen(false)}
+          onSave={async (person: any) => {
+            const created = await firebaseService.saveDocument('people', person);
+            toast.show('Fornecedor cadastrado!');
+            setIsQuickPersonModalOpen(false);
+            return created as Person;
+          }}
+          sellers={people.filter(p => p.isSeller)}
+          allPeople={people}
+          initialData={{ isSupplier: true }}
+          isDarkMode={isDarkMode}
+        />
+      )}
 
       <FinancialQueryModal
         isOpen={isQueryModalOpen}
@@ -706,7 +733,7 @@ export default function FinancialView({
               círculo colorido atrás de cada seta pra dar mais destaque de "isto é um botão".
               Confirma o que vai fazer antes de abrir o formulário (ver `manualEntryConfirmType`). */}
           <div className={`p-4 flex flex-col gap-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-             <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Outras Entradas ou Saídas de Valores</p>
+             <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1 text-center">Outras Entradas ou Saídas de Valores</p>
              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"

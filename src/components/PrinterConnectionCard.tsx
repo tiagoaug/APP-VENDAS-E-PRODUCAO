@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Bluetooth, Wifi, CheckCircle2, XCircle, RefreshCw, RotateCcw } from 'lucide-react';
-import { AbleMarkPairedDevice, isAblemarkPlatform } from '../lib/ablemarkPrinter';
+import { AbleMarkPairedDevice, isAblemarkPlatform, isPrinterUiPlatform } from '../lib/ablemarkPrinter';
 import {
   listAbleMarkPairedDevices2 as listAbleMarkPairedDevices,
   connectAbleMarkPrinter2 as connectAbleMarkPrinter,
@@ -119,18 +119,18 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
       ? 'bg-gradient-to-b from-emerald-900/40 to-emerald-900/20 border-emerald-600/60 shadow-[0_6px_16px_-4px_rgba(16,185,129,0.35)]'
       : 'bg-gradient-to-b from-emerald-50 to-white border-emerald-300 shadow-[0_6px_16px_-6px_rgba(16,185,129,0.3)]'
   }`;
-  const sectionTitleCls = 'text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3';
+  const sectionTitleCls = 'text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 mb-3';
 
   return (
     <div className={printerBrand === 'ABLEMARK' && connected ? miniCardConnectedCls : miniCardCls}>
-      {isAblemarkPlatform() && (
+      {isPrinterUiPlatform() && (
         <div className="flex gap-1.5 mb-3">
           <button
             type="button"
             onClick={() => setPrinterBrand('ABLEMARK')}
             data-guide-anchor="printerConnection.selecionarMarcaAblemark"
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
-              printerBrand === 'ABLEMARK' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-medium tracking-wide normal-case transition-all ${
+              printerBrand === 'ABLEMARK' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-blue-300' : 'bg-slate-100 text-blue-950'
             }`}
           >
             <Bluetooth size={12} /> Ablemark BR-L100
@@ -139,8 +139,8 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
             type="button"
             onClick={() => setPrinterBrand('EPSON')}
             data-guide-anchor="printerConnection.selecionarMarcaEpson"
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
-              printerBrand === 'EPSON' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-medium tracking-wide normal-case transition-all ${
+              printerBrand === 'EPSON' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-blue-300' : 'bg-slate-100 text-blue-950'
             }`}
           >
             <Wifi size={12} /> Epson (Wi-Fi Direct)
@@ -171,7 +171,7 @@ export default function PrinterConnectionCard({ isDarkMode, onConnectedChange }:
 
       {printerBrand === 'EPSON' ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+          <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
             Suporte a impressoras Epson (linha TM-m, Wi-Fi Direct) já tem a estrutura pronta —
             falta integrar o SDK oficial da Epson (aguardando conta de desenvolvedor + impressora pra validar).
           </p>

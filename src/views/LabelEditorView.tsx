@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import jsPDF from 'jspdf';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
-import { toDottedQRDataURL } from '../utils/dottedQRCode';
+import { toQRDataURL } from '../utils/qrCode';
 import {
   Type, ImagePlus, QrCode, Calendar, Minus, Square, Trash2, Copy, Save, Printer,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Plus, Check, X, ZoomIn, ZoomOut,
@@ -12,9 +12,8 @@ import {
 } from 'lucide-react';
 import { LabelElement, LabelDataBinding, BatchLabelItem, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { printAbleMarkLabel2 as printAbleMarkLabel } from '../lib/ablemarkPrinter2';
-import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
-import PrinterConnectionCard from '../components/PrinterConnectionCard';
-import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
+import { isPrinterUiPlatform } from '../lib/ablemarkPrinter';
+import { saveImageToGallery } from '../lib/gallerySaver';
 import { shareImages, sharePDF } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
 import LabelPrintPreviewModal, { PrintOptions } from '../components/LabelPrintPreviewModal';
@@ -442,7 +441,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const handleConfirmQr = async () => {
     if (!qrValue.trim()) return;
     try {
-      const dataUrl = await toDottedQRDataURL(qrValue.trim(), { margin: 1, width: 800 });
+      const dataUrl = await toQRDataURL(qrValue.trim(), { margin: 1, width: 800 });
       const side = Math.min(widthMm, heightMm) * 0.6;
       addElement({
         id: newId(), type: 'qr', x: widthMm * 0.2, y: heightMm * 0.2, w: side, h: side,
@@ -653,6 +652,30 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
 
   const [sharingJpg, setSharingJpg] = useState(false);
   const [sharingPdf, setSharingPdf] = useState(false);
+  // Popup "Compartilhar Etiqueta" — escolhe JPG ou PDF num só botão em vez de deixar os dois
+  // sempre visíveis lado a lado (ver saveButtons abaixo, card "Compartilhar Etiqueta").
+  const [showShareFormatChoice, setShowShareFormatChoice] = useState(false);
+
+  // Salva TODAS as etiquetas do lote na galeria (não só a primeira) — mesmo mecanismo de
+  // LabelPrintPreviewModal.tsx.
+  const handleSaveGallery = async () => {
+    setSavingGallery(true);
+    try {
+      const urls = await renderAllFrames();
+      let savedCount = 0;
+      for (let i = 0; i < urls.length; i++) {
+        const base64 = urls[i].split('base64,')[1] || urls[i];
+        const written = await Filesystem.writeFile({ path: `gallery_${Date.now()}_${i}.png`, data: base64, directory: Directory.Cache });
+        const { saved } = await saveImageToGallery(written.uri);
+        if (saved) savedCount++;
+      }
+      toast.show(savedCount > 0 ? `${savedCount} etiqueta${savedCount > 1 ? 's' : ''} salva${savedCount > 1 ? 's' : ''} na galeria!` : 'Falha ao salvar na galeria.');
+    } catch (err: any) {
+      toast.show('Erro ao salvar na galeria: ' + (err?.message || err));
+    } finally {
+      setSavingGallery(false);
+    }
+  };
 
   const handleShareJpg = async () => {
     setSharingJpg(true);
@@ -731,8 +754,8 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   };
 
   const btnCls = (active?: boolean) =>
-    `flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${
-      active ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+    `flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[10px] font-medium tracking-wide normal-case transition-all ${
+      active ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-blue-300 hover:bg-slate-700' : 'bg-slate-100 text-blue-950 hover:bg-slate-200'
     }`;
 
   const tickStepMm = widthMm > 60 ? 10 : 5;
@@ -1651,7 +1674,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           onClick={() => setToolsAccordionOpen(v => !v)}
           className={`w-full flex items-center justify-between px-3 py-2.5 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
         >
-          <span className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-slate-400">
+          <span className="flex items-center gap-2 text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
             <Wrench size={13} className="text-amber-500" /> Ferramentas manuais de edição da etiqueta
           </span>
           <ChevronDown size={14} className={`text-slate-400 transition-transform ${toolsAccordionOpen ? 'rotate-180' : ''}`} />
@@ -1685,7 +1708,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                 etiqueta do lote na hora de imprimir, em vez de conteúdo estático. */}
             {session.batch && (
               <div className="mt-3 pt-3 border-t border-dashed border-slate-300/50 dark:border-slate-700/50">
-                <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                <span className="flex items-center gap-1.5 text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 mb-2">
                   <Tag size={12} className="text-emerald-500" /> {session.productionContext ? 'Campos do pedido' : 'Campos da venda'}
                 </span>
                 <div className="grid grid-cols-3 gap-2">
@@ -1703,109 +1726,106 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   );
 
   const saveButtons = (
-    <div className="flex flex-col gap-2">
-      {/* Status da impressora sempre visível aqui (antes só aparecia dentro do preview de
-          impressão, e só quando desconectada) — pra dar pra ver se está conectada e resetar
-          conexão/cache antes mesmo de abrir o preview, sem precisar chegar até lá pra descobrir
-          que precisa reconectar. */}
-      {isAblemarkPlatform() && <PrinterConnectionCard isDarkMode={isDarkMode} />}
-
+    <div className="flex flex-col gap-4">
       {/* Só faz sentido perguntar isso quando o editor abriu a partir de Vendas — fora daí,
           "modelo para Vendas" não tem contexto de venda pra puxar dado nenhum. */}
       {session.batch && !session.productionContext && (
-        <label className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold cursor-pointer ${isDarkMode ? 'bg-slate-900 text-slate-300 border border-slate-800' : 'bg-white text-slate-600 border border-slate-100 shadow-sm'}`}>
+        <label className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 cursor-pointer ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100 shadow-sm'}`}>
           <input type="checkbox" checked={isSalesTemplate} onChange={e => setIsSalesTemplate(e.target.checked)} className="w-4 h-4" />
           Modelo para Vendas (aparece na lista pra reusar em outras vendas)
         </label>
       )}
       {session.productionContext && (
-        <label className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold cursor-pointer ${isDarkMode ? 'bg-slate-900 text-slate-300 border border-slate-800' : 'bg-white text-slate-600 border border-slate-100 shadow-sm'}`}>
+        <label className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 cursor-pointer ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100 shadow-sm'}`}>
           <input type="checkbox" checked={isProductionTemplate} onChange={e => setIsProductionTemplate(e.target.checked)} className="w-4 h-4" />
           Modelo de Setor (aparece agrupado no PCP pra reusar)
         </label>
       )}
-      <div className="flex gap-2">
-        <button type="button" data-guide-anchor="labelEditor.salvar" onClick={() => handleSave()} disabled={saving} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-          <Save size={14} /> {saving ? 'Salvando...' : 'Salvar'}
-        </button>
-        <button
-          type="button"
-          disabled={saving}
-          title="Salvar como um novo perfil, sem mexer no que já estava salvo"
-          data-guide-anchor="labelEditor.salvarComo"
-          onClick={() => setSaveAsNewModal({ open: true, name: session.fileId ? `${name} (cópia)` : name })}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-        >
-          <Copy size={14} /> Salvar Como
-        </button>
+      <div className={`flex flex-col gap-2 p-2 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+        <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1 text-center">Área de Salvamento do Modelo da Etiqueta</p>
+        <div className="flex gap-2">
+          <button type="button" data-guide-anchor="labelEditor.salvar" onClick={() => handleSave()} disabled={saving} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+            <Save size={14} className="text-indigo-500" /> {saving ? 'Salvando...' : 'Salvar'}
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            title="Salvar como um novo perfil, sem mexer no que já estava salvo"
+            data-guide-anchor="labelEditor.salvarComo"
+            onClick={() => setSaveAsNewModal({ open: true, name: session.fileId ? `${name} (cópia)` : name })}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <Copy size={14} className="text-violet-500" /> Salvar Como
+          </button>
+        </div>
       </div>
-      {/* Galeria (salvar imagem) e Imprimir (Bluetooth, Ablemark) são os dois só-Android desta
-          fileira — sem nenhum dos dois, a fileira inteira some no iOS em vez de deixar uma
-          faixa vazia (o gap do flex-col pai ainda contaria mesmo com os botões escondidos
-          individualmente). "Compartilhar JPG/PDF" abaixo continua cobrindo o iOS. */}
-      {(isGallerySaverPlatform() || isAblemarkPlatform()) && (
-      <div className="flex gap-2">
-        {isGallerySaverPlatform() && (
-        <button
-          type="button"
-          disabled={savingGallery}
-          data-guide-anchor="labelEditor.salvarGaleria"
-          onClick={async () => {
-            setSavingGallery(true);
-            try {
-              const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 });
-              const base64 = canvas.toDataURL('image/png').split('base64,')[1];
-              const written = await Filesystem.writeFile({ path: `gallery_${Date.now()}.png`, data: base64, directory: Directory.Cache });
-              const { saved, error } = await saveImageToGallery(written.uri);
-              toast.show(saved ? 'Etiqueta salva na galeria!' : `Falha ao salvar: ${error || '(sem detalhe)'}`);
-            } catch (err: any) {
-              toast.show('Erro ao salvar na galeria: ' + (err?.message || err));
-            } finally {
-              setSavingGallery(false);
-            }
-          }}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-        >
-          <Download size={14} /> {savingGallery ? 'Salvando...' : 'Galeria'}
-        </button>
-        )}
-        {isAblemarkPlatform() && (
+      <div className={`flex flex-col gap-2 p-2 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+        <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1 text-center">Compartilhar Etiqueta</p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowShareFormatChoice(true)}
+            data-guide-anchor="labelEditor.compartilharEtiqueta"
+            disabled={sharingJpg || sharingPdf}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <ImageIcon2 size={14} className="text-emerald-500" /> {sharingJpg || sharingPdf ? '...' : 'Compartilhar Etiqueta'}
+          </button>
+          <button
+            type="button"
+            disabled={savingGallery}
+            data-guide-anchor="labelEditor.salvarGaleria"
+            onClick={handleSaveGallery}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <Download size={14} className="text-sky-500" /> {savingGallery ? 'Salvando...' : 'Salvar na Galeria'}
+          </button>
+        </div>
+      </div>
+
+      <Modal isOpen={showShareFormatChoice} onClose={() => setShowShareFormatChoice(false)} title="Compartilhar Etiqueta" icon={<ImageIcon2 size={20} />} maxWidth="max-w-xs" zIndex={98000}>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => { setShowShareFormatChoice(false); handleShareJpg(); }}
+            data-guide-anchor="labelEditor.compartilharJpg"
+            disabled={sharingJpg}
+            className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <ImageIcon2 size={14} className="text-emerald-500" /> {sharingJpg ? '...' : 'Compartilhar JPG'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowShareFormatChoice(false); handleSharePdf(); }}
+            data-guide-anchor="labelEditor.compartilharPdf"
+            disabled={sharingPdf}
+            className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <FileText size={14} className="text-rose-500" /> {sharingPdf ? '...' : 'Compartilhar PDF'}
+          </button>
+        </div>
+      </Modal>
+      {/* Card "Impressão" — ponto de entrada único pro fluxo de impressão (Android/Web, nunca
+          iOS: nem Ablemark Bluetooth Classic sem MFi nem Epson sem SDK integrado funcionam lá).
+          Ao tocar, abre o preview (LabelPrintPreviewModal) que já reúne pré-visualização da
+          etiqueta + conexão/marca da impressora (PrinterConnectionCard, Ablemark/Epson) + ajustes
+          de impressão num só lugar — em vez de deixar a conexão sempre visível e ocupando espaço
+          aqui no rodapé mesmo fora da hora de imprimir. */}
+      {isPrinterUiPlatform() && (
         <button
           type="button"
           onClick={handleOpenPrintPreview}
           data-guide-anchor="labelEditor.imprimir"
-          className="flex-[2] flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
+          className="flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
         >
-          <Printer size={14} /> Imprimir
+          <Printer size={14} /> Impressão
         </button>
-        )}
-      </div>
       )}
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={handleShareJpg}
-          data-guide-anchor="labelEditor.compartilharJpg"
-          disabled={sharingJpg}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-        >
-          <ImageIcon2 size={14} /> {sharingJpg ? '...' : 'Compartilhar JPG'}
-        </button>
-        <button
-          type="button"
-          onClick={handleSharePdf}
-          data-guide-anchor="labelEditor.compartilharPdf"
-          disabled={sharingPdf}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-        >
-          <FileText size={14} /> {sharingPdf ? '...' : 'Compartilhar PDF'}
-        </button>
-      </div>
     </div>
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={fullscreen && selected ? 'flex flex-col gap-4' : 'flex flex-col gap-4 pb-32'}>
       {fullscreen && selected ? (
         // ── Tela cheia focada no elemento selecionado — só canvas, ferramentas ativas
         // daquele tipo, e camadas. Some com nome do arquivo, rodapé de adicionar elemento e
