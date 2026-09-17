@@ -109,17 +109,15 @@ export default function ProductsView({
         </div>
       )}
 
-      <div className="flex flex-col gap-3 pt-4">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-              {modulesConfig.production ? "Ficha Técnica de Produtos" : "Gestão de Produtos"}
-            </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-              {modulesConfig.production ? "Produção e Modelos" : "Catálogo de Vendas"}
-            </p>
-          </div>
-        </div>
+      <button
+        onClick={onAdd}
+        data-guide-anchor="products.novo"
+        className="mt-4 text-white bg-indigo-600 rounded-[1rem] py-5 flex items-center justify-center gap-2 font-black tracking-widest hover:bg-indigo-700 transition-all cursor-pointer shadow-lg shadow-indigo-500/20 active:scale-95 text-[11px] uppercase"
+      >
+        <Plus size={18} strokeWidth={3} /> Cadastrar Novo Modelo
+      </button>
+
+      <div className="flex flex-col gap-3">
         <div className="relative">
           <Search
             className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
@@ -144,14 +142,6 @@ export default function ProductsView({
           <ChevronDown size={18} className="text-slate-400" />
         </button>
       </div>
-
-      <button
-        onClick={onAdd}
-        data-guide-anchor="products.novo"
-        className="mt-2 text-white bg-indigo-600 rounded-[1rem] py-5 flex items-center justify-center gap-2 font-black tracking-widest hover:bg-indigo-700 transition-all cursor-pointer shadow-lg shadow-indigo-500/20 active:scale-95 text-[11px] uppercase"
-      >
-        <Plus size={18} strokeWidth={3} /> Cadastrar Novo Modelo
-      </button>
 
       {filteredProducts.length === 0 ? (
         <div
