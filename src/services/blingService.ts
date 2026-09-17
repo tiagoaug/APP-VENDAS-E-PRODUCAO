@@ -48,17 +48,25 @@ export interface BlingRemoteProduct {
   produtoPaiId?: string; // agrupa variações (cor/tamanho) do mesmo produto
 }
 
+// O SDK do Firebase corta a chamada sozinho aos 70s por padrão, bem menos que os 300s de
+// `timeoutSeconds` configurados nas Cloud Functions do Bling (blingFetchProducts/
+// blingSyncOrders, ver functions/src/index.ts) — a sincronização de pedidos em especial pode
+// legitimamente passar de 70s (uma chamada ao Bling por pedido, com limite de 3 req/s). Sem
+// alinhar esse timeout, o cliente desistia e mostrava "erro" mesmo quando a função continuava
+// rodando e teria terminado com sucesso — precisa bater com o timeoutSeconds do servidor.
+const BLING_SYNC_TIMEOUT_MS = 300000;
+
 /** Busca o catálogo completo do Bling (proxy server-side, usa o token salvo) — o algoritmo de
  * match em si roda no cliente (ver utils/blingReconciliation.ts), já que só precisa dessa
  * lista + o catálogo local, sem nada sensível envolvido. */
 export async function fetchBlingProducts(): Promise<BlingRemoteProduct[]> {
-  const fn = httpsCallable<void, { produtos: BlingRemoteProduct[] }>(functions, 'blingFetchProducts');
+  const fn = httpsCallable<void, { produtos: BlingRemoteProduct[] }>(functions, 'blingFetchProducts', { timeout: BLING_SYNC_TIMEOUT_MS });
   const res = await fn();
   return res.data.produtos;
 }
 
 export async function syncBlingOrdersNow(): Promise<{ ok: boolean; message: string; ordersImported: number }> {
-  const fn = httpsCallable<void, { ok: boolean; message: string; ordersImported: number }>(functions, 'blingSyncOrders');
+  const fn = httpsCallable<void, { ok: boolean; message: string; ordersImported: number }>(functions, 'blingSyncOrders', { timeout: BLING_SYNC_TIMEOUT_MS });
   const res = await fn();
   return res.data;
 }

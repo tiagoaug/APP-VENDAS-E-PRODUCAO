@@ -79,7 +79,7 @@ function renderPurchaseItemRow(item: any, idx: number, products: Product[]) {
           </span>
           {vari && (
             <>
-              <span className="text-[10px] text-slate-400 shrink-0">•</span>
+              <span className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 shrink-0">•</span>
               <span className="text-[11px] font-bold text-slate-500 truncate">{vari.colorName}{stockItem.size ? ` / ${stockItem.size}` : ''}</span>
             </>
           )}
@@ -97,7 +97,7 @@ function renderPurchaseItemRow(item: any, idx: number, products: Product[]) {
         <div className="flex items-center gap-2">
           <Package size={12} className="text-indigo-500 shrink-0" />
           <span className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white">{soleItem.moldName}</span>
-          <span className="text-[10px] text-slate-400">•</span>
+          <span className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">•</span>
           <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase">{soleItem.colorName}</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -109,7 +109,7 @@ function renderPurchaseItemRow(item: any, idx: number, products: Product[]) {
           ))}
         </div>
         <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-700">
-          <span className="text-[11px] font-black text-slate-900 dark:text-white">{totalPairs} <span className="text-[10px] font-bold text-slate-400 uppercase">pares</span></span>
+          <span className="text-[11px] font-black text-slate-900 dark:text-white">{totalPairs} <span className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">pares</span></span>
           {soleItem.totalCost > 0 && (
             <span className="text-xs font-black text-rose-500 dark:text-rose-400">
               R$ {soleItem.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -402,7 +402,7 @@ export default function BusinessOverviewCard({
           </div>
           <div className="text-left min-w-0">
             <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Análise Detalhada</p>
-            <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Receitas, Despesas e Comparativos</p>
+            <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1">Receitas, Despesas e Comparativos</p>
           </div>
         </div>
         <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isOverviewExpanded ? 'rotate-180' : ''}`} />
@@ -456,7 +456,7 @@ export default function BusinessOverviewCard({
             </div>
 
             <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Comparar com</p>
+              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Comparar com</p>
               <div className="flex gap-1.5 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">
                 {([
                   ['NONE', 'Sem comparação'],
@@ -507,7 +507,7 @@ export default function BusinessOverviewCard({
             </div>
 
             <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Lucro real agora</p>
+              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Lucro real agora</p>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <h2 className={`text-3xl font-black tracking-tighter transition-all ${businessOverview.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   R$ {businessOverview.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -521,7 +521,7 @@ export default function BusinessOverviewCard({
               </div>
               {businessOverview.comparison && (
                 <div className="mt-2">
-                  <div className="flex justify-between text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  <div className="flex justify-between text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mb-1">
                     <span className={hidePrivacy ? PRIVACY_BLUR_CLASS : ''}>{businessOverview.comparison.label}: R$ {businessOverview.comparison.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span>Agora</span>
                   </div>
@@ -537,16 +537,16 @@ export default function BusinessOverviewCard({
                   </div>
                 </div>
               )}
-              <p className="text-[10px] font-bold text-slate-400 mt-2 leading-relaxed">
+              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
                 Fontes marcadas abaixo (valor de agora) − despesas do período selecionado.
               </p>
               <div className="flex gap-3 mt-4">
                 <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
-                  <p className="text-[8px] font-black text-slate-400 tracking-widest">Margem s/ receita</p>
+                  <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Margem s/ receita</p>
                   <p className={`text-sm font-black mt-0.5 ${businessOverview.margin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{businessOverview.margin.toFixed(1).replace('.', ',')}%</p>
                 </div>
                 <button type="button" onClick={() => setShowExpenseBreakdown(true)} data-guide-anchor="dash.overview.despesasDetalhe" className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50 text-left">
-                  <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1">
+                  <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 flex items-center gap-1">
                     Despesas do período
                     <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-indigo-500/10 animate-pulse-indigo-ring">
                       <ChevronDown size={9} className="rotate-[-90deg] text-indigo-500" />
@@ -557,7 +557,7 @@ export default function BusinessOverviewCard({
               </div>
 
               <div className="mt-4">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Receitas Totais × Despesas do Período</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mb-2">Receitas Totais × Despesas do Período</p>
                 <div className="flex flex-col gap-2.5">
                   <div>
                     <div className="flex justify-between items-baseline text-[9px] font-black mb-1">
@@ -583,7 +583,7 @@ export default function BusinessOverviewCard({
                       />
                     </div>
                   </div>
-                  <p className="text-[8.5px] font-bold text-slate-400 leading-relaxed">Lucro Real = Receitas Totais (todas as transações confirmadas no período) − Despesas do período.</p>
+                  <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">Lucro Real = Receitas Totais (todas as transações confirmadas no período) − Despesas do período.</p>
                 </div>
               </div>
 
@@ -613,7 +613,7 @@ export default function BusinessOverviewCard({
                 className="w-full flex items-center justify-between p-3.5"
                 aria-expanded={isResumoExpanded}
               >
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Resumo Financeiro</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Resumo Financeiro</p>
                 <ChevronDown size={14} className={`text-slate-400 transition-transform ${isResumoExpanded ? 'rotate-180' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
@@ -632,7 +632,7 @@ export default function BusinessOverviewCard({
                         data-guide-anchor="dash.overview.saldoConsolidadoAbrir"
                         className={`p-3 rounded-2xl text-left ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
                       >
-                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1">
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 flex items-center gap-1">
                           <Landmark size={10} /> Saldo Consolidado
                           <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-indigo-500/10 animate-pulse-indigo-ring">
                             <ChevronDown size={9} className="rotate-[-90deg] text-indigo-500" />
@@ -641,41 +641,41 @@ export default function BusinessOverviewCard({
                         <p className={`text-sm font-black mt-0.5 ${resumo.consolidatedBalance >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                           R$ {resumo.consolidatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">{accountsDesc} (contas de uso Pessoal não entram).</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1 leading-relaxed">{accountsDesc} (contas de uso Pessoal não entram).</p>
                       </button>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><DollarSign size={10} /> A Receber (Pendente)</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 flex items-center gap-1"><DollarSign size={10} /> A Receber (Pendente)</p>
                         <p className={`text-sm font-black mt-0.5 text-amber-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {resumo.pendingReceivables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas já fechadas (não orçamento, não cancelada) que ainda não foram pagas por completo: total do pedido menos o que já foi pago.</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1 leading-relaxed">Vendas já fechadas (não orçamento, não cancelada) que ainda não foram pagas por completo: total do pedido menos o que já foi pago.</p>
                       </div>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><TrendingUp size={10} /> Balanço do Mês (Liquidados)</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 flex items-center gap-1"><TrendingUp size={10} /> Balanço do Mês (Liquidados)</p>
                         <p className={`text-sm font-black mt-0.5 ${resumo.monthlyBalance >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {resumo.monthlyBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Receitas menos despesas já confirmadas (liquidadas) desde o dia 1º deste mês até agora — sempre o mês calendário atual, independente do período escolhido acima.</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1 leading-relaxed">Receitas menos despesas já confirmadas (liquidadas) desde o dia 1º deste mês até agora — sempre o mês calendário atual, independente do período escolhido acima.</p>
                       </div>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Boxes size={10} /> Patrimônio em Estoque</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 flex items-center gap-1"><Boxes size={10} /> Patrimônio em Estoque</p>
                         <p className={`text-[11px] font-black mt-0.5 ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>Custo: R$ {resumo.stockValue.costValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                         <p className={`text-[9px] font-bold text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>Venda: R$ {resumo.stockValue.saleValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Custo e valor de venda de tudo que está pronto no estoque agora, pelo preço de custo/venda cadastrado em cada modelo × quantidade em estoque.</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-1 leading-relaxed">Custo e valor de venda de tudo que está pronto no estoque agora, pelo preço de custo/venda cadastrado em cada modelo × quantidade em estoque.</p>
                       </div>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Footprints size={10} /> Lucro por Par</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 flex items-center gap-1"><Footprints size={10} /> Lucro por Par</p>
                         <p className={`text-sm font-black mt-0.5 ${businessOverview.profitPerPair === null ? 'text-slate-400' : businessOverview.profitPerPair >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                           {businessOverview.profitPerPair === null ? '—' : `R$ ${businessOverview.profitPerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                         </p>
                         <p className="text-[8.5px] font-black text-indigo-500 mt-1 uppercase tracking-wide">Baseado nas despesas e receitas do período</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Mesmo cálculo do card "Análise de Lucro": (Receitas − Despesas) ÷ {businessOverview.producedPairs} {businessOverview.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} — pelo mesmo período (Mês/Trimestre/Semestre/Ano) escolhido no seletor acima.</p>
+                        <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-relaxed">Mesmo cálculo do card "Análise de Lucro": (Receitas − Despesas) ÷ {businessOverview.producedPairs} {businessOverview.producedPairs === 1 ? 'par produzido' : 'pares produzidos'} — pelo mesmo período (Mês/Trimestre/Semestre/Ano) escolhido no seletor acima.</p>
                         <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                           <p className={`text-[11px] font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-700'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                             {businessOverview.avgSalePricePerPair === null ? '—' : `R$ ${businessOverview.avgSalePricePerPair.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest ml-1">Preço Médio de Venda (todos os modelos)</span>
+                            <span className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 ml-1">Preço Médio de Venda (todos os modelos)</span>
                           </p>
-                          <p className="text-[8.5px] font-bold text-slate-400 mt-0.5 leading-relaxed">Receita das vendas fechadas ÷ {businessOverview.totalPairsSold} {businessOverview.totalPairsSold === 1 ? 'par vendido' : 'pares vendidos'} no período — média de todos os modelos, não os pares produzidos. Atacado conta os pares reais (não a caixa) usando o preço por par cadastrado no item.</p>
+                          <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 leading-relaxed">Receita das vendas fechadas ÷ {businessOverview.totalPairsSold} {businessOverview.totalPairsSold === 1 ? 'par vendido' : 'pares vendidos'} no período — média de todos os modelos, não os pares produzidos. Atacado conta os pares reais (não a caixa) usando o preço por par cadastrado no item.</p>
                         </div>
                       </div>
                     </div>
@@ -685,7 +685,7 @@ export default function BusinessOverviewCard({
             </div>
 
             <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Base do Lucro Real</p>
+              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Base do Lucro Real</p>
               <button
                 type="button"
                 onClick={() => setShowIncomeBreakdown(true)}
@@ -702,14 +702,14 @@ export default function BusinessOverviewCard({
                       <ChevronDown size={10} className="rotate-[-90deg] text-indigo-500" />
                     </span>
                   </p>
-                  <p className="text-[9px] font-bold text-slate-400">Soma de toda entrada confirmada em Financeiro no período — venda ou não. Único valor usado no Lucro Real.</p>
+                  <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Soma de toda entrada confirmada em Financeiro no período — venda ou não. Único valor usado no Lucro Real.</p>
                 </div>
                 <p className={`text-[12px] font-black shrink-0 ${OVERVIEW_SOURCE_COLORS.cyan.chip} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   R$ {businessOverview.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </button>
 
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1 mt-2">Outras Métricas (Informativo — não entram no Lucro Real)</p>
+              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1 mt-2">Outras Métricas (Informativo — não entram no Lucro Real)</p>
               {businessOverview.infoSources.map((s) => {
                 const colors = OVERVIEW_SOURCE_COLORS[s.color];
                 const Icon = s.icon;
@@ -724,7 +724,7 @@ export default function BusinessOverviewCard({
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] font-black">{s.label}</p>
-                      <p className="text-[9px] font-bold text-slate-400">{s.desc}</p>
+                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">{s.desc}</p>
                     </div>
                     <p className={`text-[12px] font-black shrink-0 ${colors.chip} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                       R$ {s.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -735,7 +735,7 @@ export default function BusinessOverviewCard({
             </div>
 
             <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Receita − Despesas — últimos 6 meses</p>
+              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1">Receita − Despesas — últimos 6 meses</p>
               <div className="flex items-end gap-2" style={{ height: 90 }}>
                 {cashFlowTrend.map((m, idx) => {
                   const maxAbs = Math.max(...cashFlowTrend.map((x) => Math.abs(x.profit)), 1);
@@ -758,7 +758,7 @@ export default function BusinessOverviewCard({
               </div>
             </div>
 
-            <p className="text-[9px] font-bold text-slate-400 leading-relaxed px-1">
+            <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed px-1">
               Estoque, produção e saldo em conta são sempre o valor de agora (não têm histórico salvo); despesas seguem o período selecionado acima. O lucro por par usado em "Lucro em Produção" vem do preço unitário já cadastrado em cada modelo.
             </p>
           </motion.div>
@@ -774,7 +774,7 @@ export default function BusinessOverviewCard({
             <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Contas Incluídas</h3>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">Escolha quais contas somam em "Saldos em Conta"</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5">Escolha quais contas somam em "Saldos em Conta"</p>
               </div>
               <button type="button" onClick={() => setShowAccountPicker(false)} data-guide-anchor="dash.overview.contasFechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
@@ -802,7 +802,7 @@ export default function BusinessOverviewCard({
 
             <div className="flex flex-col gap-2 p-6">
               {businessAccounts.length === 0 && (
-                <p className="text-[10px] font-bold text-slate-400 text-center py-6">Nenhuma conta do negócio cadastrada.</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 text-center py-6">Nenhuma conta do negócio cadastrada.</p>
               )}
               {businessAccounts.map((acc) => {
                 const checked = selectedAccountIdsResolved.includes(acc.id);
@@ -858,7 +858,7 @@ export default function BusinessOverviewCard({
                 </div>
                 <div>
                   <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Corrigir Despesas Indevidas</h3>
-                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Compras "Não Contábil" que geraram título por engano</p>
+                  <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5">Compras "Não Contábil" que geraram título por engano</p>
                 </div>
               </div>
               <button type="button" onClick={() => setShowLeakConfirm(false)} data-guide-anchor="dash.overview.corrigirFechar" className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
@@ -874,7 +874,7 @@ export default function BusinessOverviewCard({
                   <div key={t.id} className={`flex items-center gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
                     <div className="flex-1 min-w-0">
                       <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{supplier || t.description}</p>
-                      <p className="text-[9px] font-bold text-slate-400">{format(t.date, 'dd/MM/yyyy')} · {purchase?.type === PurchaseType.SOLE ? 'Solados' : 'Palmilhas'}</p>
+                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">{format(t.date, 'dd/MM/yyyy')} · {purchase?.type === PurchaseType.SOLE ? 'Solados' : 'Palmilhas'}</p>
                     </div>
                     <p className={`text-[11px] font-black text-rose-500 shrink-0 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
@@ -883,7 +883,7 @@ export default function BusinessOverviewCard({
             </div>
 
             <div className={`px-6 py-4 mx-6 mb-2 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
-              <p className="text-[9px] font-bold text-slate-400 leading-relaxed">
+              <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
                 Vamos excluir esse(s) lançamento(s) de Despesa e devolver o valor pro saldo da(s) conta(s) que foi(ram) debitada(s) — a compra em si não é alterada, só a parte financeira que não deveria ter sido gerada.
               </p>
             </div>
@@ -922,7 +922,7 @@ export default function BusinessOverviewCard({
             <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Despesas do Período</h3>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">{periodExpenseBreakdown.items.length} lançamento(s) — {OVERVIEW_PERIOD_LABELS[overviewConfig.periodType]} atual</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5">{periodExpenseBreakdown.items.length} lançamento(s) — {OVERVIEW_PERIOD_LABELS[overviewConfig.periodType]} atual</p>
               </div>
               <button type="button" onClick={() => setShowExpenseBreakdown(false)} data-guide-anchor="dash.overview.despesasFechar" className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
@@ -931,18 +931,18 @@ export default function BusinessOverviewCard({
 
             <div className="flex gap-3 px-6 pt-4">
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
-                <p className="text-[8px] font-black text-slate-400 tracking-widest">Vinculadas a compras</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Vinculadas a compras</p>
                 <p className={`text-sm font-black mt-0.5 text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodExpenseBreakdown.linkedToPurchase.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
-                <p className="text-[8px] font-black text-slate-400 tracking-widest">Outros lançamentos</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Outros lançamentos</p>
                 <p className={`text-sm font-black mt-0.5 text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodExpenseBreakdown.other.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             </div>
 
             <div className="flex flex-col gap-2 p-6">
               {periodExpenseBreakdown.items.length === 0 && (
-                <p className="text-[10px] font-bold text-slate-400 text-center py-6">Nenhuma despesa nesse período.</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 text-center py-6">Nenhuma despesa nesse período.</p>
               )}
               {periodExpenseBreakdown.items.map((t) => {
                 const categoryName = categories.find(c => c.id === t.categoryId)?.name;
@@ -951,7 +951,7 @@ export default function BusinessOverviewCard({
                   <div key={t.id} className={`flex items-center gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
                     <div className="flex-1 min-w-0">
                       <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{t.description || categoryName || 'Despesa'}</p>
-                      <p className="text-[9px] font-bold text-slate-400">
+                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">
                         {format(t.date, 'dd/MM/yyyy')}{categoryName ? ` · ${categoryName}` : ''}{t.relatedId ? ' · vinculada a compra' : ''}
                       </p>
                     </div>
@@ -997,7 +997,7 @@ export default function BusinessOverviewCard({
             <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Receitas do Período</h3>
-                <p className="text-[10px] font-bold text-slate-400 mt-0.5">{periodIncomeBreakdown.items.length} lançamento(s) — {OVERVIEW_PERIOD_LABELS[overviewConfig.periodType]} atual</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5">{periodIncomeBreakdown.items.length} lançamento(s) — {OVERVIEW_PERIOD_LABELS[overviewConfig.periodType]} atual</p>
               </div>
               <button type="button" onClick={() => setShowIncomeBreakdown(false)} data-guide-anchor="dash.overview.receitasFechar" className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
@@ -1006,18 +1006,18 @@ export default function BusinessOverviewCard({
 
             <div className="flex gap-3 px-6 pt-4">
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
-                <p className="text-[8px] font-black text-slate-400 tracking-widest">Vinculadas a venda</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Vinculadas a venda</p>
                 <p className={`text-sm font-black mt-0.5 text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodIncomeBreakdown.linkedToSale.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
-                <p className="text-[8px] font-black text-slate-400 tracking-widest">Outros lançamentos</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Outros lançamentos</p>
                 <p className={`text-sm font-black mt-0.5 text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodIncomeBreakdown.other.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             </div>
 
             <div className="flex flex-col gap-2 p-6">
               {periodIncomeBreakdown.items.length === 0 && (
-                <p className="text-[10px] font-bold text-slate-400 text-center py-6">Nenhuma receita nesse período.</p>
+                <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 text-center py-6">Nenhuma receita nesse período.</p>
               )}
               {periodIncomeBreakdown.items.map((t) => {
                 const categoryName = categories.find(c => c.id === t.categoryId)?.name;
@@ -1025,7 +1025,7 @@ export default function BusinessOverviewCard({
                   <div key={t.id} className={`flex items-center gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
                     <div className="flex-1 min-w-0">
                       <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{t.description || categoryName || 'Receita'}</p>
-                      <p className="text-[9px] font-bold text-slate-400">
+                      <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">
                         {format(t.date, 'dd/MM/yyyy')}{categoryName ? ` · ${categoryName}` : ''}{t.contactName ? ` · ${t.contactName}` : ''}{t.relatedId ? ' · vinculada a venda' : ''}
                       </p>
                     </div>
@@ -1066,7 +1066,7 @@ export default function BusinessOverviewCard({
                     ? (selectedPurchaseForCart.soleItems?.length || 0)
                     : (selectedPurchaseForCart.items?.length || 0);
                   return (
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                    <p className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5">
                       {count} {count === 1 ? 'item' : 'itens'}
                     </p>
                   );
@@ -1094,7 +1094,7 @@ export default function BusinessOverviewCard({
                 : selectedPurchaseForCart.items?.map((item: any, idx) => renderPurchaseItemRow(item, idx, products))}
             </div>
             <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</span>
+              <span className="text-[13px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Total</span>
               <h3 className={`font-black text-base tracking-tight text-rose-500 dark:text-rose-400 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 R$ {selectedPurchaseForCart.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>

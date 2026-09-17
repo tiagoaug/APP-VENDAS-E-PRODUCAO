@@ -201,72 +201,82 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
   // no loop do livro de vendas logo depois — evita rebuscar o mesmo pedido duas vezes.
   const pedidoDetailCache = new Map<string, { itens: { quantidade: number }[]; notaFiscalId?: number; origem: string; valorTotal: number; numero: string; dataVenda: number }>();
   let imported = 0;
+  let failed = 0;
 
   for (const pedidoSummary of pedidos) {
     const docId = String(pedidoSummary.id);
-    const existingSnap = await ordersRef.doc(docId).get();
-    if (existingSnap.exists && existingSnap.data()?.status === "EMITIDA") {
-      continue; // já emitida — não sobrescreve
-    }
-    const isNewOrder = !existingSnap.exists;
+    // Uma falha num pedido isolado (rede instável, hiccup do Bling, schema inesperado) não pode
+    // derrubar a sincronização inteira e jogar fora o progresso de todos os pedidos já
+    // processados antes dele — loga e segue pro próximo, mesmo padrão de resiliência já usado
+    // no loop do livro de vendas logo abaixo.
+    try {
+      const existingSnap = await ordersRef.doc(docId).get();
+      if (existingSnap.exists && existingSnap.data()?.status === "EMITIDA") {
+        continue; // já emitida — não sobrescreve
+      }
+      const isNewOrder = !existingSnap.exists;
 
-    const detail = await blingCall<{
-      data: {
-        id: number;
-        numero?: number;
-        total?: number;
-        contato?: { nome?: string };
-        loja?: { id: number };
-        notaFiscal?: { id: number };
-        data?: string; // data do pedido — "YYYY-MM-DD" (campo `data` do IFindResponse de pedidosVendas)
-        itens: { descricao: string; quantidade: number; valor: number; produto?: { id: number } }[];
-      };
-    }>({ accessToken, path: `pedidos/vendas/${pedidoSummary.id}` });
+      const detail = await blingCall<{
+        data: {
+          id: number;
+          numero?: number;
+          total?: number;
+          contato?: { nome?: string };
+          loja?: { id: number };
+          notaFiscal?: { id: number };
+          data?: string; // data do pedido — "YYYY-MM-DD" (campo `data` do IFindResponse de pedidosVendas)
+          itens: { descricao: string; quantidade: number; valor: number; produto?: { id: number } }[];
+        };
+      }>({ accessToken, path: `pedidos/vendas/${pedidoSummary.id}` });
 
-    const pedido = detail.data;
-    const itens = (pedido.itens || []).map((it) => ({
-      blingProdutoId: it.produto?.id ? String(it.produto.id) : "",
-      descricao: it.descricao,
-      quantidade: Number(it.quantidade || 0),
-      valorUnitario: Number(it.valor || 0),
-      mapeado: !!it.produto?.id && mappedIds.has(String(it.produto.id)),
-    }));
+      const pedido = detail.data;
+      const itens = (pedido.itens || []).map((it) => ({
+        blingProdutoId: it.produto?.id ? String(it.produto.id) : "",
+        descricao: it.descricao,
+        quantidade: Number(it.quantidade || 0),
+        valorUnitario: Number(it.valor || 0),
+        mapeado: !!it.produto?.id && mappedIds.has(String(it.produto.id)),
+      }));
 
-    const allMapped = itens.length > 0 && itens.every((i) => i.mapeado);
-    const now = Date.now();
-    const origem = (pedido.loja?.id && channelOrigins.get(String(pedido.loja.id))) || "PROPRIO";
-    const numero = String(pedido.numero ?? pedidoSummary.numeroLoja ?? pedido.id);
-    const dataVenda = pedido.data ? new Date(pedido.data).getTime() : now;
+      const allMapped = itens.length > 0 && itens.every((i) => i.mapeado);
+      const now = Date.now();
+      const origem = (pedido.loja?.id && channelOrigins.get(String(pedido.loja.id))) || "PROPRIO";
+      const numero = String(pedido.numero ?? pedidoSummary.numeroLoja ?? pedido.id);
+      const dataVenda = pedido.data ? new Date(pedido.data).getTime() : now;
 
-    pedidoDetailCache.set(docId, {
-      itens: itens.map((i) => ({ quantidade: i.quantidade })),
-      notaFiscalId: pedido.notaFiscal?.id,
-      origem,
-      valorTotal: Number(pedido.total || 0),
-      numero,
-      dataVenda,
-    });
-
-    await ordersRef.doc(docId).set(
-      {
-        id: docId,
-        blingPedidoId: docId,
-        numero,
+      pedidoDetailCache.set(docId, {
+        itens: itens.map((i) => ({ quantidade: i.quantidade })),
+        notaFiscalId: pedido.notaFiscal?.id,
         origem,
-        cliente: pedido.contato?.nome || "Cliente não informado",
         valorTotal: Number(pedido.total || 0),
-        itens,
-        status: allMapped ? "PRONTO_PARA_EMITIR" : "PENDENTE",
-        createdAt: existingSnap.exists ? existingSnap.data()?.createdAt || now : now,
-        updatedAt: now,
-      },
-      { merge: true }
-    );
-    imported++;
+        numero,
+        dataVenda,
+      });
 
-    if (isNewOrder) {
-      const pares = itens.reduce((s, i) => s + i.quantidade, 0);
-      await consumeNotesForNewOrder(db, uid, docId, pares);
+      await ordersRef.doc(docId).set(
+        {
+          id: docId,
+          blingPedidoId: docId,
+          numero,
+          origem,
+          cliente: pedido.contato?.nome || "Cliente não informado",
+          valorTotal: Number(pedido.total || 0),
+          itens,
+          status: allMapped ? "PRONTO_PARA_EMITIR" : "PENDENTE",
+          createdAt: existingSnap.exists ? existingSnap.data()?.createdAt || now : now,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+      imported++;
+
+      if (isNewOrder) {
+        const pares = itens.reduce((s, i) => s + i.quantidade, 0);
+        await consumeNotesForNewOrder(db, uid, docId, pares);
+      }
+    } catch (err: any) {
+      failed++;
+      console.warn(`[syncBlingOrders] Falha ao processar pedido ${docId}, pulando pro próximo:`, err?.message || err);
     }
   }
 
@@ -373,7 +383,10 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
     .doc("bling")
     .set({ lastOrderSyncAt: Date.now() }, { merge: true });
 
-  const message = removed > 0 ? `${imported} pedido(s) sincronizado(s), ${removed} removido(s) (não estão mais em aberto).` : `${imported} pedido(s) sincronizado(s).`;
+  const parts = [`${imported} pedido(s) sincronizado(s)`];
+  if (removed > 0) parts.push(`${removed} removido(s) (não estão mais em aberto)`);
+  if (failed > 0) parts.push(`${failed} com falha (tente sincronizar de novo)`);
+  const message = parts.join(", ") + ".";
   return { ok: true, message, ordersImported: imported };
 }
 

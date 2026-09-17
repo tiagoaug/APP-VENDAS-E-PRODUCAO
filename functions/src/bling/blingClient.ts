@@ -95,8 +95,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Chama um endpoint da API v3 do Bling (base https://api.bling.com.br/Api/v3), autenticado
  * via Bearer token. Respeita o limite de 3 req/s (throttle) e faz retry com backoff em caso de
- * 429 (até 3 tentativas). Lança erro com os detalhes que o Bling manda no corpo
- * (`error.description` / `error.fields`) quando a resposta não é 2xx. */
+ * 429 OU erro transitório de servidor (5xx — instabilidade do lado do Bling, não tem nada a ver
+ * com o pedido em si e insistir de novo geralmente resolve) — até 3 tentativas. Sem isso, uma
+ * única resposta 502/503/504 no meio de uma sincronização longa abortava o processo inteiro por
+ * um problema momentâneo do Bling, obrigando a rodar tudo de novo do zero. Lança erro com os
+ * detalhes que o Bling manda no corpo (`error.description` / `error.fields`) quando a resposta
+ * não é 2xx mesmo depois de esgotar as tentativas. */
 export async function blingCall<T = any>(options: BlingCallOptions): Promise<T> {
   const { accessToken, path, method = "GET", query, body } = options;
 
@@ -130,7 +134,7 @@ export async function blingCall<T = any>(options: BlingCallOptions): Promise<T> 
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    if (res.status === 429 && attempt < MAX_ATTEMPTS) {
+    if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
       await sleep(attempt * 1000); // backoff: 1s, 2s, 3s
       continue;
     }
