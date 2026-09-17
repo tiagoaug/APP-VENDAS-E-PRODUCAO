@@ -527,22 +527,29 @@ export default function PublicCatalogApp() {
                   {saleTypeLabel}
                 </span>
                 {/* Numeração + Preço ficam colados um no outro, encostados na base da coluna —
-                    o preço alinhado com o fim da foto do banner, numeração logo acima dele. */}
-                <div className="flex flex-col items-end gap-1.5">
-                  {sizeRangeLabel && (
-                    <button
-                      type="button"
-                      onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: true }))}
-                      className="self-end flex flex-col items-end gap-0.5"
-                    >
-                      <span className="px-2.5 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-700">
-                        Numeração {sizeRangeLabel}
+                    o preço alinhado com o fim da foto do banner, numeração logo acima dele. O
+                    card de Numeração É o gatilho do acordeão de variações (só esse, não tem mais
+                    um botão duplicado embaixo da descrição). */}
+                <div className="flex flex-col items-end gap-1.5 w-full">
+                  <button
+                    type="button"
+                    onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: !prev[product.productId] }))}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-all active:scale-[0.98] ${productOpen ? 'bg-white border-slate-200' : 'bg-indigo-50 border-indigo-200'}`}
+                  >
+                    <span className="flex flex-col items-start min-w-0">
+                      {sizeRangeLabel && (
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 truncate">
+                          Numeração {sizeRangeLabel}
+                        </span>
+                      )}
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-500' : 'text-indigo-600'}`}>
+                        Ver Variações{totalSelectedInProduct > 0 ? ` · ${totalSelectedInProduct} sel.` : ''}
                       </span>
-                      <span className="text-[9px] font-black text-indigo-600 underline underline-offset-2">
-                        Clique aqui e veja numerações
-                      </span>
-                    </button>
-                  )}
+                    </span>
+                    <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-base font-black transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500'}`}>
+                      ⌄
+                    </span>
+                  </button>
                   {(product.pricePerPair !== undefined || product.pricePerBox !== undefined) && (
                     <div className="flex flex-wrap justify-end gap-1.5">
                       {product.pricePerPair !== undefined && (
@@ -570,30 +577,35 @@ export default function PublicCatalogApp() {
 
             <div className="px-3 pb-3">
               {/* Acordeão POR REFERÊNCIA (não por cor) — todas as cores/numerações dessa
-                  referência ficam escondidas atrás de um único botão, que só abre quando o
+                  referência ficam escondidas atrás de um único gatilho, que só abre quando o
                   cliente quer mesmo fazer pedido daquele modelo. Evita o catálogo inteiro
-                  ficando extenso com todas as cores de todos os produtos abertas de uma vez. */}
-              <button
-                type="button"
-                onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: !prev[product.productId] }))}
-                className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] ${productOpen ? 'bg-white border-slate-200' : 'bg-indigo-50 border-indigo-200'}`}
-              >
-                <span className={`flex items-center gap-2 text-[11px] font-black uppercase tracking-widest ${productOpen ? 'text-slate-600' : 'text-indigo-600'}`}>
-                  Clique Aqui para Ver Variações
-                  {totalSelectedInProduct > 0 && (
-                    <span className="shrink-0 text-[9px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded-full">{totalSelectedInProduct} sel.</span>
-                  )}
-                </span>
-                <span className="relative shrink-0 w-7 h-7">
-                  {!productOpen && <span className="absolute inset-0 rounded-full bg-indigo-400 animate-ping opacity-75" />}
-                  <span className={`relative w-7 h-7 rounded-full flex items-center justify-center text-white text-xl font-black transition-transform ${productOpen ? 'bg-slate-400 rotate-180' : 'bg-indigo-500'}`}>
-                    ⌄
-                  </span>
-                </span>
-              </button>
-
+                  ficando extenso com todas as cores de todos os produtos abertas de uma vez.
+                  O gatilho é o card de Numeração ao lado da foto (ver acima) — sem botão
+                  duplicado aqui embaixo. */}
               {productOpen && (
-                <div className="flex flex-col gap-3 mt-3">
+                <div
+                  className="fixed inset-0 z-20 bg-black/60 flex items-end sm:items-center justify-center"
+                  onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: false }))}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[85vh] flex flex-col overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500">{product.reference}</p>
+                        <p className="text-sm font-black text-slate-900 truncate">{product.name}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setOpenProducts(prev => ({ ...prev, [product.productId]: false }))}
+                        aria-label="Fechar"
+                        className="shrink-0 w-9 h-9 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center active:scale-90 transition-all"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-3 p-3 overflow-y-auto">
                   {product.variations.map((variation) => {
                     const variationGallery = [variation.photoUrl, ...(variation.photoAlbum || [])].filter(Boolean) as string[];
                     const selectedInVariation = variation.sizes.reduce((sum, s) => sum + (cart[cartKey(product.productId, variation.variationId, s.size)] || 0), 0);
@@ -718,6 +730,39 @@ export default function PublicCatalogApp() {
                       className="w-full mt-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs outline-none"
                       placeholder="Ex: pedido no saquinho, com embalagem desmontada"
                     />
+                  </div>
+                    </div>
+
+                    {/* Navegar pro modelo anterior/próximo sem fechar o popup — troca a
+                        referência exibida direto, sem precisar voltar pra lista. */}
+                    <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-100 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const idx = visibleProducts.findIndex(p => p.productId === product.productId);
+                          const prevProduct = visibleProducts[(idx - 1 + visibleProducts.length) % visibleProducts.length];
+                          setOpenProducts({ [prevProduct.productId]: true });
+                        }}
+                        disabled={visibleProducts.length < 2}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest disabled:opacity-30 active:scale-95 transition-all"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+                        Anterior
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const idx = visibleProducts.findIndex(p => p.productId === product.productId);
+                          const nextProduct = visibleProducts[(idx + 1) % visibleProducts.length];
+                          setOpenProducts({ [nextProduct.productId]: true });
+                        }}
+                        disabled={visibleProducts.length < 2}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest disabled:opacity-30 active:scale-95 transition-all"
+                      >
+                        Próximo
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
