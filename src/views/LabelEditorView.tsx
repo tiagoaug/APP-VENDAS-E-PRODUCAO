@@ -144,7 +144,13 @@ function previewBindingText(binding: LabelDataBinding, ctx: LabelBindingContext 
 function GradePreview({ el, ctx, pxPerMmX, pxPerMmY }: { el: LabelElement; ctx: LabelBindingContext | null; pxPerMmX: number; pxPerMmY: number }) {
   const resolved = el.dataBinding ? resolveLabelBinding(el.dataBinding, ctx) : null;
   const gridEntries = resolved?.kind === 'grade' ? resolved.gridEntries : [];
-  const cells = computeGradeLayout(gridEntries, 0, 0, el.w, el.h, el.fontSize || 3.5);
+  // w/h zerados ou inválidos (ex.: durante um arrasto de redimensionar em algum estado
+  // transitório) fariam as divisões por el.w/el.h abaixo virarem Infinity/NaN — em vez de
+  // deixar isso vazar pra um estilo CSS inválido, cai no placeholder "Grade" até w/h voltarem
+  // a um valor utilizável.
+  const safeW = Number.isFinite(el.w) && el.w > 0 ? el.w : 0;
+  const safeH = Number.isFinite(el.h) && el.h > 0 ? el.h : 0;
+  const cells = safeW > 0 && safeH > 0 ? computeGradeLayout(gridEntries, 0, 0, safeW, safeH, el.fontSize || 3.5) : [];
   if (cells.length === 0) {
     return (
       <div className="w-full h-full flex items-center justify-center border-2 border-dashed border-slate-300 pointer-events-none text-slate-400 text-[8px] font-bold uppercase">
@@ -165,8 +171,8 @@ function GradePreview({ el, ctx, pxPerMmX, pxPerMmY }: { el: LabelElement; ctx: 
           <div
             className={`absolute rounded-sm flex items-center justify-center font-black leading-none ${pillCls}`}
             style={{
-              left: `${(c.pillXmm / el.w) * 100}%`, top: `${(c.pillYmm / el.h) * 100}%`,
-              width: `${(c.pillWmm / el.w) * 100}%`, height: `${(c.pillHmm / el.h) * 100}%`,
+              left: `${(c.pillXmm / safeW) * 100}%`, top: `${(c.pillYmm / safeH) * 100}%`,
+              width: `${(c.pillWmm / safeW) * 100}%`, height: `${(c.pillHmm / safeH) * 100}%`,
               fontSize: fontPx,
             }}
           >

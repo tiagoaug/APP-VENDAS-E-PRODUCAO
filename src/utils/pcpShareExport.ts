@@ -51,12 +51,33 @@ export interface PCPShareData {
   /** Quando false (só JPG), omite o cabeçalho (logo, "FICHA TÉCNICA", LOTE/EMISSÃO) — usado
    * pra mandar vários blocos ao Print Studio sem repetir o cabeçalho em cada um. */
   showHeader?: boolean;
-  /** Tamanho do papel de exportação. Se marketplace, o tamanho final é 100mm x 150mm */
-  pageSize?: 'a4' | 'marketplace';
+  /** Tamanho do papel de exportação — ver PAGE_SIZES_MM pelas dimensões de cada um. */
+  pageSize?: 'a4' | 'a5' | 'a6' | 'marketplace';
+  /** Retrato (padrão) ou paisagem — afeta tanto o PDF quanto o recorte em páginas do JPG. */
+  orientation?: 'portrait' | 'landscape';
+  /** Preto e branco economiza tinta na hora de imprimir — aplica um filtro de escala de
+   * cinza no canvas inteiro (ver drawPage em generateJPG), sem precisar tocar em cada cor
+   * usada no desenho do cabeçalho/tabelas. 'color' (padrão) mantém as cores de sempre. */
+  colorMode?: 'color' | 'bw';
   /** Quantas fichas forçar por folha/página — 0 ou ausente = automático (encaixa o máximo
    * que couber sem NUNCA cortar os dados de uma ficha entre duas folhas). No PDF sempre se
    * aplica; no JPG só tem efeito quando `splitPages` está ligado. */
   itemsPerPage?: number;
+}
+
+// Dimensões em mm (retrato) de cada tamanho de papel suportado — A5/A6 têm a MESMA proporção
+// de A4 (série ISO 216, todas ~1:√2), só o Marketplace foge disso (1:1.5). Paisagem inverte
+// largura/altura na hora de usar (ver getPageDimsMm).
+const PAGE_SIZES_MM: Record<NonNullable<PCPShareData['pageSize']>, [number, number]> = {
+  a4: [210, 297],
+  a5: [148, 210],
+  a6: [105, 148],
+  marketplace: [100, 150],
+};
+
+function getPageDimsMm(data: PCPShareData): [number, number] {
+  const [w, h] = PAGE_SIZES_MM[data.pageSize || 'a4'];
+  return data.orientation === 'landscape' ? [h, w] : [w, h];
 }
 
 // Agrupa `items` em "folhas" sem NUNCA cortar uma ficha no meio entre duas folhas: no modo
@@ -102,15 +123,22 @@ export async function generatePCPShareExport(data: PCPShareData, formatType: 'pd
     const filename = `Ficha_PCP_${data.lotNumber.replace(/[^a-zA-Z0-9]/g, '')}_${format(new Date(), 'yyyyMMdd_HHmm')}`;
 
     if (formatType === 'pdf') {
-      if (data.pageSize === 'marketplace') {
-        // Gera como imagens fatiadas no tamanho Marketplace, e junta no PDF
+      // A4 retrato colorido (o padrão de sempre) usa o PDF vetorial de verdade (texto
+      // selecionável, arquivo leve). Qualquer outra combinação (A5, A6, Marketplace,
+      // paisagem, ou Preto e Branco) gera como imagens fatiadas no tamanho/orientação
+      // escolhidos e junta no PDF — o layout vetorial só tem as medidas calibradas pra A4
+      // retrato e não tem filtro de escala de cinza (ver colorMode em generateJPG).
+      const isDefaultA4Portrait = (data.pageSize === 'a4' || !data.pageSize) && data.orientation !== 'landscape' && data.colorMode !== 'bw';
+      if (!isDefaultA4Portrait) {
+        const [pageW, pageH] = getPageDimsMm(data);
+        const orientation = data.orientation === 'landscape' ? 'landscape' : 'portrait';
         const images = await generateJPG({ ...data, splitPages: true }, filename, true);
         if (!Array.isArray(images)) return false;
 
-        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [100, 150] });
+        const doc = new jsPDF({ orientation, unit: 'mm', format: [pageW, pageH] });
         for (let i = 0; i < images.length; i++) {
-          if (i > 0) doc.addPage([100, 150], 'portrait');
-          doc.addImage(images[i], 'JPEG', 0, 0, 100, 150);
+          if (i > 0) doc.addPage([pageW, pageH], orientation);
+          doc.addImage(images[i], 'JPEG', 0, 0, pageW, pageH);
         }
         if (previewOnly) {
           return [doc.output('datauristring')];
@@ -256,15 +284,15 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(100);
-    doc.text('REFERÊNCIA / MODELO', 14, currentY);
-    doc.text('COR / VARIAÇÃO', 90, currentY);
+    doc.text('REFERÊNCIA / COR', 14, currentY);
+    doc.text('Nº DA COMPRA', 90, currentY);
     doc.text('TOTAL DE PARES', 160, currentY);
 
     currentY += 6;
     doc.setFontSize(12);
     doc.setTextColor(0);
-    doc.text(`${item.reference || '---'} ${item.orderNumber ? `(${item.orderNumber})` : ''}`, 14, currentY);
-    doc.text(item.color || '---', 90, currentY);
+    doc.text(`${item.reference || '---'}${item.color ? ` ${item.color}` : ''}`, 14, currentY);
+    doc.text(item.orderNumber || '---', 90, currentY);
     doc.text(`${item.totalPairs} Pares`, 160, currentY);
 
     currentY += 8;
@@ -552,8 +580,12 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
   const FOOTER_H = 50;
 
   // Agrupa itens em páginas — só quebra ENTRE itens, nunca no meio de um.
-  // Sem "Dividir em Páginas" (ou se tudo já cabe numa altura de A4/Marketplace), uma página só.
-  const PAGE_H = data.pageSize === 'marketplace' ? Math.round(W * 1.5) : Math.round(W * Math.SQRT2);
+  // Sem "Dividir em Páginas" (ou se tudo já cabe numa altura de uma página), uma página só.
+  // Altura calculada pela proporção mm real do tamanho/orientação escolhidos (ver
+  // getPageDimsMm) — cobre A4/A5/A6 (mesma proporção ~1:√2) e Marketplace (1:1.5), retrato
+  // ou paisagem, sem precisar de um caso especial por tamanho.
+  const [pageWmm, pageHmm] = getPageDimsMm(data);
+  const PAGE_H = Math.round(W * (pageHmm / pageWmm));
   let pages: PCPShareItem[][];
   if (splitPages) {
     // itemsPerPage > 0: força exatamente N fichas por página, independente do quanto sobra
@@ -596,6 +628,10 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     ctx.scale(SCALE, SCALE);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    // Preto e Branco: um filtro só, aplicado ANTES de qualquer desenho, converte tudo (texto,
+    // linhas, badges coloridos) pra escala de cinza — sem precisar caçar cada cor usada nas
+    // centenas de ctx.fillStyle deste arquivo.
+    if (data.colorMode === 'bw') ctx.filter = 'grayscale(1)';
 
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, W, logicalH);
@@ -647,15 +683,15 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     for (const item of pageItems) {
       ctx.fillStyle = '#64748b';
       ctx.font = '800 12px Inter';
-      ctx.fillText('REFERÊNCIA / MODELO', pad, y);
-      ctx.fillText('COR / VARIAÇÃO', pad + 350, y);
+      ctx.fillText('REFERÊNCIA / COR', pad, y);
+      ctx.fillText('Nº DA COMPRA', pad + 350, y);
       ctx.fillText('TOTAL DE PARES', W - pad - 180, y);
 
       y += 24;
       ctx.fillStyle = '#0f172a';
       ctx.font = '900 18px Inter';
-      ctx.fillText(`${item.reference || '---'} ${item.orderNumber ? `(${item.orderNumber})` : ''}`, pad, y);
-      ctx.fillText(item.color || '---', pad + 350, y);
+      ctx.fillText(`${item.reference || '---'}${item.color ? ` ${item.color}` : ''}`, pad, y);
+      ctx.fillText(item.orderNumber || '---', pad + 350, y);
       ctx.fillText(`${item.totalPairs} Pares`, W - pad - 180, y);
 
       y += 26;

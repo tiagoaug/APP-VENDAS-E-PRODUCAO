@@ -13873,7 +13873,7 @@ export default function PCPView({
       <ExportNoteModal
         isOpen={shareModal.isOpen}
         onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage) => {
+        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage, _showThumbnails, orientation, colorMode) => {
           let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
@@ -13902,14 +13902,16 @@ export default function PCPView({
             showOSData,
             showSoleGrid,
             pageSize,
-            itemsPerPage
+            itemsPerPage,
+            orientation,
+            colorMode
           }, format);
 
           if (success) {
             setShareModal(prev => ({ ...prev, isOpen: false }));
           }
         }}
-        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage) => {
+        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage, _showThumbnails, orientation, colorMode) => {
           let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
@@ -13938,7 +13940,9 @@ export default function PCPView({
             showOSData,
             showSoleGrid,
             pageSize,
-            itemsPerPage
+            itemsPerPage,
+            orientation,
+            colorMode
           }, format, true);
         }}
         isDarkMode={isDarkMode}

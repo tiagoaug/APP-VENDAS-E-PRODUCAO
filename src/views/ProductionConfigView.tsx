@@ -1,37 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode, Component } from 'react';
-
-class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, { hasError: boolean; error: Error | null }> {
-  constructor(props: any) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error: Error, info: any) {
-    console.error('[ErrorBoundary]', this.props.label, error, info);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-200 text-red-700 flex flex-col gap-2">
-          <p className="font-black text-sm tracking-widest">Erro ao Renderizar {this.props.label}</p>
-          <p className="text-xs font-mono break-all">{this.state.error?.message}</p>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
-            data-guide-anchor="prodcfg.errorRetry"
-            title="Recarregar o componente"
-            aria-label="Tentar novamente"
-            className="mt-2 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-black tracking-widest"
-          >
-            Tentar Novamente
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode } from 'react';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import {
   Tags,

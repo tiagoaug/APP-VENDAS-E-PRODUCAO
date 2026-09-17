@@ -238,6 +238,7 @@ import ProductCreationChoiceModal from "./components/ProductCreationChoiceModal"
 import AIAssistantSettings from "./components/AIAssistantSettings";
 import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import TransactionModal from "./components/TransactionModal";
 import PersonModal from "./components/PersonModal";
 import SolePurchaseModal from "./components/SolePurchaseModal";
@@ -6606,6 +6607,7 @@ export default function App() {
         const session = currentParams as OpenEditorParams | null;
         if (!session) return null;
         return (
+          <ErrorBoundary label="Editor de Etiqueta">
           <LabelEditorView
             isDarkMode={isDarkMode}
             session={{
@@ -6629,6 +6631,7 @@ export default function App() {
               }
             }}
           />
+          </ErrorBoundary>
         );
       }
       case ViewType.BACKUP:

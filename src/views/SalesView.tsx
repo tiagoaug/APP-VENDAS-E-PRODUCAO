@@ -1013,7 +1013,7 @@ export default function SalesView({
     _showFinancialValues?: boolean, _groupMode?: 'none' | 'ref_color' | 'ref', _pcpTotalGrid?: boolean,
     _showMaterials?: boolean, _showItemGrid?: boolean, _showSectorNotes?: boolean, _showOrderList?: boolean,
     _splitPages?: boolean, _showProvider?: boolean, _showOSData?: boolean, _showSoleGrid?: boolean,
-    _selectedSectorIds?: string[], _pageSize?: 'a4' | 'marketplace', _itemsPerPage?: number,
+    _selectedSectorIds?: string[], _pageSize?: 'a4' | 'a5' | 'a6' | 'marketplace', _itemsPerPage?: number,
     exportShowThumbnails?: boolean,
   ) => {
     if (!exportModal.sale) return;
@@ -1043,7 +1043,7 @@ export default function SalesView({
     _showFinancialValues?: boolean, _groupMode?: 'none' | 'ref_color' | 'ref', _pcpTotalGrid?: boolean,
     _showMaterials?: boolean, _showItemGrid?: boolean, _showSectorNotes?: boolean, _showOrderList?: boolean,
     _splitPages?: boolean, _showProvider?: boolean, _showOSData?: boolean, _showSoleGrid?: boolean,
-    _selectedSectorIds?: string[], _pageSize?: 'a4' | 'marketplace', _itemsPerPage?: number,
+    _selectedSectorIds?: string[], _pageSize?: 'a4' | 'a5' | 'a6' | 'marketplace', _itemsPerPage?: number,
     exportShowThumbnails?: boolean,
   ): Promise<string[]> => {
     if (!exportModal.sale) return [];
