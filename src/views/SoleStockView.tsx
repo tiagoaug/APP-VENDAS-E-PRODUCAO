@@ -4,7 +4,7 @@ import {
   ArrowLeft, Package, Palette, Clock, Plus, Trash2, Save,
   ChevronDown, ChevronUp, Search, Edit2, CheckCircle2, X, Calculator, Tag,
   Share2, FileText, Image, Info, ClipboardList, ShoppingCart, SlidersHorizontal,
-  Weight, GripVertical, Maximize2, Minimize2
+  Weight, GripVertical, Maximize2, Minimize2, Sparkles
 } from 'lucide-react';
 import { firebaseService } from '../services/firebaseService';
 import Modal from '../components/Modal';
@@ -46,6 +46,9 @@ export default function SoleStockView({
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [selectedStockItem, setSelectedStockItem] = useState<any>(null);
   const [showAddEntryModal, setShowAddEntryModal] = useState(false);
+  // Acordeão "Mais Funcionalidades" (Entrada Manual/Histórico/Compartilhar/Filtrar/Formular
+  // Pedido) — fechado por padrão pra não ocupar espaço enquanto não está em uso.
+  const [showMoreFeatures, setShowMoreFeatures] = useState(false);
   const [entryMoldId, setEntryMoldId] = useState('');
   const [entryColorId, setEntryColorId] = useState('');
   const [entryGrade, setEntryGrade] = useState<Record<string, string>>({});
@@ -566,7 +569,7 @@ export default function SoleStockView({
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h3 className="font-black text-slate-800 dark:text-white text-base uppercase tracking-tight">Entrada Manual</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Adicione pares ao estoque de solados</p>
+                <p className="text-[10px] font-medium tracking-wide normal-case mt-0.5 text-blue-950 dark:text-blue-300">Adicione pares ao estoque de solados</p>
               </div>
               <button
                 type="button"
@@ -581,7 +584,7 @@ export default function SoleStockView({
 
             <div className="flex flex-col gap-4">
               <div>
-                <label htmlFor="entry-mold-select" className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Modelo</label>
+                <label htmlFor="entry-mold-select" className="text-[9px] font-medium tracking-wide normal-case mb-1.5 block text-blue-950 dark:text-blue-300">Modelo</label>
                 <select
                   id="entry-mold-select"
                   value={entryMoldId}
@@ -594,7 +597,7 @@ export default function SoleStockView({
               </div>
 
               <div>
-                <label htmlFor="entry-color-select" className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Cor</label>
+                <label htmlFor="entry-color-select" className="text-[9px] font-medium tracking-wide normal-case mb-1.5 block text-blue-950 dark:text-blue-300">Cor</label>
                 <select
                   id="entry-color-select"
                   value={entryColorId}
@@ -613,7 +616,7 @@ export default function SoleStockView({
               {entryMold && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Grade de Tamanhos</label>
+                    <label className="text-[9px] font-medium tracking-wide normal-case block text-blue-950 dark:text-blue-300">Grade de Tamanhos</label>
                     {entryGradeTotal > 0 && (
                       <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">{entryGradeTotal} pares</span>
                     )}
@@ -642,7 +645,7 @@ export default function SoleStockView({
                           >
                             <Calculator size={14} strokeWidth={2.5} />
                           </button>
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight leading-none">{size}</span>
+                          <span className="text-[9px] font-medium tracking-wide normal-case leading-none text-blue-950 dark:text-blue-300">{size}</span>
                           <input
                             type="number"
                             min="0"
@@ -683,7 +686,7 @@ export default function SoleStockView({
                 </div>
                 <div>
                   <h3 className="font-black text-slate-800 dark:text-white text-base uppercase tracking-tight">Central de Compartilhamento</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Exporte o estoque em JPG ou PDF</p>
+                  <p className="text-[10px] font-medium tracking-wide normal-case mt-0.5 text-blue-950 dark:text-blue-300">Exporte o estoque em JPG ou PDF</p>
                 </div>
               </div>
               <button
@@ -700,7 +703,7 @@ export default function SoleStockView({
             <div className="flex flex-col gap-4">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label htmlFor="share-mold-select" className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Filtrar Modelo</label>
+                  <label htmlFor="share-mold-select" className="text-[9px] font-medium tracking-wide normal-case mb-1.5 block text-blue-950 dark:text-blue-300">Filtrar Modelo</label>
                   <select
                     id="share-mold-select"
                     value={shareFilterMoldId}
@@ -712,7 +715,7 @@ export default function SoleStockView({
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="share-color-select" className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Filtrar Cor</label>
+                  <label htmlFor="share-color-select" className="text-[9px] font-medium tracking-wide normal-case mb-1.5 block text-blue-950 dark:text-blue-300">Filtrar Cor</label>
                   <select
                     id="share-color-select"
                     value={shareFilterColorId}
@@ -727,7 +730,7 @@ export default function SoleStockView({
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Pré-visualização</label>
+                  <label className="text-[9px] font-medium tracking-wide normal-case block text-blue-950 dark:text-blue-300">Pré-visualização</label>
                   {shareItems.length > 0 && (
                     <span className="text-[9px] font-black text-sky-500 uppercase tracking-widest">{shareItems.length} {shareItems.length === 1 ? 'item' : 'itens'} • {shareTotalGeral} pares</span>
                   )}
@@ -736,7 +739,7 @@ export default function SoleStockView({
                 {shareItems.length === 0 ? (
                   <div className={`rounded-2xl border py-8 px-4 text-center ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                     <Package size={22} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhum item encontrado para os filtros selecionados</p>
+                    <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Nenhum item encontrado para os filtros selecionados</p>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2.5 max-h-72 overflow-y-auto pr-1">
@@ -752,7 +755,7 @@ export default function SoleStockView({
                         <div className="flex flex-wrap gap-2">
                           {item.sizes.map(s => (
                             <div key={s.size} className={`flex flex-col items-center justify-center px-3.5 py-2.5 rounded-xl border min-w-[56px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'}`}>
-                              <span className="text-[9px] font-black text-slate-500 uppercase leading-none mb-1">{s.size}</span>
+                              <span className="text-[9px] font-medium tracking-wide normal-case leading-none mb-1 text-blue-950 dark:text-blue-300">{s.size}</span>
                               <span className={`text-[15px] font-black leading-none ${s.qty > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'}`}>{s.qty}</span>
                             </div>
                           ))}
@@ -764,7 +767,7 @@ export default function SoleStockView({
               </div>
 
               <div>
-                <label htmlFor="share-observations" className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Observações</label>
+                <label htmlFor="share-observations" className="text-[9px] font-medium tracking-wide normal-case mb-1.5 block text-blue-950 dark:text-blue-300">Observações</label>
                 <textarea
                   id="share-observations"
                   value={shareObservations}
@@ -877,7 +880,7 @@ export default function SoleStockView({
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowDetailFilter(false)} />
           <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
             <h3 className="font-black text-slate-800 dark:text-white text-base mb-1 uppercase tracking-tight">Filtrar detalhamento</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Escolha o que aparece em cada tamanho</p>
+            <p className="text-[10px] font-medium tracking-wide normal-case mb-4 text-blue-950 dark:text-blue-300">Escolha o que aparece em cada tamanho</p>
             <div className="flex flex-col gap-2">
               {([
                 { key: 'mapas', label: 'Mapas (reservado)' },
@@ -916,7 +919,7 @@ export default function SoleStockView({
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowSupplierPicker(false)} />
           <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
             <h3 className="font-black text-slate-800 dark:text-white text-base mb-1 uppercase tracking-tight">Formular Pedido</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Selecione o fornecedor</p>
+            <p className="text-[10px] font-medium tracking-wide normal-case mb-4 text-blue-950 dark:text-blue-300">Selecione o fornecedor</p>
             {formularSuppliers.length === 0 ? (
               <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">Nenhum fornecedor de solados cadastrado</p>
             ) : (
@@ -951,7 +954,7 @@ export default function SoleStockView({
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
           <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
             <h3 className="font-black text-slate-800 dark:text-white text-base mb-1 uppercase tracking-tight">Tipo de Pedido</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Como você quer formular esse pedido?</p>
+            <p className="text-[10px] font-medium tracking-wide normal-case mb-4 text-blue-950 dark:text-blue-300">Como você quer formular esse pedido?</p>
             <div className="flex flex-col gap-2.5">
               <button
                 type="button"
@@ -960,7 +963,7 @@ export default function SoleStockView({
                 className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-emerald-400'}`}
               >
                 <span className="block text-xs font-black uppercase tracking-tight">Pedido Livre</span>
-                <span className="block text-[9px] font-bold text-slate-400 mt-0.5 normal-case">Sem controle de quantidade de material — preenche a grade à vontade</span>
+                <span className="block text-[9px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 normal-case">Sem controle de quantidade de material — preenche a grade à vontade</span>
               </button>
               <button
                 type="button"
@@ -969,7 +972,7 @@ export default function SoleStockView({
                 className={`w-full text-left px-4 py-3.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:border-amber-500' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-amber-400'}`}
               >
                 <span className="block text-xs font-black uppercase tracking-tight">Pedido com Quantidade de Material Definida</span>
-                <span className="block text-[9px] font-bold text-slate-400 mt-0.5 normal-case">Informa quantos kg de matéria-prima tem disponível e acompanha o restante enquanto formula</span>
+                <span className="block text-[9px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-0.5 normal-case">Informa quantos kg de matéria-prima tem disponível e acompanha o restante enquanto formula</span>
               </button>
             </div>
             <button
@@ -1004,7 +1007,7 @@ export default function SoleStockView({
             <div className="flex items-center gap-1.5 min-w-0">
               <GripVertical size={13} className="text-slate-400 shrink-0" />
               <Weight size={12} className="text-amber-500 shrink-0" />
-              <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 truncate">Material</span>
+              <span className="text-[8px] font-medium tracking-wide normal-case truncate text-blue-950 dark:text-blue-300">Material</span>
             </div>
             <button
               type="button"
@@ -1034,7 +1037,7 @@ export default function SoleStockView({
               style={materialCalcSize ? { width: materialCalcSize.width, height: materialCalcSize.height } : undefined}
             >
               <div>
-                <label className="text-[8px] font-black uppercase tracking-widest text-slate-400">Material Disponível (kg)</label>
+                <label className="text-[8px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Material Disponível (kg)</label>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -1051,7 +1054,7 @@ export default function SoleStockView({
                   type="button"
                   onClick={() => setMaterialMode('yield')}
                   data-guide-anchor="soleStock.materialModoRendimento"
-                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${materialMode === 'yield' ? 'bg-amber-500 text-white' : 'text-slate-500'}`}
+                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-medium tracking-wide normal-case transition-all ${materialMode === 'yield' ? 'bg-amber-500 text-white' : (isDarkMode ? 'text-blue-300' : 'text-blue-950')}`}
                 >
                   Rendimento
                 </button>
@@ -1059,7 +1062,7 @@ export default function SoleStockView({
                   type="button"
                   onClick={() => setMaterialMode('registered')}
                   data-guide-anchor="soleStock.materialModoCadastrado"
-                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${materialMode === 'registered' ? 'bg-amber-500 text-white' : 'text-slate-500'}`}
+                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-medium tracking-wide normal-case transition-all ${materialMode === 'registered' ? 'bg-amber-500 text-white' : (isDarkMode ? 'text-blue-300' : 'text-blue-950')}`}
                 >
                   Peso Cadastrado
                 </button>
@@ -1067,7 +1070,7 @@ export default function SoleStockView({
 
               {materialMode === 'yield' ? (
                 <div>
-                  <label className="text-[8px] font-black uppercase tracking-widest text-slate-400">Rendimento (pares por kg)</label>
+                  <label className="text-[8px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Rendimento (pares por kg)</label>
                   <div className="mt-1 flex items-center gap-1.5">
                     <input
                       type="number"
@@ -1090,7 +1093,7 @@ export default function SoleStockView({
                   </div>
                 </div>
               ) : (
-                <p className="text-[8px] font-bold text-slate-400 leading-relaxed">
+                <p className="text-[8px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
                   Usa o peso por par já cadastrado em cada numeração do molde — cada tamanho consome o material de acordo com o próprio peso real.
                 </p>
               )}
@@ -1098,18 +1101,18 @@ export default function SoleStockView({
               {materialTotalKg > 0 && (
                 <div className={`rounded-xl p-2.5 flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Já Formulado</span>
+                    <span className="text-[8px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Já Formulado</span>
                     <span className="text-[11px] font-black text-slate-600 dark:text-slate-300">{materialConsumption.totalPairs} pares</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Restante</span>
+                    <span className="text-[8px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Restante</span>
                     <span className={`text-[13px] font-black ${materialRemainingKg < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                       {materialRemainingKg.toFixed(2)} kg
                     </span>
                   </div>
                   {materialPairsPossible !== null && (
                     <div className="flex items-center justify-between">
-                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">≈ Pares Ainda Possíveis</span>
+                      <span className="text-[8px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">≈ Pares Ainda Possíveis</span>
                       <span className="text-[11px] font-black text-amber-500">{Math.max(0, Math.floor(materialPairsPossible))}</span>
                     </div>
                   )}
@@ -1155,7 +1158,7 @@ export default function SoleStockView({
         </button>
         <div className="flex-1">
           <h2 className={`text-[11px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Estoque de Solados</h2>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Controle de estoque por modelo e cor</p>
+          <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Controle de estoque por modelo e cor</p>
         </div>
       </div>
 
@@ -1247,17 +1250,22 @@ export default function SoleStockView({
           )}
         </div>
 
-        <select
-          value={selectedMoldId}
-          onChange={(e) => setSelectedMoldId(e.target.value)}
-          title="Filtrar por modelo"
-          className={`w-full border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
-        >
-          <option value="">Todos os Modelos</option>
-          {molds.map(m => (
-            <option key={m.id} value={m.id}>{m.name}</option>
-          ))}
-        </select>
+        {/* appearance-none + chevron próprio (em vez da seta nativa do <select>, que não dá pra
+            alinhar de verdade com o chevron do acordeão "Mais Funcionalidades" logo abaixo). */}
+        <div className="relative">
+          <select
+            value={selectedMoldId}
+            onChange={(e) => setSelectedMoldId(e.target.value)}
+            title="Filtrar por modelo"
+            className={`w-full appearance-none border-2 rounded-2xl pl-4 pr-10 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+          >
+            <option value="">Todos os Modelos</option>
+            {molds.map(m => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+          <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+        </div>
 
         {isBalanceMode && stockEntries.length > 0 && (
           <button
@@ -1272,70 +1280,87 @@ export default function SoleStockView({
         )}
 
         {isBalanceMode && stockEntries.length > 0 && (
-          <p className={`text-[9px] font-bold flex items-center gap-1 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          <p className={`text-[9px] font-medium tracking-wide flex items-center gap-1 px-1 ${isDarkMode ? 'text-blue-300' : 'text-blue-950'}`}>
             <span className="text-rose-400">⚠</span>
             Zerar apaga todo o histórico de entradas e define o estoque como zero. Ação irreversível.
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={() => setShowAddEntryModal(true)}
-          data-guide-anchor="soleStock.entradaAbrir"
-          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
-        >
-          <Plus size={14} strokeWidth={2.5} className="text-emerald-500" /> Entrada Manual
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigateToWeighingHistory ? onNavigateToWeighingHistory() : (onNavigateToWeighing ? onNavigateToWeighing() : onBack())}
-          data-guide-anchor="soleStock.historicoPesagem"
-          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
-        >
-          <Clock size={14} className="text-indigo-500" /> Histórico de Pesagem
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowShareCenter(true)}
-          data-guide-anchor="soleStock.compartilharAbrir"
-          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
-        >
-          <Share2 size={14} strokeWidth={2.5} className="text-sky-500" /> Compartilhar
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowDetailFilter(true)}
-          data-guide-anchor="soleStock.detalheAbrir"
-          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
-        >
-          <SlidersHorizontal size={14} strokeWidth={2.5} className="text-violet-500" /> Filtrar Detalhamento
-        </button>
-
-        {people && onFormularPedido && (
+        <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
           <button
             type="button"
-            onClick={isFormularPedidoMode ? cancelFormularPedido : startFormularPedido}
-            data-guide-anchor="soleStock.pedidoToggle"
-            className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${
-              isFormularPedidoMode
-                ? 'bg-rose-500 border-rose-500 text-white'
-                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50')
-            }`}
+            onClick={() => setShowMoreFeatures(v => !v)}
+            data-guide-anchor="soleStock.maisFuncionalidadesAccordion"
+            className={`w-full flex items-center justify-between px-4 py-3 ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}
           >
-            {isFormularPedidoMode ? <X size={14} strokeWidth={2.5} /> : <ClipboardList size={14} strokeWidth={2.5} className="text-emerald-500" />}
-            {isFormularPedidoMode ? 'Cancelar Pedido' : 'Formular Pedido'}
+            <span className="flex items-center gap-2 text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
+              <Sparkles size={14} className="text-violet-500" /> Mais Funcionalidades
+            </span>
+            <ChevronDown size={16} className={`text-slate-400 transition-transform ${showMoreFeatures ? 'rotate-180' : ''}`} />
           </button>
-        )}
+          {showMoreFeatures && (
+            <div className="p-3 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAddEntryModal(true)}
+                data-guide-anchor="soleStock.entradaAbrir"
+                className={`w-full py-3 px-4 rounded-2xl text-[10px] font-medium tracking-wide normal-case flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-blue-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-blue-950 hover:border-slate-300 hover:bg-slate-50'}`}
+              >
+                <Plus size={14} strokeWidth={2.5} className="text-emerald-500" /> Entrada Manual
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigateToWeighingHistory ? onNavigateToWeighingHistory() : (onNavigateToWeighing ? onNavigateToWeighing() : onBack())}
+                data-guide-anchor="soleStock.historicoPesagem"
+                className={`w-full py-3 px-4 rounded-2xl text-[10px] font-medium tracking-wide normal-case flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-blue-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-blue-950 hover:border-slate-300 hover:bg-slate-50'}`}
+              >
+                <Clock size={14} className="text-indigo-500" /> Histórico de Pesagem
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowShareCenter(true)}
+                data-guide-anchor="soleStock.compartilharAbrir"
+                className={`w-full py-3 px-4 rounded-2xl text-[10px] font-medium tracking-wide normal-case flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-blue-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-blue-950 hover:border-slate-300 hover:bg-slate-50'}`}
+              >
+                <Share2 size={14} strokeWidth={2.5} className="text-sky-500" /> Compartilhar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDetailFilter(true)}
+                data-guide-anchor="soleStock.detalheAbrir"
+                className={`w-full py-3 px-4 rounded-2xl text-[10px] font-medium tracking-wide normal-case flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-blue-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-blue-950 hover:border-slate-300 hover:bg-slate-50'}`}
+              >
+                <SlidersHorizontal size={14} strokeWidth={2.5} className="text-violet-500" /> Filtrar Detalhamento
+              </button>
+
+              {people && onFormularPedido && (
+                <button
+                  type="button"
+                  onClick={isFormularPedidoMode ? cancelFormularPedido : startFormularPedido}
+                  data-guide-anchor="soleStock.pedidoToggle"
+                  className={`w-full py-3 px-4 rounded-2xl text-[10px] font-medium tracking-wide normal-case flex items-center gap-2.5 border active:scale-95 transition-all ${
+                    isFormularPedidoMode
+                      ? 'bg-rose-500 border-rose-500 text-white'
+                      : (isDarkMode ? 'bg-slate-800 border-slate-700 text-blue-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-blue-950 hover:border-slate-300 hover:bg-slate-50')
+                  }`}
+                >
+                  {isFormularPedidoMode ? <X size={14} strokeWidth={2.5} /> : <ClipboardList size={14} strokeWidth={2.5} className="text-emerald-500" />}
+                  {isFormularPedidoMode ? 'Cancelar Pedido' : 'Formular Pedido'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 mb-6">
         {displayedStock.length === 0 ? (
           <div className={`p-8 rounded-3xl text-center ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} border`}>
             <Package size={32} className="mx-auto text-slate-300 mb-2" />
-            <p className="text-[10px] text-slate-400 font-bold uppercase">
+            <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
               {isFormularPedidoMode ? 'Nenhum solado em estoque para este fornecedor' : 'Nenhum solado em estoque'}
             </p>
           </div>
@@ -1390,7 +1415,7 @@ export default function SoleStockView({
                         </span>
                       )}
                     </div>
-                    <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mt-1">
+                    <p className="text-[9px] font-medium tracking-wide normal-case mt-1 text-blue-950 dark:text-blue-300">
                       * Saldo futuro = saldo quando chegar todas as compras em estoque
                     </p>
                   </div>
@@ -1432,7 +1457,7 @@ export default function SoleStockView({
                               : (isDarkMode ? 'bg-slate-800 border border-transparent' : 'bg-slate-50 border border-transparent')
                           }`}
                         >
-                          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tight w-12 shrink-0">
+                          <span className="text-[11px] font-medium tracking-wide normal-case w-12 shrink-0 text-blue-950 dark:text-blue-300">
                             {size}
                           </span>
                           {isBalanceMode ? (
@@ -1485,7 +1510,7 @@ export default function SoleStockView({
                                   (+{pendingQty} compras)
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none">
+                                <span className="text-[10px] font-medium tracking-wide normal-case leading-none text-blue-950 dark:text-blue-300">
                                   (sem compras)
                                 </span>
                               )}
@@ -1516,19 +1541,19 @@ export default function SoleStockView({
                       <div className="grid grid-cols-2 gap-2 mt-2">
                         <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                           <p className="text-base font-black text-blue-500 leading-none">{displayTotal}</p>
-                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Pares</p>
+                          <p className="text-[9px] font-medium tracking-wide normal-case mt-0.5 text-blue-950 dark:text-blue-300">Pares</p>
                         </div>
                         <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                           <p className="text-base font-black text-amber-500 leading-none">{totalReserved}</p>
-                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Reservado</p>
+                          <p className="text-[9px] font-medium tracking-wide normal-case mt-0.5 text-blue-950 dark:text-blue-300">Reservado</p>
                         </div>
                         <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                           <p className="text-base font-black text-rose-500 leading-none">{totalMissing}</p>
-                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Faltando</p>
+                          <p className="text-[9px] font-medium tracking-wide normal-case mt-0.5 text-blue-950 dark:text-blue-300">Faltando</p>
                         </div>
                         <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                           <p className="text-base font-black text-sky-500 leading-none">{totalPending}</p>
-                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Comprado</p>
+                          <p className="text-[9px] font-medium tracking-wide normal-case mt-0.5 text-blue-950 dark:text-blue-300">Comprado</p>
                         </div>
                       </div>
 
@@ -1663,7 +1688,7 @@ export default function SoleStockView({
                                 <div className={`p-3 rounded-2xl border flex flex-col gap-1.5 ${
                                   isDarkMode ? 'bg-slate-950/30 border-slate-800/80' : 'bg-slate-50/30 border-slate-100'
                                 }`}>
-                                  <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-0.5">
+                                  <p className="text-[8px] font-medium tracking-wide normal-case mb-0.5 text-blue-950 dark:text-blue-300">
                                     Detalhamento de Compras (de todas as compras):
                                   </p>
                                   <div className="flex flex-col gap-1">
@@ -1695,7 +1720,7 @@ export default function SoleStockView({
                         const orderVal = orderQuantities[itemKey]?.[size] ?? '';
                         return (
                           <div key={size} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${isDarkMode ? 'bg-emerald-900/10 border-emerald-700/30' : 'bg-emerald-50 border-emerald-100'}`}>
-                            <span className="text-[11px] font-black text-slate-400 uppercase tracking-tight w-12 shrink-0">{size}</span>
+                            <span className="text-[11px] font-medium tracking-wide normal-case w-12 shrink-0 text-blue-950 dark:text-blue-300">{size}</span>
                             <input
                               type="number"
                               min="0"

@@ -440,6 +440,18 @@ const SECTOR_COLORS = [
 
 // ProductionScreenType moved to types.ts
 
+// Cores das categorias do Catálogo de Insumos (Adesivos, Embalagens, Couro/Sintético...) —
+// hoisted pra fora do render pra dar pra reaproveitar tanto na lista de categorias quanto no
+// cabeçalho do popup que abre com os itens dela (ver openMaterialCategoryPopup).
+const MATERIAL_CATEGORY_PALETTE = [
+  { bg: '#6366f1', light: '#eef2ff', border: '#c7d2fe' },
+  { bg: '#8b5cf6', light: '#f5f3ff', border: '#ddd6fe' },
+  { bg: '#10b981', light: '#ecfdf5', border: '#a7f3d0' },
+  { bg: '#f59e0b', light: '#fffbeb', border: '#fde68a' },
+  { bg: '#ef4444', light: '#fef2f2', border: '#fecaca' },
+  { bg: '#0ea5e9', light: '#f0f9ff', border: '#bae6fd' },
+];
+
 const DEFAULT_UNITS = [
   { name: 'UN', description: 'Unidade' },
   { name: 'PR', description: 'Par' },
@@ -1637,16 +1649,10 @@ function GenericConfigList({
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
-  // Categorias de Insumo (Catálogo de Insumos) vêm minimizadas por padrão — Set vazio = tudo
-  // fechado; guarda só as que o usuário abriu manualmente.
-  const [openMaterialCategories, setOpenMaterialCategories] = useState<Set<string>>(new Set());
-  const toggleMaterialCategory = (cat: string) => {
-    setOpenMaterialCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat); else next.add(cat);
-      return next;
-    });
-  };
+  // Categoria de Insumo (Catálogo de Insumos) abre num popup com os itens dela, em vez de
+  // expandir inline — null = nenhum popup aberto.
+  const [openMaterialCategoryPopup, setOpenMaterialCategoryPopup] = useState<string | null>(null);
+  const [materialCategoryPopupSearch, setMaterialCategoryPopupSearch] = useState('');
 
   // "Modelos Disponíveis" de Padrão de Embalagem (só type === 'PACKAGING') — mesmo desenho de
   // GradesView.tsx (templates compartilhados entre contas, com prévia expansível), mas carrega
@@ -2772,40 +2778,30 @@ function GenericConfigList({
           })
         ) : type === 'MATERIAL' ? (
           Object.entries(groupedItems || {}).map(([category, catItems]: [string, ProductionConfigItem[]], catIdx) => {
-            const catPalette = [
-              { bg: '#6366f1', light: '#eef2ff', border: '#c7d2fe' },
-              { bg: '#8b5cf6', light: '#f5f3ff', border: '#ddd6fe' },
-              { bg: '#10b981', light: '#ecfdf5', border: '#a7f3d0' },
-              { bg: '#f59e0b', light: '#fffbeb', border: '#fde68a' },
-              { bg: '#ef4444', light: '#fef2f2', border: '#fecaca' },
-              { bg: '#0ea5e9', light: '#f0f9ff', border: '#bae6fd' },
-            ];
-            const pal = catPalette[catIdx % catPalette.length];
+            const pal = MATERIAL_CATEGORY_PALETTE[catIdx % MATERIAL_CATEGORY_PALETTE.length];
             const alertCount = catItems.filter(i => {
               const stock = getTotalMaterialStock(i);
               const minStock = i.metadata?.minStock ?? 0;
               return stock < minStock;
             }).length;
-            const isCatOpen = openMaterialCategories.has(category);
             return (
             <div key={category} className="flex flex-col gap-3">
               <div
                 role="button"
                 tabIndex={0}
-                onClick={() => toggleMaterialCategory(category)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleMaterialCategory(category); }}
+                onClick={() => { setOpenMaterialCategoryPopup(category); setMaterialCategoryPopupSearch(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setOpenMaterialCategoryPopup(category); setMaterialCategoryPopupSearch(''); } }}
                 data-guide-anchor="prodcfg.categoriaToggle"
-                title={isCatOpen ? `Recolher ${category}` : `Expandir ${category}`}
-                aria-label={isCatOpen ? `Recolher ${category}` : `Expandir ${category}`}
-                className="flex items-center gap-4 px-4 py-3 rounded-2xl border cursor-pointer select-none"
-                style={{ backgroundColor: isDarkMode ? `${pal.bg}18` : pal.light, borderColor: isDarkMode ? `${pal.bg}40` : pal.border }}
+                title={`Ver itens de ${category}`}
+                aria-label={`Ver itens de ${category}`}
+                className={`flex items-center gap-4 px-4 py-3 rounded-2xl border cursor-pointer select-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}
               >
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: pal.bg }}>
                   <Tags size={16} color="#fff" />
                 </div>
                 <div className="flex-1">
                   <h4 className={`text-xs font-black uppercase tracking-[0.2em] leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{category}</h4>
-                  <p className="text-[9px] font-bold uppercase tracking-widest leading-none mt-0.5" style={{ color: `${pal.bg}99` }}>{catItems.length} {catItems.length === 1 ? 'ITEM' : 'ITENS'} CADASTRADO{catItems.length !== 1 ? 'S' : ''}</p>
+                  <p className="text-[9px] font-bold uppercase tracking-widest leading-none mt-0.5 text-slate-400">{catItems.length} {catItems.length === 1 ? 'ITEM' : 'ITENS'} CADASTRADO{catItems.length !== 1 ? 'S' : ''}</p>
                 </div>
                 {alertCount > 0 && (
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest text-white" style={{ backgroundColor: '#ef4444' }}>
@@ -2813,30 +2809,14 @@ function GenericConfigList({
                   </span>
                 )}
                 <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white transition-transform"
-                  style={{ backgroundColor: pal.bg, transform: isCatOpen ? 'rotate(180deg)' : 'none' }}
+                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white"
+                  style={{ backgroundColor: pal.bg }}
                 >
-                  <ChevronDown size={14} strokeWidth={3} />
+                  <ChevronDown size={14} strokeWidth={3} className="-rotate-90" />
                 </div>
               </div>
-              {isCatOpen && (
-                <div className="flex flex-col gap-3 pl-2 border-l-2" style={{ borderColor: `${pal.bg}40` }}>
-                  {catItems.map(item => (
-                    <MaterialCard
-                      key={item.id}
-                      item={item}
-                      isDarkMode={isDarkMode}
-                      onEdit={() => { setEditingItem({ ...item }); setIsModalOpen(true); }}
-                      onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
-                      flowTags={flowTags}
-                      people={people}
-                      need={purchaseNeeds[item.id] || 0}
-                      colors={colors}
-                      productionConfigs={productionConfigs}
-                    />
-                  ))}
-                </div>
-              )}
+              {/* Itens desta categoria abrem num popup à parte (ver Modal logo abaixo do
+                  Object.entries), em vez de expandir inline aqui embaixo. */}
             </div>
             );
           })
@@ -2974,6 +2954,60 @@ function GenericConfigList({
           </div>
         )}
       </div>
+
+      {/* Popup com os itens da categoria de Insumo tocada (ver openMaterialCategoryPopup) — abre
+          num popup em vez de expandir inline na lista de categorias. */}
+      {type === 'MATERIAL' && (() => {
+        const categoryKeys = Object.keys(groupedItems || {});
+        const catIdx = openMaterialCategoryPopup ? categoryKeys.indexOf(openMaterialCategoryPopup) : -1;
+        const pal = MATERIAL_CATEGORY_PALETTE[Math.max(0, catIdx) % MATERIAL_CATEGORY_PALETTE.length];
+        const catItems = (openMaterialCategoryPopup ? (groupedItems?.[openMaterialCategoryPopup] || []) : [])
+          .filter(item => {
+            const q = materialCategoryPopupSearch.trim().toLowerCase();
+            if (!q) return true;
+            return (item.name || '').toLowerCase().includes(q) || (item.metadata?.reference || '').toLowerCase().includes(q);
+          });
+        return (
+          <Modal
+            isOpen={!!openMaterialCategoryPopup}
+            onClose={() => setOpenMaterialCategoryPopup(null)}
+            title={openMaterialCategoryPopup || ''}
+            icon={<div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: pal.bg }}><Tags size={16} color="#fff" /></div>}
+            maxWidth="max-w-lg"
+            zIndex={75000}
+          >
+            <div className="flex flex-col gap-3">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                <input
+                  type="text"
+                  value={materialCategoryPopupSearch}
+                  onChange={(e) => setMaterialCategoryPopupSearch(e.target.value)}
+                  placeholder={`Buscar em ${openMaterialCategoryPopup || ''}...`}
+                  className={`w-full pl-11 pr-4 py-3 rounded-2xl text-xs font-bold outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-transparent text-slate-900 focus:border-indigo-200'}`}
+                />
+              </div>
+              {catItems.length === 0 && (
+                <p className="text-[10px] text-center text-slate-400 font-bold uppercase tracking-widest py-4">Nenhum item encontrado.</p>
+              )}
+              {catItems.map(item => (
+                <MaterialCard
+                  key={item.id}
+                  item={item}
+                  isDarkMode={isDarkMode}
+                  onEdit={() => { setEditingItem({ ...item }); setIsModalOpen(true); }}
+                  onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
+                  flowTags={flowTags}
+                  people={people}
+                  need={purchaseNeeds[item.id] || 0}
+                  colors={colors}
+                  productionConfigs={productionConfigs}
+                />
+              ))}
+            </div>
+          </Modal>
+        );
+      })()}
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Editar / Cadastrar`} zIndex={70000}>
         <form onSubmit={handleSave} className="flex flex-col gap-6">
