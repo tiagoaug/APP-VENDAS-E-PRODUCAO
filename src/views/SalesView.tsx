@@ -308,6 +308,14 @@ export default function SalesView({
   // uma só vez para a sessão atual quando a pesquisa não encontra nada no que já está em memória.
   const [olderSales, setOlderSales] = useState<Sale[] | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  // Renderizar TODAS as vendas filtradas de uma vez deixa a rolagem pesada
+  // (cada card tem sombra/cantos grandes e várias seções) — especialmente notado
+  // no iOS/WKWebView, que sofre bem mais que Android com listas grandes assim.
+  // Mostra em lotes e cresce sob demanda; reseta quando os critérios de filtro mudam
+  // (efeito que faz o reset fica logo abaixo de `filteredSales`, que é quem define
+  // a lista de critérios que realmente importa aqui).
+  const SALES_PAGE_SIZE = 20;
+  const [visibleSalesCount, setVisibleSalesCount] = useState(SALES_PAGE_SIZE);
   const handleLoadFullHistory = async () => {
     setIsLoadingHistory(true);
     try {
@@ -1254,6 +1262,10 @@ export default function SalesView({
     }).sort((a, b) => b.date - a.date); // Mais recentes primeiro
   }, [effectiveSales, filter, paymentFilter, deliveryFilter, selectedStatuses, periodRange, searchQuery]);
 
+  useEffect(() => {
+    setVisibleSalesCount(SALES_PAGE_SIZE);
+  }, [filter, paymentFilter, deliveryFilter, selectedStatuses, periodRange, searchQuery]);
+
   const getProductInfo = (productId: string) => productMap.get(productId);
 
   const getVariationInfo = (productId: string, variationId: string) => {
@@ -1858,11 +1870,22 @@ export default function SalesView({
                         <button
                           key={s.saleId}
                           onClick={() => {
-                            const el = document.getElementById(`sale-card-${s.saleId}`);
-                            if (el) {
-                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                el.classList.add('ring-4', 'ring-indigo-500', 'transition-all', 'duration-300');
-                                setTimeout(() => el.classList.remove('ring-4', 'ring-indigo-500'), 2000);
+                            // A lista principal só renderiza um lote por vez (ver visibleSalesCount) —
+                            // se o pedido-alvo ainda não está no DOM, expande o lote antes de rolar até ele.
+                            const targetIdx = filteredSales.findIndex(fs => fs.id === s.saleId);
+                            const jumpToCard = () => {
+                              const el = document.getElementById(`sale-card-${s.saleId}`);
+                              if (el) {
+                                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  el.classList.add('ring-4', 'ring-indigo-500', 'transition-all', 'duration-300');
+                                  setTimeout(() => el.classList.remove('ring-4', 'ring-indigo-500'), 2000);
+                              }
+                            };
+                            if (targetIdx >= visibleSalesCount) {
+                              setVisibleSalesCount(targetIdx + 1);
+                              setTimeout(jumpToCard, 50);
+                            } else {
+                              jumpToCard();
                             }
                           }}
                           data-guide-anchor="sales.crossCheckPill"
@@ -2377,7 +2400,7 @@ export default function SalesView({
       )}
 
       <div className="space-y-4">
-        {filteredSales.map((sale) => {
+        {filteredSales.slice(0, visibleSalesCount).map((sale) => {
           const totalPaid = (sale.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
           const remaining = Math.max(0, sale.total - totalPaid);
 
@@ -3210,6 +3233,17 @@ export default function SalesView({
              <TrendingUp size={64} strokeWidth={1} className="mb-4" />
              <p className="text-[10px] font-black tracking-widest italic">Sem registro de vendas</p>
           </div>
+        )}
+
+        {filteredSales.length > visibleSalesCount && (
+          <button
+            type="button"
+            onClick={() => setVisibleSalesCount(c => c + SALES_PAGE_SIZE)}
+            data-guide-anchor="sales.carregarMaisPedidos"
+            className={`w-full py-3.5 rounded-2xl text-[10px] font-medium tracking-wide transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 text-blue-300 border border-slate-800' : 'bg-white text-blue-950 border border-slate-100 shadow-sm'}`}
+          >
+            Carregar mais pedidos ({filteredSales.length - visibleSalesCount} restantes)
+          </button>
         )}
       </div>
 
