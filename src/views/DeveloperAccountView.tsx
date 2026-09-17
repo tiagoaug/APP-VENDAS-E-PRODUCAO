@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight, Terminal, X, Copy, Trash2 } from 'lucide-react';
+import { Clipboard } from '@capacitor/clipboard';
 import { ViewType } from '../types';
 import { TEMPLATE_ADMIN_EMAIL } from '../utils/templateAdmin';
 import { toast } from '../utils/toast';
+import { isAuthDiagEnabled, setAuthDiagEnabled, readAuthDiagLog, clearAuthDiagLog } from '../lib/authDiagLog';
 
 interface DeveloperAccountViewProps {
   isDarkMode: boolean;
@@ -21,6 +23,31 @@ interface DeveloperAccountViewProps {
 // futuras ações de dev entram aqui do mesmo jeito, sem espalhar pelo resto de Configurações).
 export default function DeveloperAccountView({ isDarkMode, currentUserEmail, developerAccountEmail, onSaveDeveloperAccount, onNavigate }: DeveloperAccountViewProps) {
   const [isSaving, setIsSaving] = useState(false);
+  // "Modo Diagnóstico" — painel de log em tela pra depurar bugs difíceis de reproduzir sem
+  // Mac/Xcode (ver lib/authDiagLog.ts). Nasceu do bug de login iOS não persistindo, mas fica
+  // aqui reaproveitável pra qualquer bug parecido no futuro — qualquer `logAuthDiag()` no app
+  // só grava algo quando esse toggle está ligado.
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [diagEnabled, setDiagEnabled] = useState(false);
+  const [diagLines, setDiagLines] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!showLogsModal) return;
+    setDiagEnabled(isAuthDiagEnabled());
+    setDiagLines(readAuthDiagLog());
+    const id = setInterval(() => setDiagLines(readAuthDiagLog()), 1000);
+    return () => clearInterval(id);
+  }, [showLogsModal]);
+
+  const handleCopyLogs = async () => {
+    const text = diagLines.join('\n') || 'Nenhum log registrado ainda.';
+    try {
+      await Clipboard.write({ string: text });
+      toast.show('Log copiado!');
+    } catch (e: any) {
+      toast.show('Erro ao copiar: ' + (e?.message || e));
+    }
+  };
 
   const effectiveEmail = developerAccountEmail || TEMPLATE_ADMIN_EMAIL;
   const isCurrentUserAlreadyIt = currentUserEmail === effectiveEmail;
@@ -129,11 +156,97 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
             </div>
             <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
           </button>
+          <button
+            onClick={() => setShowLogsModal(true)}
+            title="Logs"
+            aria-label="Abrir logs de diagnóstico"
+            className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-50'}`}
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400">
+                <Terminal size={20} />
+              </div>
+              <div className="text-left">
+                <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Logs</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Modo diagnóstico pra bugs difíceis de reproduzir</p>
+              </div>
+            </div>
+            <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+          </button>
         </div>
         <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1">
           O botão "Salvar Como Padrão para Novas Contas" dentro de Vendas &gt; Filtros e Configurações também só aparece pra esta conta.
         </p>
       </div>
+
+      {showLogsModal && (
+        <div className="fixed inset-0 z-[200000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLogsModal(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+          >
+            <div className={`p-5 flex items-center justify-between gap-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                  <Terminal size={18} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Logs</h3>
+              </div>
+              <button type="button" onClick={() => setShowLogsModal(false)} className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} aria-label="Fechar">
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-4 overflow-y-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !diagEnabled;
+                  setAuthDiagEnabled(next);
+                  setDiagEnabled(next);
+                  setDiagLines(readAuthDiagLog());
+                }}
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+              >
+                <div className="text-left">
+                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo Diagnóstico</p>
+                  <p className="text-[10px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">
+                    {diagEnabled ? 'Ligado — registrando eventos internos' : 'Desligado — nada é registrado'}
+                  </p>
+                </div>
+                <div className={`w-11 h-6 rounded-full relative shrink-0 transition-colors ${diagEnabled ? 'bg-amber-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${diagEnabled ? 'left-5' : 'left-0.5'}`} />
+                </div>
+              </button>
+
+              <div className={`flex-1 min-h-[160px] max-h-[40vh] overflow-y-auto rounded-2xl p-3 text-[10px] font-mono leading-relaxed ${isDarkMode ? 'bg-black text-slate-200' : 'bg-slate-950 text-slate-100'}`}>
+                {diagLines.length > 0 ? (
+                  diagLines.map((line, i) => <div key={i} className="break-words">{line}</div>)
+                ) : (
+                  <p className="text-slate-500 italic">Nenhum log registrado ainda.</p>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyLogs}
+                  className="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  <Copy size={14} /> Copiar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { clearAuthDiagLog(); setDiagLines([]); }}
+                  className={`flex-1 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                >
+                  <Trash2 size={14} /> Limpar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

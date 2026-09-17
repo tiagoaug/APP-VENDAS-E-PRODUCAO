@@ -15,17 +15,12 @@ import { logAuthDiag } from './authDiagLog';
 // JavaScriptCore do WKWebView, sem round-trip pra nenhuma ponte nativa e sem nenhum mecanismo
 // de evento/listener esperando algo que nunca chega — não tem como travar).
 //
-// CAUSA REAL do "sessão nunca é gravada" (achada via diagnóstico em localStorage, ver
-// authDiagLog.ts): initializeAuth() lançava "INTERNAL ASSERTION FAILED: Expected a class
-// definition" de forma SÍNCRONA — capturado pelo try/catch em firebase.ts, que caía pro
-// fallback `[inMemoryPersistence]` pra SESSÃO INTEIRA, sem eu nunca saber (o catch só logava no
-// console, invisível sem Xcode). O motivo: `_getInstance()` internamente faz
-// `debugAssert(cls instanceof Function, 'Expected a class definition')` — a SDK exige que cada
-// persistência seja uma CLASSE (ela mesma instancia com `new cls()` e cacheia o singleton), não
-// um objeto literal como este arquivo tentava usar antes. `inMemoryPersistence`/
-// `browserLocalPersistence` são exportadas como a CLASSE em si, nunca uma instância pronta —
-// daí o formato abaixo, espelhando exatamente `InMemoryPersistence` do próprio SDK
-// (@firebase/auth, função `_getInstance`).
+// IMPORTANTE: precisa ser uma CLASSE, não um objeto literal com os métodos prontos —
+// `_getInstance()` do @firebase/auth faz `debugAssert(cls instanceof Function, 'Expected a
+// class definition')` e depois `new cls()` (a SDK instancia e cacheia o singleton sozinha).
+// `inMemoryPersistence`/`browserLocalPersistence` são exportadas como a CLASSE em si, nunca uma
+// instância pronta — ver [[project_ios_wkwebview_auth_hang]] pra história completa de como esse
+// requisito (nada óbvio, e a SDK falha em silêncio se não seguido) foi descoberto.
 class CapacitorPreferencesPersistence {
   type = 'LOCAL' as const;
 
