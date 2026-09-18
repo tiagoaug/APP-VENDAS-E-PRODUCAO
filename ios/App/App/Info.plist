@@ -82,6 +82,21 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Necessário para mostrar a posição do motorista em tempo real durante uma entrega.</string>
 
+	<!-- Rede local — sem isso o iOS bloqueia silenciosamente a busca por impressoras AirPrint
+	     na Wi-Fi (UIPrintInteractionController usa Bonjour/mDNS pra descobrir impressoras, e
+	     desde o iOS 14 isso exige essa permissão declarada); a folha de impressão abre
+	     normalmente, mas mostra "No AirPrint Printers Found" mesmo com a impressora ligada
+	     na mesma rede e funcionando via apps do sistema (Fotos, Arquivos), que já têm esse
+	     acesso liberado por padrão. _ipp._tcp/_ipps._tcp são os serviços mDNS que o AirPrint
+	     anuncia. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Necessário para encontrar impressoras disponíveis na sua rede Wi-Fi.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_ipp._tcp</string>
+		<string>_ipps._tcp</string>
+	</array>
+
 	<!-- Login com Google (FirebaseAuthentication, provider "google.com" em capacitor.config.ts) —
 	     REVERSED_CLIENT_ID do GoogleService-Info.plist, exigido pro fluxo de retorno do login. -->
 	<key>CFBundleURLTypes</key>

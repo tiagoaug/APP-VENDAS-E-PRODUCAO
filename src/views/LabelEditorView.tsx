@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import jsPDF from 'jspdf';
+import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Printer as NetworkPrinter } from '@capgo/capacitor-printer';
@@ -735,9 +736,15 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
       });
       const pdfDataUri = doc.output('datauristring');
       const base64 = pdfDataUri.split('base64,')[1] || pdfDataUri;
-      // Algumas plataformas não resolvem nem rejeitam essa promise quando o usuário cancela
-      // a folha de impressão do sistema (o botão ficava travado em "Abrindo..." pra sempre) —
-      // corrida com um timeout garante que o botão sempre volta ao normal.
+      // No iOS, a busca por impressoras AirPrint depende da permissão de Rede Local (ver
+      // NSLocalNetworkUsageDescription no Info.plist) — se o usuário recusou o aviso do
+      // sistema (ou ele nunca apareceu), a folha abre normal mas mostra "No AirPrint
+      // Printers Found" mesmo com a impressora ligada e funcionando via apps do sistema.
+      // Como isso é 100% nativo (a folha é do iOS, não dá pra "logar" de dentro do JS o que
+      // acontece lá), o aviso na hora é o jeito de dar essa dica sem precisar de Mac pra depurar.
+      if (Capacitor.getPlatform() === 'ios') {
+        toast.show('Abrindo impressão... Se nenhuma impressora aparecer, confirme em Ajustes > (nome do app) > Rede Local.');
+      }
       await Promise.race([
         NetworkPrinter.printBase64({ data: base64, mimeType: 'application/pdf', name: name || 'Etiqueta' }),
         new Promise(resolve => setTimeout(resolve, 60000)),
