@@ -243,6 +243,13 @@ export default function StockView({
   // Gerenciamento abria a tela errada antes de "pular" pro modal certo).
   const [showBalancoConfirm, setShowBalancoConfirm] = useState(() => !!initialShowBalancoConfirm);
   const [editedStocks, setEditedStocks] = useState<Record<string, Product>>({});
+  // Chaves "productId::variationId::key" que o usuário REALMENTE tocou nesta sessão de
+  // balanço — usado em handleSaveAll pra nunca comparar o snapshot antigo (capturado ao
+  // abrir o modo de edição) contra o produto ao vivo em campos que o usuário nem mexeu.
+  // Sem isso, um crédito de produção concorrente (StockLot creditado enquanto o balanço
+  // estava aberto) parecia "o usuário reduziu esse estoque de propósito" e apagava o
+  // crédito de verdade — mesma causa raiz do bug corrigido em ProductFormView.
+  const [touchedStockKeys, setTouchedStockKeys] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
   const [showEntryHistory, setShowEntryHistory] = useState(false);
@@ -316,7 +323,9 @@ export default function StockView({
   const [convertModal, setConvertModal] = useState<{ productId: string; variationId: string; variationName: string } | null>(null);
 
   const handleConvertToRetail = async (productId: string, variationId: string, boxes: number, pkgId: string) => {
-    const source = isEditing ? (editedStocks[productId] || products.find(p => p.id === productId)) : products.find(p => p.id === productId);
+    // Sempre parte do produto AO VIVO (nunca do snapshot antigo de editedStocks durante o
+    // balanço) — mesmo motivo do handleSaveAll/handleUpdatePkgAllocations acima.
+    const source = products.find(p => p.id === productId);
     const pkg = packagingItems.find(p => p.id === pkgId);
     if (!source || !pkg) return;
     const variation = source.variations.find(v => v.id === variationId);
@@ -368,53 +377,52 @@ export default function StockView({
       initialStocks[p.id] = JSON.parse(JSON.stringify(p));
     });
     setEditedStocks(initialStocks);
+    setTouchedStockKeys(new Set());
     setIsEditing(true);
   };
 
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
-      for (const productId of Object.keys(editedStocks)) {
+      // Agrupa as chaves tocadas por produto — só processa produtos que o usuário
+      // realmente mexeu em algum campo nesta sessão.
+      const touchedByProduct = new Map<string, string[]>();
+      touchedStockKeys.forEach(k => {
+        const productId = k.split('::')[0];
+        const arr = touchedByProduct.get(productId) || [];
+        arr.push(k);
+        touchedByProduct.set(productId, arr);
+      });
+
+      for (const [productId, keys] of touchedByProduct.entries()) {
+        // Produto AO VIVO, lido agora — nunca o snapshot antigo capturado ao abrir o modo
+        // de edição, que pode já estar desatualizado se produção creditou estoque nesse
+        // meio tempo (ver comentário em touchedStockKeys acima).
         const original = products.find(p => p.id === productId);
         const edited = editedStocks[productId];
-        if (!original || JSON.stringify(original) === JSON.stringify(edited)) continue;
+        if (!original || !edited) continue;
 
-        // Deltas de estoque (por variação+tamanho/ATACADO) — o que realmente precisa
-        // virar StockLots criados/reduzidos, não só um número novo no contador.
+        // Deltas de estoque — só dos campos que o usuário efetivamente tocou (nunca compara
+        // o snapshot inteiro contra o vivo, senão um crédito concorrente em campo NÃO
+        // tocado pelo usuário seria lido como "reduzir de propósito" e apagaria o crédito).
         const stockDeltas: { variationId: string; key: string; oldValue: number; newValue: number }[] = [];
-        edited.variations.forEach(editedVari => {
-          const originalVari = original.variations.find(v => v.id === editedVari.id);
-          if (!originalVari) return;
-          const keys = new Set([...Object.keys(originalVari.stock || {}), ...Object.keys(editedVari.stock || {})]);
-          keys.forEach(key => {
-            const oldValue = (originalVari.stock as any)?.[key] || 0;
-            const newValue = (editedVari.stock as any)?.[key] || 0;
-            if (oldValue !== newValue) stockDeltas.push({ variationId: editedVari.id, key, oldValue, newValue });
-          });
+        keys.forEach(k => {
+          const [, variationId, key] = k.split('::');
+          const originalVari = original.variations.find(v => v.id === variationId);
+          const editedVari = edited.variations.find(v => v.id === variationId);
+          if (!originalVari || !editedVari) return;
+          const oldValue = (originalVari.stock as any)?.[key] || 0;
+          const newValue = (editedVari.stock as any)?.[key] || 0;
+          if (oldValue !== newValue) stockDeltas.push({ variationId, key, oldValue, newValue });
         });
 
         if (stockDeltas.length > 0 && onReconcileStockBalance) {
           await onReconcileStockBalance(productId, stockDeltas);
-          // Outros campos além de estoque (nome etc.) que também tenham mudado na mesma
-          // edição continuam indo pelo caminho de sempre — `stock`/`stockPkgAllocations`
-          // ficam por conta de onReconcileStockBalance (que recalcula a alocação certa a
-          // partir de quais StockLots de verdade foram criados/reduzidos).
-          const editedOtherFields = {
-            ...edited,
-            variations: edited.variations.map(v => {
-              const ov = original.variations.find(x => x.id === v.id);
-              return ov ? { ...v, stock: ov.stock, stockPkgAllocations: ov.stockPkgAllocations } : v;
-            }),
-          };
-          if (JSON.stringify(original) !== JSON.stringify(editedOtherFields)) {
-            await onUpdateProduct(editedOtherFields);
-          }
-        } else {
-          await onUpdateProduct(edited);
         }
       }
       setIsEditing(false);
       setEditedStocks({});
+      setTouchedStockKeys(new Set());
       onBackToManagement();
     } catch (error) {
       console.error("Erro ao salvar balanço:", error);
@@ -425,6 +433,7 @@ export default function StockView({
   };
 
   const updateProductStock = (productId: string, variationId: string, key: string, value: number) => {
+    setTouchedStockKeys(prev => new Set(prev).add(`${productId}::${variationId}::${key}`));
     setEditedStocks(prev => {
       const newStocks = { ...prev };
       const product = newStocks[productId];
@@ -453,8 +462,12 @@ export default function StockView({
   };
 
   const handleUpdatePkgAllocations = async (product: Product, variationId: string, allocations: StockPkgAllocation[]) => {
-    // Cap allocations so totalAllocated never exceeds boxQty
-    const variation = product.variations.find(v => v.id === variationId);
+    // Base SEMPRE o produto AO VIVO (não o `product` recebido — durante o balanço ele pode
+    // ser o snapshot antigo de editedStocks) — mesmo motivo do handleSaveAll: produção pode
+    // ter creditado estoque nesse produto entre o balanço abrir e esta troca de alocação,
+    // e gravar em cima do snapshot antigo apagaria esse crédito.
+    const liveProduct = products.find(p => p.id === product.id) || product;
+    const variation = liveProduct.variations.find(v => v.id === variationId);
     const boxQty = variation?.stock['WHOLESALE'] ?? 0;
     const totalAlloc = allocations.reduce((s, a) => s + a.qty, 0);
     let safeAllocations = allocations;
@@ -470,8 +483,8 @@ export default function StockView({
     }
 
     const updated: Product = {
-      ...product,
-      variations: product.variations.map(v =>
+      ...liveProduct,
+      variations: liveProduct.variations.map(v =>
         v.id === variationId ? { ...v, stockPkgAllocations: safeAllocations } : v
       )
     };
