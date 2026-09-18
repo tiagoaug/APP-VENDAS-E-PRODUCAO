@@ -24,6 +24,7 @@ dependencies {
     implementation project(':capacitor-share')
     implementation project(':capawesome-capacitor-file-picker')
     implementation project(':capgo-capacitor-native-biometric')
+    implementation project(':capgo-capacitor-printer')
 
 }
 

@@ -1,9 +1,22 @@
 import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth, Image as ImageIcon, Download, Maximize2 } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth, Image as ImageIcon, Download, Maximize2, Printer as PrinterIcon } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Printer } from '@capgo/capacitor-printer';
+import jsPDF from 'jspdf';
 import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
 import { toast } from '../utils/toast';
+
+// Dimensões em mm (retrato) de cada tamanho de papel suportado — mesma tabela de
+// src/utils/pcpShareExport.ts, duplicada aqui porque este modal é usado por telas que
+// não importam aquele arquivo (Vendas/Compras) e a impressão trabalha só em cima das
+// páginas JPG que já estão na pré-visualização, independente de quem gerou.
+const PRINT_PAGE_SIZES_MM: Record<'a4' | 'a5' | 'a6' | 'marketplace', [number, number]> = {
+  a4: [210, 297],
+  a5: [148, 210],
+  a6: [105, 148],
+  marketplace: [100, 150],
+};
 
 
 export interface ExportProfile {
@@ -354,6 +367,36 @@ export default function ExportNoteModal({
       toast.show('Erro ao salvar na galeria: ' + (err?.message || err));
     } finally {
       setSavingGallery(false);
+    }
+  };
+
+  // Imprime direto numa impressora AirPrint (iOS) ou de rede/Wi-Fi (Android) — junta TODAS
+  // as páginas da pré-visualização JPG num único PDF (respeitando tamanho/orientação
+  // escolhidos) e entrega pro plugin nativo, que abre a folha de impressão do sistema com
+  // a lista de impressoras disponíveis. Não depende de qual tela abriu o modal (Vendas,
+  // Compras ou PCP) — trabalha só em cima do que já está pré-visualizado.
+  const [isPrinting, setIsPrinting] = useState(false);
+  const handlePrint = async () => {
+    if (previewPages.length === 0) {
+      toast.show('Aguarde a pré-visualização carregar antes de imprimir.');
+      return;
+    }
+    setIsPrinting(true);
+    try {
+      const [pw, ph] = PRINT_PAGE_SIZES_MM[pageSize];
+      const [pageW, pageH] = orientation === 'landscape' ? [ph, pw] : [pw, ph];
+      const doc = new jsPDF({ orientation, unit: 'mm', format: [pageW, pageH] });
+      previewPages.forEach((dataUri, i) => {
+        if (i > 0) doc.addPage([pageW, pageH], orientation);
+        doc.addImage(dataUri, 'JPEG', 0, 0, pageW, pageH);
+      });
+      const pdfDataUri = doc.output('datauristring');
+      const base64 = pdfDataUri.split('base64,')[1] || pdfDataUri;
+      await Printer.printBase64({ data: base64, mimeType: 'application/pdf', name: `Ficha_${Date.now()}` });
+    } catch (err: any) {
+      toast.show('Erro ao imprimir: ' + (err?.message || err));
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -1548,6 +1591,20 @@ export default function ExportNoteModal({
                   >
                     {selectedFormat === 'pdf' ? <FileText size={16} /> : <Send size={16} className="rotate-45" />}
                     Gerar {selectedFormat.toUpperCase()}
+                  </button>
+
+                  {/* Impressão direta via AirPrint (iOS) / impressoras de rede (Android) — junta
+                      as páginas já pré-visualizadas num PDF e abre a folha nativa de impressão
+                      do sistema, que lista as impressoras disponíveis na rede automaticamente. */}
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    disabled={isPrinting || previewPages.length === 0}
+                    data-guide-anchor="export.imprimirDireto"
+                    className="w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-slate-800 text-white disabled:opacity-50"
+                  >
+                    <PrinterIcon size={16} />
+                    {isPrinting ? 'Abrindo Impressão...' : 'Imprimir (AirPrint / Rede)'}
                   </button>
 
                   {/* Impressão Bluetooth (Ablemark) só existe no Android — no iOS o botão nem
