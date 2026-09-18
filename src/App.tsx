@@ -1394,7 +1394,10 @@ export default function App() {
         expiresAt: d.data().expiresAt,
         customerLabel: d.data().customerLabel || null,
       }))),
-      (error) => { console.error('[license] Falha ao listar licenças', error); setAllLicenses([]); },
+      (error) => {
+        console.error('[license] Falha ao listar licenças', error);
+        setAllLicenses([]);
+      },
     );
     return unsub;
   }, [user, developerAccountEmail]);

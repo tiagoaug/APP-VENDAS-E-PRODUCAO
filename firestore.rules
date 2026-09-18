@@ -212,12 +212,15 @@ service cloud.firestore {
       }
     }
 
-    // Consulta de GRUPO DE COLEÇÃO (collectionGroup('license')) — junta o doc "current" de
-    // TODOS os clientes numa consulta só, pro painel "Licenças de Clientes" listar todo mundo
-    // de uma vez em vez de precisar saber cada UID de antemão. Só a conta de desenvolvimento;
-    // a regra específica users/{userId}/license/current acima continua valendo pro dono ler a
-    // própria (esta regra de grupo NÃO se aplica a leituras de documento único por caminho).
-    match /{path=**}/license/current {
+    // Consulta de GRUPO DE COLEÇÃO (collectionGroup('license')) — junta o doc de TODOS os
+    // clientes numa consulta só, pro painel "Licenças de Clientes" listar todo mundo de uma
+    // vez em vez de precisar saber cada UID de antemão. Só a conta de desenvolvimento; a
+    // regra específica users/{userId}/license/current acima continua valendo pro dono ler a
+    // própria. O segmento final PRECISA ser um coringa ({docId}, não um nome fixo tipo
+    // "current") — é assim que o Firestore reconhece a regra como válida pra consulta de
+    // grupo de coleção (testado: com nome fixo, a consulta dava permission-denied mesmo com
+    // isTemplateAdmin() batendo certinho).
+    match /{path=**}/license/{docId} {
       allow read: if isTemplateAdmin();
     }
 
