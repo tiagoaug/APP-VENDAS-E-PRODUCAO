@@ -97,6 +97,16 @@
 		<string>_ipps._tcp</string>
 	</array>
 
+	<!-- Impressão IPP direto por IP — fetch() puro em http:// (porta 631) pra impressoras que
+	     falam IPP mas não têm certificação AirPrint (ex.: alguns Epson que só aparecem no
+	     Android). ATS bloqueia HTTP puro por padrão; NSAllowsLocalNetworking libera só pra
+	     endereços de rede local (192.168.x, 10.x etc.), sem desligar ATS pro resto do app. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
 	<!-- Login com Google (FirebaseAuthentication, provider "google.com" em capacitor.config.ts) —
 	     REVERSED_CLIENT_ID do GoogleService-Info.plist, exigido pro fluxo de retorno do login. -->
 	<key>CFBundleURLTypes</key>

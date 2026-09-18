@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Printer } from '@capgo/capacitor-printer';
 import jsPDF from 'jspdf';
+import { printPdfViaIpp } from '../utils/ippPrint';
 import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
 import { toast } from '../utils/toast';
@@ -376,23 +377,31 @@ export default function ExportNoteModal({
   // escolhidos) e entrega pro plugin nativo, que abre a folha de impressão do sistema com
   // a lista de impressoras disponíveis. Não depende de qual tela abriu o modal (Vendas,
   // Compras ou PCP) — trabalha só em cima do que já está pré-visualizado.
+  // Junta as páginas já pré-visualizadas (JPG) num único PDF, no tamanho/orientação
+  // escolhidos — usado tanto pela impressão AirPrint/Rede quanto pela impressão IPP direto
+  // por IP abaixo, já que as duas partem do mesmo arquivo final.
+  const buildCombinedPdfBase64 = (): string | null => {
+    if (previewPages.length === 0) return null;
+    const [pw, ph] = PRINT_PAGE_SIZES_MM[pageSize];
+    const [pageW, pageH] = orientation === 'landscape' ? [ph, pw] : [pw, ph];
+    const doc = new jsPDF({ orientation, unit: 'mm', format: [pageW, pageH] });
+    previewPages.forEach((dataUri, i) => {
+      if (i > 0) doc.addPage([pageW, pageH], orientation);
+      doc.addImage(dataUri, 'JPEG', 0, 0, pageW, pageH);
+    });
+    const pdfDataUri = doc.output('datauristring');
+    return pdfDataUri.split('base64,')[1] || pdfDataUri;
+  };
+
   const [isPrinting, setIsPrinting] = useState(false);
   const handlePrint = async () => {
-    if (previewPages.length === 0) {
+    const base64 = buildCombinedPdfBase64();
+    if (!base64) {
       toast.show('Aguarde a pré-visualização carregar antes de imprimir.');
       return;
     }
     setIsPrinting(true);
     try {
-      const [pw, ph] = PRINT_PAGE_SIZES_MM[pageSize];
-      const [pageW, pageH] = orientation === 'landscape' ? [ph, pw] : [pw, ph];
-      const doc = new jsPDF({ orientation, unit: 'mm', format: [pageW, pageH] });
-      previewPages.forEach((dataUri, i) => {
-        if (i > 0) doc.addPage([pageW, pageH], orientation);
-        doc.addImage(dataUri, 'JPEG', 0, 0, pageW, pageH);
-      });
-      const pdfDataUri = doc.output('datauristring');
-      const base64 = pdfDataUri.split('base64,')[1] || pdfDataUri;
       // No iOS, a busca por impressoras AirPrint depende da permissão de Rede Local (ver
       // NSLocalNetworkUsageDescription no Info.plist) — se o usuário recusou o aviso do
       // sistema (ou ele nunca apareceu), a folha abre normal mas mostra "No AirPrint
@@ -410,6 +419,33 @@ export default function ExportNoteModal({
       toast.show('Erro ao imprimir: ' + (err?.message || err));
     } finally {
       setIsPrinting(false);
+    }
+  };
+
+  // Impressão IPP direto por IP — para impressoras que falam IPP mas não têm certificação
+  // AirPrint completa (aparecem no Android via Mopria/serviço do fabricante, mas não no
+  // AirPrint do iOS). Bypassa completamente a descoberta automática: o usuário digita o IP.
+  const [ippAddress, setIppAddress] = useState('');
+  const [isPrintingIpp, setIsPrintingIpp] = useState(false);
+  const handlePrintViaIpp = async () => {
+    const base64 = buildCombinedPdfBase64();
+    if (!base64) {
+      toast.show('Aguarde a pré-visualização carregar antes de imprimir.');
+      return;
+    }
+    const host = ippAddress.trim();
+    if (!host) {
+      toast.show('Digite o IP da impressora.');
+      return;
+    }
+    setIsPrintingIpp(true);
+    try {
+      const result = await printPdfViaIpp(host, base64, `Ficha_${Date.now()}`);
+      toast.show(result.success ? 'Enviado para a impressora!' : `Falha ao imprimir: ${result.error || 'erro desconhecido'}`);
+    } catch (err: any) {
+      toast.show('Erro ao imprimir por IP: ' + (err?.message || err));
+    } finally {
+      setIsPrintingIpp(false);
     }
   };
 
@@ -1890,6 +1926,42 @@ export default function ExportNoteModal({
                       Enabler" etc.). Com isso instalado, qualquer impressora de rede desses fabricantes
                       aparece automaticamente na folha de impressão.
                     </p>
+                  </div>
+
+                  {/* Impressão por IP (IPP Direto) — pra quando a impressora aparece no Android
+                      (via Mopria/serviço do fabricante) mas não no AirPrint do iOS, porque não
+                      tem certificação AirPrint completa mesmo falando IPP. Não depende de
+                      descoberta automática: manda o arquivo direto pro IP digitado. */}
+                  <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-emerald-50 border-emerald-100'}`}>
+                    <p className="text-xs font-black uppercase tracking-wider mb-1 flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                      <Hash size={13} /> Impressão por IP (IPP Direto)
+                    </p>
+                    <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 leading-relaxed mb-2">
+                      Se a impressora aparece no Android mas não no AirPrint do iOS (comum em
+                      alguns modelos que não têm certificação AirPrint completa), tente aqui:
+                      manda o arquivo direto pro IP dela na rede, sem depender de descoberta
+                      automática. Encontre o IP nas configurações de rede da própria impressora.
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={ippAddress}
+                        onChange={(e) => setIppAddress(e.target.value)}
+                        placeholder="Ex: 192.168.31.45"
+                        data-guide-anchor="export.imprimirIpEndereco"
+                        className={`flex-1 min-w-0 px-3 py-2 rounded-xl border text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder:text-slate-600' : 'bg-white border-slate-200 text-slate-800 placeholder:text-slate-400'}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePrintViaIpp}
+                        disabled={isPrintingIpp || previewPages.length === 0}
+                        data-guide-anchor="export.imprimirIpConfirmar"
+                        className="shrink-0 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white disabled:opacity-50 active:scale-95 transition-all"
+                      >
+                        {isPrintingIpp ? '...' : 'Imprimir'}
+                      </button>
+                    </div>
                   </div>
 
                   <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30' : 'bg-amber-50 border-amber-100'}`}>
