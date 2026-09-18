@@ -538,6 +538,22 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     }
     const id = existingProduct?.id || productIdRef.current || generateId();
     productIdRef.current = id;
+    // `variations` é estado local, carregado UMA VEZ quando o formulário abre — se o
+    // formulário ficar aberto enquanto produção credita estoque nesse mesmo produto (PCP
+    // finalizando um Mapa, por exemplo), salvar aqui sobrescrevia `stock`/
+    // `stockPkgAllocations` com o valor antigo (de antes do crédito), apagando-o
+    // silenciosamente mesmo com nenhuma mudança de estoque feita neste formulário — bug real
+    // encontrado em produção (StockLot creditado sem refletir no contador, ver
+    // useStockDiagnosticsSummary/"Estoque Não Creditado"). `existingProduct` reflete o
+    // produto AO VIVO (recalculado via useMemo sempre que `products` atualiza), então pega o
+    // estoque de lá — por variação (casando por id) — em vez do snapshot antigo do estado
+    // local, preservando só as edições de verdade feitas aqui (nome, foto, cor, etc.).
+    const liveVariationsById = new Map((existingProduct?.variations || []).map(v => [v.id, v]));
+    const reconciledVariations = variations.map(v => {
+      const live = liveVariationsById.get(v.id);
+      if (!live) return v; // variação nova, criada nesta sessão — nada pra reconciliar
+      return { ...v, stock: live.stock, stockPkgAllocations: live.stockPkgAllocations };
+    });
     return {
       id,
       name: resolvedName,
@@ -563,7 +579,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       moldId: modulesConfig.production ? moldId : undefined,
       soleMapping: modulesConfig.production ? soleMapping : {},
       toolMapping: modulesConfig.production ? toolMapping : {},
-      variations,
+      variations: reconciledVariations,
       productionRoute: modulesConfig.production ? productionRoute : undefined,
       sectorPrices: modulesConfig.production ? sectorPrices : undefined,
       estimatedPairsPerDay: modulesConfig.production ? (parseFloat(estimatedPairsPerDay as string) || undefined) : undefined,
