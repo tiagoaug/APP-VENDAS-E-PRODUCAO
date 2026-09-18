@@ -5865,9 +5865,9 @@ export default function PCPView({
               <div className={`grid ${gridColsClass} gap-3`} data-guide-anchor="pcp.statsTiles">
                 {visibleTiles.map(tile => (
                   <div key={tile.id} className={`flex flex-col items-center text-center px-4 py-4 rounded-[1.5rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>{tile.label}</span>
+                    <span className="text-[11px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 leading-tight mb-1.5" style={{ minHeight: 26 }}>{tile.label}</span>
                     <span className={`text-xl font-black leading-none ${tile.color}`}>{tile.value}</span>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">{tile.unit}</span>
+                    <span className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 mt-1">{tile.unit}</span>
                   </div>
                 ))}
               </div>
@@ -5906,7 +5906,7 @@ export default function PCPView({
                           </div>
                           <div className="min-w-0">
                             <h3 className="text-[15px] font-black uppercase tracking-wide leading-tight text-slate-900 dark:text-white">{sector.name}</h3>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Setor de Produção</span>
+                            <span className="text-[11px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Setor de Produção</span>
                           </div>
                         </div>
                         <div className="flex gap-1.5 shrink-0">
@@ -5928,11 +5928,11 @@ export default function PCPView({
                       {/* Estatísticas em tiles */}
                       <div className="grid grid-cols-2 gap-3">
                         <div className={`rounded-2xl px-4 py-3 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
-                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Pares no Setor</span>
+                          <span className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Pares no Setor</span>
                           <p className={`text-2xl font-black leading-none mt-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{metric?.totalPares || 0}</p>
                         </div>
                         <div className={`rounded-2xl px-4 py-3 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
-                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Mapas WIP</span>
+                          <span className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Mapas WIP</span>
                           <p className={`text-2xl font-black leading-none mt-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{metric?.lotsCount || 0}</p>
                         </div>
                       </div>
@@ -6276,7 +6276,7 @@ export default function PCPView({
 
                           {isMainOpen && (
                             <div className="p-4 pt-0 flex flex-col gap-3">
-                              <p className="text-[9px] text-slate-400 uppercase font-bold">{fichasSemOSAtiva.length} fichas · {selectable.length} disponíveis</p>
+                              <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">{fichasSemOSAtiva.length} fichas · {selectable.length} disponíveis</p>
 
                               {/* Select-all row */}
                               <div className="flex items-center justify-between pt-1">
@@ -6297,7 +6297,7 @@ export default function PCPView({
                                       className="w-4 h-4 accent-indigo-600 cursor-pointer"
                                     />
                                   )}
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                  <span className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
                                     {selectable.length} disponíve{selectable.length === 1 ? 'l' : 'is'}
                                   </span>
                                 </div>

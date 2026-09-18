@@ -263,7 +263,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
 
   const textCls = isDarkMode ? 'text-white' : 'text-slate-900';
   const cardCls = isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm';
-  const labelCls = 'text-[9px] font-black uppercase tracking-widest text-slate-400';
+  const labelCls = 'text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300';
 
   return (
     <div className={`flex flex-col h-full pb-32 px-1 overflow-y-auto overflow-x-hidden force-scrollbar ${textCls}`}>
@@ -281,7 +281,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
             <Calculator size={18} className="text-indigo-500" />
             <h2 className={`text-[13px] font-black uppercase tracking-tight ${textCls}`}>Regra de Três</h2>
           </div>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+          <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 mt-0.5">
             Descubra proporções sem complicação
           </p>
         </div>
@@ -322,7 +322,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
           <div className={`p-5 rounded-[2rem] border flex flex-col gap-5 ${cardCls}`}>
             <div className={`p-3 rounded-2xl flex items-start gap-2 ${isDarkMode ? 'bg-indigo-900/10' : 'bg-indigo-50/60'}`}>
               <Sparkles size={14} className="text-indigo-500 mt-0.5 shrink-0" />
-              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
                 Use quando <span className="font-black">só duas coisas</span> mudam juntas — ex.:
                 "com tantos pares, gasto tanto de material".
               </p>
@@ -370,7 +370,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
                   Diminui
                 </button>
               </div>
-              <p className="text-[9px] text-slate-400 italic leading-relaxed">
+              <p className="text-[9px] font-medium tracking-wide text-blue-950 dark:text-blue-300 italic leading-relaxed">
                 Ex.: mais pares de sapato pedem mais metros de tecido (aumenta junto). Mais gente
                 ajudando faz o trabalho acabar mais rápido (diminui).
               </p>
@@ -411,7 +411,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
           <div className={`p-5 rounded-[2rem] border flex flex-col gap-5 ${cardCls}`}>
             <div className={`p-3 rounded-2xl flex items-start gap-2 ${isDarkMode ? 'bg-indigo-900/10' : 'bg-indigo-50/60'}`}>
               <Sparkles size={14} className="text-indigo-500 mt-0.5 shrink-0" />
-              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
                 Use quando <span className="font-black">mais de duas coisas</span> mudam ao mesmo
                 tempo — ex.: "tantos operários, trabalhando tantos dias, fazem tantas peças".
                 Pra cada coisa que muda, diga o valor na Situação 1 (o que você já sabe) e na
@@ -437,7 +437,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
                     )}
                   </div>
                   <div className="flex flex-col gap-1.5" data-guide-anchor="ruleOfThree.compostaDescricao">
-                    <span className="text-[8px] font-black uppercase text-slate-400">Situação 1</span>
+                    <span className="text-[9px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Situação 1</span>
                     <div className="flex gap-2">
                       <NumberField value={row.val1} onChange={(v) => updateRow(row.id, { val1: v })} isDarkMode={isDarkMode} />
                       <input
@@ -450,7 +450,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-[8px] font-black uppercase text-slate-400">Situação 2</span>
+                    <span className="text-[9px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Situação 2</span>
                     <div className="flex gap-2">
                       <NumberField value={row.val2} onChange={(v) => updateRow(row.id, { val2: v })} isDarkMode={isDarkMode} />
                       <input
@@ -463,7 +463,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-[8px] font-black uppercase text-slate-400">Unidade</span>
+                    <span className="text-[9px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Unidade</span>
                     <UnitButton value={row.unit} onChange={(v) => updateRow(row.id, { unit: v })} onOpen={() => openUnitPicker(row.unit, (v) => updateRow(row.id, { unit: v }))} isDarkMode={isDarkMode} placeholder="escolher ou digitar" />
                   </div>
                   <div className="flex gap-2">
@@ -509,7 +509,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
                 className={`px-3 py-2 rounded-xl border-2 outline-none text-xs font-black uppercase tracking-wide ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
               />
               <div className="flex flex-col gap-1.5">
-                <span className="text-[8px] font-black uppercase text-slate-400">Situação 1 (você sabe)</span>
+                <span className="text-[9px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Situação 1 (você sabe)</span>
                 <div className="flex gap-2">
                   <NumberField value={resultVal1} onChange={setResultVal1} isDarkMode={isDarkMode} />
                   <input
@@ -522,7 +522,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
-                <span className="text-[8px] font-black uppercase text-slate-400">Unidade</span>
+                <span className="text-[9px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Unidade</span>
                 <UnitButton value={resultUnit} onChange={setResultUnit} onOpen={() => openUnitPicker(resultUnit, setResultUnit)} isDarkMode={isDarkMode} placeholder="escolher ou digitar" />
               </div>
             </div>
@@ -577,7 +577,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
 
             {units.length > 0 && (
               <div className="flex flex-col gap-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Unidades já cadastradas</p>
+                <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Unidades já cadastradas</p>
                 <div className="flex flex-wrap gap-2">
                   {units.map((u) => (
                     <button
@@ -620,7 +620,7 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
 
             <div className="flex flex-col gap-2">
               <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Simples</p>
-              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
                 É pra quando <span className="font-black">só duas coisas</span> mudam juntas.
               </p>
               <div className={`p-3 rounded-2xl text-[11px] font-bold leading-relaxed ${isDarkMode ? 'bg-slate-950/50 text-slate-300' : 'bg-slate-50 text-slate-600'}`}>
@@ -632,21 +632,21 @@ export default function RuleOfThreeView({ onBack, isDarkMode, units }: RuleOfThr
 
             <div className="flex flex-col gap-2">
               <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Composta</p>
-              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
                 É pra quando <span className="font-black">três ou mais coisas</span> mudam ao mesmo tempo.
               </p>
               <div className={`p-3 rounded-2xl text-[11px] font-bold leading-relaxed ${isDarkMode ? 'bg-slate-950/50 text-slate-300' : 'bg-slate-50 text-slate-600'}`}>
                 <span className="font-black">3 pespontadeiras</span>, trabalhando <span className="font-black">8 horas</span> por dia,
                 produzem <span className="font-black">240 pares</span> por dia. Com <span className="font-black">5 pespontadeiras</span> trabalhando <span className="font-black">6 horas</span> por dia, quantos pares?
               </div>
-              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
                 Pra cada coisa que muda ("grandeza"), pergunte: <span className="font-black">se eu só aumentar essa coisa, o resultado aumenta ou diminui?</span>
               </p>
-              <ul className="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed list-disc pl-4 flex flex-col gap-1">
+              <ul className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed list-disc pl-4 flex flex-col gap-1">
                 <li>Pespontadeiras: mais gente = mais pares → <span className="text-emerald-600 dark:text-emerald-400 font-black">aumenta junto</span></li>
                 <li>Horas por dia: mais horas = mais pares → <span className="text-emerald-600 dark:text-emerald-400 font-black">aumenta junto</span></li>
               </ul>
-              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed italic">
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed italic">
                 Exemplo de "diminui" (inversa): quanto mais gente ajudando um serviço, menos
                 tempo ele leva — aumenta uma, a outra cai.
               </p>
