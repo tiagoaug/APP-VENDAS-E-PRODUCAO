@@ -2,8 +2,9 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ArrowLeft, Check, CheckCircle2, ClipboardList, DollarSign,
   Info, Loader2, Plus, Search, Share2, Trash2, X,
-  Calendar as CalendarIcon, Tag, ChevronDown, ChevronUp, Printer, Eye, Layers
+  Calendar as CalendarIcon, Tag, ChevronDown, ChevronUp, Printer, Eye, Layers, Calculator,
 } from 'lucide-react';
+import CalculatorPopover from '../components/CalculatorPopover';
 import { format } from 'date-fns';
 import {
   ServiceOrder, ProductionLot, Product, Sector,
@@ -392,6 +393,10 @@ export default function ServiceOrderFormView({
     setBasket(prev => prev.map(item => item.id === id ? { ...item, price } : item));
   };
 
+  // Calculadora pro R$/par de cada item — o input numérico puro não seleciona o "0" ao
+  // tocar (comum em teclados mobile), obrigando o usuário a apagar antes de digitar.
+  const [activePriceCalculatorId, setActivePriceCalculatorId] = useState<string | null>(null);
+
   // Total Quantity of Pairs in Basket
   const totalQuantity = useMemo(() => {
     return basket.reduce((acc, item) => acc + item.quantity, 0);
@@ -753,7 +758,7 @@ export default function ServiceOrderFormView({
                   onChange={handleSectorChange}
                   placeholder="Selecionar setor..."
                   isDarkMode={isDarkMode}
-                  icon={<Layers size={18} />}
+                  icon={<Layers size={18} className="text-cyan-500" />}
                 />
               </div>
 
@@ -771,7 +776,7 @@ export default function ServiceOrderFormView({
                   data-guide-anchor="serviceOrder.prestadorAbrirPopup"
                   className={`w-full flex items-center gap-3 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-800 rounded-2xl pl-5 pr-4 py-3 transition-all ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}
                 >
-                  <ClipboardList size={18} className="text-slate-400 shrink-0" />
+                  <ClipboardList size={18} className="text-violet-500 shrink-0" />
                   <span className="flex-1 text-left text-[13px] font-black uppercase tracking-widest truncate">
                     {providerId ? (people.find(p => p.id === providerId)?.name || '') : (providerManualName || 'Digite ou escolha o prestador...')}
                   </span>
@@ -909,7 +914,7 @@ export default function ServiceOrderFormView({
                       onChange={setAccountId}
                       placeholder="Selecionar conta..."
                       isDarkMode={isDarkMode}
-                      icon={<DollarSign size={18} />}
+                      icon={<DollarSign size={18} className="text-emerald-500" />}
                     />
                   </div>
 
@@ -923,7 +928,7 @@ export default function ServiceOrderFormView({
                       onChange={setCategoryId}
                       placeholder="Selecionar categoria..."
                       isDarkMode={isDarkMode}
-                      icon={<Tag size={18} />}
+                      icon={<Tag size={18} className="text-amber-500" />}
                     />
                   </div>
                 </div>
@@ -1032,7 +1037,9 @@ export default function ServiceOrderFormView({
                           Qtd: {item.quantity} prs
                         </span>
                         
-                        {/* Editable Price per pair */}
+                        {/* Editable Price per pair — botão de calculadora ao lado, porque o "0"
+                            do input numérico não seleciona sozinho ao tocar (teclado mobile),
+                            forçando o usuário a apagar antes de digitar o valor novo. */}
                         <div className="flex items-center gap-1.5">
                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
                             R$/par:
@@ -1047,6 +1054,16 @@ export default function ServiceOrderFormView({
                               isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-800'
                             }`}
                           />
+                          <button
+                            type="button"
+                            onClick={() => setActivePriceCalculatorId(item.id)}
+                            data-guide-anchor="serviceOrder.itemCalculadora"
+                            title="Abrir calculadora"
+                            aria-label="Abrir calculadora para inserir o valor por par"
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${isDarkMode ? 'bg-slate-800 text-emerald-400 hover:bg-slate-700' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                          >
+                            <Calculator size={14} />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1171,6 +1188,16 @@ export default function ServiceOrderFormView({
           product={products.find(p => p.id === printOSData.os.productId)}
           grids={grids}
           lot={lots.find(l => l.id === printOSData.os.lotId)}
+        />
+      )}
+
+      {activePriceCalculatorId && (
+        <CalculatorPopover
+          onApply={(val) => {
+            updateItemPrice(activePriceCalculatorId, val);
+            setActivePriceCalculatorId(null);
+          }}
+          onClose={() => setActivePriceCalculatorId(null)}
         />
       )}
     </div>

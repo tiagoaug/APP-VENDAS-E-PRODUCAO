@@ -155,7 +155,7 @@ export default function ExportNoteModal({
   const [note, setNote] = useState('');
   const [isObservationOpen, setIsObservationOpen] = useState(false);
   const [selectedSectorIds, setSelectedSectorIds] = useState<string[]>([]);
-  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'profiles' | 'share' | 'pageSize' | 'pages' | 'printHelp' | null>(null);
+  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'profiles' | 'share' | 'printSettings' | 'pages' | 'printHelp' | null>(null);
   
   // Profile State
   const [profiles, setProfiles] = useState<ExportProfile[]>(() => loadProfiles());
@@ -392,7 +392,13 @@ export default function ExportNoteModal({
       });
       const pdfDataUri = doc.output('datauristring');
       const base64 = pdfDataUri.split('base64,')[1] || pdfDataUri;
-      await Printer.printBase64({ data: base64, mimeType: 'application/pdf', name: `Ficha_${Date.now()}` });
+      // Algumas plataformas não resolvem nem rejeitam essa promise quando o usuário cancela
+      // a folha de impressão do sistema (o botão ficava travado em "Abrindo Impressão..." pra
+      // sempre) — corrida com um timeout garante que o botão sempre volta ao normal.
+      await Promise.race([
+        Printer.printBase64({ data: base64, mimeType: 'application/pdf', name: `Ficha_${Date.now()}` }),
+        new Promise(resolve => setTimeout(resolve, 60000)),
+      ]);
     } catch (err: any) {
       toast.show('Erro ao imprimir: ' + (err?.message || err));
     } finally {
@@ -820,7 +826,7 @@ export default function ExportNoteModal({
       {/* "pageSize" e "pages" só existem dentro de "share" (Tamanho de Exportação e Dividir em
           Páginas viraram cards que abrem um popup próprio, em vez de ficar tudo junto inline) —
           fechar volta pra "share" em vez de fechar tudo, como um nível de navegação a mais. */}
-      {(() => { const closeTarget = (activePopup === 'pageSize' || activePopup === 'pages' || activePopup === 'printHelp') ? 'share' : null; return activePopup && (
+      {(() => { const closeTarget = (activePopup === 'printSettings' || activePopup === 'pages' || activePopup === 'printHelp') ? 'share' : null; return activePopup && (
         <div
           className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setActivePopup(closeTarget)}
@@ -842,7 +848,7 @@ export default function ExportNoteModal({
                 {activePopup === 'sector' && 'Detalhes de Setor'}
                 {activePopup === 'profiles' && 'Perfis de Exportação'}
                 {activePopup === 'share' && 'Opções de Compartilhamento'}
-                {activePopup === 'pageSize' && 'Tamanho de Exportação'}
+                {activePopup === 'printSettings' && 'Configurações de Impressão'}
                 {activePopup === 'pages' && 'Dividir em Páginas'}
                 {activePopup === 'printHelp' && 'Como Funciona a Impressão'}
               </span>
@@ -1635,67 +1641,22 @@ export default function ExportNoteModal({
                     </button>
                   )}
 
-                  {/* Format Toggles */}
-                  <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFormat('pdf')}
-                      data-guide-anchor="export.selecionarFormato"
-                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        selectedFormat === 'pdf' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      Formato PDF
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFormat('jpg')}
-                      data-guide-anchor="export.selecionarFormato"
-                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        selectedFormat === 'jpg' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      Formato JPG
-                    </button>
-                  </div>
-
-                  {/* Cor — sempre disponível (independe de PDF/JPG ou de Dividir em Páginas),
-                      diferente do Tamanho/Orientação logo abaixo. */}
-                  <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
-                    <button
-                      type="button"
-                      onClick={() => setColorMode('color')}
-                      data-guide-anchor="export.selecionarCor"
-                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        colorMode === 'color' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      Imprimir com Cores
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setColorMode('bw')}
-                      data-guide-anchor="export.selecionarCor"
-                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        colorMode === 'bw' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      Preto e Branco
-                    </button>
-                  </div>
-
-                  {/* Tamanho de Exportação — vira card resumo que abre popup próprio (ver
-                      activePopup === 'pageSize'), junto com Orientação. */}
+                  {/* Configurações de Impressão — card resumo que reúne Formato, Cor e Tamanho de
+                      Exportação num popup só (ver activePopup === 'printSettings'), em vez de
+                      deixar os três toggles/cards soltos aqui embaixo do botão de imprimir. */}
                   <button
                     type="button"
-                    onClick={() => setActivePopup('pageSize')}
-                    data-guide-anchor="export.tamanhoAbrirPopup"
+                    onClick={() => setActivePopup('printSettings')}
+                    data-guide-anchor="export.configImpressaoAbrirPopup"
                     className={`w-full flex items-center justify-between gap-2 px-3 py-3 rounded-2xl border transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800/50 hover:bg-slate-800' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
                   >
-                    <span className="flex flex-col items-start min-w-0">
-                      <span className="text-[11px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Tamanho de Exportação</span>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
-                        {({ a4: 'A4', a5: 'A5', a6: 'A6', marketplace: 'Marketplace' } as const)[pageSize]} · {orientation === 'portrait' ? 'Vertical' : 'Horizontal'}
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Settings2 size={14} className="text-amber-500" />
+                      <span className="flex flex-col items-start min-w-0">
+                        <span className="text-[11px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">Configurações de Impressão</span>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                          {selectedFormat.toUpperCase()} · {colorMode === 'color' ? 'Colorido' : 'P&B'} · {({ a4: 'A4', a5: 'A5', a6: 'A6', marketplace: 'Marketplace' } as const)[pageSize]} {orientation === 'portrait' ? 'Vertical' : 'Horizontal'}
+                        </span>
                       </span>
                     </span>
                     <ChevronRight size={14} className="text-slate-400 shrink-0" />
@@ -1703,16 +1664,69 @@ export default function ExportNoteModal({
                 </div>
               )}
 
-              {/* Tamanho de Exportação Popup Content — mesmos controles de sempre (Papel/
-                  Marketplace + Orientação), só que num popup próprio em vez de inline dentro
-                  de "share". Voltar (X/Fechar) retorna pra "share" (ver closeTarget acima). */}
-              {activePopup === 'pageSize' && (() => {
+              {/* Configurações de Impressão Popup Content — Formato (PDF/JPG), Cor
+                  (Colorido/P&B) e Tamanho de Exportação (Papel + Orientação) juntos num único
+                  popup, em vez de espalhados soltos dentro de "share". Voltar (X/Fechar) retorna
+                  pra "share" (ver closeTarget acima). */}
+              {activePopup === 'printSettings' && (() => {
                 const pageSizeActive = selectedFormat === 'pdf' || splitPages;
                 return (
                   <div className="flex flex-col gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-1">Formato</p>
+                      <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFormat('pdf')}
+                          data-guide-anchor="export.selecionarFormato"
+                          className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            selectedFormat === 'pdf' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          Formato PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFormat('jpg')}
+                          data-guide-anchor="export.selecionarFormato"
+                          className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            selectedFormat === 'jpg' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          Formato JPG
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-1">Cor</p>
+                      <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                        <button
+                          type="button"
+                          onClick={() => setColorMode('color')}
+                          data-guide-anchor="export.selecionarCor"
+                          className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            colorMode === 'color' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          Imprimir com Cores
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setColorMode('bw')}
+                          data-guide-anchor="export.selecionarCor"
+                          className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            colorMode === 'bw' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          Preto e Branco
+                        </button>
+                      </div>
+                    </div>
+
                     {!pageSizeActive && (
                       <p className={`text-[9px] font-bold px-1 leading-relaxed rounded-xl p-2.5 ${isDarkMode ? 'bg-amber-500/10 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>
-                        Só faz efeito com <span className="font-black">Formato PDF</span> ou <span className="font-black">Dividir em Páginas</span> ligado — em JPG simples o canvas cresce livremente.
+                        Tamanho só faz efeito com <span className="font-black">Formato PDF</span> ou <span className="font-black">Dividir em Páginas</span> ligado — em JPG simples o canvas cresce livremente.
                       </p>
                     )}
                     <div>

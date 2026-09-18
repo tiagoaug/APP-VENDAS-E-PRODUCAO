@@ -6559,10 +6559,10 @@ export default function PCPView({
                                             </span>
                                           </div>
                                           <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                                            <span className="text-[10px] font-medium tracking-wide normal-case text-slate-900 dark:text-white">
                                               PED. {f.lot.orderNumber}
                                             </span>
-                                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+                                            <span className="text-[10px] font-medium tracking-wide normal-case text-slate-900 dark:text-white">
                                               {f.order?.customerName || 'ESTOQUE'}
                                             </span>
                                             <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">
@@ -6609,7 +6609,7 @@ export default function PCPView({
                                                 <h3 className={`text-sm font-black uppercase tracking-wider truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                                                   {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
                                                 </h3>
-                                                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                                                <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
                                                   PED. {f.lot.orderNumber} · MAPA{f.lot.orderNumber}
                                                 </p>
                                               </div>
@@ -6640,11 +6640,11 @@ export default function PCPView({
                                           <div className="grid grid-cols-3 gap-4 px-2">
                                             <div>
                                               <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Cliente</p>
-                                              <p className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase truncate">{f.order?.customerName || 'Estoque'}</p>
+                                              <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 truncate">{f.order?.customerName || 'Estoque'}</p>
                                             </div>
                                             <div>
                                               <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300">Entrega</p>
-                                              <p className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase">
+                                              <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300">
                                                 {f.order?.deliveryDate ? new Date(f.order.deliveryDate).toLocaleDateString('pt-BR') : '-'}
                                               </p>
                                             </div>
@@ -6772,7 +6772,7 @@ export default function PCPView({
                                                 className={`w-full grid grid-cols-[20px_1fr_20px] items-center gap-2 py-3 px-3 rounded-xl shadow-sm border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
                                               >
                                                 <Share2 size={16} className="text-sky-600 dark:text-sky-400" />
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-center text-slate-700 dark:text-slate-200">Compartilhar Ficha</span>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-center text-slate-900 dark:text-white">Compartilhar Ficha</span>
                                                 <span />
                                               </button>
                                               <button type="button"
@@ -6781,9 +6781,22 @@ export default function PCPView({
                                                 className={`w-full grid grid-cols-[20px_1fr_20px] items-center gap-2 py-3 px-3 rounded-xl shadow-sm border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
                                               >
                                                 <ArrowLeftRight size={16} className="text-violet-600 dark:text-violet-400" />
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-center text-slate-700 dark:text-slate-200">Mover de Setor</span>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-center text-slate-900 dark:text-white">Mover de Setor</span>
                                                 <span />
                                               </button>
+                                              {/* Emitir OS — só pra fichas sem OS pendente ainda (não faz sentido
+                                                  emitir uma segunda OS pra algo já coberto por uma pendente). */}
+                                              {!hasOS && (
+                                                <button type="button"
+                                                  onClick={() => handleOpenOSModalForOrder(f.lot, [`${f.lot.id}::${f.si.orderId}::${f.siIdx}`], undefined, undefined, f.si.qty)}
+                                                  data-guide-anchor="pcp.pedidoFichaEmitirOS"
+                                                  className={`w-full grid grid-cols-[20px_1fr_20px] items-center gap-2 py-3 px-3 rounded-xl shadow-sm border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+                                                >
+                                                  <Hammer size={16} className="text-sky-600 dark:text-sky-400" />
+                                                  <span className="text-[10px] font-black uppercase tracking-widest text-center text-slate-900 dark:text-white">Emitir OS</span>
+                                                  <span />
+                                                </button>
+                                              )}
                                             </div>
                                             {/* Fracionar Pedido — só pra fichas sem OS pendente (fracionar uma
                                               já comprometida com OS exigiria reescrever a OS também). */}
@@ -6806,7 +6819,7 @@ export default function PCPView({
                                                 type="button"
                                                 onClick={() => setOpenPedidoDetailKey(null)}
                                                 data-guide-anchor="pcp.pedidoFichaFechar"
-                                                className={`w-full py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                                className={`w-full py-3 rounded-2xl text-[11px] font-medium tracking-wide normal-case transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-blue-300 hover:bg-slate-700' : 'bg-slate-100 text-blue-950 hover:bg-slate-200'}`}
                                               >
                                                 Voltar
                                               </button>

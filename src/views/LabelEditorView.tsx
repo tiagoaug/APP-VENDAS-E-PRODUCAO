@@ -735,7 +735,13 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
       });
       const pdfDataUri = doc.output('datauristring');
       const base64 = pdfDataUri.split('base64,')[1] || pdfDataUri;
-      await NetworkPrinter.printBase64({ data: base64, mimeType: 'application/pdf', name: name || 'Etiqueta' });
+      // Algumas plataformas não resolvem nem rejeitam essa promise quando o usuário cancela
+      // a folha de impressão do sistema (o botão ficava travado em "Abrindo..." pra sempre) —
+      // corrida com um timeout garante que o botão sempre volta ao normal.
+      await Promise.race([
+        NetworkPrinter.printBase64({ data: base64, mimeType: 'application/pdf', name: name || 'Etiqueta' }),
+        new Promise(resolve => setTimeout(resolve, 60000)),
+      ]);
     } catch (err: any) {
       toast.show('Erro ao imprimir: ' + (err?.message || err));
     } finally {
