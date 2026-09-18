@@ -155,7 +155,7 @@ export default function ExportNoteModal({
   const [note, setNote] = useState('');
   const [isObservationOpen, setIsObservationOpen] = useState(false);
   const [selectedSectorIds, setSelectedSectorIds] = useState<string[]>([]);
-  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'profiles' | 'share' | 'pageSize' | 'pages' | null>(null);
+  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'profiles' | 'share' | 'pageSize' | 'pages' | 'printHelp' | null>(null);
   
   // Profile State
   const [profiles, setProfiles] = useState<ExportProfile[]>(() => loadProfiles());
@@ -820,7 +820,7 @@ export default function ExportNoteModal({
       {/* "pageSize" e "pages" só existem dentro de "share" (Tamanho de Exportação e Dividir em
           Páginas viraram cards que abrem um popup próprio, em vez de ficar tudo junto inline) —
           fechar volta pra "share" em vez de fechar tudo, como um nível de navegação a mais. */}
-      {(() => { const closeTarget = (activePopup === 'pageSize' || activePopup === 'pages') ? 'share' : null; return activePopup && (
+      {(() => { const closeTarget = (activePopup === 'pageSize' || activePopup === 'pages' || activePopup === 'printHelp') ? 'share' : null; return activePopup && (
         <div
           className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setActivePopup(closeTarget)}
@@ -844,6 +844,7 @@ export default function ExportNoteModal({
                 {activePopup === 'share' && 'Opções de Compartilhamento'}
                 {activePopup === 'pageSize' && 'Tamanho de Exportação'}
                 {activePopup === 'pages' && 'Dividir em Páginas'}
+                {activePopup === 'printHelp' && 'Como Funciona a Impressão'}
               </span>
               <button
                 onClick={() => setActivePopup(closeTarget)}
@@ -1595,17 +1596,30 @@ export default function ExportNoteModal({
 
                   {/* Impressão direta via AirPrint (iOS) / impressoras de rede (Android) — junta
                       as páginas já pré-visualizadas num PDF e abre a folha nativa de impressão
-                      do sistema, que lista as impressoras disponíveis na rede automaticamente. */}
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    disabled={isPrinting || previewPages.length === 0}
-                    data-guide-anchor="export.imprimirDireto"
-                    className="w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-slate-800 text-white disabled:opacity-50"
-                  >
-                    <PrinterIcon size={16} />
-                    {isPrinting ? 'Abrindo Impressão...' : 'Imprimir (AirPrint / Rede)'}
-                  </button>
+                      do sistema, que lista as impressoras disponíveis na rede automaticamente.
+                      O "?" ao lado explica o tipo de conexão e quais impressoras funcionam. */}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrint}
+                      disabled={isPrinting || previewPages.length === 0}
+                      data-guide-anchor="export.imprimirDireto"
+                      className="flex-1 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-slate-800 text-white disabled:opacity-50"
+                    >
+                      <PrinterIcon size={16} />
+                      {isPrinting ? 'Abrindo Impressão...' : 'Imprimir (AirPrint / Rede)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActivePopup('printHelp')}
+                      data-guide-anchor="export.imprimirDiretoAjuda"
+                      title="Como funciona a impressão AirPrint/Rede"
+                      aria-label="Como funciona a impressão AirPrint/Rede"
+                      className={`w-11 shrink-0 rounded-xl flex items-center justify-center transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}
+                    >
+                      <span className="text-[13px] font-black">?</span>
+                    </button>
+                  </div>
 
                   {/* Impressão Bluetooth (Ablemark) só existe no Android — no iOS o botão nem
                       aparece, em vez de levar o usuário até o picker de etiquetas pra só então
@@ -1819,6 +1833,53 @@ export default function ExportNoteModal({
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Explicação da Impressão AirPrint/Rede — quais impressoras funcionam e como
+                  a conexão é feita, pra quem toca no "?" ao lado do botão sem saber o que esperar. */}
+              {activePopup === 'printHelp' && (
+                <div className="flex flex-col gap-3">
+                  <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <p className={`text-xs font-black uppercase tracking-wider mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tipo de conexão</p>
+                    <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 leading-relaxed">
+                      A impressão sai pela <strong>rede Wi-Fi</strong> — o celular/tablet e a impressora
+                      precisam estar conectados na <strong>mesma rede</strong>. Não usa Bluetooth nem cabo USB.
+                      O app monta o arquivo (respeitando tamanho, orientação e cor escolhidos) e abre a
+                      folha de impressão nativa do sistema, que descobre as impressoras da rede sozinha.
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <p className={`text-xs font-black uppercase tracking-wider mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No iPhone/iPad</p>
+                    <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 leading-relaxed">
+                      Usa o <strong>AirPrint</strong>, tecnologia da própria Apple. Funciona com qualquer
+                      impressora que tenha o selo "AirPrint" ou "Compatível com AirPrint" — a maioria das
+                      impressoras de escritório (HP, Epson, Canon, Brother, Samsung) fabricadas depois de
+                      2011 já vem com isso de fábrica, sem precisar instalar nenhum app ou driver.
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <p className={`text-xs font-black uppercase tracking-wider mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Android</p>
+                    <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 leading-relaxed">
+                      Usa o sistema de impressão do próprio Android. Precisa ter o <strong>serviço de
+                      impressão do fabricante</strong> instalado (geralmente já vem pronto, ou baixa uma
+                      vez na Play Store — "HP Print Service", "Mopria Print Service", "Epson Print
+                      Enabler" etc.). Com isso instalado, qualquer impressora de rede desses fabricantes
+                      aparece automaticamente na folha de impressão.
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30' : 'bg-amber-50 border-amber-100'}`}>
+                    <p className="text-xs font-black uppercase tracking-wider mb-1 text-amber-600 dark:text-amber-400">Não serve para</p>
+                    <p className="text-[10px] font-medium tracking-wide normal-case text-blue-950 dark:text-blue-300 leading-relaxed">
+                      Impressoras térmicas de etiqueta/recibo que só falam protocolo próprio (ESC/POS,
+                      ZPL) por Bluetooth — a maioria das térmicas industriais, como a usada no Editor de
+                      Etiquetas, entra nessa categoria e não aparece aqui. Pra essas, use a conexão
+                      Bluetooth dedicada (card "Impressão" do Editor de Etiquetas).
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
