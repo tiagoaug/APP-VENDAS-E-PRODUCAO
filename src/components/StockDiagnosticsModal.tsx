@@ -1,17 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
+import { format } from "date-fns";
 import { Product, StockLot, ProductionLot, Sale } from "../types";
-import { Wrench, CheckCircle2, AlertTriangle, TrendingUp, Boxes, Settings } from "lucide-react";
+import { Wrench, CheckCircle2, AlertTriangle, TrendingUp, Boxes, Settings, Clock } from "lucide-react";
 import Modal from "./Modal";
 import { toast } from '../utils/toast';
-import { useStockLotDuplicates, DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
+import { DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
+import { useStockDiagnosticsSummary } from '../hooks/useStockDiagnosticsSummary';
 import StockDuplicateDiagnosticModal from './StockDuplicateDiagnosticModal';
-import { buildSeparationReconcileGroups, SeparationReconcileGroup } from '../utils/separationReconcile';
+import { SeparationReconcileGroup } from '../utils/separationReconcile';
 import { buildStockDuplicateFixPlan, StockDuplicateFixPlan } from '../utils/stockDuplicateFix';
-import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
-import { buildUndercreditGroups, UndercreditGroup } from '../utils/stockUndercreditFix';
-import { buildOrphanedReservedLots, OrphanedReservedLot, ORPHANED_RESOLVED_STORAGE_KEY, readResolvedOrphanedLotKeys } from '../utils/stockOrphanedReservations';
-
-const UNDERCREDIT_RESOLVED_KEY = 'pcp_resolved_undercredit_v1';
+import { UndercreditGroup } from '../utils/stockUndercreditFix';
+import { OrphanedReservedLot } from '../utils/stockOrphanedReservations';
 
 const StockDiagnosticsModal: React.FC<{
   isOpen: boolean;
@@ -46,43 +45,13 @@ const StockDiagnosticsModal: React.FC<{
   const [trimmingAllUndercredit, setTrimmingAllUndercredit] = useState(false);
   const [fixingOrphanedKey, setFixingOrphanedKey] = useState<string | null>(null);
 
-  const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots, lots);
+  const {
+    pkgAllocIssuesCount, separationReconcileGroups, orphanedFinalizedKeyFixes,
+    duplicateStockLotGroups, duplicateStockByRefColor, markStockDuplicatesResolved,
+    undercreditGroups, dismissUndercreditGroup, dismissAllUndercreditGroups,
+    orphanedLots, dismissOrphanedLot,
+  } = useStockDiagnosticsSummary(products, stockLots, lots, sales);
 
-  const separationReconcileGroups = useMemo(() => buildSeparationReconcileGroups(stockLots), [stockLots]);
-  const orphanedFinalizedKeyFixes = useMemo(() => buildOrphanedFinalizedKeyFixes(lots), [lots]);
-  const allUndercreditGroups = useMemo(() => buildUndercreditGroups(products, stockLots), [products, stockLots]);
-
-  const [undercreditResolved, setUndercreditResolved] = useState<Record<string, boolean>>(() => {
-    try {
-      const raw = localStorage.getItem(UNDERCREDIT_RESOLVED_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
-  const dismissUndercreditGroup = (g: UndercreditGroup) => {
-    setUndercreditResolved(prev => {
-      const next = { ...prev, [g.key]: true };
-      try { localStorage.setItem(UNDERCREDIT_RESOLVED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  };
-  // Mesma ideia do dismiss individual (só esconde neste aparelho, não mexe em estoque) — bom
-  // como último recurso, mas prefira "Descontar dos Lotes" (onTrimUndercreditExcess) quando
-  // disponível: aquele conserta o dado de verdade (pra todo mundo), esse aqui só maquia a
-  // tela de quem clicou.
-  const dismissAllUndercreditGroups = () => {
-    setUndercreditResolved(prev => {
-      const next = { ...prev };
-      undercreditGroups.forEach(g => { next[g.key] = true; });
-      try { localStorage.setItem(UNDERCREDIT_RESOLVED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  };
-  const undercreditGroups = useMemo(
-    () => allUndercreditGroups.filter(g => !undercreditResolved[g.key]),
-    [allUndercreditGroups, undercreditResolved]
-  );
   const handleTrimAllUndercreditExcess = async () => {
     if (!onTrimUndercreditExcess) return;
     setTrimmingAllUndercredit(true);
@@ -94,31 +63,6 @@ const StockDiagnosticsModal: React.FC<{
       setTrimmingAllUndercredit(false);
     }
   };
-
-  const allOrphanedLots = useMemo(() => buildOrphanedReservedLots(stockLots, sales, products), [stockLots, sales, products]);
-  const [orphanedResolved, setOrphanedResolved] = useState<Record<string, boolean>>(readResolvedOrphanedLotKeys);
-  const dismissOrphanedLot = (entry: OrphanedReservedLot) => {
-    setOrphanedResolved(prev => {
-      const next = { ...prev, [entry.key]: true };
-      try { localStorage.setItem(ORPHANED_RESOLVED_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  };
-  const orphanedLots = useMemo(
-    () => allOrphanedLots.filter(e => !orphanedResolved[e.key]),
-    [allOrphanedLots, orphanedResolved]
-  );
-
-  const pkgAllocIssuesCount = useMemo(() => {
-    return products.reduce((count, product) => {
-      const hasIssue = product.variations.some((v) => {
-        const boxQty = v.stock?.['WHOLESALE'] ?? 0;
-        const totalAlloc = (v.stockPkgAllocations || []).reduce((s, a) => s + a.qty, 0);
-        return totalAlloc > boxQty;
-      });
-      return hasIssue ? count + 1 : count;
-    }, 0);
-  }, [products]);
 
   const handleFixStockDuplicateGroup = async (group: DuplicateStockByRefColor) => {
     if (!onApplyStockDuplicateFix) return;
@@ -459,6 +403,24 @@ const StockDiagnosticsModal: React.FC<{
                       ? `${g.missingBoxes} cx`
                       : `${Object.values(g.missingSizes || {}).reduce((s, q) => s + q, 0)} pares`}
                   </span>
+                </div>
+                {/* Data/hora de cada StockLot envolvido — pra verificar se a pendência é
+                    resíduo antigo (de antes da correção de atomicidade) ou algo recente. */}
+                <div className={`flex flex-col gap-1 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                    <Clock size={10} /> Data/Hora dos Lotes
+                  </span>
+                  {[...g.lots].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map(lot => (
+                    <div key={lot.id} className="flex items-center justify-between gap-2 text-[10px]">
+                      <span className={isDarkMode ? 'text-slate-300' : 'text-slate-600'}>
+                        {lot.createdAt ? format(lot.createdAt, "dd/MM/yyyy HH:mm:ss") : '—'}
+                        {lot.lotOrderNumber ? ` · Mapa #${lot.lotOrderNumber}` : ''}
+                      </span>
+                      <span className="font-bold text-slate-400">
+                        {lot.boxQty !== undefined && lot.boxQty !== null ? `${lot.boxQty} cx` : `${lot.totalPairs} prs`}
+                      </span>
+                    </div>
+                  ))}
                 </div>
                 <button
                   type="button"

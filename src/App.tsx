@@ -8454,6 +8454,15 @@ export default function App() {
             sales={sales}
             stockLots={stockLots}
             transactions={transactions}
+            // Diagnósticos e Correções (mesmos handlers já usados em Vendas) — dá visibilidade
+            // e correção direta a partir do PCP também, sem precisar navegar até Vendas.
+            onFixPkgAllocations={handleFixPkgAllocations}
+            onReconcileSeparationGroup={handleReconcileSeparationGroup}
+            onApplyStockDuplicateFix={handleApplyStockDuplicateFix}
+            onRepairOrphanedFinalizedKeys={handleRepairOrphanedFinalizedKeys}
+            onApplyUndercreditFix={handleApplyUndercreditFix}
+            onTrimUndercreditExcess={handleTrimUndercreditExcess}
+            onReleaseOrphanedLot={handleReleaseOrphanedLot}
           />
         );
       case ViewType.PRODUCTION_SERVICE_ORDER_FORM:

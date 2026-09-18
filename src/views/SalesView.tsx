@@ -27,6 +27,7 @@ import PedidosClientesPanel from '../components/PedidosClientesPanel';
 import StockLotsPanel from '../components/StockLotsPanel';
 import StockEntryHistoryModal from '../components/StockEntryHistoryModal';
 import StockDiagnosticsModal from '../components/StockDiagnosticsModal';
+import { useStockDiagnosticsSummary } from '../hooks/useStockDiagnosticsSummary';
 import SalePaymentModal from '../components/SalePaymentModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import PaymentCardModal from '../components/PaymentCardModal';
@@ -601,6 +602,9 @@ export default function SalesView({
   // motivo do Histórico acima. Usado tanto pelo card em Gerenciamento quanto pelo aviso de
   // "Reparar Finalizados" que aparece no topo de Vendas quando há pendência.
   const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  // Total de pendências das 6 categorias de Diagnósticos e Correções — só pro badge do card
+  // em Gerenciamento (o modal em si recalcula tudo de novo sozinho, ver StockDiagnosticsModal).
+  const { total: diagnosticsTotal } = useStockDiagnosticsSummary(products, stockLots, lots, sales);
   const [isExportingShortage, setIsExportingShortage] = useState(false);
 
   const crossCheckData = useMemo(() => {
@@ -1678,7 +1682,14 @@ export default function SalesView({
                   <Wrench size={18} strokeWidth={2.5} />
                 </div>
                 <div className="min-w-0">
-                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Diagnósticos e Correções</p>
+                  <p className={`text-[11px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    Diagnósticos e Correções
+                    {diagnosticsTotal > 0 && (
+                      <span className="min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center shrink-0">
+                        {diagnosticsTotal}
+                      </span>
+                    )}
+                  </p>
                   <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Alocações de embalagem, separações, estoque não creditado, reservas órfãs e mais</p>
                 </div>
                 <ChevronRight size={16} className="text-amber-500 shrink-0 ml-auto" />

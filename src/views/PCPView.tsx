@@ -57,9 +57,14 @@ import { getMaterialStockForColor } from '../utils/materialStock';
 import ExportNoteModal from '../components/ExportNoteModal';
 import { generatePCPShareExport, PCPShareItem } from '../utils/pcpShareExport';
 import { useStockLotDuplicates, DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
-import { buildStockDuplicateFixPlan } from '../utils/stockDuplicateFix';
+import { useStockDiagnosticsSummary } from '../hooks/useStockDiagnosticsSummary';
+import { buildStockDuplicateFixPlan, StockDuplicateFixPlan } from '../utils/stockDuplicateFix';
+import { SeparationReconcileGroup } from '../utils/separationReconcile';
+import { UndercreditGroup } from '../utils/stockUndercreditFix';
+import { OrphanedReservedLot } from '../utils/stockOrphanedReservations';
 import StockDuplicateBanner from '../components/StockDuplicateBanner';
 import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosticModal';
+import StockDiagnosticsModal from '../components/StockDiagnosticsModal';
 import StockRepairBanner from '../components/StockRepairBanner';
 
 const getContrastingColor = (hexcolor: string) => {
@@ -181,6 +186,15 @@ interface PCPViewProps {
   // Botão "Salvar Como Padrão para Novas Contas" só aparece pra conta de desenvolvimento.
   defaultFilters?: PcpDefaultFilters | null;
   onSaveDefaultFilters?: (data: PcpDefaultFilters) => void | Promise<void>;
+  // Diagnósticos e Correções — mesmos handlers usados em Vendas (ver StockDiagnosticsModal),
+  // agora também acessíveis direto do PCP.
+  onFixPkgAllocations?: () => Promise<{ fixed: number; total: number }>;
+  onReconcileSeparationGroup?: (group: SeparationReconcileGroup) => Promise<void>;
+  onApplyStockDuplicateFix?: (plan: StockDuplicateFixPlan) => Promise<void>;
+  onRepairOrphanedFinalizedKeys?: () => Promise<{ fixed: number; lotsTouched: number }>;
+  onApplyUndercreditFix?: (group: UndercreditGroup) => Promise<void>;
+  onTrimUndercreditExcess?: (group: UndercreditGroup) => Promise<void>;
+  onReleaseOrphanedLot?: (entry: OrphanedReservedLot) => Promise<void>;
 }
 
 export default function PCPView({
@@ -227,6 +241,13 @@ export default function PCPView({
   activeCollaborator = null,
   defaultFilters,
   onSaveDefaultFilters,
+  onFixPkgAllocations,
+  onReconcileSeparationGroup,
+  onApplyStockDuplicateFix,
+  onRepairOrphanedFinalizedKeys,
+  onApplyUndercreditFix,
+  onTrimUndercreditExcess,
+  onReleaseOrphanedLot,
 }: PCPViewProps) {
   // Mesma lógica de App.tsx `canShowMenuItem` — esconde atalhos pra sub-funções que o
   // colaborador não tem acesso, em vez de deixar o ícone visível sem levar a lugar nenhum.
@@ -1840,6 +1861,12 @@ export default function PCPView({
   // Diagnóstico de StockLots duplicados (ver showStockDiagnosticModal) — compartilhado
   // com a tela de Estoques via useStockLotDuplicates.
   const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots, lots);
+
+  // Resumo completo de "Diagnósticos e Correções" (mesmas 6 categorias do modal usado em
+  // Vendas) — dá visibilidade da pendência direto no Monitor do PCP, sem precisar navegar
+  // até Vendas pra descobrir que existe algo pra corrigir.
+  const fullDiagnosticsSummary = useStockDiagnosticsSummary(products, stockLots, lots, sales);
+  const [showFullDiagnosticsModal, setShowFullDiagnosticsModal] = useState(false);
 
   // Corrige de verdade uma duplicidade de estoque: desconta do produto exatamente o que
   // cada StockLot excedente creditou e apaga os registros excedentes, mantendo só o mais
@@ -5830,6 +5857,28 @@ export default function PCPView({
             onOpen={() => setShowStockDiagnosticModal(true)}
             isDarkMode={isDarkMode}
           />
+          {/* Aviso das outras 5 categorias de Diagnósticos e Correções (Embalagem, Separações,
+              Finalizados, Estoque Não Creditado, Reservas Órfãs) — duplicidade já tem seu
+              próprio banner acima, então não conta aqui de novo pra não duplicar o aviso. */}
+          {(fullDiagnosticsSummary.total - duplicateStockLotGroups.length) > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowFullDiagnosticsModal(true)}
+              data-guide-anchor="pcp.diagnosticosBanner"
+              className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/15' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+                <Settings2 size={18} strokeWidth={2.5} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>
+                  {fullDiagnosticsSummary.total - duplicateStockLotGroups.length} pendência{(fullDiagnosticsSummary.total - duplicateStockLotGroups.length) === 1 ? '' : 's'} em Diagnósticos e Correções
+                </p>
+                <p className="text-[9px] font-bold text-amber-600/80 uppercase tracking-widest mt-0.5">Toque para revisar e corrigir</p>
+              </div>
+              <ChevronRight size={16} className="text-amber-500 shrink-0" />
+            </button>
+          )}
           <StockRepairBanner
             fixable={stockRepairSummary.fixable}
             unresolved={stockRepairSummary.unresolved}
@@ -12318,6 +12367,23 @@ export default function PCPView({
         groups={duplicateStockByRefColor}
         onMarkResolved={markStockDuplicatesResolved}
         onFixNow={fixStockDuplicateGroup}
+      />
+
+      <StockDiagnosticsModal
+        isOpen={showFullDiagnosticsModal}
+        onClose={() => setShowFullDiagnosticsModal(false)}
+        isDarkMode={isDarkMode}
+        products={products}
+        stockLots={stockLots}
+        lots={lots}
+        sales={sales}
+        onFixPkgAllocations={onFixPkgAllocations}
+        onReconcileSeparationGroup={onReconcileSeparationGroup}
+        onApplyStockDuplicateFix={onApplyStockDuplicateFix}
+        onRepairOrphanedFinalizedKeys={onRepairOrphanedFinalizedKeys}
+        onApplyUndercreditFix={onApplyUndercreditFix}
+        onTrimUndercreditExcess={onTrimUndercreditExcess}
+        onReleaseOrphanedLot={onReleaseOrphanedLot}
       />
 
       {/* ── Modal: Reparar Caixas ATACADO ── */}
