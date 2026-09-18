@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight, Terminal, X, Copy, Trash2, KeyRound, Check } from 'lucide-react';
+import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight, Terminal, X, Copy, Trash2, KeyRound, Check, Pencil } from 'lucide-react';
 import { Clipboard } from '@capacitor/clipboard';
 import { ViewType } from '../types';
 import { TEMPLATE_ADMIN_EMAIL } from '../utils/templateAdmin';
 import { toast } from '../utils/toast';
 import { isAuthDiagEnabled, setAuthDiagEnabled, readAuthDiagLog, clearAuthDiagLog } from '../lib/authDiagLog';
+
+export interface LicenseEntry {
+  uid: string;
+  expiresAt: number;
+  customerLabel: string | null;
+}
 
 interface DeveloperAccountViewProps {
   isDarkMode: boolean;
@@ -13,7 +19,10 @@ interface DeveloperAccountViewProps {
   onSaveDeveloperAccount: (email: string | null) => Promise<void>;
   // Licenciamento comercial — grava/remove a data de expiração de OUTRA conta (a própria
   // firestore.rules exige ser conta de desenvolvimento pra escrever, isto aqui é só a UI).
-  onSetUserLicense: (targetUid: string, expiresAt: number | null) => Promise<void>;
+  onSetUserLicense: (targetUid: string, expiresAt: number | null, customerLabel?: string) => Promise<void>;
+  // Todos os clientes com licença configurada (collectionGroup, ver App.tsx) — null enquanto
+  // ainda não chegou o primeiro snapshot.
+  allLicenses: LicenseEntry[] | null;
   onNavigate: (view: ViewType) => void;
 }
 
@@ -24,15 +33,37 @@ interface DeveloperAccountViewProps {
 // nunca vira uma brecha de autopromoção); 2) as AÇÕES que só essa conta pode fazer (hoje só
 // "Configurações Padrão pra Novos Usuários", movida pra cá de dentro de Mais > Acessibilidade —
 // futuras ações de dev entram aqui do mesmo jeito, sem espalhar pelo resto de Configurações).
-export default function DeveloperAccountView({ isDarkMode, currentUserEmail, developerAccountEmail, onSaveDeveloperAccount, onSetUserLicense, onNavigate }: DeveloperAccountViewProps) {
+export default function DeveloperAccountView({ isDarkMode, currentUserEmail, developerAccountEmail, onSaveDeveloperAccount, onSetUserLicense, allLicenses, onNavigate }: DeveloperAccountViewProps) {
   const [isSaving, setIsSaving] = useState(false);
-  // Licenciamento comercial — UID do cliente + data de vencimento, digitados manualmente por
-  // enquanto (ainda não existe integração automática com pagamento). O UID se pega em
-  // Firebase Console > Authentication, buscando pelo e-mail do cliente.
-  const [showLicenseModal, setShowLicenseModal] = useState(false);
+  // Licenciamento comercial — painel (lista de todos os clientes com licença) + formulário
+  // de adicionar/editar um cliente por vez, dentro do mesmo popup. UID + data de vencimento
+  // digitados manualmente por enquanto (ainda não existe integração automática com
+  // pagamento). O UID se pega em Firebase Console > Authentication, buscando pelo e-mail do
+  // cliente. `editingUid` != null quando o formulário abriu a partir de "Editar" na lista —
+  // trava o campo de UID (só dá pra mudar data/nome de quem já está cadastrado).
+  const [showLicensePanel, setShowLicensePanel] = useState(false);
+  const [showLicenseForm, setShowLicenseForm] = useState(false);
   const [licenseUid, setLicenseUid] = useState('');
+  const [licenseLabel, setLicenseLabel] = useState('');
   const [licenseDate, setLicenseDate] = useState('');
+  const [editingUid, setEditingUid] = useState<string | null>(null);
   const [isSavingLicense, setIsSavingLicense] = useState(false);
+
+  const openNewLicense = () => {
+    setEditingUid(null);
+    setLicenseUid('');
+    setLicenseLabel('');
+    setLicenseDate('');
+    setShowLicenseForm(true);
+  };
+  const openEditLicense = (entry: LicenseEntry) => {
+    setEditingUid(entry.uid);
+    setLicenseUid(entry.uid);
+    setLicenseLabel(entry.customerLabel || '');
+    setLicenseDate(new Date(entry.expiresAt).toISOString().slice(0, 10));
+    setShowLicenseForm(true);
+  };
+  const sortedLicenses = (allLicenses || []).slice().sort((a, b) => a.expiresAt - b.expiresAt);
   // "Modo Diagnóstico" — painel de log em tela pra depurar bugs difíceis de reproduzir sem
   // Mac/Xcode (ver lib/authDiagLog.ts). Nasceu do bug de login iOS não persistindo, mas fica
   // aqui reaproveitável pra qualquer bug parecido no futuro — qualquer `logAuthDiag()` no app
@@ -84,11 +115,9 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
     setIsSavingLicense(true);
     try {
       const expiresAt = new Date(licenseDate + 'T23:59:59').getTime();
-      await onSetUserLicense(licenseUid, expiresAt);
+      await onSetUserLicense(licenseUid, expiresAt, licenseLabel);
       toast.show(`Licença definida até ${new Date(expiresAt).toLocaleDateString('pt-BR')}.`);
-      setShowLicenseModal(false);
-      setLicenseUid('');
-      setLicenseDate('');
+      setShowLicenseForm(false);
     } catch (e: any) {
       toast.show('Erro ao salvar licença: ' + (e?.message || e));
     } finally {
@@ -105,9 +134,7 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
     try {
       await onSetUserLicense(licenseUid, null);
       toast.show('Licença removida — conta liberada sem data de vencimento.');
-      setShowLicenseModal(false);
-      setLicenseUid('');
-      setLicenseDate('');
+      setShowLicenseForm(false);
     } catch (e: any) {
       toast.show('Erro ao remover licença: ' + (e?.message || e));
     } finally {
@@ -223,7 +250,7 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
             <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
           </button>
           <button
-            onClick={() => setShowLicenseModal(true)}
+            onClick={() => setShowLicensePanel(true)}
             title="Licenças de Clientes"
             aria-label="Gerenciar licenças de clientes"
             className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-50'}`}
@@ -314,8 +341,70 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
         </div>
       )}
 
-      {showLicenseModal && (
-        <div className="fixed inset-0 z-[200000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLicenseModal(false)}>
+      {showLicensePanel && (
+        <div className="fixed inset-0 z-[200000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLicensePanel(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+          >
+            <div className={`p-5 flex items-center justify-between gap-3 border-b shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                  <KeyRound size={18} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Licenças de Clientes</h3>
+              </div>
+              <button type="button" onClick={() => setShowLicensePanel(false)} className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} aria-label="Fechar">
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="p-5 flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={openNewLicense}
+                className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <KeyRound size={15} /> Nova Licença
+              </button>
+
+              {allLicenses === null ? (
+                <p className="text-[10px] font-bold text-slate-400 text-center py-6">Carregando...</p>
+              ) : sortedLicenses.length === 0 ? (
+                <p className="text-[10px] font-bold text-slate-400 text-center py-6">Nenhum cliente com licença configurada ainda — todas as contas continuam liberadas sem restrição.</p>
+              ) : (
+                sortedLicenses.map(entry => {
+                  const expired = entry.expiresAt < Date.now();
+                  const daysLeft = Math.ceil((entry.expiresAt - Date.now()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <button
+                      key={entry.uid}
+                      type="button"
+                      onClick={() => openEditLicense(entry)}
+                      className={`w-full text-left flex items-center gap-3 p-3 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+                    >
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${expired ? (isDarkMode ? 'bg-rose-500/15 text-rose-400' : 'bg-rose-50 text-rose-500') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600')}`}>
+                        <KeyRound size={16} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{entry.customerLabel || entry.uid}</p>
+                        {entry.customerLabel && <p className="text-[9px] font-bold text-slate-400 truncate">{entry.uid}</p>}
+                        <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${expired ? 'text-rose-500' : 'text-emerald-500'}`}>
+                          {expired ? `Vencida em ${new Date(entry.expiresAt).toLocaleDateString('pt-BR')}` : `Ativa até ${new Date(entry.expiresAt).toLocaleDateString('pt-BR')} (${daysLeft}d)`}
+                        </p>
+                      </div>
+                      <Pencil size={14} className="text-slate-400 shrink-0" />
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLicenseForm && (
+        <div className="fixed inset-0 z-[200001] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLicenseForm(false)}>
           <div
             onClick={(e) => e.stopPropagation()}
             className={`w-full max-w-md flex flex-col rounded-[2rem] shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
@@ -325,18 +414,20 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
                   <KeyRound size={18} />
                 </div>
-                <h3 className={`text-sm font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Licenças de Clientes</h3>
+                <h3 className={`text-sm font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{editingUid ? 'Editar Licença' : 'Nova Licença'}</h3>
               </div>
-              <button type="button" onClick={() => setShowLicenseModal(false)} className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} aria-label="Fechar">
+              <button type="button" onClick={() => setShowLicenseForm(false)} className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
 
             <div className="p-5 flex flex-col gap-4">
-              <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
-                O UID do cliente se pega no Firebase Console → Authentication, buscando pelo
-                e-mail da conta dele. Sem licença cadastrada, a conta nunca fica bloqueada.
-              </p>
+              {!editingUid && (
+                <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
+                  O UID do cliente se pega no Firebase Console → Authentication, buscando pelo
+                  e-mail da conta dele. Sem licença cadastrada, a conta nunca fica bloqueada.
+                </p>
+              )}
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">UID do Cliente</label>
@@ -344,7 +435,19 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
                   type="text"
                   value={licenseUid}
                   onChange={(e) => setLicenseUid(e.target.value)}
+                  disabled={!!editingUid}
                   placeholder="Ex: aZ1bC2dE3fG4hI5jK6lM7nO8pQ9"
+                  className={`w-full px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Nome do Cliente (opcional)</label>
+                <input
+                  type="text"
+                  value={licenseLabel}
+                  onChange={(e) => setLicenseLabel(e.target.value)}
+                  placeholder="Ex: Calçados Musgo LTDA"
                   className={`w-full px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
                 />
               </div>
@@ -367,15 +470,17 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
               >
                 <Check size={15} /> {isSavingLicense ? 'Salvando...' : 'Definir Vencimento'}
               </button>
-              <button
-                type="button"
-                onClick={handleRemoveLicense}
-                disabled={isSavingLicense}
-                title="Remove a data de vencimento — a conta passa a não ter mais restrição de licença"
-                className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-40 ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Remover Licença (Liberar Sem Vencimento)
-              </button>
+              {editingUid && (
+                <button
+                  type="button"
+                  onClick={handleRemoveLicense}
+                  disabled={isSavingLicense}
+                  title="Remove a data de vencimento — a conta passa a não ter mais restrição de licença"
+                  className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-40 ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Remover Licença (Liberar Sem Vencimento)
+                </button>
+              )}
             </div>
           </div>
         </div>

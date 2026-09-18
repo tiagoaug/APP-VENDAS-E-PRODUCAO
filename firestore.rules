@@ -14,7 +14,7 @@ service cloud.firestore {
     // futuras; a conta de desenvolvimento nunca cria esse doc pra si mesma. `get()`/`exists()`
     // aqui NÃO reavaliam a regra do documento buscado (sem recursão), só leem o dado bruto.
     function hasActiveLicense(userId) {
-      let licensePath = /databases/$(database)/documents/users/$(userId)/appConfig/license;
+      let licensePath = /databases/$(database)/documents/users/$(userId)/license/current;
       return !exists(licensePath) || get(licensePath).data.expiresAt > request.time.toMillis();
     }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId && hasActiveLicense(userId); }
@@ -193,8 +193,11 @@ service cloud.firestore {
       // Licença comercial — excluída da regra coringa abaixo (que já exige licença ativa via
       // isOwner) de propósito: precisa ficar legível mesmo com a licença VENCIDA, pra mostrar
       // a data certa na tela de bloqueio. Só a conta de desenvolvimento escreve (nunca o
-      // próprio dono da conta — senão qualquer um se auto-renovaria).
-      match /appConfig/license {
+      // próprio dono da conta — senão qualquer um se auto-renovaria). Coleção "license"
+      // (não "appConfig", que já é usada como coleção de NÍVEL SUPERIOR pra outras coisas —
+      // um nome igual bagunçaria a consulta de grupo de coleção abaixo, que lista TODOS os
+      // clientes de uma vez pro painel "Licenças de Clientes").
+      match /license/current {
         allow read: if isSignedIn() && (request.auth.uid == userId || isTemplateAdmin());
         allow write: if isTemplateAdmin();
       }
@@ -205,8 +208,17 @@ service cloud.firestore {
           && collection != 'catalogLinks'
           && collection != 'catalogRequests'
           && collection != 'catalogProfiles'
-          && collection != 'appConfig';
+          && collection != 'license';
       }
+    }
+
+    // Consulta de GRUPO DE COLEÇÃO (collectionGroup('license')) — junta o doc "current" de
+    // TODOS os clientes numa consulta só, pro painel "Licenças de Clientes" listar todo mundo
+    // de uma vez em vez de precisar saber cada UID de antemão. Só a conta de desenvolvimento;
+    // a regra específica users/{userId}/license/current acima continua valendo pro dono ler a
+    // própria (esta regra de grupo NÃO se aplica a leituras de documento único por caminho).
+    match /{path=**}/license/current {
+      allow read: if isTemplateAdmin();
     }
 
     // Índice global uid -> uid, usado pelo webhook público do Bling (chega sem contexto de

@@ -71,7 +71,7 @@ import { ptBR } from "date-fns/locale";
 import { auth, db, logout } from "./lib/firebase";
 import { readAuthDiagLog, clearAuthDiagLog } from "./lib/authDiagLog";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { doc, collection, query, where, getDocs, deleteField, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
+import { doc, collection, collectionGroup, query, where, getDocs, deleteField, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
 import { firebaseService, deepClean } from "./services/firebaseService";
 import { notificationService, ReminderNotification } from "./services/notificationService";
 import { Capacitor } from "@capacitor/core";
@@ -781,14 +781,14 @@ export default function App() {
   // do Assistente de Configuração Inicial, que precisa esperar o gate resolver primeiro.
   const [collabGateReady, setCollabGateReady] = useState(false);
 
-  // Licenciamento comercial — users/{uid}/appConfig/license (ver firestore.rules). Sem doc
+  // Licenciamento comercial — users/{uid}/license/current (ver firestore.rules). Sem doc
   // (contas legadas/de teste, inclusive a nossa própria), considera sempre válida; só trava
   // quando existe um `expiresAt` no passado. `checked` evita mostrar a tela de bloqueio antes
   // do primeiro snapshot chegar (senão toda conta "piscaria" bloqueada por um instante).
   const [licenseState, setLicenseState] = useState<{ checked: boolean; expiresAt: number | null }>({ checked: false, expiresAt: null });
   useEffect(() => {
     if (!user) { setLicenseState({ checked: false, expiresAt: null }); return; }
-    const ref = doc(db, `users/${user.uid}/appConfig/license`);
+    const ref = doc(db, `users/${user.uid}/license/current`);
     const unsub = onSnapshot(
       ref,
       (snap) => setLicenseState({ checked: true, expiresAt: snap.exists() ? (snap.data().expiresAt ?? null) : null }),
@@ -798,17 +798,24 @@ export default function App() {
   }, [user]);
   const licenseExpired = licenseState.checked && licenseState.expiresAt !== null && licenseState.expiresAt < Date.now();
   // Só a conta de desenvolvimento pode chamar isto de verdade (firestore.rules: write em
-  // appConfig/license exige isTemplateAdmin()) — a tela que expõe isto (DeveloperAccountView)
+  // license/current exige isTemplateAdmin()) — a tela que expõe isto (DeveloperAccountView)
   // já esconde o botão pra qualquer outra conta, isto aqui é só o mecanismo de escrita.
   // `expiresAt: null` remove a licença (apaga o doc) — sem doc, a conta nunca é bloqueada.
-  const handleSetUserLicense = async (targetUid: string, expiresAt: number | null) => {
-    const ref = doc(db, `users/${targetUid.trim()}/appConfig/license`);
+  const handleSetUserLicense = async (targetUid: string, expiresAt: number | null, customerLabel?: string) => {
+    const ref = doc(db, `users/${targetUid.trim()}/license/current`);
     if (expiresAt === null) {
       await deleteDoc(ref);
     } else {
-      await setDoc(ref, { expiresAt, updatedAt: Date.now() });
+      await setDoc(ref, { expiresAt, customerLabel: customerLabel?.trim() || null, updatedAt: Date.now() });
     }
   };
+  // Lista TODOS os clientes com licença configurada (collectionGroup — ver firestore.rules)
+  // pro painel "Licenças de Clientes" em DeveloperAccountView. Só a conta de desenvolvimento
+  // consegue essa leitura; outras contas recebem permission-denied (não usamos o hook fora
+  // do contexto de dev, mas a regra do servidor é quem realmente impede). Efeito que dispara
+  // essa consulta fica mais abaixo (depois de `developerAccountEmail` ser declarado), já que
+  // precisa dele na lista de dependências pra reagir a uma delegação de conta de dev.
+  const [allLicenses, setAllLicenses] = useState<{ uid: string; expiresAt: number; customerLabel: string | null }[] | null>(null);
 
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [onboardingStatusDecided, setOnboardingStatusDecided] = useState(false);
@@ -1372,6 +1379,25 @@ export default function App() {
   // util em dia (usado em toda a árvore sem prop drilling) e guarda o valor aqui só pra exibir
   // na tela DeveloperAccountView.
   const [developerAccountEmail, setDeveloperAccountEmailState] = useState<string | null>(null);
+
+  // Lista TODOS os clientes com licença configurada (collectionGroup — ver firestore.rules)
+  // pro painel "Licenças de Clientes" em DeveloperAccountView. Só a conta de desenvolvimento
+  // consegue essa leitura de verdade — a regra do servidor é quem impede outras contas, isto
+  // aqui só evita gastar uma leitura à toa quando nem é dev.
+  useEffect(() => {
+    if (!user || !isTemplateAdmin()) { setAllLicenses(null); return; }
+    const q = query(collectionGroup(db, 'license'));
+    const unsub = onSnapshot(
+      q,
+      (snap) => setAllLicenses(snap.docs.map(d => ({
+        uid: d.ref.parent.parent?.id || '???',
+        expiresAt: d.data().expiresAt,
+        customerLabel: d.data().customerLabel || null,
+      }))),
+      (error) => { console.error('[license] Falha ao listar licenças', error); setAllLicenses([]); },
+    );
+    return unsub;
+  }, [user, developerAccountEmail]);
 
   // Filtros/visualização padrão de Vendas pra contas novas — só aplicados em SalesView se a
   // conta ainda não tiver nada salvo localmente (ver useEffect lá dentro).
@@ -9153,6 +9179,7 @@ export default function App() {
             developerAccountEmail={developerAccountEmail}
             onSaveDeveloperAccount={saveDeveloperAccount}
             onSetUserLicense={handleSetUserLicense}
+            allLicenses={allLicenses}
             onNavigate={navigateTo}
           />
         );
