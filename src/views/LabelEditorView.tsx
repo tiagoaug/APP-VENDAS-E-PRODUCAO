@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import jsPDF from 'jspdf';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Printer as NetworkPrinter } from '@capgo/capacitor-printer';
 import { toQRDataURL } from '../utils/qrCode';
 import {
-  Type, ImagePlus, QrCode, Calendar, Minus, Square, Trash2, Copy, Save, Printer,
+  Type, ImagePlus, QrCode, Calendar, Minus, Square, Trash2, Copy, Save, Printer, Wifi,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Plus, Check, X, ZoomIn, ZoomOut,
   Contrast, Crop as CropIcon, Download, Eye, EyeOff, Lock, Unlock, Layers as LayersIcon,
   Maximize2, Minimize2, Image as ImageIcon2, ChevronDown, Ruler as RulerIcon, RotateCw, Wrench, Grid3x3, Tag, Radius,
@@ -713,6 +714,32 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
       toast.show('Erro ao gerar PDF: ' + (err?.message || err));
     } finally {
       setSharingPdf(false);
+    }
+  };
+
+  // Segundo caminho de impressão, além da térmica Bluetooth (handlePrint/printAbleMarkLabel):
+  // AirPrint no iOS / impressoras de rede no Android — funciona em QUALQUER plataforma,
+  // inclusive iOS, onde a impressora térmica Bluetooth Classic não está disponível. Junta as
+  // etiquetas (1 por item em modo lote) num PDF só, no tamanho físico exato da etiqueta, e
+  // entrega pro plugin nativo, que abre a folha de impressão do sistema.
+  const [isPrintingNetwork, setIsPrintingNetwork] = useState(false);
+  const handleNetworkPrint = async () => {
+    setIsPrintingNetwork(true);
+    try {
+      const urls = await renderAllFrames();
+      const orientation = widthMm > heightMm ? 'landscape' : 'portrait';
+      const doc = new jsPDF({ unit: 'mm', format: [widthMm, heightMm], orientation });
+      urls.forEach((url, i) => {
+        if (i > 0) doc.addPage([widthMm, heightMm], orientation);
+        doc.addImage(url, 'PNG', 0, 0, widthMm, heightMm);
+      });
+      const pdfDataUri = doc.output('datauristring');
+      const base64 = pdfDataUri.split('base64,')[1] || pdfDataUri;
+      await NetworkPrinter.printBase64({ data: base64, mimeType: 'application/pdf', name: name || 'Etiqueta' });
+    } catch (err: any) {
+      toast.show('Erro ao imprimir: ' + (err?.message || err));
+    } finally {
+      setIsPrintingNetwork(false);
     }
   };
 
@@ -1811,22 +1838,40 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           </button>
         </div>
       </Modal>
-      {/* Card "Impressão" — ponto de entrada único pro fluxo de impressão (Android/Web, nunca
-          iOS: nem Ablemark Bluetooth Classic sem MFi nem Epson sem SDK integrado funcionam lá).
-          Ao tocar, abre o preview (LabelPrintPreviewModal) que já reúne pré-visualização da
-          etiqueta + conexão/marca da impressora (PrinterConnectionCard, Ablemark/Epson) + ajustes
-          de impressão num só lugar — em vez de deixar a conexão sempre visível e ocupando espaço
-          aqui no rodapé mesmo fora da hora de imprimir. */}
-      {isPrinterUiPlatform() && (
-        <button
-          type="button"
-          onClick={handleOpenPrintPreview}
-          data-guide-anchor="labelEditor.imprimir"
-          className="flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
-        >
-          <Printer size={14} /> Impressão
-        </button>
-      )}
+      {/* Card "Impressão" — dois caminhos possíveis, lado a lado. "Impressão" abre o preview
+          (LabelPrintPreviewModal, térmica Bluetooth Ablemark/Epson) e só existe Android/Web
+          (nem Bluetooth Classic sem MFi nem Epson sem SDK integrado funcionam no iOS).
+          "AirPrint / Rede" é o caminho novo: funciona em TODA plataforma, inclusive iOS, e
+          manda a etiqueta pra qualquer impressora Wi-Fi comum via folha nativa do sistema. */}
+      <div className={`flex flex-col gap-2 p-2 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+        <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 px-1 text-center">Impressão de Etiquetas</p>
+        <div className="flex gap-2">
+          {isPrinterUiPlatform() && (
+            <button
+              type="button"
+              onClick={handleOpenPrintPreview}
+              data-guide-anchor="labelEditor.imprimir"
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
+            >
+              <Printer size={14} /> Impressão
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleNetworkPrint}
+            disabled={isPrintingNetwork}
+            data-guide-anchor="labelEditor.imprimirRede"
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <Wifi size={14} className="text-sky-500" /> {isPrintingNetwork ? 'Abrindo...' : 'AirPrint / Rede'}
+          </button>
+        </div>
+        <p className="text-[9px] font-medium tracking-wide normal-case text-slate-400 px-1 text-center leading-snug">
+          {isPrinterUiPlatform()
+            ? <><strong>Impressão</strong> usa a impressora térmica conectada por Bluetooth (Ablemark/Epson), no tamanho exato da etiqueta. <strong>AirPrint / Rede</strong> manda pra qualquer impressora Wi-Fi da rede — inclui iOS, onde a conexão Bluetooth não está disponível.</>
+            : <>Manda a etiqueta pra qualquer impressora Wi-Fi da rede (AirPrint no iOS, impressoras de rede no Android).</>}
+        </p>
+      </div>
     </div>
   );
 
