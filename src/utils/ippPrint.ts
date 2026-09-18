@@ -58,12 +58,29 @@ export async function printPdfViaIpp(
     requestBody.set(header, 0);
     requestBody.set(pdfBytes, header.length);
 
-    const httpUrl = `http://${host}:${port}${resourcePath}`;
-    const response = await fetch(httpUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/ipp' },
-      body: requestBody,
-    });
+    // Sem timeout, um IP errado/inalcançável deixa o fetch() pendurado por muito tempo (o
+    // timeout padrão de conexão TCP costuma passar de 1 minuto) — 10s é mais que suficiente
+    // pra uma resposta numa rede local; se não responder nesse prazo, quase certamente não
+    // tem impressora nesse IP.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    let response: Response;
+    try {
+      const httpUrl = `http://${host}:${port}${resourcePath}`;
+      response = await fetch(httpUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/ipp' },
+        body: requestBody,
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return { success: false, error: 'Nenhuma resposta da impressora nesse IP (tempo esgotado). Confirme o endereço e se está na mesma rede.' };
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       return { success: false, error: `HTTP ${response.status}` };
