@@ -8,7 +8,16 @@ service cloud.firestore {
 
     // --- Global Helpers ---
     function isSignedIn() { return request.auth != null; }
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    // Licenciamento comercial: users/{userId}/appConfig/license (fora da regra coringa
+    // abaixo, com regra própria) — sem o doc, considera licença válida (contas legadas/sem
+    // cobrança configurada nunca ficam travadas à toa). Só existe hoje pra vendas públicas
+    // futuras; a conta de desenvolvimento nunca cria esse doc pra si mesma. `get()`/`exists()`
+    // aqui NÃO reavaliam a regra do documento buscado (sem recursão), só leem o dado bruto.
+    function hasActiveLicense(userId) {
+      let licensePath = /databases/$(database)/documents/users/$(userId)/appConfig/license;
+      return !exists(licensePath) || get(licensePath).data.expiresAt > request.time.toMillis();
+    }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId && hasActiveLicense(userId); }
     function isEmailVerified() { return request.auth.token.email_verified == true; }
     // Só a conta de desenvolvimento pode publicar novos modelos/exemplos nas coleções
     // compartilhadas entre contas (categoryTemplates, gridTemplates, colorTemplates,
@@ -181,12 +190,22 @@ service cloud.firestore {
         allow create, update: if isOwner(userId) && isValidCatalogProfile(incoming());
       }
 
+      // Licença comercial — excluída da regra coringa abaixo (que já exige licença ativa via
+      // isOwner) de propósito: precisa ficar legível mesmo com a licença VENCIDA, pra mostrar
+      // a data certa na tela de bloqueio. Só a conta de desenvolvimento escreve (nunca o
+      // próprio dono da conta — senão qualquer um se auto-renovaria).
+      match /appConfig/license {
+        allow read: if isSignedIn() && (request.auth.uid == userId || isTemplateAdmin());
+        allow write: if isTemplateAdmin();
+      }
+
       match /{collection}/{document=**} {
         allow read, write: if isOwner(userId)
           && collection != 'blingIntegration'
           && collection != 'catalogLinks'
           && collection != 'catalogRequests'
-          && collection != 'catalogProfiles';
+          && collection != 'catalogProfiles'
+          && collection != 'appConfig';
       }
     }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight, Terminal, X, Copy, Trash2 } from 'lucide-react';
+import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight, Terminal, X, Copy, Trash2, KeyRound, Check } from 'lucide-react';
 import { Clipboard } from '@capacitor/clipboard';
 import { ViewType } from '../types';
 import { TEMPLATE_ADMIN_EMAIL } from '../utils/templateAdmin';
@@ -11,6 +11,9 @@ interface DeveloperAccountViewProps {
   currentUserEmail: string | null;
   developerAccountEmail: string | null;
   onSaveDeveloperAccount: (email: string | null) => Promise<void>;
+  // Licenciamento comercial — grava/remove a data de expiração de OUTRA conta (a própria
+  // firestore.rules exige ser conta de desenvolvimento pra escrever, isto aqui é só a UI).
+  onSetUserLicense: (targetUid: string, expiresAt: number | null) => Promise<void>;
   onNavigate: (view: ViewType) => void;
 }
 
@@ -21,8 +24,15 @@ interface DeveloperAccountViewProps {
 // nunca vira uma brecha de autopromoção); 2) as AÇÕES que só essa conta pode fazer (hoje só
 // "Configurações Padrão pra Novos Usuários", movida pra cá de dentro de Mais > Acessibilidade —
 // futuras ações de dev entram aqui do mesmo jeito, sem espalhar pelo resto de Configurações).
-export default function DeveloperAccountView({ isDarkMode, currentUserEmail, developerAccountEmail, onSaveDeveloperAccount, onNavigate }: DeveloperAccountViewProps) {
+export default function DeveloperAccountView({ isDarkMode, currentUserEmail, developerAccountEmail, onSaveDeveloperAccount, onSetUserLicense, onNavigate }: DeveloperAccountViewProps) {
   const [isSaving, setIsSaving] = useState(false);
+  // Licenciamento comercial — UID do cliente + data de vencimento, digitados manualmente por
+  // enquanto (ainda não existe integração automática com pagamento). O UID se pega em
+  // Firebase Console > Authentication, buscando pelo e-mail do cliente.
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [licenseUid, setLicenseUid] = useState('');
+  const [licenseDate, setLicenseDate] = useState('');
+  const [isSavingLicense, setIsSavingLicense] = useState(false);
   // "Modo Diagnóstico" — painel de log em tela pra depurar bugs difíceis de reproduzir sem
   // Mac/Xcode (ver lib/authDiagLog.ts). Nasceu do bug de login iOS não persistindo, mas fica
   // aqui reaproveitável pra qualquer bug parecido no futuro — qualquer `logAuthDiag()` no app
@@ -63,6 +73,45 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
       toast.show('Erro ao salvar: ' + (e?.message || e));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveLicense = async () => {
+    if (!licenseUid.trim() || !licenseDate) {
+      toast.show('Preencha o UID do cliente e a data de vencimento.');
+      return;
+    }
+    setIsSavingLicense(true);
+    try {
+      const expiresAt = new Date(licenseDate + 'T23:59:59').getTime();
+      await onSetUserLicense(licenseUid, expiresAt);
+      toast.show(`Licença definida até ${new Date(expiresAt).toLocaleDateString('pt-BR')}.`);
+      setShowLicenseModal(false);
+      setLicenseUid('');
+      setLicenseDate('');
+    } catch (e: any) {
+      toast.show('Erro ao salvar licença: ' + (e?.message || e));
+    } finally {
+      setIsSavingLicense(false);
+    }
+  };
+
+  const handleRemoveLicense = async () => {
+    if (!licenseUid.trim()) {
+      toast.show('Preencha o UID do cliente.');
+      return;
+    }
+    setIsSavingLicense(true);
+    try {
+      await onSetUserLicense(licenseUid, null);
+      toast.show('Licença removida — conta liberada sem data de vencimento.');
+      setShowLicenseModal(false);
+      setLicenseUid('');
+      setLicenseDate('');
+    } catch (e: any) {
+      toast.show('Erro ao remover licença: ' + (e?.message || e));
+    } finally {
+      setIsSavingLicense(false);
     }
   };
 
@@ -173,6 +222,23 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
             </div>
             <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
           </button>
+          <button
+            onClick={() => setShowLicenseModal(true)}
+            title="Licenças de Clientes"
+            aria-label="Gerenciar licenças de clientes"
+            className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-50'}`}
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400">
+                <KeyRound size={20} />
+              </div>
+              <div className="text-left">
+                <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Licenças de Clientes</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Definir ou remover data de vencimento por conta</p>
+              </div>
+            </div>
+            <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+          </button>
         </div>
         <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1">
           O botão "Salvar Como Padrão para Novas Contas" dentro de Vendas &gt; Filtros e Configurações também só aparece pra esta conta.
@@ -243,6 +309,73 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
                   <Trash2 size={14} /> Limpar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLicenseModal && (
+        <div className="fixed inset-0 z-[200000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLicenseModal(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md flex flex-col rounded-[2rem] shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+          >
+            <div className={`p-5 flex items-center justify-between gap-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                  <KeyRound size={18} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Licenças de Clientes</h3>
+              </div>
+              <button type="button" onClick={() => setShowLicenseModal(false)} className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} aria-label="Fechar">
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-4">
+              <p className="text-[10px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
+                O UID do cliente se pega no Firebase Console → Authentication, buscando pelo
+                e-mail da conta dele. Sem licença cadastrada, a conta nunca fica bloqueada.
+              </p>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">UID do Cliente</label>
+                <input
+                  type="text"
+                  value={licenseUid}
+                  onChange={(e) => setLicenseUid(e.target.value)}
+                  placeholder="Ex: aZ1bC2dE3fG4hI5jK6lM7nO8pQ9"
+                  className={`w-full px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Vencimento da Licença</label>
+                <input
+                  type="date"
+                  value={licenseDate}
+                  onChange={(e) => setLicenseDate(e.target.value)}
+                  className={`w-full px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveLicense}
+                disabled={isSavingLicense}
+                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <Check size={15} /> {isSavingLicense ? 'Salvando...' : 'Definir Vencimento'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveLicense}
+                disabled={isSavingLicense}
+                title="Remove a data de vencimento — a conta passa a não ter mais restrição de licença"
+                className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-40 ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Remover Licença (Liberar Sem Vencimento)
+              </button>
             </div>
           </div>
         </div>

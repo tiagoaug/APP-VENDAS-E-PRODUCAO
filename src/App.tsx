@@ -8,6 +8,7 @@ import {
   ShoppingCart,
   ShoppingBag,
   ArrowLeft,
+  Lock,
   ArrowRight,
   Check,
   Settings,
@@ -70,7 +71,7 @@ import { ptBR } from "date-fns/locale";
 import { auth, db, logout } from "./lib/firebase";
 import { readAuthDiagLog, clearAuthDiagLog } from "./lib/authDiagLog";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
+import { doc, collection, query, where, getDocs, deleteField, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
 import { firebaseService, deepClean } from "./services/firebaseService";
 import { notificationService, ReminderNotification } from "./services/notificationService";
 import { Capacitor } from "@capacitor/core";
@@ -779,6 +780,35 @@ export default function App() {
   // state (não variável local do useEffect) pra poder ser lido pelo efeito de auto-disparo
   // do Assistente de Configuração Inicial, que precisa esperar o gate resolver primeiro.
   const [collabGateReady, setCollabGateReady] = useState(false);
+
+  // Licenciamento comercial — users/{uid}/appConfig/license (ver firestore.rules). Sem doc
+  // (contas legadas/de teste, inclusive a nossa própria), considera sempre válida; só trava
+  // quando existe um `expiresAt` no passado. `checked` evita mostrar a tela de bloqueio antes
+  // do primeiro snapshot chegar (senão toda conta "piscaria" bloqueada por um instante).
+  const [licenseState, setLicenseState] = useState<{ checked: boolean; expiresAt: number | null }>({ checked: false, expiresAt: null });
+  useEffect(() => {
+    if (!user) { setLicenseState({ checked: false, expiresAt: null }); return; }
+    const ref = doc(db, `users/${user.uid}/appConfig/license`);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => setLicenseState({ checked: true, expiresAt: snap.exists() ? (snap.data().expiresAt ?? null) : null }),
+      (error) => { console.error('[license] Falha ao ler licença', error); setLicenseState({ checked: true, expiresAt: null }); },
+    );
+    return unsub;
+  }, [user]);
+  const licenseExpired = licenseState.checked && licenseState.expiresAt !== null && licenseState.expiresAt < Date.now();
+  // Só a conta de desenvolvimento pode chamar isto de verdade (firestore.rules: write em
+  // appConfig/license exige isTemplateAdmin()) — a tela que expõe isto (DeveloperAccountView)
+  // já esconde o botão pra qualquer outra conta, isto aqui é só o mecanismo de escrita.
+  // `expiresAt: null` remove a licença (apaga o doc) — sem doc, a conta nunca é bloqueada.
+  const handleSetUserLicense = async (targetUid: string, expiresAt: number | null) => {
+    const ref = doc(db, `users/${targetUid.trim()}/appConfig/license`);
+    if (expiresAt === null) {
+      await deleteDoc(ref);
+    } else {
+      await setDoc(ref, { expiresAt, updatedAt: Date.now() });
+    }
+  };
 
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [onboardingStatusDecided, setOnboardingStatusDecided] = useState(false);
@@ -9122,6 +9152,7 @@ export default function App() {
             currentUserEmail={user?.email ?? null}
             developerAccountEmail={developerAccountEmail}
             onSaveDeveloperAccount={saveDeveloperAccount}
+            onSetUserLicense={handleSetUserLicense}
             onNavigate={navigateTo}
           />
         );
@@ -9832,6 +9863,50 @@ export default function App() {
         <LoginView />
         {authDiagPanel}
       </>
+    );
+  }
+
+  // Licenciamento comercial — trava ANTES de assinar qualquer coleção de dados do negócio
+  // (produtos, vendas, etc.), tanto pra não gastar leituras à toa numa conta bloqueada quanto
+  // pra nunca mostrar nem um flash da tela normal antes do bloqueio. A trava de verdade é do
+  // lado do servidor (firestore.rules, isOwner() exige hasActiveLicense) — isto aqui é só a
+  // experiência (mensagem clara em vez de um erro de permissão cru em cada card).
+  if (!licenseState.checked) {
+    return (
+      <div className={`h-screen flex items-center justify-center ${isDarkMode ? "bg-slate-950" : "bg-slate-50"}`}>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+  if (licenseExpired) {
+    return (
+      <div className={`h-screen flex items-center justify-center p-6 ${isDarkMode ? "bg-slate-950" : "bg-slate-50"}`}>
+        <div className={`w-full max-w-sm rounded-[2rem] p-8 flex flex-col items-center gap-4 text-center ${isDarkMode ? "bg-slate-900 border border-slate-800" : "bg-white shadow-xl"}`}>
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isDarkMode ? "bg-rose-500/15 text-rose-400" : "bg-rose-50 text-rose-500"}`}>
+            <Lock size={28} strokeWidth={2.5} />
+          </div>
+          <h2 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Licença Expirada</h2>
+          <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 leading-relaxed">
+            {licenseState.expiresAt
+              ? `Sua licença venceu em ${new Date(licenseState.expiresAt).toLocaleDateString('pt-BR')}. Renove no nosso site pra continuar usando o LIM.O APP.`
+              : 'Sua licença venceu. Renove no nosso site pra continuar usando o LIM.O APP.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white active:scale-95 transition-all"
+          >
+            Já Renovei — Verificar Novamente
+          </button>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"}`}
+          >
+            Sair / Trocar de Conta
+          </button>
+        </div>
+      </div>
     );
   }
 
