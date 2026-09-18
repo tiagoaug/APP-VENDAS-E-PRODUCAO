@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight, Terminal, X, Copy, Trash2, KeyRound, Check, Pencil } from 'lucide-react';
+import { ShieldCheck, Mail, ArrowRightLeft, RotateCcw, Bookmark, ChevronRight, Terminal, X, Copy, Trash2, KeyRound, Check, Pencil, Search } from 'lucide-react';
 import { Clipboard } from '@capacitor/clipboard';
 import { ViewType } from '../types';
 import { TEMPLATE_ADMIN_EMAIL } from '../utils/templateAdmin';
@@ -63,7 +63,20 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
     setLicenseDate(new Date(entry.expiresAt).toISOString().slice(0, 10));
     setShowLicenseForm(true);
   };
-  const sortedLicenses = (allLicenses || []).slice().sort((a, b) => a.expiresAt - b.expiresAt);
+  // Busca por chave (UID) ou nome do cliente — útil assim que a lista crescer com clientes
+  // de verdade, pra não precisar rolar tudo pra achar um.
+  const [licenseSearch, setLicenseSearch] = useState('');
+  const closeLicensePanel = () => {
+    setShowLicensePanel(false);
+    setLicenseSearch('');
+  };
+  const sortedLicenses = (allLicenses || [])
+    .filter(e => {
+      const q = licenseSearch.trim().toLowerCase();
+      if (!q) return true;
+      return e.uid.toLowerCase().includes(q) || (e.customerLabel || '').toLowerCase().includes(q);
+    })
+    .sort((a, b) => a.expiresAt - b.expiresAt);
   // "Modo Diagnóstico" — painel de log em tela pra depurar bugs difíceis de reproduzir sem
   // Mac/Xcode (ver lib/authDiagLog.ts). Nasceu do bug de login iOS não persistindo, mas fica
   // aqui reaproveitável pra qualquer bug parecido no futuro — qualquer `logAuthDiag()` no app
@@ -342,7 +355,7 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
       )}
 
       {showLicensePanel && (
-        <div className="fixed inset-0 z-[200000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLicensePanel(false)}>
+        <div className="fixed inset-0 z-[200000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={closeLicensePanel}>
           <div
             onClick={(e) => e.stopPropagation()}
             className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
@@ -354,7 +367,7 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
                 </div>
                 <h3 className={`text-sm font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Licenças de Clientes</h3>
               </div>
-              <button type="button" onClick={() => setShowLicensePanel(false)} className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} aria-label="Fechar">
+              <button type="button" onClick={closeLicensePanel} className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`} aria-label="Fechar">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
@@ -368,10 +381,25 @@ export default function DeveloperAccountView({ isDarkMode, currentUserEmail, dev
                 <KeyRound size={15} /> Nova Licença
               </button>
 
+              {allLicenses !== null && allLicenses.length > 0 && (
+                <div className="relative">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={licenseSearch}
+                    onChange={(e) => setLicenseSearch(e.target.value)}
+                    placeholder="Buscar por nome ou UID..."
+                    className={`w-full pl-9 pr-3 py-2.5 rounded-xl border-2 text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400'}`}
+                  />
+                </div>
+              )}
+
               {allLicenses === null ? (
                 <p className="text-[10px] font-bold text-slate-400 text-center py-6">Carregando...</p>
-              ) : sortedLicenses.length === 0 ? (
+              ) : allLicenses.length === 0 ? (
                 <p className="text-[10px] font-bold text-slate-400 text-center py-6">Nenhum cliente com licença configurada ainda — todas as contas continuam liberadas sem restrição.</p>
+              ) : sortedLicenses.length === 0 ? (
+                <p className="text-[10px] font-bold text-slate-400 text-center py-6">Nenhum cliente encontrado pra "{licenseSearch}".</p>
               ) : (
                 sortedLicenses.map(entry => {
                   const expired = entry.expiresAt < Date.now();
