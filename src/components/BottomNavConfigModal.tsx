@@ -1,4 +1,5 @@
-import { Reorder, useDragControls } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   X, ShoppingCart, ShoppingBag, Factory, Building2, Truck, DollarSign, User as UserIcon, UserCog,
   Eye, EyeOff, LayoutDashboard, Settings, Pin, PinOff,
@@ -62,24 +63,25 @@ interface NavRowProps {
   // Tile menor pra caber na fileira da barra fixa (junto de Home/Mais); a expansível usa o
   // tamanho normal, igual ao painel "Mais" de verdade.
   compact?: boolean;
+  onPointerDown: (e: React.PointerEvent) => void;
+  isDragging?: boolean;
+  dragStyle?: React.CSSProperties;
 }
 
-// Item arrastável — useDragControls precisa viver num componente próprio por linha (não dá pra
-// chamar o hook direto dentro do .map do pai), mesmo padrão já usado em DashboardConfigView e
-// DeliveryRouteBuilderView/DeliveryRouteDetailView (Reorder.Item + alça própria via onPointerDown,
-// já testado em touch Android — nada de drag nativo HTML5, que não funciona em toque). Ocultar/
-// Fixar viraram botões pequenos direto no próprio ícone (canto superior), a pedido do Tiago —
-// as antigas setas pra cima/baixo saíram, já que arrastar cobre a mesma necessidade.
-function NavRow({ item, isHidden, isPinned, isDarkMode, onToggleHidden, onTogglePinned, compact }: NavRowProps) {
-  const controls = useDragControls();
-
+// Tile de exibição — o arrasto de verdade é controlado pelo DraggableNavGrid (pai), que faz
+// hit-test manual em pixels; motion.js `Reorder` foi trocado por isso porque seu algoritmo de
+// reordenação só funciona bem em LISTA de eixo único, não numa grade com quebra de linha (o
+// arrasto ficava "travado"/não reordenava direito ao mover entre linhas — reportado pelo
+// Tiago). `layout` anima a realocação suave dos tiles parados; o tile sendo arrastado sai do
+// fluxo da grade (position: fixed) e segue o dedo livremente, abrindo espaço onde estava.
+function NavRow({ item, isHidden, isPinned, isDarkMode, onToggleHidden, onTogglePinned, compact, onPointerDown, isDragging, dragStyle }: NavRowProps) {
   return (
-    <Reorder.Item
-      value={item}
-      dragListener={false}
-      dragControls={controls}
-      onPointerDown={(e: React.PointerEvent) => { e.preventDefault(); controls.start(e); }}
-      className={`relative flex flex-col items-center gap-1 rounded-2xl border cursor-grab active:cursor-grabbing select-none touch-none transition-all ${compact ? 'p-1.5' : 'p-2.5'} ${isHidden ? 'opacity-40' : ''} ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+    <motion.div
+      layout={!isDragging}
+      data-item-id={item.id}
+      onPointerDown={onPointerDown}
+      style={dragStyle}
+      className={`relative flex flex-col items-center gap-1 rounded-2xl border select-none touch-none ${isDragging ? 'cursor-grabbing shadow-2xl scale-105 z-50' : 'cursor-grab transition-colors'} ${compact ? 'p-1.5' : 'p-2.5'} ${isHidden ? 'opacity-40' : ''} ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'} ${isDragging ? (isDarkMode ? 'bg-slate-800' : 'bg-white') : ''}`}
     >
       <div className="absolute -top-1.5 -right-1.5 flex items-center gap-1 z-10">
         <button
@@ -109,7 +111,125 @@ function NavRow({ item, isHidden, isPinned, isDarkMode, onToggleHidden, onToggle
         {item.icon}
       </div>
       <p className={`text-[7px] font-black tracking-tight uppercase text-center leading-tight truncate max-w-full ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
-    </Reorder.Item>
+    </motion.div>
+  );
+}
+
+interface DraggableNavGridProps {
+  items: NavCandidate[];
+  onReorder: (newOrder: NavCandidate[]) => void;
+  hidden: BottomNavItemId[];
+  pinnedIds: Set<BottomNavItemId>;
+  isDarkMode: boolean;
+  onToggleHidden: (id: BottomNavItemId) => void;
+  onTogglePinned: (id: BottomNavItemId) => void;
+  compact?: boolean;
+  className?: string;
+}
+
+// Grade com arrasto livre 2D de verdade: segura um ícone, arrasta pra qualquer posição da
+// grade (não só cima/baixo) e ele troca de lugar com o que estiver por baixo do dedo,
+// empurrando os outros e abrindo espaço — pedido explícito do Tiago depois que o Reorder do
+// framer-motion se mostrou não confiável numa grade com quebra de linha. Hit-test manual via
+// getBoundingClientRect de cada tile a cada pointermove; o tile arrastado vira position:fixed
+// (sai do fluxo da grade, abrindo o buraco) e segue o dedo por transform; os outros usam
+// `layout` do framer-motion pra deslizar suavemente pro novo lugar.
+function DraggableNavGrid({ items, onReorder, hidden, pinnedIds, isDarkMode, onToggleHidden, onTogglePinned, compact, className }: DraggableNavGridProps) {
+  const [order, setOrder] = useState(items);
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [draggingId, setDraggingId] = useState<BottomNavItemId | null>(null);
+  const draggingIdRef = useRef<BottomNavItemId | null>(null);
+  const dragOriginRef = useRef({ left: 0, top: 0, width: 0, height: 0 });
+  const pointerStartRef = useRef({ x: 0, y: 0 });
+  const [dragDelta, setDragDelta] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    // Só resincroniza com o pai quando NÃO tem arrasto em andamento (ver draggingIdRef) — evita
+    // que um re-render por outro motivo (ex.: toggle de ocultar/fixar num outro tile) interrompa
+    // um arrasto ativo nesta grade.
+    if (!draggingIdRef.current) setOrder(items);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  const handlePointerDown = (id: BottomNavItemId, e: React.PointerEvent) => {
+    e.preventDefault();
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+    const rect = target.getBoundingClientRect();
+    dragOriginRef.current = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    draggingIdRef.current = id;
+    setDraggingId(id);
+    setDragDelta({ x: 0, y: 0 });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const dragId = draggingIdRef.current;
+    if (!dragId) return;
+    setDragDelta({ x: e.clientX - pointerStartRef.current.x, y: e.clientY - pointerStartRef.current.y });
+
+    const nodes = containerRef.current?.querySelectorAll<HTMLElement>('[data-item-id]');
+    if (!nodes) return;
+    for (const node of nodes) {
+      const targetId = node.getAttribute('data-item-id');
+      if (!targetId || targetId === dragId) continue;
+      const rect = node.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const current = orderRef.current;
+        const fromIdx = current.findIndex(i => i.id === dragId);
+        const toIdx = current.findIndex(i => i.id === targetId);
+        if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+          const next = [...current];
+          const [moved] = next.splice(fromIdx, 1);
+          next.splice(toIdx, 0, moved);
+          setOrder(next);
+        }
+        break;
+      }
+    }
+  };
+
+  const endDrag = () => {
+    if (draggingIdRef.current) onReorder(orderRef.current);
+    draggingIdRef.current = null;
+    setDraggingId(null);
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      className={className}
+    >
+      {order.map(item => {
+        const isDragging = draggingId === item.id;
+        return (
+          <NavRow
+            key={item.id}
+            item={item}
+            compact={compact}
+            isHidden={hidden.includes(item.id)}
+            isPinned={pinnedIds.has(item.id)}
+            isDarkMode={isDarkMode}
+            onToggleHidden={onToggleHidden}
+            onTogglePinned={onTogglePinned}
+            onPointerDown={(e) => handlePointerDown(item.id, e)}
+            isDragging={isDragging}
+            dragStyle={isDragging ? {
+              position: 'fixed',
+              left: dragOriginRef.current.left + dragDelta.x,
+              top: dragOriginRef.current.top + dragDelta.y,
+              width: dragOriginRef.current.width,
+              height: dragOriginRef.current.height,
+            } : undefined}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -245,19 +365,16 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
                   {expandableItems.length === 0 ? (
                     <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wide text-center py-3">Tudo fixado — nada pra expandir</p>
                   ) : (
-                    <Reorder.Group values={expandableItems} onReorder={reorderExpandable} className="grid grid-cols-3 gap-2">
-                      {expandableItems.map(item => (
-                        <NavRow
-                          key={item.id}
-                          item={item}
-                          isHidden={config.hidden.includes(item.id)}
-                          isPinned={false}
-                          isDarkMode={isDarkMode}
-                          onToggleHidden={toggleHidden}
-                          onTogglePinned={togglePinned}
-                        />
-                      ))}
-                    </Reorder.Group>
+                    <DraggableNavGrid
+                      items={expandableItems}
+                      onReorder={reorderExpandable}
+                      hidden={config.hidden}
+                      pinnedIds={pinnedIds}
+                      isDarkMode={isDarkMode}
+                      onToggleHidden={toggleHidden}
+                      onTogglePinned={togglePinned}
+                      className="grid grid-cols-3 gap-2"
+                    />
                   )}
                 </div>
               </div>
@@ -276,20 +393,17 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
                       Nada fixado
                     </div>
                   ) : (
-                    <Reorder.Group values={pinnedItems} onReorder={reorderPinned} className="flex-1 min-w-0 grid grid-cols-3 gap-1">
-                      {pinnedItems.map(item => (
-                        <NavRow
-                          key={item.id}
-                          item={item}
-                          compact
-                          isHidden={config.hidden.includes(item.id)}
-                          isPinned={true}
-                          isDarkMode={isDarkMode}
-                          onToggleHidden={toggleHidden}
-                          onTogglePinned={togglePinned}
-                        />
-                      ))}
-                    </Reorder.Group>
+                    <DraggableNavGrid
+                      items={pinnedItems}
+                      onReorder={reorderPinned}
+                      hidden={config.hidden}
+                      pinnedIds={pinnedIds}
+                      isDarkMode={isDarkMode}
+                      onToggleHidden={toggleHidden}
+                      onTogglePinned={togglePinned}
+                      compact
+                      className="flex-1 min-w-0 grid grid-cols-3 gap-1"
+                    />
                   )}
                   <div className="flex flex-col items-center justify-center gap-0.5 w-12 shrink-0 rounded-xl bg-black/5 dark:bg-white/10 py-1.5">
                     <Settings size={14} className={isDarkMode ? 'text-slate-300' : 'text-slate-600'} />
