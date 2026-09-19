@@ -43,7 +43,6 @@ import {
   Calculator,
   Wand2,
   Sparkles,
-  RefreshCw,
   Settings,
   Percent,
   AlertTriangle,
@@ -2424,7 +2423,7 @@ function GenericConfigList({
           Não
         </button>
       </div>
-      {hint && <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-2 px-1">{hint}</p>}
+      {hint && <p className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest mt-2 px-1">{hint}</p>}
     </div>
   );
 
@@ -2983,7 +2982,7 @@ function GenericConfigList({
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-2" data-guide-anchor="mold.referencia">
-                  <label htmlFor="mold-reference" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Referência *</label>
+                  <label htmlFor="mold-reference" className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Referência *</label>
                   <div className="relative group">
                     <input id="mold-reference" type="text" value={editingItem?.metadata?.reference || editingItem?.metadata?.moldReference || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, reference: e.target.value.toUpperCase(), moldReference: e.target.value.toUpperCase() } } : null)} required title="Referência da Matriz" placeholder="EX: REF-01" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                     <button
@@ -2997,13 +2996,13 @@ function GenericConfigList({
                   </div>
                 </div>
                 <div className="flex flex-col gap-2" data-guide-anchor="mold.nome">
-                  <label htmlFor="mold-name" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Nome da Matriz *</label>
+                  <label htmlFor="mold-name" className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Nome da Matriz *</label>
                   <input id="mold-name" type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)} required title="Nome da Matriz" placeholder="NOME DA MATRIZ" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                 </div>
               </div>
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-2" data-guide-anchor="mold.categoria">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Categoria</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Categoria</label>
                   <button
                     type="button"
                     onClick={() => { setIsCategoryPickerOpen(true); setIsCreatingCategoryInline(false); setCategorySearch(''); }}
@@ -3042,7 +3041,7 @@ function GenericConfigList({
                           </button>
                         ))}
                         {moldCategoryNames.filter(name => name.toLowerCase().includes(categorySearch.toLowerCase())).length === 0 && (
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma categoria encontrada.</p>
+                          <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhuma categoria encontrada.</p>
                         )}
                       </div>
                       {onQuickAddCategory && (
@@ -3058,11 +3057,11 @@ function GenericConfigList({
                     </div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                      <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest leading-relaxed">
                         Salvo direto em Categorias — fica disponível pra qualquer outro cadastro do sistema, sem sair de Solados.
                       </p>
                       <div>
-                        <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Em qual aba de Categorias salvar?</label>
+                        <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Em qual aba de Categorias salvar?</label>
                         <div className="grid grid-cols-3 gap-2">
                           {CATEGORY_TYPE_OPTIONS.map(opt => (
                             <button
@@ -3070,7 +3069,7 @@ function GenericConfigList({
                               type="button"
                               onClick={() => setNewCategoryType(opt.type)}
                               data-guide-anchor="mold.categoriaTipo"
-                              className={`flex items-center justify-center py-2.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all ${newCategoryType === opt.type ? `${opt.color} border-transparent text-white shadow-lg` : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-400')}`}
+                              className={`flex items-center justify-center py-2.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all ${newCategoryType === opt.type ? `${opt.color} border-transparent text-white shadow-lg` : (isDarkMode ? 'bg-slate-800 border-slate-700 text-blue-300' : 'bg-slate-50 border-slate-100 text-blue-900')}`}
                             >
                               {opt.label}
                             </button>
@@ -3078,7 +3077,7 @@ function GenericConfigList({
                         </div>
                       </div>
                       <div>
-                        <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Categoria</label>
+                        <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Nome da Categoria</label>
                         <input
                           type="text"
                           value={newCategoryName}
@@ -3106,7 +3105,7 @@ function GenericConfigList({
                   )}
                 </Modal>
                 <div className="flex flex-col gap-2" data-guide-anchor="mold.fornecedor">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Fornecedor</label>
                   <button
                     type="button"
                     onClick={() => { setIsSupplierPickerOpen(true); setSupplierSearch(''); }}
@@ -3146,7 +3145,7 @@ function GenericConfigList({
                       </button>
                     ))}
                     {suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase())).length === 0 && (
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum fornecedor encontrado.</p>
+                      <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhum fornecedor encontrado.</p>
                     )}
                   </div>
                   {onQuickAddPerson && (
@@ -3187,7 +3186,7 @@ function GenericConfigList({
               )}
               {moldBuysReadySole && (
                 <div className="flex flex-col gap-2" data-guide-anchor="mold.custoSoladoPronto">
-                  <label htmlFor="mold-ready-sole-cost" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Valor Pago por Par (R$)</label>
+                  <label htmlFor="mold-ready-sole-cost" className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Valor Pago por Par (R$)</label>
                   <div className="relative group">
                     <input
                       id="mold-ready-sole-cost"
@@ -3224,7 +3223,7 @@ function GenericConfigList({
               )}
               {moldBuysMaterials && (<>
               <div className="flex flex-col gap-2" data-guide-anchor="mold.materialBase">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Material Base (Insumos)</label>
+                <label className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Material Base (Insumos)</label>
                 <button
                   type="button"
                   onClick={() => openMaterialPicker('base')}
@@ -3233,7 +3232,7 @@ function GenericConfigList({
                   {(() => {
                     const selected = productionConfigs.find(m => m.id === editingItem?.metadata?.baseMaterialId);
                     return (
-                      <span className={!selected ? 'opacity-40 normal-case' : ''}>
+                      <span className={!selected ? 'opacity-40 normal-case text-blue-900 dark:text-blue-300' : ''}>
                         {selected ? `${selected.name} (${selected.metadata?.reference}) - R$ ${selected.metadata?.baseCost || 0}` : 'Selecionar insumo para puxar preço...'}
                       </span>
                     );
@@ -3243,7 +3242,7 @@ function GenericConfigList({
               </div>
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-2" data-guide-anchor="mold.precoKg">
-                  <label htmlFor="mold-price" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Preço do Material / KG (R$)</label>
+                  <label htmlFor="mold-price" className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Preço do Material / KG (R$)</label>
                   <div className="relative group">
                     <input id="mold-price" type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => {
                       const pricePerKg = parseFloat(e.target.value) || 0;
@@ -3267,7 +3266,7 @@ function GenericConfigList({
                 </div>
                 <div className="flex flex-col gap-2" data-guide-anchor="mold.custoPorPar">
                   <div className="flex items-center justify-between">
-                    <label htmlFor="mold-unit-cost" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Custo por Par (R$)</label>
+                    <label htmlFor="mold-unit-cost" className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Custo por Par (R$)</label>
                     {averageWeightLive > 0 && editingItem?.metadata?.price && editingItem.metadata.price > 0 && (
                       <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-widest mr-1">
                         {averageWeightLive.toFixed(1)}g ÷ 1000 × R${editingItem.metadata.price}
@@ -3278,24 +3277,15 @@ function GenericConfigList({
                     <input id="mold-unit-cost" type="number" step="0.0001" value={editingItem?.metadata?.unitCost || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: parseFloat(e.target.value) } } : null)} title="Custo por par (calculado automaticamente ou informe manualmente)" placeholder={averageWeightLive > 0 && editingItem?.metadata?.price ? ((averageWeightLive / 1000) * (editingItem.metadata.price)).toFixed(4) : '0,00'} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                     <button
                       type="button"
-                      title="Recalcular com peso médio atual"
-                      aria-label="Recalcular custo por par com base no peso médio"
-                      onClick={() => {
-                        const pricePerKg = editingItem?.metadata?.price || 0;
-                        const avgW = averageWeightLive || 0;
-                        if (avgW > 0 && pricePerKg > 0) {
-                          const calc = parseFloat(((avgW / 1000) * pricePerKg).toFixed(4));
-                          setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: calc } } : null);
-                        } else {
-                          setActiveCalc({
-                            initialValue: editingItem?.metadata?.unitCost || 0,
-                            onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: val } } : null)
-                          });
-                        }
-                      }}
+                      title="Abrir Calculadora"
+                      aria-label="Abrir calculadora para definir custo por par"
+                      onClick={() => setActiveCalc({
+                        initialValue: editingItem?.metadata?.unitCost || 0,
+                        onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: val } } : null)
+                      })}
                       className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
                     >
-                      <RefreshCw size={16} />
+                      <Calculator size={16} />
                     </button>
                   </div>
                   {editingItem?.metadata?.unitCost && editingItem.metadata.unitCost > 0 && (
@@ -3307,7 +3297,7 @@ function GenericConfigList({
               </div>
               </>)}
               <div className="flex flex-col gap-2" data-guide-anchor="mold.estagioFluxo">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Estágio do Fluxo / Setor</label>
+                <label className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Estágio do Fluxo / Setor</label>
                 <button
                   type="button"
                   onClick={() => { setIsFlowTagPickerOpen(true); setIsCreatingFlowTagInline(false); setFlowTagSearch(''); }}
@@ -3346,7 +3336,7 @@ function GenericConfigList({
                         </button>
                       ))}
                       {flowTags.filter(t => t.name.toLowerCase().includes(flowTagSearch.toLowerCase())).length === 0 && (
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum fluxo/setor encontrado.</p>
+                        <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhum fluxo/setor encontrado.</p>
                       )}
                     </div>
                     {onQuickAddFlowTag && (
@@ -3362,11 +3352,11 @@ function GenericConfigList({
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                    <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest leading-relaxed">
                       Salvo direto em Fluxos de Setor — fica disponível pra qualquer outro cadastro do sistema, sem sair de Solados.
                     </p>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome do Fluxo / Setor</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Nome do Fluxo / Setor</label>
                       <input
                         type="text"
                         value={newFlowTagName}
@@ -3418,13 +3408,13 @@ function GenericConfigList({
                         >
                           <div className="flex flex-col min-w-0">
                             <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{m.name}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{m.metadata?.reference} • R$ {m.metadata?.baseCost || 0}/kg</span>
+                            <span className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">{m.metadata?.reference} • R$ {m.metadata?.baseCost || 0}/kg</span>
                           </div>
                           <ChevronRight size={16} className="text-indigo-400 shrink-0" />
                         </button>
                       ))}
                       {productionConfigs.filter(m => m.type === 'MATERIAL' && m.name.toLowerCase().includes(materialPickerSearch.toLowerCase())).length === 0 && (
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum insumo encontrado.</p>
+                        <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhum insumo encontrado.</p>
                       )}
                     </div>
                     {onQuickAddMaterial && (
@@ -3440,7 +3430,7 @@ function GenericConfigList({
                   </div>
                 ) : newMaterialItem ? (
                   <div className="flex flex-col gap-4">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                    <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest leading-relaxed">
                       Cadastro completo de Insumo — salvo direto em Insumos, fica disponível pra
                       qualquer outro cadastro do sistema, sem perder o progresso deste Solado.
                     </p>
@@ -3479,7 +3469,7 @@ function GenericConfigList({
               </Modal>
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2"><Grid3X3 size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Numeração / Grade do Solado</span></div>
+                  <div className="flex items-center gap-2"><Grid3X3 size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">Numeração / Grade do Solado</span></div>
                   <AnimatePresence>
                     {gridSuccess && (
                       <motion.div
@@ -3551,7 +3541,7 @@ function GenericConfigList({
                         >
                           <div className="flex flex-col flex-1 min-w-0">
                             <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                            <span className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest truncate">
                               {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
                             </span>
                           </div>
@@ -3567,7 +3557,7 @@ function GenericConfigList({
                         </div>
                       ))}
                       {grids.filter(g => g.type === GridType.SOLADO && g.name.toLowerCase().includes(gridSearchTerm.toLowerCase())).length === 0 && (
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade de solado encontrada.</p>
+                        <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade de solado encontrada.</p>
                       )}
                     </div>
                     <button
@@ -3581,9 +3571,9 @@ function GenericConfigList({
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingGridId ? 'Editando Grade' : 'Nova Grade'}</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">{editingGridId ? 'Editando Grade' : 'Nova Grade'}</p>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Grade</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Nome da Grade</label>
                       <input
                         type="text"
                         value={newGridName}
@@ -3593,7 +3583,7 @@ function GenericConfigList({
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Adicionar Numeração</label>
                       <div className="flex gap-2">
                         <input
                           type="text"
@@ -3646,7 +3636,7 @@ function GenericConfigList({
               {moldTracksWeight && (
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2"><Scale size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span></div>
+                  <div className="flex items-center gap-2"><Scale size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">Pesos por Tamanho (GR)</span></div>
                 </div>
 
                 <button
@@ -3696,7 +3686,7 @@ function GenericConfigList({
                               className={`w-full px-4 py-3 rounded-xl font-black text-xs text-right pr-16 outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500'}`}
                             />
                             <div className="absolute right-10 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                              <span className="text-[8px] font-black text-slate-400">GR</span>
+                              <span className="text-[8px] font-black text-blue-900 dark:text-blue-300">GR</span>
                             </div>
                             <button
                               type="button"
@@ -3749,7 +3739,7 @@ function GenericConfigList({
                   zIndex={75000}
                 >
                   <div className="flex flex-col gap-4">
-                    <p className="text-xs text-slate-500 font-medium">
+                    <p className="text-xs text-blue-900 dark:text-blue-300 font-medium">
                       Cadastre o peso médio para cada cor. Se tiver pesos diferentes por tamanho, cadastre também os tamanhos.
                     </p>
                     <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
@@ -3758,7 +3748,7 @@ function GenericConfigList({
                         const registeredColors = (colors || []).filter(c => registeredColorIds.has(c.id));
                         if (registeredColors.length === 0) {
                           return (
-                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest text-center py-8 px-4 leading-relaxed">
+                            <p className="text-xs text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-8 px-4 leading-relaxed">
                               Nenhuma cor cadastrada para esta matriz.<br />Selecione as cores em "Cores Disponíveis e Sub-Ref" antes de configurar os pesos.
                             </p>
                           );
@@ -3798,7 +3788,7 @@ function GenericConfigList({
                                     }}
                                     className={`w-full px-3 py-2 rounded-xl font-black text-xs text-right pr-10 outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500'}`}
                                   />
-                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400">GR</span>
+                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-blue-900 dark:text-blue-300">GR</span>
                                 </div>
                               </div>
                             </div>
@@ -3809,7 +3799,7 @@ function GenericConfigList({
                                   const sizeWeight = colorSizeWeights[size] || 0;
                                   return (
                                     <div key={size} className="flex flex-col gap-1">
-                                      <label className="text-[8px] font-black text-slate-400 uppercase text-center">{size}</label>
+                                      <label className="text-[8px] font-black text-blue-900 dark:text-blue-300 uppercase text-center">{size}</label>
                                       <input
                                         type="number"
                                         value={sizeWeight || ''}
@@ -3862,7 +3852,7 @@ function GenericConfigList({
 
                 <div className="flex items-center justify-between mt-4 pt-6 border-t-2 border-dashed border-slate-100 dark:border-slate-800" data-guide-anchor="mold.pesoGradeTotal">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Peso da Grade (Soma GR)</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-1">Peso da Grade (Soma GR)</label>
                     <div className="relative group">
                       <input
                         type="number"
@@ -3900,14 +3890,14 @@ function GenericConfigList({
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Rendimento por KG</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 mb-1">Rendimento por KG</p>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
                         {averageWeightLive > 0 ? (1000 / averageWeightLive).toFixed(2) : '0.00'}
                       </span>
-                      <span className="text-xs font-black text-slate-400 uppercase">PRS / KG</span>
+                      <span className="text-xs font-black text-blue-900 dark:text-blue-300 uppercase">PRS / KG</span>
                     </div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                    <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest mt-1">
                       1000 g ÷ Média ({averageWeightLive.toFixed(1)} g)
                     </p>
                   </div>
@@ -3917,7 +3907,7 @@ function GenericConfigList({
               {moldBuysMaterials && (
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-6">
-                  <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Layers size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Composição de Materiais</span></div><span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Defina o consumo de insumos</span></div>
+                  <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Layers size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">Composição de Materiais</span></div><span className="text-xs font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Defina o consumo de insumos</span></div>
                   <button
                     type="button"
                     onClick={() => { const currentComposition = editingItem?.metadata?.composition || []; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: [...currentComposition, { materialId: '', quantity: 0, type: 'weight' }] } } : null); }}
@@ -3933,7 +3923,7 @@ function GenericConfigList({
                   {(editingItem?.metadata?.composition || []).map((item: any, index: number) => (
                     <div key={index} data-guide-anchor="mold.composicaoItem" className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                       <div className="col-span-6 flex flex-col gap-1">
-                        <label className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Insumo / Material</label>
+                        <label className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-1">Insumo / Material</label>
                         <button
                           type="button"
                           onClick={() => openMaterialPicker(index)}
@@ -3945,8 +3935,8 @@ function GenericConfigList({
                           <ChevronRight size={14} className="text-slate-400 shrink-0" />
                         </button>
                       </div>
-                      <div className="col-span-3 flex flex-col gap-1"><label htmlFor={`qty-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Quant / %</label><div className="relative group"><input id={`qty-${index}`} type="number" step="0.001" value={item.quantity || ''} title="Quantidade" placeholder="0,000" onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], materialId: e.target.value, quantity: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade" onClick={() => setActiveCalc({ initialValue: item.quantity || 0, onResult: (val) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], quantity: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
-                      <div className="col-span-2 flex flex-col gap-1"><label className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Tipo</label><button type="button" title="Alternar Tipo" aria-label="Alternar entre peso e porcentagem" onClick={() => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], type: item.type === 'weight' ? 'percentage' : 'weight' }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest border-2 transition-all ${item.type === 'percentage' ? 'bg-amber-500 border-amber-600 text-white' : 'bg-indigo-500 border-indigo-600 text-white'}`}>{item.type === 'percentage' ? '%' : 'GR'}</button></div>
+                      <div className="col-span-3 flex flex-col gap-1"><label htmlFor={`qty-${index}`} className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-1">Quant / %</label><div className="relative group"><input id={`qty-${index}`} type="number" step="0.001" value={item.quantity || ''} title="Quantidade" placeholder="0,000" onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], materialId: e.target.value, quantity: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade" onClick={() => setActiveCalc({ initialValue: item.quantity || 0, onResult: (val) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], quantity: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
+                      <div className="col-span-2 flex flex-col gap-1"><label className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-1">Tipo</label><button type="button" title="Alternar Tipo" aria-label="Alternar entre peso e porcentagem" onClick={() => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], type: item.type === 'weight' ? 'percentage' : 'weight' }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest border-2 transition-all ${item.type === 'percentage' ? 'bg-amber-500 border-amber-600 text-white' : 'bg-indigo-500 border-indigo-600 text-white'}`}>{item.type === 'percentage' ? '%' : 'GR'}</button></div>
                       <div className="col-span-1 flex items-end pb-1"><button type="button" title="Remover Insumo" aria-label="Remover este insumo da composição" onClick={() => { const newComp = (editingItem?.metadata?.composition || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
                   ))}
@@ -3964,7 +3954,7 @@ function GenericConfigList({
               {moldHasSoleServices && (
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-6">
-                  <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Hammer size={18} className="text-emerald-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Serviços Agregados</span></div><span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Mão de obra ou processos terceirizados</span></div>
+                  <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Hammer size={18} className="text-emerald-500" /><span className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">Serviços Agregados</span></div><span className="text-xs font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Mão de obra ou processos terceirizados</span></div>
                   <button
                     type="button"
                     onClick={() => { const currentServices = editingItem?.metadata?.extraServices || []; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: [...currentServices, { name: '', cost: 0 }] } } : null); }}
@@ -3979,8 +3969,8 @@ function GenericConfigList({
                 <div className="flex flex-col gap-3">
                   {(editingItem?.metadata?.extraServices || []).map((service: any, index: number) => (
                     <div key={index} data-guide-anchor="mold.servicoItem" className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                      <div className="col-span-7 flex flex-col gap-1"><label htmlFor={`service-name-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Nome do Serviço</label><input id={`service-name-${index}`} type="text" value={service.name} title="Nome do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], name: e.target.value.toUpperCase() }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="EX: PINTURA" className={`w-full px-4 py-3 rounded-xl font-bold text-xs uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /></div>
-                      <div className="col-span-4 flex flex-col gap-1"><label htmlFor={`service-cost-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Valor (R$)</label><div className="relative group"><input id={`service-cost-${index}`} type="number" step="0.01" value={service.cost || ''} title="Custo do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="0,00" className={`w-full px-4 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir valor do serviço" onClick={() => setActiveCalc({ initialValue: service.cost || 0, onResult: (val) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
+                      <div className="col-span-7 flex flex-col gap-1"><label htmlFor={`service-name-${index}`} className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-1">Nome do Serviço</label><input id={`service-name-${index}`} type="text" value={service.name} title="Nome do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], name: e.target.value.toUpperCase() }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="EX: PINTURA" className={`w-full px-4 py-3 rounded-xl font-bold text-xs uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /></div>
+                      <div className="col-span-4 flex flex-col gap-1"><label htmlFor={`service-cost-${index}`} className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-1">Valor (R$)</label><div className="relative group"><input id={`service-cost-${index}`} type="number" step="0.01" value={service.cost || ''} title="Custo do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="0,00" className={`w-full px-4 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir valor do serviço" onClick={() => setActiveCalc({ initialValue: service.cost || 0, onResult: (val) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
                       <div className="col-span-1 flex items-end pb-1"><button type="button" title="Remover Serviço" aria-label="Remover este serviço" onClick={() => { const newServices = (editingItem?.metadata?.extraServices || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
                   ))}
@@ -3989,7 +3979,7 @@ function GenericConfigList({
               )}
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2"><Palette size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores Selecionadas e Sub-Ref</span></div>
+                  <div className="flex items-center gap-2"><Palette size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">Cores Selecionadas e Sub-Ref</span></div>
                   <button
                     type="button"
                     onClick={() => setShowColorPicker(true)}
@@ -4000,7 +3990,7 @@ function GenericConfigList({
                   </button>
                 </div>
                 {(editingItem?.metadata?.colorVariations || []).length === 0 ? (
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center py-4">Nenhuma cor selecionada — toque em "Adicionar Cor".</p>
+                  <p className="text-[11px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest text-center py-4">Nenhuma cor selecionada — toque em "Adicionar Cor".</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                     {(editingItem?.metadata?.colorVariations || []).map((variation: any) => {
@@ -4062,17 +4052,17 @@ function GenericConfigList({
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Peso Médio (Par)</span>
+                      <span className="text-xs font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Peso Médio (Par)</span>
                       <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{avgWeight.toFixed(2)} GR</span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Custo Material (Média × Preço/KG)</span>
+                      <span className="text-xs font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Custo Material (Média × Preço/KG)</span>
                       <span className="text-xs font-black text-amber-600">R$ {materialCostPerPair.toFixed(4)}</span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Serviços Agregados</span>
+                      <span className="text-xs font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Serviços Agregados</span>
                       <span className="text-xs font-black text-emerald-600">R$ {extraServicesCost.toFixed(4)}</span>
                     </div>
 
@@ -4146,7 +4136,7 @@ function GenericConfigList({
                     </button>
                   </>
                 ) : (
-                  <button type="button" title="Adicionar Foto" aria-label="Adicionar nova foto" onClick={() => fileInputRef.current?.click()} data-guide-anchor="tool.adicionarFoto" className="flex flex-col items-center gap-2 text-slate-400">
+                  <button type="button" title="Adicionar Foto" aria-label="Adicionar nova foto" onClick={() => fileInputRef.current?.click()} data-guide-anchor="tool.adicionarFoto" className="flex flex-col items-center gap-2 text-blue-900 dark:text-blue-300">
                     <Camera size={24} />
                     <span className="text-xs font-bold uppercase tracking-widest">Adicionar Foto</span>
                   </button>
@@ -4155,7 +4145,7 @@ function GenericConfigList({
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Referência da Faca *</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Referência da Faca *</label>
                 <div className="relative group">
                   <input
                     type="text"
@@ -4177,7 +4167,7 @@ function GenericConfigList({
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome / Descrição da Faca *</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Nome / Descrição da Faca *</label>
                 <input
                   type="text"
                   value={editingItem?.name || ''}
@@ -4235,7 +4225,7 @@ function GenericConfigList({
                         </button>
                       ))}
                       {toolCategoryNames.filter(name => name.toLowerCase().includes(toolCategorySearch.toLowerCase())).length === 0 && (
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma categoria encontrada.</p>
+                        <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhuma categoria encontrada.</p>
                       )}
                     </div>
                     {onQuickAddCategory && (
@@ -4251,11 +4241,11 @@ function GenericConfigList({
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                    <p className="text-[10px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest leading-relaxed">
                       Salvo direto em Categorias — fica disponível pra qualquer outro cadastro do sistema, sem sair de Facas.
                     </p>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Categoria</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Nome da Categoria</label>
                       <input
                         type="text"
                         value={newToolCategoryName}
@@ -4333,7 +4323,7 @@ function GenericConfigList({
                         <div key={g.id} className={`w-full flex items-center gap-2 p-4 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                           <div className="flex flex-col flex-1 min-w-0">
                             <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                            <span className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest truncate">
                               {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
                             </span>
                           </div>
@@ -4349,7 +4339,7 @@ function GenericConfigList({
                         </div>
                       ))}
                       {grids.filter(g => g.type === GridType.FACA && g.name.toLowerCase().includes(facaGridSearchTerm.toLowerCase())).length === 0 && (
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade de faca encontrada.</p>
+                        <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade de faca encontrada.</p>
                       )}
                     </div>
                     <button
@@ -4363,9 +4353,9 @@ function GenericConfigList({
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingFacaGridId ? 'Editando Grade' : 'Nova Grade'}</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">{editingFacaGridId ? 'Editando Grade' : 'Nova Grade'}</p>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Grade</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Nome da Grade</label>
                       <input
                         type="text"
                         value={newFacaGridName}
@@ -4375,7 +4365,7 @@ function GenericConfigList({
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Adicionar Numeração</label>
                       <div className="flex gap-2">
                         <input
                           type="text"
@@ -4418,7 +4408,7 @@ function GenericConfigList({
               </Modal>
 
               <div className="flex flex-col gap-4">
-                <label htmlFor="tool-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Configurar Numerações</label>
+                <label htmlFor="tool-new-size" className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 px-2">Configurar Numerações</label>
                 <div className="flex gap-2">
                   <input id="tool-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
                   <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} data-guide-anchor="tool.numeracaoAdicionar" className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center justify-center border border-slate-200 dark:border-slate-700">
@@ -4441,7 +4431,7 @@ function GenericConfigList({
                   <div className="flex items-center justify-between px-2">
                     <div className="flex items-center gap-3">
                       <Target size={18} className="text-slate-400" />
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">MATRIZ DE ÁREA (M²)</h4>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">MATRIZ DE ÁREA (M²)</h4>
                     </div>
                     <button 
                       type="button" 
@@ -4508,7 +4498,7 @@ function GenericConfigList({
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className={`text-xs font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{product.name}</p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{product.reference}</p>
+                              <p className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">{product.reference}</p>
                             </div>
                           </button>
                         );
@@ -4544,19 +4534,19 @@ function GenericConfigList({
                 >
                   <div className="flex items-center gap-2">
                     <Footprints size={18} className="text-rose-500" />
-                    <span className="text-xs font-black uppercase tracking-widest text-slate-500">Esta faca também é molde de Palmilha?</span>
+                    <span className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">Esta faca também é molde de Palmilha?</span>
                   </div>
                   {editingItem?.metadata?.palmilha ? <CheckCircle2 size={22} className="text-rose-500" /> : <Circle size={22} className="text-slate-300" />}
                 </button>
 
                 {editingItem?.metadata?.palmilha && (
                   <div className="flex flex-col gap-4 pt-2">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                    <p className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest leading-relaxed">
                       Usa as numerações cadastradas acima como grades de estoque de palmilha.
                     </p>
 
                     <div className="flex flex-col gap-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Palmilha</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Tipo de Palmilha</label>
                       <div className="grid grid-cols-2 gap-2">
                         {(['MONTAGEM', 'ACABAMENTO'] as const).map(sub => (
                           <button
@@ -4568,7 +4558,7 @@ function GenericConfigList({
                               return { ...prev, metadata: { ...prev.metadata, palmilha: { ...currentPalmilha, subtype: sub } } };
                             })}
                             data-guide-anchor="tool.palmilhaSubtipo"
-                            className={`py-3 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${editingItem?.metadata?.palmilha?.subtype === sub ? 'bg-rose-500 border-rose-600 text-white' : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
+                            className={`py-3 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${editingItem?.metadata?.palmilha?.subtype === sub ? 'bg-rose-500 border-rose-600 text-white' : isDarkMode ? 'bg-slate-900 border-slate-800 text-blue-300' : 'bg-white border-slate-100 text-blue-900'}`}
                           >
                             {sub === 'MONTAGEM' ? 'Montagem' : 'Acabamento'}
                           </button>
@@ -4577,7 +4567,7 @@ function GenericConfigList({
                     </div>
 
                     <div className="flex flex-col gap-4">
-                      <div className="flex items-center gap-2"><Palette size={18} className="text-rose-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores da Palmilha</span></div>
+                      <div className="flex items-center gap-2"><Palette size={18} className="text-rose-500" /><span className="text-xs font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">Cores da Palmilha</span></div>
                       <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                         {(colors || []).map(color => {
                           const variation = (editingItem?.metadata?.palmilha?.colorVariations || []).find((cv: any) => cv.colorId === color.id);
@@ -4632,7 +4622,7 @@ function GenericConfigList({
 
                     {editingItem?.metadata?.palmilha?.subtype === 'ACABAMENTO' && (
                       <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Serviço de Acabamento (ex: Silk)</label>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Serviço de Acabamento (ex: Silk)</label>
                         <select
                           value={editingItem?.metadata?.palmilha?.silkServiceId || ''}
                           title="Serviço de Acabamento"
@@ -4654,15 +4644,15 @@ function GenericConfigList({
             </div>
           ) : type === 'INFESTO' ? (
             <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Layers size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Camadas para<br />Corte e Produção</p></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Infesto *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: COURO PADRÃO" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Quantidade de Camadas *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.layers || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)} placeholder="Ex: 4" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade de camadas" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.layers || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: val } } : null) })} data-guide-anchor="infesto.camadasCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Layers size={32} /></div><p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest leading-relaxed">Configuração de Camadas para<br />Corte e Produção</p></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Nome do Infesto *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: COURO PADRÃO" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Quantidade de Camadas *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.layers || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)} placeholder="Ex: 4" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade de camadas" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.layers || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: val } } : null) })} data-guide-anchor="infesto.camadasCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
             </div>
           ) : type === 'DEADLINE' ? (
             <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><CalendarClock size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Definição de Prazos e SLA<br />para Ordens de Produção</p></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Prazo *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: URGENTE, PADRÃO..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prazo em Dias *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.days || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)} placeholder="Ex: 7" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir prazo em dias" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.days || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: val } } : null) })} data-guide-anchor="deadline.diasCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><CalendarClock size={32} /></div><p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest leading-relaxed">Definição de Prazos e SLA<br />para Ordens de Produção</p></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Nome do Prazo *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: URGENTE, PADRÃO..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Prazo em Dias *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.days || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)} placeholder="Ex: 7" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir prazo em dias" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.days || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: val } } : null) })} data-guide-anchor="deadline.diasCalc" className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
             </div>
           ) : type === 'PACKAGING' ? (
             <div className="flex flex-col gap-6">
@@ -4765,7 +4755,7 @@ function GenericConfigList({
                         >
                           <div className="flex flex-col flex-1 min-w-0">
                             <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                            <span className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest truncate">
                               {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
                             </span>
                           </div>
@@ -4781,7 +4771,7 @@ function GenericConfigList({
                         </div>
                       ))}
                       {grids.filter(g => (g.type === GridType.FORMA || !g.type) && g.name.toLowerCase().includes(productionGradeSearchTerm.toLowerCase())).length === 0 && (
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade encontrada. Crie aqui uma grade de sua necessidade.</p>
+                        <p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade encontrada. Crie aqui uma grade de sua necessidade.</p>
                       )}
                     </div>
                     <button
@@ -4795,9 +4785,9 @@ function GenericConfigList({
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingProductionGradeId ? 'Editando Grade' : 'Nova Grade de Produção'}</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300">{editingProductionGradeId ? 'Editando Grade' : 'Nova Grade de Produção'}</p>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Grade</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Nome da Grade</label>
                       <input
                         type="text"
                         value={newProductionGradeName}
@@ -4807,7 +4797,7 @@ function GenericConfigList({
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
+                      <label className="text-[9px] uppercase font-black text-blue-900 dark:text-blue-300 mb-1.5 block tracking-widest">Adicionar Numeração</label>
                       <div className="flex gap-2">
                         <input
                           type="text"
@@ -4912,9 +4902,9 @@ function GenericConfigList({
             </div>
           ) : (
             <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>{icon}</div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Preencha os dados abaixo para<br />registrar em {label}</p></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome / Sigla</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: UN, KG, MT..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Descrição Completa</label><input type="text" value={editingItem?.description || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Ex: Unidade, Quilograma, Metro..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} /></div>
+              <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>{icon}</div><p className="text-[10px] text-blue-900 dark:text-blue-300 font-bold uppercase tracking-widest leading-relaxed">Preencha os dados abaixo para<br />registrar em {label}</p></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Nome / Sigla</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: UN, KG, MT..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-blue-900 dark:text-blue-300 ml-2">Descrição Completa</label><input type="text" value={editingItem?.description || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Ex: Unidade, Quilograma, Metro..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} /></div>
             </div>
           )}
           <button type="submit" disabled={isLoading} data-guide-anchor="prodcfg.salvarRegistro" className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50 disabled:cursor-not-allowed">{isLoading ? (<><Loader2 size={18} className="animate-spin" />SALVANDO...</>) : (<><Check size={18} strokeWidth={3} />{editingItem?.id ? 'Salvar Alterações' : 'Confirmar Cadastro'}</>)}</button>
@@ -5352,6 +5342,10 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
   const safeComposition = Array.isArray(item.metadata?.composition) ? item.metadata!.composition! : [];
   const safeSizeWeights = (item.metadata?.sizeWeights && typeof item.metadata.sizeWeights === 'object' && !Array.isArray(item.metadata.sizeWeights)) ? item.metadata.sizeWeights : {};
   const safeSoleStock = Array.isArray(soleStock) ? soleStock : [];
+  // Com mais de 4 numerações os cards (aumentados a pedido do Tiago pra mostrar estoque
+  // melhor) não cabem mais numa linha só — encolhe de volta pro tamanho compacto original
+  // pra organizar em mais colunas por linha em vez de estourar o card pra baixo.
+  const isCompactSizes = Object.keys(safeSizeWeights).length > 4;
 
   const getStockForSize = (size: string) => {
     return safeSoleStock
@@ -5369,7 +5363,7 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
           <div className="flex flex-col">
             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] font-mono">{item.metadata?.reference || item.metadata?.moldReference || 'S/ REF'}</span>
             <h5 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</h5>
-            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.metadata?.category || 'GERAL'} • {flowTag?.name || 'S/ FLUXO'}</p>
+            <p className="text-[9px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-widest mt-0.5">{item.metadata?.category || 'GERAL'} • {flowTag?.name || 'S/ FLUXO'}</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -5384,9 +5378,9 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
             if (!cv) return null;
             const color = safeColors.find(c => c.id === cv.colorId);
             return (
-              <div key={cv.colorId || String(Math.random())} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                <div className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: color?.hex || '#ccc' }} />
-                <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">{color?.name || 'COR'} ({cv.subRef})</span>
+              <div key={cv.colorId || String(Math.random())} className={`px-3.5 py-2 rounded-xl flex items-center gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                <div className="w-2.5 h-2.5 rounded-full shadow-sm shrink-0" style={{ backgroundColor: color?.hex || '#ccc' }} />
+                <span className="text-xs font-black uppercase tracking-widest text-slate-500">{color?.name || 'COR'} ({cv.subRef})</span>
               </div>
             );
           })}
@@ -5395,28 +5389,57 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
 
       {Object.keys(safeSizeWeights).length > 0 && (
         <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
-          <div className="flex items-center gap-2 text-slate-400">
+          <div className="flex items-center gap-2 text-blue-900 dark:text-blue-300">
             <Package size={14} />
             <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (g)</span>
           </div>
-          <div className="flex flex-wrap justify-center gap-3">
-            {sortSizeEntries(Object.entries(safeSizeWeights)).map(([size, weight]) => {
-              const stock = getStockForSize(size);
-              return (
-                <div key={size} className="flex flex-col items-center rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm min-w-[72px]">
-                  <div className="w-full px-4 py-1.5 bg-black flex items-center justify-center">
-                    <span className="text-[10px] font-black text-white uppercase tracking-widest">{size}</span>
+          {isCompactSizes ? (
+            /* Mais de 4 numerações — vira um card único em formato de tabela em vez de N
+               caixinhas separadas (que passariam a quebrar em várias linhas e deixar o card
+               enorme); pedido do Tiago como alternativa ao encolher as caixinhas. */
+            <div className="w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-black">
+                    <th className="px-4 py-2 text-left text-[10px] font-black text-white uppercase tracking-widest">Tamanho</th>
+                    <th className="px-4 py-2 text-right text-[10px] font-black text-white uppercase tracking-widest">Peso</th>
+                    <th className="px-4 py-2 text-right text-[10px] font-black text-white uppercase tracking-widest">Estoque</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortSizeEntries(Object.entries(safeSizeWeights)).map(([size, weight]) => {
+                    const stock = getStockForSize(size);
+                    return (
+                      <tr key={size} className="border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+                        <td className="px-4 py-2.5 text-sm font-black text-slate-800 dark:text-white">{size}</td>
+                        <td className="px-4 py-2.5 text-right text-sm font-medium text-slate-800 dark:text-slate-200">{Number(weight) || 0} g</td>
+                        <td className="px-4 py-2.5 text-right text-sm font-medium text-emerald-500">{stock > 0 ? stock : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex flex-wrap justify-center gap-3">
+              {sortSizeEntries(Object.entries(safeSizeWeights)).map(([size, weight]) => {
+                const stock = getStockForSize(size);
+                return (
+                  <div key={size} className="flex flex-col items-center rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm min-w-[96px]">
+                    <div className="w-full px-5 py-2 bg-black flex items-center justify-center">
+                      <span className="text-xs font-black text-white uppercase tracking-widest">{size}</span>
+                    </div>
+                    <div className="w-full px-5 py-4 bg-white flex flex-col items-center gap-1">
+                      <span className="text-lg font-medium text-slate-800">{Number(weight) || 0} g</span>
+                      {stock > 0 && (
+                        <span className="text-xs font-medium text-emerald-500 uppercase tracking-widest">Est: {stock}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="w-full px-4 py-2.5 bg-white flex flex-col items-center gap-0.5">
-                    <span className="text-sm font-black text-slate-800">{Number(weight) || 0} g</span>
-                    {stock > 0 && (
-                      <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Est: {stock}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -5486,8 +5509,8 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
           <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
             <Hash size={12} className="text-emerald-500" />
             <div className="flex flex-col">
-              <span className="text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none mb-0.5">Rendimento:</span>
-              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+              <span className="text-[9px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none mb-0.5">Rendimento:</span>
+              <span className="text-xs font-medium text-blue-900 dark:text-blue-300">
                 {(() => {
                   const weights = Object.values(safeSizeWeights) as number[];
                   const activeWeights = weights.filter(w => Number(w) > 0);
@@ -5499,20 +5522,26 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
             </div>
           </div>
           {Object.keys(safeSizeWeights).length > 0 && (
-            <span className="text-[7px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+            <span className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest ml-1">
               Soma: {Object.values(safeSizeWeights).reduce((a, b) => Number(a) + Number(b), 0).toFixed(1)} g
             </span>
           )}
         </div>
         <div className="flex flex-col items-end">
-          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Custo por Par</p>
+          <p className="text-[9px] font-black text-blue-900 dark:text-blue-300 uppercase tracking-widest mb-1">Custo por Par</p>
           <div className="flex items-baseline gap-1">
             <span className="text-[10px] font-black text-emerald-500">R$</span>
             <span className="text-xl font-black text-emerald-500">
               {(() => {
-                const unitCost = Number(item.metadata?.unitCost) || 0;
+                // Quando "Você compra o solado pronto?" = SIM, o valor digitado direto em
+                // "Valor Pago por Par" (readySoleCost) é o custo de verdade — usar o unitCost
+                // (calculado por peso × preço/KG do material) aqui ignorava isso e mostrava um
+                // valor antigo/errado no card (reportado pelo Tiago com print).
+                const baseCost = item.metadata?.buysReadySole
+                  ? (Number(item.metadata?.readySoleCost) || 0)
+                  : (Number(item.metadata?.unitCost) || 0);
                 const servicesCost = safeExtraServices.reduce((acc: number, s: any) => acc + (Number(s?.cost) || 0), 0);
-                return (unitCost + servicesCost).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                return (baseCost + servicesCost).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
               })()}
             </span>
           </div>
