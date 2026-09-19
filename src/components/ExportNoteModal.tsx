@@ -157,7 +157,7 @@ export default function ExportNoteModal({
   const [note, setNote] = useState('');
   const [isObservationOpen, setIsObservationOpen] = useState(false);
   const [selectedSectorIds, setSelectedSectorIds] = useState<string[]>([]);
-  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'profiles' | 'share' | 'printSettings' | 'pages' | 'printHelp' | null>(null);
+  const [activePopup, setActivePopup] = useState<'financial' | 'grid' | 'group' | 'os' | 'sector' | 'sectorNotes' | 'profiles' | 'share' | 'printSettings' | 'pages' | 'printHelp' | null>(null);
   
   // Profile State
   const [profiles, setProfiles] = useState<ExportProfile[]>(() => loadProfiles());
@@ -869,7 +869,7 @@ export default function ExportNoteModal({
       {/* "pageSize" e "pages" só existem dentro de "share" (Tamanho de Exportação e Dividir em
           Páginas viraram cards que abrem um popup próprio, em vez de ficar tudo junto inline) —
           fechar volta pra "share" em vez de fechar tudo, como um nível de navegação a mais. */}
-      {(() => { const closeTarget = (activePopup === 'printSettings' || activePopup === 'pages' || activePopup === 'printHelp') ? 'share' : null; return activePopup && (
+      {(() => { const closeTarget = (activePopup === 'printSettings' || activePopup === 'pages' || activePopup === 'printHelp') ? 'share' : activePopup === 'sectorNotes' ? 'grid' : null; return activePopup && (
         <div
           className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setActivePopup(closeTarget)}
@@ -889,6 +889,7 @@ export default function ExportNoteModal({
                 {activePopup === 'group' && 'Agrupamento de Itens'}
                 {activePopup === 'os' && 'Dados da OS'}
                 {activePopup === 'sector' && 'Detalhes de Setor'}
+                {activePopup === 'sectorNotes' && 'Setores para Instruções'}
                 {activePopup === 'profiles' && 'Perfis de Exportação'}
                 {activePopup === 'share' && 'Opções de Compartilhamento'}
                 {activePopup === 'printSettings' && 'Configurações de Impressão'}
@@ -1035,7 +1036,15 @@ export default function ExportNoteModal({
                   {showSectorNotesToggle && (
                     <button
                       type="button"
-                      onClick={() => setShowSectorNotes(prev => !prev)}
+                      onClick={() => {
+                        setShowSectorNotes(prev => {
+                          const next = !prev;
+                          // Ativar já abre o popup de escolha de setores direto — antes a lista
+                          // ficava inline aqui embaixo, ocupando espaço mesmo com poucos setores.
+                          if (next) setActivePopup('sectorNotes');
+                          return next;
+                        });
+                      }}
                       data-guide-anchor="export.toggleInstrucoesSetor"
                       className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
                         isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
@@ -1056,79 +1065,100 @@ export default function ExportNoteModal({
                   )}
 
                   {showSectorNotes && sectors && sectors.length > 0 && (
-                    <div className={`p-3 rounded-2xl border flex flex-col gap-2 ${
-                      isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-slate-50/50 border-slate-100'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <button
+                      type="button"
+                      onClick={() => setActivePopup('sectorNotes')}
+                      data-guide-anchor="export.setoresAbrirPopup"
+                      className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
+                        isDarkMode ? 'bg-slate-800/30 border-slate-800 hover:border-slate-750' : 'bg-slate-50/50 border-slate-100 hover:border-slate-200'
+                      }`}
+                    >
+                      <div className="text-left">
+                        <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Setores para Instruções
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSectorIds(sectors.map(s => s.id))}
-                            data-guide-anchor="export.setoresSelecionarTodos"
-                            className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300"
-                          >
-                            Todos
-                          </button>
-                          <span className="text-slate-350 dark:text-slate-700 text-[9px] font-bold">|</span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSectorIds([])}
-                            data-guide-anchor="export.setoresSelecionarNenhum"
-                            className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300"
-                          >
-                            Nenhum
-                          </button>
+                        </div>
+                        <div className="text-[9px] font-bold text-blue-900 dark:text-blue-300 mt-0.5">
+                          {selectedSectorIds.length} de {sectors.length} selecionado{sectors.length === 1 ? '' : 's'}
                         </div>
                       </div>
-                      
-                      <div className="max-h-[160px] overflow-y-auto flex flex-col gap-1.5 custom-scrollbar pr-1">
-                        {sectors.map(sec => {
-                          const isChecked = selectedSectorIds.includes(sec.id);
-                          return (
-                            <button
-                              key={sec.id}
-                              type="button"
-                              onClick={() => {
-                                if (isChecked) {
-                                  setSelectedSectorIds(prev => prev.filter(id => id !== sec.id));
-                                } else {
-                                  setSelectedSectorIds(prev => [...prev, sec.id]);
-                                }
-                              }}
-                              data-guide-anchor="export.setorAlternar"
-                              className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
-                                isChecked
-                                  ? 'border-indigo-500/30 bg-indigo-500/5 dark:bg-indigo-500/10'
-                                  : isDarkMode ? 'border-slate-800 bg-slate-800/20 hover:border-slate-750' : 'border-slate-200 bg-white hover:border-slate-300'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                {sec.color && (
-                                  <div 
-                                    className="w-2.5 h-2.5 rounded-full shrink-0" 
-                                    style={{ backgroundColor: sec.color }}
-                                  />
-                                )}
-                                <span className={`text-[10px] font-bold uppercase tracking-wider truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                                  {sec.name}
-                                </span>
-                              </div>
-                              <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border ${
-                                isChecked
-                                  ? 'bg-indigo-600 border-indigo-600 text-white'
-                                  : isDarkMode ? 'border-slate-750' : 'border-slate-300'
-                              }`}>
-                                {isChecked && <Check size={11} strokeWidth={4} />}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                      <ChevronRight size={16} className="text-slate-400 shrink-0" />
+                    </button>
                   )}
+                </div>
+              )}
+
+              {/* Sector Notes Picker Popup Content — separado de "grid" (era uma lista inline
+                  dentro do Resumo da Grade; Tiago pediu um popup próprio pra escolher os setores). */}
+              {activePopup === 'sectorNotes' && sectors && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      {sectors.length} setor{sectors.length === 1 ? '' : 'es'} disponíve{sectors.length === 1 ? 'l' : 'is'}
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSectorIds(sectors.map(s => s.id))}
+                        data-guide-anchor="export.setoresSelecionarTodos"
+                        className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300"
+                      >
+                        Todos
+                      </button>
+                      <span className="text-slate-350 dark:text-slate-700 text-[9px] font-bold">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSectorIds([])}
+                        data-guide-anchor="export.setoresSelecionarNenhum"
+                        className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300"
+                      >
+                        Nenhum
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    {sectors.map(sec => {
+                      const isChecked = selectedSectorIds.includes(sec.id);
+                      return (
+                        <button
+                          key={sec.id}
+                          type="button"
+                          onClick={() => {
+                            if (isChecked) {
+                              setSelectedSectorIds(prev => prev.filter(id => id !== sec.id));
+                            } else {
+                              setSelectedSectorIds(prev => [...prev, sec.id]);
+                            }
+                          }}
+                          data-guide-anchor="export.setorAlternar"
+                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                            isChecked
+                              ? 'border-indigo-500/30 bg-indigo-500/5 dark:bg-indigo-500/10'
+                              : isDarkMode ? 'border-slate-800 bg-slate-800/20 hover:border-slate-750' : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {sec.color && (
+                              <div
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: sec.color }}
+                              />
+                            )}
+                            <span className={`text-[10px] font-bold uppercase tracking-wider truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                              {sec.name}
+                            </span>
+                          </div>
+                          <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border ${
+                            isChecked
+                              ? 'bg-indigo-600 border-indigo-600 text-white'
+                              : isDarkMode ? 'border-slate-750' : 'border-slate-300'
+                          }`}>
+                            {isChecked && <Check size={11} strokeWidth={4} />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
