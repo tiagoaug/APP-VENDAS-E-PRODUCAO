@@ -4,7 +4,7 @@ import {
   Eye, EyeOff, ChevronUp, ChevronDown, LayoutDashboard, Settings, GripVertical, Pin, PinOff,
   GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
   Inbox, Link2, Handshake, Package, CreditCard, ScanText, Sparkles, Scissors,
-  PackagePlus, Layout, SlidersHorizontal, Wand2,
+  PackagePlus, Layout, SlidersHorizontal, Wand2, Smartphone,
 } from 'lucide-react';
 import { AppModulesConfig, BottomNavConfig, BottomNavItemId } from '../types';
 
@@ -49,6 +49,7 @@ const CANDIDATES: NavCandidate[] = [
   { id: 'dashboardConfig', label: 'Organizar Dashboard', icon: <Layout size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
   { id: 'accessibility', label: 'Acessibilidade e Personalização', icon: <SlidersHorizontal size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
   { id: 'visualSetup', label: 'Assistente de Personalização Visual', icon: <Wand2 size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
+  { id: 'headerSpace', label: 'Espaço no Topo', icon: <Smartphone size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
 ];
 
 interface NavRowProps {

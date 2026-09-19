@@ -67,7 +67,8 @@ import {
   Rocket,
   SlidersHorizontal,
   Layout,
-  Wand2
+  Wand2,
+  Smartphone
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -6211,6 +6212,7 @@ export default function App() {
             bottomNavConfig={bottomNavConfig}
             onSaveBottomNavConfig={saveBottomNavConfig}
             openAccessibilityNonce={currentParams?.openAccessibilityNonce}
+            openHeaderSpaceNonce={currentParams?.openHeaderSpaceNonce}
           />
         );
       case ViewType.PRODUCTS:
@@ -9451,6 +9453,9 @@ export default function App() {
       // Clique tem tratamento especial (ver onClick abaixo) — chama handleStartVisualSetup()
       // direto, igual ao atalho de Assist. IA.
       { id: 'visualSetup', label: 'P. Visual', icon: <Wand2 size={20} />, view: ViewType.SETTINGS, allowed: true },
+      // Clique tem tratamento especial (ver onClick abaixo) — abre o popup de Espaço no Topo em
+      // Configurações direto, com um nonce (ver openHeaderSpaceNonce em SettingsView).
+      { id: 'headerSpace', label: 'Espaço Topo', icon: <Smartphone size={20} />, view: ViewType.SETTINGS, allowed: true },
     ];
 
     const visible = candidates.filter(c => c.allowed && !bottomNavConfig.hidden.includes(c.id));
@@ -9619,6 +9624,7 @@ export default function App() {
     // goBack() — precisa de navigateTo (empilha no histórico) e não resetTo (zera o histórico
     // pra 1 item), senão o "←" não tem pra onde voltar e a pessoa fica presa na tela.
     if (item.id === 'dashboardConfig') { navigateTo(ViewType.DASHBOARD_CONFIG); return; }
+    if (item.id === 'headerSpace') { navigateTo(ViewType.SETTINGS, { openHeaderSpaceNonce: Date.now() }); return; }
     if (MODAL_VIEWS.includes(item.view)) { navigateTo(item.view); return; }
     resetTo(item.view);
   };

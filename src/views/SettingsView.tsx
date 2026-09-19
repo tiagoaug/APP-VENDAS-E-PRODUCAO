@@ -55,7 +55,8 @@ import {
   ShoppingCart,
   ShoppingBag,
   DollarSign,
-  ScanLine
+  ScanLine,
+  Smartphone
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -143,6 +144,9 @@ interface SettingsViewProps {
   // muda de valor a cada toque só pra disparar o useEffect abaixo e abrir o popup direto, sem
   // precisar passar por "Mais Opções" (ver App.tsx middleNavItems/handleMiddleNavItemClick).
   openAccessibilityNonce?: number;
+  // Nonce do ícone "Espaço no Topo" na barra de navegação inferior — abre o popup de ajuste
+  // fino direto (ver headerSpaceEditorOpen abaixo), mesmo padrão de openAccessibilityNonce.
+  openHeaderSpaceNonce?: number;
 }
 
 export default function SettingsView({
@@ -183,6 +187,7 @@ export default function SettingsView({
   bottomNavConfig,
   onSaveBottomNavConfig,
   openAccessibilityNonce,
+  openHeaderSpaceNonce,
 }: SettingsViewProps) {
   // "Tema", "Fonte", "Tamanho da Fonte" e "Ícones do Menu" começam minimizados — são escolhas
   // feitas uma vez e raramente revisitadas, então não precisam ocupar espaço aberto toda vez
@@ -274,6 +279,15 @@ export default function SettingsView({
   useEffect(() => {
     if (openAccessibilityNonce) setShowA11y(true);
   }, [openAccessibilityNonce]);
+  // Ícone "Espaço no Topo" da navegação inferior — abre o popup de ajuste fino direto, com o
+  // valor atual já carregado no rascunho (mesma ação do botão dentro de Acessibilidade).
+  useEffect(() => {
+    if (openHeaderSpaceNonce && setHeaderTopSpacePx) {
+      setDraftHeaderTopSpacePx(headerTopSpacePx);
+      setHeaderSpaceEditorOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openHeaderSpaceNonce]);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [faceIdUnlockEnabled, setFaceIdUnlockEnabled] = useState(false);
@@ -842,7 +856,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.33.11</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.34.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1509,7 +1523,7 @@ export default function SettingsView({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-sm rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+            className={`w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
           >
             <div className="text-center">
               <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo</h3>
@@ -1522,14 +1536,24 @@ export default function SettingsView({
               </p>
             </div>
 
-            {/* Prévia ao vivo — a barrinha se move junto com o cursor, no MESMO valor em pixels
-                que será aplicado no cabeçalho de verdade. */}
-            <div className={`relative rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`} style={{ height: HEADER_SPACE_RANGE + 56 }}>
+            {/* Prévia ao vivo — silhueta de celular com notch; a barrinha do cabeçalho se move
+                junto com o cursor, no MESMO valor em pixels que será aplicado de verdade. */}
+            <div className="flex justify-center py-1">
               <div
-                className="absolute inset-x-2 h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg flex items-center justify-center transition-[top] duration-75"
-                style={{ top: (draftHeaderTopSpacePx - HEADER_SPACE_MIN) + 8 }}
+                className={`relative w-40 rounded-[2.3rem] p-2 shadow-xl ${isDarkMode ? 'bg-slate-700' : 'bg-slate-900'}`}
+                style={{ height: HEADER_SPACE_RANGE + 96 }}
               >
-                <span className="text-white text-[9px] font-black uppercase tracking-widest">Cabeçalho</span>
+                {/* Notch */}
+                <div className="absolute left-1/2 -translate-x-1/2 top-2 w-16 h-4 rounded-full bg-black z-10" />
+                {/* Tela */}
+                <div className={`relative w-full h-full rounded-[1.7rem] overflow-hidden ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+                  <div
+                    className="absolute inset-x-2 h-9 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg flex items-center justify-center transition-[top] duration-75"
+                    style={{ top: (draftHeaderTopSpacePx - HEADER_SPACE_MIN) + 8 }}
+                  >
+                    <span className="text-white text-[8px] font-black uppercase tracking-widest">Cabeçalho</span>
+                  </div>
+                </div>
               </div>
             </div>
 
