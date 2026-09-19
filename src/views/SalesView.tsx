@@ -1651,8 +1651,14 @@ export default function SalesView({
           </div>
         </div>
 
+        {/* Painel de Gerenciamento — popup próprio (era um card inline na página, então a
+            "Análise de Lucro"/dados de Vendas ficavam visíveis atrás; Tiago pediu que Gerenciamento
+            mostre só Gerenciamento, num popup). Fecha ao tocar fora, igual aos outros popups do app. */}
+        {showManagementCard && (
+        <div className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowManagementCard(false)}>
+        <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-[2rem] shadow-2xl flex flex-col gap-4 p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
         {/* Painel de Gerenciamento — escolhe entre Cruzamento e Diagnósticos e Correções */}
-        {showManagementCard && managementView === 'chooser' && (
+        {managementView === 'chooser' && (
           <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center justify-between mb-4 px-2">
               <div className="flex items-center gap-3">
@@ -1795,7 +1801,7 @@ export default function SalesView({
         )}
 
         {/* Card de Cruzamento de Demanda x Estoque/Produção */}
-        {showManagementCard && managementView === 'cruzamento' && (
+        {managementView === 'cruzamento' && (
           <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center justify-between mb-4 px-2">
               <div className="flex items-center gap-3">
@@ -1962,7 +1968,7 @@ export default function SalesView({
         )}
 
         {/* Expedição — Pedidos de Clientes, trazido de dentro do antigo StockView */}
-        {showManagementCard && managementView === 'expedicao' && (
+        {managementView === 'expedicao' && (
           <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center justify-between mb-4 px-2">
               <div className="flex items-center gap-3">
@@ -2015,7 +2021,7 @@ export default function SalesView({
         )}
 
         {/* Lotes — Registro de Produção, trazido de dentro do antigo StockView */}
-        {showManagementCard && managementView === 'lotes' && (
+        {managementView === 'lotes' && (
           <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center justify-between mb-4 px-2">
               <div className="flex items-center gap-3">
@@ -2058,6 +2064,9 @@ export default function SalesView({
               <StockLotsPanel stockLots={stockLots} isDarkMode={isDarkMode} searchTerm={managementSearchTerm} />
             </div>
           </div>
+        )}
+        </div>
+        </div>
         )}
 
         {/* Search - Always Visible — Filtros saiu da fileira de cima (Gerenciamento/Disponível/
