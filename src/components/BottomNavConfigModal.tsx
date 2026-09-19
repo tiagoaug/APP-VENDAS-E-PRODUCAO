@@ -330,13 +330,6 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
           </button>
         </div>
 
-        <div className="px-6 pb-3 shrink-0 flex flex-col gap-2">
-          <div className={`flex items-center gap-2 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-amber-900/20 border-amber-800/40 text-amber-300' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
-            <Pin size={15} className="shrink-0" />
-            Fixado aparece sempre na barra — o resto só ao expandir (seta pra cima)
-          </div>
-        </div>
-
         {/* Prévia interativa — celular representativo com as MESMAS duas camadas da barra de
             verdade: a barra fixa (Home + fixados + Mais) embaixo, e o painel expansível (o
             resto) acima dela, exatamente como aparece na tela real ao tocar na seta pra cima.
@@ -405,7 +398,11 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
           </div>
         </div>
 
-        <div className="p-6 pt-2 shrink-0">
+        <div className="px-6 pb-6 pt-2 shrink-0 flex flex-col gap-3">
+          <div className={`flex items-center gap-2 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-amber-900/20 border-amber-800/40 text-amber-300' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+            <Pin size={15} className="shrink-0" />
+            Fixado aparece sempre na barra — o resto só ao expandir (seta pra cima)
+          </div>
           <p className="text-[9px] font-bold text-slate-400 text-center italic">
             As alterações salvam na hora e sincronizam em todos os dispositivos.
           </p>
