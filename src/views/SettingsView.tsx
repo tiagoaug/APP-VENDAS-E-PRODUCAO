@@ -709,26 +709,6 @@ export default function SettingsView({
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
             </button>
 
-            {/* ── ORGANIZAR DASHBOARD ── */}
-            <button
-              onClick={() => onNavigate(ViewType.DASHBOARD_CONFIG)}
-              title="Organizar Dashboard"
-              aria-label="Organizar layout do Dashboard"
-              data-guide-anchor="settings.dashboardConfigAbrir"
-              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400">
-                  <Layout size={22} />
-                </div>
-                <div className="text-left">
-                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Organizar Dashboard</p>
-                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Layout e atalhos da tela inicial</p>
-                </div>
-              </div>
-              <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
-            </button>
-
             {/* ── CONTA DESENVOLVEDORA (só quem já é conta de desenvolvimento) — reúne
                 "Configurações Padrão (Novos Usuários)" e demais ações de dev lá dentro, ver
                 DeveloperAccountView.tsx ── */}
@@ -751,26 +731,6 @@ export default function SettingsView({
                 <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
               </button>
             )}
-
-            {/* ── PERSONALIZAR NAVEGAÇÃO ── */}
-            <button
-              onClick={() => setShowNavConfig(true)}
-              title="Personalizar Navegação"
-              aria-label="Escolher e ordenar os ícones da barra de navegação"
-              data-guide-anchor="settings.navConfigAbrir"
-              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400">
-                  <MoveHorizontal size={22} />
-                </div>
-                <div className="text-left">
-                  <p className={`flex items-center gap-1.5 text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação {visualGuideTarget === 'navegacao' && <GuidePulseDot show />}</p>
-                  <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium tracking-wide mt-0.5">Escolha e ordene os ícones da barra</p>
-                </div>
-              </div>
-              <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
-            </button>
 
             {/* ── LIMPEZA E ARQUIVAMENTO DE DADOS ── */}
             <button
@@ -859,7 +819,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.35.1</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.35.2</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1114,6 +1074,45 @@ export default function SettingsView({
                   <div className="min-w-0">
                     <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Controle da Barra de Atalhos</p>
                     <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Privacidade, Ajuda, Modo Diurno e mais</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
+
+              {/* Organizar Dashboard e Personalizar Navegação — movidos de dentro de "Mais
+                  Opções" pra cá, a pedido do Tiago, pra deixar toda a personalização visual
+                  concentrada num único ponto de entrada mais fácil de achar. */}
+              <button
+                type="button"
+                onClick={() => { setShowA11y(false); onNavigate(ViewType.DASHBOARD_CONFIG); }}
+                data-guide-anchor="settings.dashboardConfigAbrir"
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-blue-400' : 'bg-blue-50 text-blue-500'}`}>
+                    <Layout size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Organizar Dashboard</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Layout e atalhos da tela inicial</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowNavConfig(true)}
+                data-guide-anchor="settings.navConfigAbrir"
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
+                    <MoveHorizontal size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação {visualGuideTarget === 'navegacao' && <GuidePulseDot show />}</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Escolha e ordene os ícones da barra</p>
                   </div>
                 </div>
                 <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />

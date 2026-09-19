@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   X, ShoppingCart, ShoppingBag, Factory, Building2, Truck, DollarSign, User as UserIcon, UserCog,
-  Eye, EyeOff, LayoutDashboard, Settings, Pin, PinOff,
+  Eye, EyeOff, LayoutDashboard, Settings, Pin, PinOff, Maximize2,
   GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
   Inbox, Link2, Handshake, Package, CreditCard, ScanText, Sparkles, Scissors,
   PackagePlus, Layout, SlidersHorizontal, Wand2, Smartphone,
@@ -83,30 +83,28 @@ function NavRow({ item, isHidden, isPinned, isDarkMode, onToggleHidden, onToggle
       style={dragStyle}
       className={`relative flex flex-col items-center gap-1 rounded-2xl border select-none touch-none ${isDragging ? 'cursor-grabbing shadow-2xl scale-105 z-50' : 'cursor-grab transition-colors'} ${compact ? 'p-1.5' : 'p-2.5'} ${isHidden ? 'opacity-40' : ''} ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'} ${isDragging ? (isDarkMode ? 'bg-slate-800' : 'bg-white') : ''}`}
     >
-      <div className="absolute -top-1.5 -right-1.5 flex items-center gap-1 z-10">
+      {!isHidden && (
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); onToggleHidden(item.id); }}
-          title={isHidden ? 'Mostrar na barra' : 'Esconder da barra'}
-          aria-label={isHidden ? `Mostrar ${item.label} na barra` : `Esconder ${item.label} da barra`}
-          className={`w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${isHidden ? (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-400') : 'bg-indigo-600 text-white'}`}
+          onClick={(e) => { e.stopPropagation(); onTogglePinned(item.id); }}
+          title={isPinned ? 'Fixo na barra — tocar pra deixar só na expansão' : 'Só aparece expandindo — tocar pra fixar na barra'}
+          aria-label={isPinned ? `Desafixar ${item.label} da barra` : `Fixar ${item.label} na barra`}
+          className={`absolute -top-1.5 -left-1.5 z-10 w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${isPinned ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-400')}`}
         >
-          {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
+          {isPinned ? <Pin size={11} /> : <PinOff size={11} />}
         </button>
-        {!isHidden && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onTogglePinned(item.id); }}
-            title={isPinned ? 'Fixo na barra — tocar pra deixar só na expansão' : 'Só aparece expandindo — tocar pra fixar na barra'}
-            aria-label={isPinned ? `Desafixar ${item.label} da barra` : `Fixar ${item.label} na barra`}
-            className={`w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${isPinned ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-400')}`}
-          >
-            {isPinned ? <Pin size={11} /> : <PinOff size={11} />}
-          </button>
-        )}
-      </div>
+      )}
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onToggleHidden(item.id); }}
+        title={isHidden ? 'Mostrar na barra' : 'Esconder da barra'}
+        aria-label={isHidden ? `Mostrar ${item.label} na barra` : `Esconder ${item.label} da barra`}
+        className={`absolute -top-1.5 -right-1.5 z-10 w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${isHidden ? (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-400') : 'bg-indigo-600 text-white'}`}
+      >
+        {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
+      </button>
       <div className={`${compact ? 'w-8 h-8' : 'w-10 h-10'} rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}>
         {item.icon}
       </div>
@@ -237,6 +235,10 @@ function DraggableNavGrid({ items, onReorder, hidden, pinnedIds, isDarkMode, onT
 // App.tsx middleNavItems), o resto o usuário pode esconder e reordenar. Mudanças salvam na hora
 // (mesmo padrão do ModuleConfigView), sem botão de "Confirmar" separado.
 export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, modulesConfig, isDarkMode }: BottomNavConfigModalProps) {
+  // Tela cheia — mais espaço pra arrastar os ícones sem ficar espremido numa silhueta de
+  // celular pequena; precisa vir antes do `if (!isOpen) return null` pra não violar as regras
+  // de hooks (senão o useState só é chamado condicionalmente).
+  const [isFullscreen, setIsFullscreen] = useState(false);
   if (!isOpen) return null;
 
   // Mesma lógica de ordenação usada em App.tsx (middleNavItems) — itens fora de `order` vão pro
@@ -311,40 +313,43 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+    <div className={`fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 ${isFullscreen ? '' : 'p-4'}`} onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-lg max-h-[90vh] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+        className={`shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-200 ${isFullscreen ? 'w-full h-full rounded-none' : 'w-full max-w-lg max-h-[90vh] rounded-[2.5rem]'} ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
       >
         <div className="p-6 pb-4 flex items-center justify-between shrink-0">
           <div>
             <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Arraste os ícones pra posicionar — toque no olho/pin pra ocultar ou fixar</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Fechar"
-            aria-label="Fechar"
-            className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
-          >
-            <X size={20} strokeWidth={2.5} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(v => !v)}
+              title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia — mais espaço pra arrastar'}
+              aria-label={isFullscreen ? 'Sair da tela cheia' : 'Abrir em tela cheia'}
+              className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
+            >
+              {isFullscreen ? <X size={20} strokeWidth={2.5} /> : <Maximize2 size={20} strokeWidth={2.5} />}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Fechar"
+              aria-label="Fechar"
+              className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
+            >
+              <X size={20} strokeWidth={2.5} />
+            </button>
+          </div>
         </div>
 
         <div className="px-6 pb-3 shrink-0 flex flex-col gap-2">
-          <div className={`flex items-center gap-2 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
-            <LayoutDashboard size={14} className="shrink-0" />
-            Home fica sempre primeiro
-            <span className="mx-1">·</span>
-            <Settings size={14} className="shrink-0" />
-            Mais fica sempre por último
-          </div>
           <div className={`flex items-center gap-2 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-amber-900/20 border-amber-800/40 text-amber-300' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
             <Pin size={14} className="shrink-0" />
             Fixado aparece sempre na barra — o resto só ao expandir (seta pra cima)
           </div>
-
         </div>
 
         {/* Prévia interativa — celular representativo com as MESMAS duas camadas da barra de
@@ -353,7 +358,7 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
             Arrasta pra reposicionar dentro de cada camada, toca no olho/pin de cada ícone pra
             ocultar/fixar (o que move o item de uma camada pra outra). */}
         <div className="flex-1 overflow-y-auto px-6 pb-4 min-h-0">
-          <div className={`relative mx-auto max-w-[340px] rounded-[2.3rem] p-3 shadow-xl ${isDarkMode ? 'bg-slate-700' : 'bg-slate-900'}`}>
+          <div className={`relative mx-auto rounded-[2.3rem] p-2.5 shadow-xl ${isFullscreen ? 'max-w-[420px]' : 'max-w-[290px]'} ${isDarkMode ? 'bg-slate-700' : 'bg-slate-900'}`}>
             <div className="absolute left-1/2 -translate-x-1/2 top-2 w-16 h-4 rounded-full bg-black z-10" />
             <div className={`relative rounded-[1.7rem] pt-8 px-3 pb-3 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
               {/* Painel expansível — some antes de aparecer a barra fixa na tela real (a seta
