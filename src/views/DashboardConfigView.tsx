@@ -584,7 +584,7 @@ function CardItem({ card, isDarkMode, onToggleVisibility, viewMode, onChangeModu
                 </span>
               )}
             </div>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-4">
+            <p className="text-[8px] font-medium text-blue-900 dark:text-blue-300 uppercase tracking-widest mt-1 ml-4">
               ID: {card.id}
             </p>
           </div>

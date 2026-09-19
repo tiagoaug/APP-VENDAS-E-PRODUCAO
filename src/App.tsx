@@ -9615,6 +9615,10 @@ export default function App() {
     if (item.id === 'cuttingKnives') { navigateToProduction('FACAS'); return; }
     if (item.id === 'accessibility') { navigateTo(ViewType.SETTINGS, { openAccessibilityNonce: Date.now() }); return; }
     if (item.id === 'visualSetup') { handleStartVisualSetup(); return; }
+    // DASHBOARD_CONFIG é uma tela cheia própria (fixed inset-0, cobre o <nav>) cujo "←" chama
+    // goBack() — precisa de navigateTo (empilha no histórico) e não resetTo (zera o histórico
+    // pra 1 item), senão o "←" não tem pra onde voltar e a pessoa fica presa na tela.
+    if (item.id === 'dashboardConfig') { navigateTo(ViewType.DASHBOARD_CONFIG); return; }
     if (MODAL_VIEWS.includes(item.view)) { navigateTo(item.view); return; }
     resetTo(item.view);
   };
