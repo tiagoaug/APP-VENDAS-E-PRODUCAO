@@ -10,6 +10,9 @@ interface SimpleCatalogListViewProps<T extends NamedItem> {
   items: T[];
   // Rótulo singular pra textos (ex: "Marca", "Modelo").
   itemLabel: string;
+  // Explica o que essa lista é e onde ela é usada no resto do app — a tela só tinha o campo de
+  // adicionar, sem dizer pra que serve (pedido do Tiago, mesmo espírito da legenda em Categorias).
+  description: string;
   onAdd: (name: string) => Promise<void> | void;
   onEdit: (id: string, name: string) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
@@ -21,6 +24,7 @@ interface SimpleCatalogListViewProps<T extends NamedItem> {
 export default function SimpleCatalogListView<T extends NamedItem>({
   items,
   itemLabel,
+  description,
   onAdd,
   onEdit,
   onDelete,
@@ -61,6 +65,9 @@ export default function SimpleCatalogListView<T extends NamedItem>({
 
   return (
     <div className="flex flex-col gap-6 pb-32">
+      <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-indigo-900/10 border-indigo-900/30' : 'bg-indigo-50/50 border-indigo-100'}`}>
+        <p className="text-[11px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed">{description}</p>
+      </div>
       <div className={`p-4 rounded-2xl border shadow-sm flex items-center gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
         <input
           type="text"

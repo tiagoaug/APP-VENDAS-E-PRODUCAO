@@ -6503,6 +6503,7 @@ export default function App() {
           <SimpleCatalogListView
             items={brands}
             itemLabel="Marca"
+            description="Marca do produto — as opções cadastradas aqui aparecem no campo Marca ao cadastrar ou editar um Produto em Vendas."
             onAdd={async (name) => {
               try {
                 await firebaseService.saveDocument("brands", { name });
@@ -6533,6 +6534,7 @@ export default function App() {
           <SimpleCatalogListView
             items={productModels}
             itemLabel="Modelo"
+            description="Nome padrão de modelo — ao escolher um no campo Modelo do Produto em Vendas, o nome do produto já é preenchido automaticamente com esse nome."
             onAdd={async (name) => {
               try {
                 await firebaseService.saveDocument("productModels", { name });
