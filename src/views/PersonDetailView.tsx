@@ -181,7 +181,7 @@ export default function PersonDetailView({
 
         {person.isCustomer && onGenerateCatalogLink && (
           <div>
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-3">Link de Pedido</h3>
+            <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-3">Link de Pedido</h3>
             <div className={`p-4 rounded-2xl border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
               {activeCatalogLink ? (
                 <>
@@ -189,11 +189,11 @@ export default function PersonDetailView({
                     <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 flex items-center justify-center shrink-0">
                       <Link2 size={18} />
                     </div>
-                    <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                    <p className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                       {PUBLIC_CATALOG_BASE_URL}/pedido/{activeCatalogLink.token}
                     </p>
                   </div>
-                  <p className="text-[9px] font-bold text-amber-500 px-1 leading-relaxed">
+                  <p className="text-[10px] font-bold text-amber-500 px-1 leading-relaxed">
                     Obs: link individual, já vinculado ao cadastro de {person.name} — não compartilhe com outras pessoas.
                   </p>
                   {onSetCatalogLinkProducts && (
@@ -205,13 +205,13 @@ export default function PersonDetailView({
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <Tag size={14} className="text-indigo-500 shrink-0" />
-                        <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
+                        <span className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
                           {!activeCatalogLink.productIds || activeCatalogLink.productIds.length === 0 ? 'Produtos: Catálogo Completo' : `Produtos: ${activeCatalogLink.productIds.length} selecionados`}
                           {activeCatalogLink.hidePrices ? ' · sem valores' : ''}
                           {activeCatalogLink.useStockQuantities ? ' · qtd. do estoque' : ''}
                         </span>
                       </div>
-                      <span className="text-[9px] font-black uppercase text-indigo-500 shrink-0">Editar</span>
+                      <span className="text-[10px] font-black uppercase text-indigo-500 shrink-0">Editar</span>
                     </button>
                   )}
                   {onSetCatalogLinkProducts && catalogProfiles.length > 0 && (
@@ -220,7 +220,7 @@ export default function PersonDetailView({
                         type="button"
                         onClick={() => setCatalogProfilesModalOpen(true)}
                         data-guide-anchor="personDetail.catalogoVerTodosPerfis"
-                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-slate-100 text-indigo-500'}`}
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wide ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-slate-100 text-indigo-500'}`}
                       >
                         <Bookmark size={11} /> Ver Todos
                       </button>
@@ -228,7 +228,7 @@ export default function PersonDetailView({
                         type="button"
                         onClick={() => onSetCatalogLinkProducts(activeCatalogLink.id, [])}
                         data-guide-anchor="personDetail.catalogoCompleto"
-                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${!activeCatalogLink.productIds || activeCatalogLink.productIds.length === 0 ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wide ${!activeCatalogLink.productIds || activeCatalogLink.productIds.length === 0 ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
                       >
                         <Package size={11} /> Catálogo Completo
                       </button>
@@ -242,7 +242,7 @@ export default function PersonDetailView({
                             type="button"
                             onClick={() => onSetCatalogLinkProducts(activeCatalogLink.id, profile.productIds)}
                             data-guide-anchor="personDetail.catalogoAplicarPerfil"
-                            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide ${isActive ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wide ${isActive ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
                           >
                             <Bookmark size={11} /> {profile.name}
                           </button>
@@ -258,7 +258,7 @@ export default function PersonDetailView({
                         toast.show('Link copiado!');
                       }}
                       data-guide-anchor="personDetail.linkCopiar"
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all"
                     >
                       <Copy size={14} /> Copiar Link
                     </button>
@@ -277,7 +277,7 @@ export default function PersonDetailView({
                         }
                       }}
                       disabled={isGeneratingLink}
-                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
                     >
                       <RefreshCcw size={14} />
                     </button>
@@ -296,7 +296,7 @@ export default function PersonDetailView({
                     }
                   }}
                   disabled={isGeneratingLink}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-60"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-60"
                 >
                   <Link2 size={16} /> {isGeneratingLink ? 'Gerando...' : 'Gerar Link de Pedido'}
                 </button>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   X, ShoppingCart, ShoppingBag, Factory, Building2, Truck, DollarSign, User as UserIcon, UserCog,
-  Eye, EyeOff, LayoutDashboard, Settings, Pin, PinOff,
+  Eye, EyeOff, LayoutDashboard, Settings, Pin, PinOff, HelpCircle,
   GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
   Inbox, Link2, Handshake, Package, CreditCard, ScanText, Sparkles, Scissors,
   PackagePlus, Layout, SlidersHorizontal, Wand2, Smartphone,
@@ -235,6 +235,9 @@ function DraggableNavGrid({ items, onReorder, hidden, pinnedIds, isDarkMode, onT
 // App.tsx middleNavItems), o resto o usuário pode esconder e reordenar. Mudanças salvam na hora
 // (mesmo padrão do ModuleConfigView), sem botão de "Confirmar" separado.
 export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, modulesConfig, isDarkMode }: BottomNavConfigModalProps) {
+  // Popup de ajuda com a explicação completa — precisa vir antes do `if (!isOpen) return null`
+  // pra não violar as regras de hooks.
+  const [showHelp, setShowHelp] = useState(false);
   if (!isOpen) return null;
 
   // Mesma lógica de ordenação usada em App.tsx (middleNavItems) — itens fora de `order` vão pro
@@ -319,15 +322,26 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
             <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Arraste os ícones pra posicionar — toque no olho/pin pra ocultar ou fixar</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Fechar"
-            aria-label="Fechar"
-            className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
-          >
-            <X size={20} strokeWidth={2.5} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              title="Como funciona esta tela"
+              aria-label="Ver explicação de como usar esta tela"
+              className={`p-2 rounded-xl transition-all active:scale-90 ${isDarkMode ? 'bg-slate-800 text-indigo-400 active:bg-slate-700' : 'bg-slate-50 text-indigo-500 active:bg-slate-100'}`}
+            >
+              <HelpCircle size={20} strokeWidth={2.5} />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Fechar"
+              aria-label="Fechar"
+              className={`p-2 rounded-xl transition-all active:scale-90 ${isDarkMode ? 'bg-slate-800 text-slate-400 active:bg-slate-700' : 'bg-slate-50 text-slate-400 active:bg-slate-100'}`}
+            >
+              <X size={20} strokeWidth={2.5} />
+            </button>
+          </div>
         </div>
 
         {/* Prévia interativa — celular representativo com as MESMAS duas camadas da barra de
@@ -398,16 +412,75 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
           </div>
         </div>
 
-        <div className="px-6 pb-6 pt-2 shrink-0 flex flex-col gap-3">
-          <div className={`flex items-center gap-2 p-3 rounded-2xl border text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-amber-900/20 border-amber-800/40 text-amber-300' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
-            <Pin size={15} className="shrink-0" />
-            Fixado aparece sempre na barra — o resto só ao expandir (seta pra cima)
-          </div>
+        <div className="px-6 pb-6 pt-2 shrink-0">
           <p className="text-[9px] font-bold text-slate-400 text-center italic">
             As alterações salvam na hora e sincronizam em todos os dispositivos.
           </p>
         </div>
       </div>
+
+      {/* Popup de ajuda — explicação completa de como usar esta tela, aberta pelo "?" no
+          cabeçalho. Substitui o card fixo "Fixado aparece sempre..." que ficava sempre visível
+          ocupando espaço — agora fica escondido até o usuário pedir. */}
+      {showHelp && (
+        <div
+          className="fixed inset-0 z-[80000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={(e) => { e.stopPropagation(); setShowHelp(false); }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm max-h-[85vh] overflow-y-auto rounded-[2rem] p-6 shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                <HelpCircle size={22} />
+              </div>
+              <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Como usar esta tela</h3>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div>
+                <p className={`text-xs font-black uppercase tracking-wide mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Barra fixa x Painel expansível</p>
+                <p className="text-[11px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed">
+                  A barra de navegação de verdade (embaixo, no app) tem duas partes: a <b>Barra Fixa</b>, com Home, os ícones fixados e Mais, que aparece sempre; e o <b>Painel Expansível</b>, com o resto dos ícones, que só aparece quando você toca na seta pra cima da barra. Aqui na prévia, as duas partes ficam sempre visíveis pra facilitar editar.
+                </p>
+              </div>
+              <div>
+                <p className={`text-xs font-black uppercase tracking-wide mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Arrastar pra reposicionar</p>
+                <p className="text-[11px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed">
+                  Segure um ícone e arraste pra qualquer posição dentro da mesma área (Barra Fixa ou Painel Expansível) — ele troca de lugar com o ícone por baixo do seu dedo, abrindo espaço na hora.
+                </p>
+              </div>
+              <div>
+                <p className={`text-xs font-black uppercase tracking-wide mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Olho — ocultar ou mostrar</p>
+                <p className="text-[11px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed">
+                  Toque no ícone de olho (canto inferior direito do tile) pra esconder aquele atalho da barra por completo, ou mostrar de novo um que já estava escondido.
+                </p>
+              </div>
+              <div>
+                <p className={`text-xs font-black uppercase tracking-wide mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pin — fixar ou deixar só na expansão</p>
+                <p className="text-[11px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed">
+                  Toque no pin (canto superior esquerdo) pra mover o ícone entre a Barra Fixa (fica sempre visível) e o Painel Expansível (só aparece ao expandir). Home e Mais não têm essa opção — eles são sempre fixos, nas pontas da barra.
+                </p>
+              </div>
+              <div>
+                <p className={`text-xs font-black uppercase tracking-wide mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Salvamento</p>
+                <p className="text-[11px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed">
+                  Toda alteração salva na hora, sem precisar confirmar nada, e sincroniza automaticamente em todos os aparelhos logados na mesma conta.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowHelp(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

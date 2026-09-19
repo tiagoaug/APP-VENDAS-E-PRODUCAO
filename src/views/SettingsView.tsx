@@ -56,7 +56,8 @@ import {
   ShoppingBag,
   DollarSign,
   ScanLine,
-  Smartphone
+  Smartphone,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -819,7 +820,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.35.4</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.35.5</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -905,50 +906,91 @@ export default function SettingsView({
 
               {/* Miniaturas dos modelos na Engenharia de Produção */}
               {setShowEngineeringThumbnails && (
-                <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
-                      {showEngineeringThumbnails ? <Eye size={18} /> : <EyeOff size={18} />}
+                <div className={`flex flex-col gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                        {showEngineeringThumbnails ? <Eye size={18} /> : <EyeOff size={18} />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Miniaturas dos Modelos</p>
+                        <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Foto nas listas de produtos cadastrados</p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Miniaturas dos Modelos</p>
-                      <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Foto nas listas de produtos cadastrados</p>
+                    <button
+                      onClick={() => setShowEngineeringThumbnails(!showEngineeringThumbnails)}
+                      title="Mostrar/ocultar miniaturas dos modelos"
+                      aria-label="Mostrar ou ocultar miniaturas dos modelos na Engenharia de Produção"
+                      data-guide-anchor="settings.miniaturasEngenharia"
+                      className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${showEngineeringThumbnails ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
+                  {/* Prévia ao vivo — silhueta de celular com uma listinha de produtos de
+                      exemplo, mostrando a miniatura aparecendo ou sumindo ao ligar/desligar. */}
+                  <div className="flex justify-center pt-1">
+                    <div className="relative w-32 rounded-[1.6rem] p-1.5 shadow-lg bg-slate-900">
+                      <div className="absolute left-1/2 -translate-x-1/2 top-1 w-9 h-2 rounded-full bg-black z-10" />
+                      <div className={`relative rounded-[1.1rem] overflow-hidden pt-4 pb-2 px-1.5 flex flex-col gap-1 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+                        {[0, 1].map(i => (
+                          <div key={i} className={`flex items-center gap-1.5 p-1 rounded-lg shadow-sm ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                            {showEngineeringThumbnails && (
+                              <div className="w-5 h-5 rounded bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center shrink-0">
+                                <ImageIcon size={10} className="text-indigo-500 dark:text-indigo-400" />
+                              </div>
+                            )}
+                            <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                              <div className={`h-1 rounded-full w-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`} />
+                              <div className={`h-1 rounded-full w-2/3 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setShowEngineeringThumbnails(!showEngineeringThumbnails)}
-                    title="Mostrar/ocultar miniaturas dos modelos"
-                    aria-label="Mostrar ou ocultar miniaturas dos modelos na Engenharia de Produção"
-                    data-guide-anchor="settings.miniaturasEngenharia"
-                    className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${showEngineeringThumbnails ? 'left-7' : 'left-1'}`} />
-                  </button>
                 </div>
               )}
 
               {/* Modo Privacidade Financeira — borra valores no Financeiro e nos cards do
                   Dashboard, pra poder mostrar a tela pra alguém sem expor números. */}
               {setHideFinancialValues && (
-                <div className={`flex items-center justify-between gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
-                      {hideFinancialValues ? <EyeOff size={18} /> : <Eye size={18} />}
+                <div className={`flex flex-col gap-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                        {hideFinancialValues ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo Privacidade Financeira</p>
+                        <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Borra valores no Financeiro e no Dashboard</p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo Privacidade Financeira</p>
-                      <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Borra valores no Financeiro e no Dashboard</p>
+                    <button
+                      onClick={() => setHideFinancialValues(!hideFinancialValues)}
+                      title="Ativar/desativar Modo Privacidade Financeira"
+                      aria-label="Ativar ou desativar o Modo Privacidade Financeira"
+                      data-guide-anchor="settings.privacidadeFinanceira"
+                      className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${hideFinancialValues ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${hideFinancialValues ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
+                  {/* Prévia ao vivo — silhueta de celular com um valor de exemplo, borrado ou
+                      não conforme o modo está ligado/desligado. */}
+                  <div className="flex justify-center pt-1">
+                    <div className="relative w-32 rounded-[1.6rem] p-1.5 shadow-lg bg-slate-900">
+                      <div className="absolute left-1/2 -translate-x-1/2 top-1 w-9 h-2 rounded-full bg-black z-10" />
+                      <div className={`relative rounded-[1.1rem] overflow-hidden pt-4 pb-3 px-2 flex flex-col items-center gap-1 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+                        <span className={`text-[6px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Saldo em Caixa</span>
+                        <span
+                          className={`text-[11px] font-black transition-all ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'} ${hideFinancialValues ? 'blur-[4px] select-none' : ''}`}
+                        >
+                          R$ 12.450,00
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setHideFinancialValues(!hideFinancialValues)}
-                    title="Ativar/desativar Modo Privacidade Financeira"
-                    aria-label="Ativar ou desativar o Modo Privacidade Financeira"
-                    data-guide-anchor="settings.privacidadeFinanceira"
-                    className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${hideFinancialValues ? 'bg-indigo-600' : 'bg-slate-200'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${hideFinancialValues ? 'left-7' : 'left-1'}`} />
-                  </button>
                 </div>
               )}
 
@@ -1583,6 +1625,38 @@ export default function SettingsView({
                 );
               })}
             </div>
+
+            {/* Prévia ao vivo — silhueta de celular com cabeçalho, cartão de conteúdo e barra
+                de navegação nas MESMAS classes do tema escolhido (headerGradient/pillGradient/
+                outerBg/baseText), pra dar uma noção real de como o app fica em cada tema. */}
+            <div className="flex justify-center py-1">
+              <div className="relative w-48 rounded-[2.3rem] p-2 shadow-xl bg-slate-900" style={{ height: 300 }}>
+                <div className="absolute left-1/2 -translate-x-1/2 top-2 w-16 h-4 rounded-full bg-black z-10" />
+                <div className={`relative w-full h-full rounded-[1.7rem] overflow-hidden flex flex-col ${THEME_VISUALS[appTheme].outerBg}`}>
+                  <div className={`shrink-0 pt-7 pb-2 px-2 ${THEME_VISUALS[appTheme].headerGradient}`}>
+                    <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-full ${THEME_VISUALS[appTheme].pillGradient}`}>
+                      <span className={`text-[7px] font-black uppercase tracking-wide ${THEME_VISUALS[appTheme].baseText}`}>LIM.O APP</span>
+                      <div className={`w-3 h-3 rounded-full bg-current opacity-50 ${THEME_VISUALS[appTheme].baseText}`} />
+                    </div>
+                  </div>
+                  <div className="flex-1 p-2.5 flex flex-col gap-2">
+                    <div className={`flex-1 rounded-2xl p-2.5 flex flex-col justify-center gap-1.5 ${THEME_VISUALS[appTheme].pillGradient}`}>
+                      <span className={`text-[7px] font-black uppercase tracking-wide ${THEME_VISUALS[appTheme].baseText}`}>Cartão de exemplo</span>
+                      <span className={`text-[6px] font-medium opacity-70 ${THEME_VISUALS[appTheme].baseText}`}>Aa Bb Cc — texto de conteúdo</span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 p-2">
+                    <div className={`flex items-center justify-around gap-1 px-2 py-2 rounded-full ${THEME_VISUALS[appTheme].pillGradient}`}>
+                      <LayoutDashboard size={13} className={THEME_VISUALS[appTheme].baseText} />
+                      <ShoppingCart size={13} className={`${THEME_VISUALS[appTheme].baseText} opacity-50`} />
+                      <ShoppingBag size={13} className={`${THEME_VISUALS[appTheme].baseText} opacity-50`} />
+                      <DollarSign size={13} className={`${THEME_VISUALS[appTheme].baseText} opacity-50`} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={() => setThemeSectionOpen(false)}

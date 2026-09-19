@@ -609,9 +609,9 @@ function TabItem({
       title={label}
       aria-label={`Ir para ${label}`}
       data-guide-anchor={anchorKey}
-      className={`flex flex-col items-center justify-center gap-0.5 transition-all rounded-2xl ${big ? 'flex-1 min-h-0 w-full py-2 bg-black/[0.035] dark:bg-white/[0.06]' : fluid ? 'w-full py-1.5' : 'w-16 shrink-0 py-1.5'}`}
+      className={`flex flex-col items-center justify-center gap-0.5 transition-all rounded-2xl ${big ? 'flex-1 min-h-0 w-full py-1.5 bg-black/[0.035] dark:bg-white/[0.06]' : fluid ? 'w-full py-1.5' : 'w-16 shrink-0 py-1.5'}`}
     >
-      <div className={`relative flex items-center justify-center rounded-xl transition-all ${big ? 'w-14 h-10' : 'w-10 h-7'}`} style={pillStyle}>
+      <div className={`relative flex items-center justify-center rounded-xl transition-all ${big ? 'w-14 h-9' : 'w-10 h-7'}`} style={pillStyle}>
         <span className="transition-all" style={iconStyle}>
           {icon}
         </span>
@@ -619,7 +619,7 @@ function TabItem({
           <span className="absolute top-0.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
         )}
       </div>
-      <span className={`font-bold tracking-tight transition-all leading-none truncate max-w-full px-0.5 ${big ? 'text-[10px]' : 'text-[9px]'}`} style={iconStyle}>
+      <span className="font-bold tracking-tight transition-all leading-normal truncate max-w-full px-0.5 shrink-0 text-[10px]" style={iconStyle}>
         {label}
       </span>
     </button>
