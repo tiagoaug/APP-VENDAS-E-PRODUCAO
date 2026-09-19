@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Lock,
   ArrowRight,
+  PackagePlus,
   Check,
   Settings,
   DollarSign,
@@ -63,7 +64,10 @@ import {
   RotateCcw,
   PlayCircle,
   X,
-  Rocket
+  Rocket,
+  SlidersHorizontal,
+  Layout,
+  Wand2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -6206,6 +6210,7 @@ export default function App() {
             onOpenLabelPrintStudio={handleOpenLabelPrintStudio}
             bottomNavConfig={bottomNavConfig}
             onSaveBottomNavConfig={saveBottomNavConfig}
+            openAccessibilityNonce={currentParams?.openAccessibilityNonce}
           />
         );
       case ViewType.PRODUCTS:
@@ -7169,6 +7174,7 @@ export default function App() {
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
             onOpenPastedOrder={(draft) => navigateTo(ViewType.SALE_FORM, draft)}
             openCatalogSendNonce={currentParams?.openCatalogSendNonce}
+            openManagementNonce={currentParams?.openManagementNonce}
             defaultFilters={salesDefaultFilters}
             onSaveDefaultFilters={async (data) => {
               try {
@@ -9394,6 +9400,10 @@ export default function App() {
     const candidates: { id: BottomNavItemId; label: string; icon: ReactNode; view: ViewType; anchorKey?: string; allowed: boolean; badge?: boolean }[] = [
       { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={20} />, view: ViewType.PURCHASES, anchorKey: 'nav.compras', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PURCHASES) },
       { id: 'sales', label: 'Vendas', icon: <ShoppingBag size={20} />, view: ViewType.SALES, anchorKey: 'nav.vendas', allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
+      // Abre o painel "Gerenciamento" de Vendas direto (Cruzamento, Diagnósticos, Histórico,
+      // Expedição, Estoque, Lotes, Fazer Balanço) — mesmo tratamento especial de "Enviar
+      // Catálogo" logo acima, um nonce em navigateTo (ver openManagementNonce em SalesView).
+      { id: 'management', label: 'Gerenc.', icon: <PackagePlus size={20} />, view: ViewType.SALES, allowed: modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) },
       { id: 'production', label: 'Prod.', icon: <Factory size={20} />, view: ViewType.PRODUCTION_MENU, anchorKey: 'nav.producao', allowed: modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) },
       { id: 'bling', label: 'Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, allowed: isTemplateAdmin() && modulesConfig.sales && modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) },
       { id: 'entregas', label: 'Entregas', icon: <Truck size={20} />, view: ViewType.DELIVERY_MENU, allowed: modulesConfig.sales && modulesConfig.entregas && isViewAllowed(activeCollaborator, ViewType.DELIVERY_MENU) },
@@ -9433,6 +9443,14 @@ export default function App() {
       // Clique tem tratamento especial (ver onClick abaixo) — usa onNavigateProduction('FACAS')
       // igual ao atalho de Configurações, não `resetTo(view)`.
       { id: 'cuttingKnives', label: 'Facas', icon: <Scissors size={20} />, view: ViewType.PRODUCTION_ENGINEERING, allowed: modulesConfig.sales && modulesConfig.production },
+      { id: 'dashboardConfig', label: 'Dashboard', icon: <Layout size={20} />, view: ViewType.DASHBOARD_CONFIG, allowed: true },
+      // Clique tem tratamento especial (ver onClick abaixo) — abre o popup de Acessibilidade em
+      // Configurações direto, com um nonce (ver openAccessibilityNonce em SettingsView), igual ao
+      // atalho de "Enviar Catálogo".
+      { id: 'accessibility', label: 'Acessib.', icon: <SlidersHorizontal size={20} />, view: ViewType.SETTINGS, allowed: true },
+      // Clique tem tratamento especial (ver onClick abaixo) — chama handleStartVisualSetup()
+      // direto, igual ao atalho de Assist. IA.
+      { id: 'visualSetup', label: 'P. Visual', icon: <Wand2 size={20} />, view: ViewType.SETTINGS, allowed: true },
     ];
 
     const visible = candidates.filter(c => c.allowed && !bottomNavConfig.hidden.includes(c.id));
@@ -9592,8 +9610,11 @@ export default function App() {
     setNavExpanded(false);
     if (item.id === 'labelPrintStudio') { handleOpenLabelPrintStudio(); return; }
     if (item.id === 'sendCatalog') { navigateTo(ViewType.SALES, { openCatalogSendNonce: Date.now() }); return; }
+    if (item.id === 'management') { navigateTo(ViewType.SALES, { openManagementNonce: Date.now() }); return; }
     if (item.id === 'aiAssistant') { setShowAISettingsFromNav(true); return; }
     if (item.id === 'cuttingKnives') { navigateToProduction('FACAS'); return; }
+    if (item.id === 'accessibility') { navigateTo(ViewType.SETTINGS, { openAccessibilityNonce: Date.now() }); return; }
+    if (item.id === 'visualSetup') { handleStartVisualSetup(); return; }
     if (MODAL_VIEWS.includes(item.view)) { navigateTo(item.view); return; }
     resetTo(item.view);
   };

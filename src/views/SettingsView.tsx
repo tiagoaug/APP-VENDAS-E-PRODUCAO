@@ -139,6 +139,10 @@ interface SettingsViewProps {
   // Personalização da barra de navegação inferior (ver App.tsx middleNavItems/BottomNavConfigModal).
   bottomNavConfig: BottomNavConfig;
   onSaveBottomNavConfig: (config: BottomNavConfig) => void;
+  // Nonce (Date.now() a cada clique) do ícone "Acessibilidade" na barra de navegação inferior —
+  // muda de valor a cada toque só pra disparar o useEffect abaixo e abrir o popup direto, sem
+  // precisar passar por "Mais Opções" (ver App.tsx middleNavItems/handleMiddleNavItemClick).
+  openAccessibilityNonce?: number;
 }
 
 export default function SettingsView({
@@ -178,6 +182,7 @@ export default function SettingsView({
   onOpenLabelPrintStudio,
   bottomNavConfig,
   onSaveBottomNavConfig,
+  openAccessibilityNonce,
 }: SettingsViewProps) {
   // "Tema", "Fonte", "Tamanho da Fonte" e "Ícones do Menu" começam minimizados — são escolhas
   // feitas uma vez e raramente revisitadas, então não precisam ocupar espaço aberto toda vez
@@ -264,6 +269,11 @@ export default function SettingsView({
     if (visualGuideTarget === 'tamanho') setFontScaleSectionOpen(true);
     if (visualGuideTarget === 'icones') setNavIconsSectionOpen(true);
   }, [visualGuideTarget]);
+  // Ícone "Acessibilidade" da navegação inferior — abre o popup direto, sem tocar em nenhuma
+  // seção interna específica (diferente do tour guiado acima).
+  useEffect(() => {
+    if (openAccessibilityNonce) setShowA11y(true);
+  }, [openAccessibilityNonce]);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [faceIdUnlockEnabled, setFaceIdUnlockEnabled] = useState(false);
@@ -832,7 +842,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.33.6</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.33.7</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}

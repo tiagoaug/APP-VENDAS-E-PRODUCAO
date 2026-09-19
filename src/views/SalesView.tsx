@@ -145,6 +145,10 @@ interface SalesViewProps {
   // { openCatalogSendNonce: Date.now() }), abre o popup de escolher cliente direto, sem passar
   // pelo "+". Nonce (não boolean) pra disparar de novo mesmo clicando 2x seguidas sem sair da tela.
   openCatalogSendNonce?: number;
+  // Atalho "Gerenciamento" da barra de navegação — chega via navigateTo(ViewType.SALES,
+  // { openManagementNonce: Date.now() }), abre o card de Gerenciamento (Cruzamento de Estoque,
+  // Diagnósticos, Expedição, Lotes, etc.) direto no chooser, sem precisar tocar no ícone da caixinha.
+  openManagementNonce?: number;
   // Filtros/visualização padrão pra contas NOVAS (ver botão "Salvar Como Padrão para Novas
   // Contas" dentro do painel "Filtros e Configurações", só visível pra conta de desenvolvimento)
   // — aplicado só se a conta ainda não tiver nada salvo localmente, ver useEffect abaixo.
@@ -242,6 +246,7 @@ export default function SalesView({
   catalogRequests = [],
   onNavigateCatalogRequests,
   openCatalogSendNonce,
+  openManagementNonce,
   defaultFilters,
   onSaveDefaultFilters,
   onEdit,
@@ -594,6 +599,15 @@ export default function SalesView({
   // seletor quando o card é reaberto, não fica "preso" na última escolha.
   const [managementView, setManagementView] = useState<'chooser' | 'cruzamento' | 'expedicao' | 'lotes'>('chooser');
   const [managementSearchTerm, setManagementSearchTerm] = useState('');
+  // Atalho "Gerenciamento" da barra de navegação — ver openManagementNonce acima. Abre o card
+  // já no chooser, mesmo que a última visita tenha ficado numa sub-tela (cruzamento/expedicao/lotes).
+  useEffect(() => {
+    if (openManagementNonce) {
+      setShowManagementCard(true);
+      setManagementView('chooser');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openManagementNonce]);
   // Histórico de Movimentações abre como modal aqui mesmo (sem navegar pra Estoque) — antes
   // navegava pra StockView e abria o modal via useEffect pós-mount, o que mostrava um frame
   // da tela de Estoque "pelada" antes do modal aparecer (parecia abrir a tela errada).

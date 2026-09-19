@@ -1222,7 +1222,7 @@ export type AppModulesConfig = {
 // os itens do meio entram em `order`/`hidden`. Itens ausentes de `order` caem no fim, na ordem
 // padrão de sempre — assim adicionar um item novo (ex.: um módulo futuro) nunca quebra a config
 // salva de quem já personalizou antes.
-export type BottomNavItemId = 'purchases' | 'sales' | 'production' | 'bling' | 'entregas' | 'financial' | 'personal' | 'rh' | 'pcp' | 'stock' | 'people' | 'reports' | 'soleStock' | 'engineering' | 'purchaseNeeds' | 'ruleOfThree' | 'labelPrintStudio' | 'catalogRequests' | 'sendCatalog' | 'fornecedores' | 'products' | 'paymentMethods' | 'ocr' | 'aiAssistant' | 'cuttingKnives';
+export type BottomNavItemId = 'purchases' | 'sales' | 'management' | 'production' | 'bling' | 'entregas' | 'financial' | 'personal' | 'rh' | 'pcp' | 'stock' | 'people' | 'reports' | 'soleStock' | 'engineering' | 'purchaseNeeds' | 'ruleOfThree' | 'labelPrintStudio' | 'catalogRequests' | 'sendCatalog' | 'fornecedores' | 'products' | 'paymentMethods' | 'ocr' | 'aiAssistant' | 'cuttingKnives' | 'dashboardConfig' | 'accessibility' | 'visualSetup';
 export type BottomNavConfig = {
   order: BottomNavItemId[];
   hidden: BottomNavItemId[];

@@ -4,6 +4,7 @@ import {
   Eye, EyeOff, ChevronUp, ChevronDown, LayoutDashboard, Settings, GripVertical, Pin, PinOff,
   GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
   Inbox, Link2, Handshake, Package, CreditCard, ScanText, Sparkles, Scissors,
+  PackagePlus, Layout, SlidersHorizontal, Wand2,
 } from 'lucide-react';
 import { AppModulesConfig, BottomNavConfig, BottomNavItemId } from '../types';
 
@@ -21,6 +22,7 @@ type NavCandidate = { id: BottomNavItemId; label: string; icon: React.ReactNode;
 const CANDIDATES: NavCandidate[] = [
   { id: 'purchases', label: 'Compras', icon: <ShoppingCart size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
   { id: 'sales', label: 'Vendas', icon: <ShoppingBag size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
+  { id: 'management', label: 'Gerenciamento', icon: <PackagePlus size={18} />, requiredModule: 'sales', requiredModuleLabel: 'Vendas' },
   { id: 'production', label: 'Prod.', icon: <Factory size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
   { id: 'bling', label: 'Bling', icon: <Building2 size={18} />, requiredModule: 'bling', requiredModuleLabel: 'Bling' },
   { id: 'entregas', label: 'Entregas', icon: <Truck size={18} />, requiredModule: 'entregas', requiredModuleLabel: 'Entregas' },
@@ -44,6 +46,9 @@ const CANDIDATES: NavCandidate[] = [
   { id: 'ocr', label: 'Extrator de Texto (OCR)', icon: <ScanText size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
   { id: 'aiAssistant', label: 'Assistente de IA', icon: <Sparkles size={18} />, requiredModule: 'ai', requiredModuleLabel: 'IA' },
   { id: 'cuttingKnives', label: 'Facas de Corte', icon: <Scissors size={18} />, requiredModule: 'production', requiredModuleLabel: 'Produção' },
+  { id: 'dashboardConfig', label: 'Organizar Dashboard', icon: <Layout size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
+  { id: 'accessibility', label: 'Acessibilidade e Personalização', icon: <SlidersHorizontal size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
+  { id: 'visualSetup', label: 'Assistente de Personalização Visual', icon: <Wand2 size={18} />, requiredModule: 'any', requiredModuleLabel: 'Qualquer' },
 ];
 
 interface NavRowProps {
