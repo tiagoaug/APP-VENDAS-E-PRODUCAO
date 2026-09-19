@@ -842,7 +842,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.33.7</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.33.8</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -869,7 +869,7 @@ export default function SettingsView({
                 </div>
                 <div>
                   <h3 className={`text-base font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Acessibilidade</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Tema, fonte e tamanho</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-900 dark:text-blue-300 mt-1">Tema, fonte e tamanho</p>
                 </div>
               </div>
               <button
@@ -912,7 +912,7 @@ export default function SettingsView({
                   </div>
                   <div className="min-w-0">
                     <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo {isDarkMode ? 'Noturno' : 'Diurno'}</p>
-                    <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Atalho rápido</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Atalho rápido</p>
                   </div>
                 </div>
                 <button
@@ -935,7 +935,7 @@ export default function SettingsView({
                     </div>
                     <div className="min-w-0">
                       <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Miniaturas dos Modelos</p>
-                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Foto nas listas de produtos cadastrados</p>
+                      <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Foto nas listas de produtos cadastrados</p>
                     </div>
                   </div>
                   <button
@@ -960,7 +960,7 @@ export default function SettingsView({
                     </div>
                     <div className="min-w-0">
                       <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo Privacidade Financeira</p>
-                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Borra valores no Financeiro e no Dashboard</p>
+                      <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Borra valores no Financeiro e no Dashboard</p>
                     </div>
                   </div>
                   <button
@@ -994,7 +994,7 @@ export default function SettingsView({
                     </div>
                     <div className="min-w-0">
                       <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Espaço no Topo {visualGuideTarget === 'topo' && <GuidePulseDot show />}</p>
-                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Ajuste fino pra não ficar atrás da câmera/notch</p>
+                      <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Ajuste fino pra não ficar atrás da câmera/notch</p>
                     </div>
                   </div>
                   <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-500 border border-slate-200'}`}>
@@ -1040,7 +1040,7 @@ export default function SettingsView({
                           >
                             {active && <Check size={14} className="text-white drop-shadow" strokeWidth={3} />}
                           </div>
-                          <span className={`text-[8px] font-black uppercase tracking-wide ${active ? 'text-violet-500' : 'text-slate-400'}`}>{t.label}</span>
+                          <span className={`text-[8px] font-black uppercase tracking-wide ${active ? 'text-violet-500' : 'text-blue-900 dark:text-blue-300'}`}>{t.label}</span>
                         </button>
                       );
                     })}
@@ -1074,7 +1074,7 @@ export default function SettingsView({
                           type="button"
                           onClick={() => setFontFamily(opt.value)}
                           data-guide-anchor="settings.fonteFamilia"
-                          className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${active ? 'bg-violet-500 text-white' : isDarkMode ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-white text-slate-600'}`}
+                          className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${active ? 'bg-violet-500 text-white' : isDarkMode ? 'hover:bg-slate-700 text-blue-300' : 'hover:bg-white text-blue-900'}`}
                           style={{ fontFamily: opt.value }}
                         >
                           <span className="text-sm truncate">{opt.label}</span>
@@ -1247,7 +1247,7 @@ export default function SettingsView({
                           </div>
                           <div className="min-w-0">
                             <p className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
-                            {note && <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide truncate">{note}</p>}
+                            {note && <p className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wide truncate">{note}</p>}
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -1257,7 +1257,7 @@ export default function SettingsView({
                             data-guide-anchor="settings.barraAtalhosExibir"
                             className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
                           >
-                            <span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Exibir</span>
+                            <span className="text-[9px] font-black uppercase tracking-wide text-blue-900 dark:text-blue-300">Exibir</span>
                             <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutVisibility[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
                               <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutVisibility[key] ? 'left-4' : 'left-0.5'}`} />
                             </span>
@@ -1269,7 +1269,7 @@ export default function SettingsView({
                             data-guide-anchor="settings.barraAtalhosMovimento"
                             className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl disabled:opacity-40 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
                           >
-                            <span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Movimento</span>
+                            <span className="text-[9px] font-black uppercase tracking-wide text-blue-900 dark:text-blue-300">Movimento</span>
                             <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutAnimated[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
                               <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutAnimated[key] ? 'left-4' : 'left-0.5'}`} />
                             </span>
@@ -1277,7 +1277,7 @@ export default function SettingsView({
                         </div>
                       </div>
                     ))}
-                    <p className="text-[10px] font-medium text-slate-400 leading-relaxed px-1">
+                    <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-1">
                       "Exibir" mostra ou esconde o atalho no cabeçalho. "Movimento" liga o balancinho de animação; desligado, o ícone fica parado até você tocar.
                     </p>
                   </div>
