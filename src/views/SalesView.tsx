@@ -1653,9 +1653,13 @@ export default function SalesView({
 
         {/* Painel de Gerenciamento — popup próprio (era um card inline na página, então a
             "Análise de Lucro"/dados de Vendas ficavam visíveis atrás; Tiago pediu que Gerenciamento
-            mostre só Gerenciamento, num popup). Fecha ao tocar fora, igual aos outros popups do app. */}
+            mostre só Gerenciamento, num popup). Fecha ao tocar fora, igual aos outros popups do app.
+            z-[45000] (abaixo do Modal global/StockDiagnosticsModal/StockEntryHistoryModal, que usam
+            zIndex 50000) de propósito — vários botões daqui dentro (Diagnósticos, Histórico,
+            Estoque) abrem esses modais por cima, e com z-[65000] eles ficavam escondidos atrás
+            deste popup, impossível de ver sem fechar o card primeiro (reportado pelo Tiago). */}
         {showManagementCard && (
-        <div className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowManagementCard(false)}>
+        <div className="fixed inset-0 z-[45000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowManagementCard(false)}>
         <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-[2rem] shadow-2xl flex flex-col gap-4 p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
         {/* Painel de Gerenciamento — escolhe entre Cruzamento e Diagnósticos e Correções */}
         {managementView === 'chooser' && (
