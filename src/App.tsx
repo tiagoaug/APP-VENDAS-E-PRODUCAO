@@ -9686,7 +9686,7 @@ export default function App() {
       case ViewType.PRODUCTION_STOCK:
         return "Estoque de Materiais";
       case ViewType.PRODUCTION_WEIGHING:
-        return "Pesagem e Contagem de Solados";
+        return "Pesagem";
       case ViewType.PRODUCTION_SOLE_PURCHASE:
         return "Entrada de Solados";
       case ViewType.PRODUCTION_SOLE_RECEIPT:
