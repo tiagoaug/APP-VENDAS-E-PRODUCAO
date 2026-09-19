@@ -196,7 +196,10 @@ export default function SettingsView({
   const [fontSectionOpen, setFontSectionOpen] = useState(false);
   const [fontScaleSectionOpen, setFontScaleSectionOpen] = useState(false);
   const [navIconsSectionOpen, setNavIconsSectionOpen] = useState(false);
-  const [shortcutBarSectionOpen, setShortcutBarSectionOpen] = useState(false);
+  // Controle da Barra de Atalhos virou popup próprio (era acordeão inline aqui dentro de
+  // Acessibilidade) — Tiago pediu uma prévia de celular mostrando os ícones no cabeçalho,
+  // mesmo padrão do popup de Espaço no Topo.
+  const [showShortcutBarEditor, setShowShortcutBarEditor] = useState(false);
   // Só Dias Úteis na Média — antes vivia só em Configuração de Fábrica, trazido pra cá pra
   // centralizar toda a configuração de Produção no Menu Mais (mesma coleção/serviço, só que
   // lido/gravado direto daqui em vez de por ProductionConfigView).
@@ -856,7 +859,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.34.3</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.35.0</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -1017,286 +1020,104 @@ export default function SettingsView({
                 </button>
               )}
 
-              {/* Tema — acordeão minimizado por padrão (escolha rara de revisitar). */}
-              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                <button
-                  type="button"
-                  onClick={() => setThemeSectionOpen(v => !v)}
-                  data-guide-anchor="settings.temaAcordeao"
-                  className="flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-pink-400' : 'bg-pink-50 text-pink-500'}`}>
-                      <Palette size={18} />
-                    </div>
+              {/* Tema, Fonte, Tamanho da Fonte e Ícones do Menu viraram popups próprios (eram
+                  acordeões inline aqui) — mesmo padrão de Espaço no Topo/Controle da Barra de
+                  Atalhos. Reaproveita os MESMOS estados booleanos (themeSectionOpen etc.) que já
+                  existiam pro acordeão — agora significam "popup aberto" em vez de "expandido",
+                  o que mantém o tour guiado (useEffect de visualGuideTarget acima) funcionando
+                  sem nenhuma mudança. */}
+              <button
+                type="button"
+                onClick={() => setThemeSectionOpen(true)}
+                data-guide-anchor="settings.temaAcordeao"
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-pink-400' : 'bg-pink-50 text-pink-500'}`}>
+                    <Palette size={18} />
+                  </div>
+                  <div className="min-w-0">
                     <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tema {visualGuideTarget === 'tema' && <GuidePulseDot show />}</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">{THEME_VISUALS[appTheme].label}</p>
                   </div>
-                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${themeSectionOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {themeSectionOpen && (
-                  <div className="grid grid-cols-4 gap-2.5">
-                    {(Object.keys(THEME_VISUALS) as ThemeId[]).map(id => {
-                      const t = THEME_VISUALS[id];
-                      const active = appTheme === id;
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setAppTheme(id)}
-                          data-guide-anchor="settings.tema"
-                          className="flex flex-col items-center gap-1.5"
-                          aria-label={`Tema ${t.label}`}
-                          title={t.label}
-                        >
-                          <div
-                            className={`w-9 h-9 rounded-lg border-2 transition-all flex items-center justify-center ${active ? 'border-violet-500 scale-110 shadow-lg' : 'border-transparent'}`}
-                            style={{ background: t.swatch }}
-                          >
-                            {active && <Check size={14} className="text-white drop-shadow" strokeWidth={3} />}
-                          </div>
-                          <span className={`text-[8px] font-black uppercase tracking-wide ${active ? 'text-violet-500' : 'text-blue-900 dark:text-blue-300'}`}>{t.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                </div>
+                <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
 
-              {/* Fonte — acordeão minimizado por padrão (escolha rara de revisitar). */}
-              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                <button
-                  type="button"
-                  onClick={() => setFontSectionOpen(v => !v)}
-                  data-guide-anchor="settings.fonteAcordeao"
-                  className="flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-blue-400' : 'bg-blue-50 text-blue-500'}`}>
-                      <Type size={18} />
-                    </div>
+              <button
+                type="button"
+                onClick={() => setFontSectionOpen(true)}
+                data-guide-anchor="settings.fonteAcordeao"
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-blue-400' : 'bg-blue-50 text-blue-500'}`}>
+                    <Type size={18} />
+                  </div>
+                  <div className="min-w-0">
                     <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fonte {visualGuideTarget === 'fonte' && <GuidePulseDot show />}</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider truncate">{FONT_OPTIONS.find(o => o.value === fontFamily)?.label || fontFamily}</p>
                   </div>
-                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontSectionOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {fontSectionOpen && (
-                  <div className={`flex flex-col gap-1.5 max-h-48 overflow-y-auto rounded-2xl p-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                    {FONT_OPTIONS.map(opt => {
-                      const active = fontFamily === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setFontFamily(opt.value)}
-                          data-guide-anchor="settings.fonteFamilia"
-                          className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${active ? 'bg-violet-500 text-white' : isDarkMode ? 'hover:bg-slate-700 text-blue-300' : 'hover:bg-white text-blue-900'}`}
-                          style={{ fontFamily: opt.value }}
-                        >
-                          <span className="text-sm truncate">{opt.label}</span>
-                          {active && <Check size={14} className="shrink-0" strokeWidth={3} />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                </div>
+                <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
 
-              {/* Tamanho da Fonte — acordeão minimizado por padrão. */}
-              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                <button
-                  type="button"
-                  onClick={() => setFontScaleSectionOpen(v => !v)}
-                  data-guide-anchor="settings.fonteTamanhoAcordeao"
-                  className="flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-teal-400' : 'bg-teal-50 text-teal-500'}`}>
-                      <Type size={18} />
-                    </div>
-                    <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tamanho da Fonte ({fontScale}%) {visualGuideTarget === 'tamanho' && <GuidePulseDot show />}</p>
+              <button
+                type="button"
+                onClick={() => setFontScaleSectionOpen(true)}
+                data-guide-anchor="settings.fonteTamanhoAcordeao"
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-teal-400' : 'bg-teal-50 text-teal-500'}`}>
+                    <Type size={18} />
                   </div>
-                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${fontScaleSectionOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {fontScaleSectionOpen && (
-                  <div className="grid grid-cols-5 gap-2">
-                    {FONT_SCALE_OPTIONS.map(pct => {
-                      const active = fontScale === pct;
-                      return (
-                        <button
-                          key={pct}
-                          type="button"
-                          onClick={() => setFontScale(pct)}
-                          data-guide-anchor="settings.fonteTamanho"
-                          className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all active:scale-95 ${active ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
-                        >
-                          <span className={`font-black leading-none ${active ? 'text-violet-600 dark:text-violet-400' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`} style={{ fontSize: `${10 + (pct / 100) * 6}px` }}>A</span>
-                          <span className={`text-[9px] font-black ${active ? 'text-violet-500' : 'text-slate-400'}`}>{pct}%</span>
-                        </button>
-                      );
-                    })}
+                  <div className="min-w-0">
+                    <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tamanho da Fonte {visualGuideTarget === 'tamanho' && <GuidePulseDot show />}</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">{fontScale}%</p>
                   </div>
-                )}
-              </div>
+                </div>
+                <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
 
-              {/* Ícones do Menu — barra inferior (Home/Compras/Vendas/...) — acordeão minimizado
-                  por padrão. */}
-              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                <button
-                  type="button"
-                  onClick={() => setNavIconsSectionOpen(v => !v)}
-                  data-guide-anchor="settings.iconesMenuAcordeao"
-                  className="flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
-                      <Layout size={18} />
-                    </div>
+              <button
+                type="button"
+                onClick={() => setNavIconsSectionOpen(true)}
+                data-guide-anchor="settings.iconesMenuAcordeao"
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
+                    <Layout size={18} />
+                  </div>
+                  <div className="min-w-0">
                     <p className={`flex items-center gap-1.5 text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ícones do Menu {visualGuideTarget === 'icones' && <GuidePulseDot show />}</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">{navIconMode === 'mono' ? 'Monocromático' : 'Colorido'}</p>
                   </div>
-                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${navIconsSectionOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {navIconsSectionOpen && (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setNavIconMode('mono')}
-                        data-guide-anchor="settings.navIconMode"
-                        className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'mono' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
-                      >
-                        <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'mono' ? 'text-violet-500' : 'text-slate-400'}`}>Monocromático</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNavIconMode('colored')}
-                        data-guide-anchor="settings.navIconMode"
-                        className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'colored' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
-                      >
-                        <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'colored' ? 'text-violet-500' : 'text-slate-400'}`}>Colorido</span>
-                      </button>
-                    </div>
-                    {navIconMode === 'mono' && (
-                      <div className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Cor do ícone ativo</p>
-                        <div className="flex flex-wrap gap-2">
-                          {NAV_MONO_PALETTE.map(c => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => setNavMonoColor(c)}
-                              title={c}
-                              aria-label={`Cor ${c}`}
-                              data-guide-anchor="settings.navMonoCor"
-                              className={`w-7 h-7 rounded-lg border transition-all ${navMonoColor === c ? 'border-violet-500 scale-110 ring-2 ring-violet-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
-                              style={{ backgroundColor: c }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Prévia ao vivo — antes ficava solta lá em cima, junto do botão do
-                        Assistente; Tiago pediu pra morar aqui dentro de Ícones do Menu, já que
-                        é a cor do ícone (mono ou colorido) que muda na hora — Tema/Fonte/Tamanho
-                        continuam refletidos junto, só a localização mudou. */}
-                    <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'}`}>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-2">Prévia</p>
-                      <div className={`flex items-center justify-around gap-2 p-3 rounded-2xl mb-3 ${THEME_VISUALS[appTheme].pillGradient}`}>
-                        {[
-                          { key: 'dashboard', Icon: LayoutDashboard },
-                          { key: 'purchases', Icon: ShoppingCart },
-                          { key: 'sales', Icon: ShoppingBag },
-                          { key: 'financial', Icon: DollarSign },
-                        ].map(({ key, Icon }) => (
-                          <Icon key={key} size={18} color={navIconMode === 'colored' ? NAV_TAB_COLORS[key] : navMonoColor} />
-                        ))}
-                      </div>
-                      <p
-                        style={{ fontFamily, fontSize: `${13 * (fontScale / 100)}px` }}
-                        className={`font-bold truncate px-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                      >
-                        Texto de exemplo — Aa Bb Cc 123
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
+                </div>
+                <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
 
               {/* Controle da Barra de Atalhos — Privacidade/Ajuda/Modo Diurno no cabeçalho.
-                  Acordeão minimizado por padrão, mesmo padrão de Ícones do Menu logo acima. Pra
-                  cada atalho: "Exibir" (mostra/esconde o botão do cabeçalho) e "Com Movimento"
-                  (o balancinho de animação ociosa — ver privacyAnim/helpAnim/themeAnim em
-                  App.tsx; estático = só fica parado até o toque). */}
-              <div className={`flex flex-col gap-2.5 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                <button
-                  type="button"
-                  onClick={() => setShortcutBarSectionOpen(v => !v)}
-                  data-guide-anchor="settings.barraAtalhosAcordeao"
-                  className="flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-sky-400' : 'bg-sky-50 text-sky-500'}`}>
-                      <MoveHorizontal size={18} />
-                    </div>
+                  Virou popup próprio (ver showShortcutBarEditor abaixo), com prévia de celular,
+                  em vez de acordeão inline — mesmo padrão do popup de Espaço no Topo. */}
+              <button
+                type="button"
+                onClick={() => setShowShortcutBarEditor(true)}
+                data-guide-anchor="settings.barraAtalhosAbrir"
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-2xl text-left transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 hover:bg-slate-800/70' : 'bg-slate-50 border border-slate-100 hover:bg-slate-100'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700 text-sky-400' : 'bg-sky-50 text-sky-500'}`}>
+                    <MoveHorizontal size={18} />
+                  </div>
+                  <div className="min-w-0">
                     <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Controle da Barra de Atalhos</p>
+                    <p className="text-[11px] text-blue-900 dark:text-blue-300 font-medium uppercase tracking-wider">Privacidade, Ajuda, Modo Diurno e mais</p>
                   </div>
-                  <ChevronDown size={16} className={`text-slate-400 transition-transform ${shortcutBarSectionOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {shortcutBarSectionOpen && (
-                  <div className="flex flex-col gap-2">
-                    {([
-                      { key: 'privacidade' as const, label: 'Privacidade', Icon: hideFinancialValues ? EyeOff : Eye, iconBg: 'bg-rose-50 dark:bg-slate-700 text-rose-500 dark:text-rose-400' },
-                      { key: 'ajuda' as const, label: 'Ajuda', Icon: HelpCircle, iconBg: 'bg-sky-50 dark:bg-slate-700 text-sky-500 dark:text-sky-400' },
-                      { key: 'tema' as const, label: isDarkMode ? 'Modo Noturno' : 'Modo Diurno', Icon: isDarkMode ? Moon : Sun, iconBg: 'bg-amber-50 dark:bg-slate-700 text-amber-500 dark:text-amber-400' },
-                      // Scanner e IA continuam configuráveis aqui mesmo com o módulo (Produção/
-                      // IA) desativado — a preferência já fica pronta e passa a valer sozinha
-                      // assim que o módulo correspondente for ativado, sem precisar mexer aqui
-                      // de novo depois.
-                      { key: 'scanner' as const, label: 'Scanner', Icon: ScanLine, iconBg: 'bg-emerald-50 dark:bg-slate-700 text-emerald-500 dark:text-emerald-400', note: !modulesConfig.production ? 'Só aparece com o Módulo de Produção ativo' : undefined },
-                      { key: 'ia' as const, label: 'Assistente IA', Icon: Sparkles, iconBg: 'bg-violet-50 dark:bg-slate-700 text-violet-500 dark:text-violet-400', note: !modulesConfig.ai ? 'Só aparece com o Assistente de IA ativo' : undefined },
-                    ]).map(({ key, label, Icon, iconBg, note }) => (
-                      <div key={key} className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white border border-slate-100'}`}>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
-                            <Icon size={14} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
-                            {note && <p className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wide truncate">{note}</p>}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => onToggleHeaderShortcutVisibility?.(key)}
-                            data-guide-anchor="settings.barraAtalhosExibir"
-                            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
-                          >
-                            <span className="text-[9px] font-black uppercase tracking-wide text-blue-900 dark:text-blue-300">Exibir</span>
-                            <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutVisibility[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
-                              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutVisibility[key] ? 'left-4' : 'left-0.5'}`} />
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onToggleHeaderShortcutAnimated?.(key)}
-                            disabled={!headerShortcutVisibility[key]}
-                            data-guide-anchor="settings.barraAtalhosMovimento"
-                            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl disabled:opacity-40 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
-                          >
-                            <span className="text-[9px] font-black uppercase tracking-wide text-blue-900 dark:text-blue-300">Movimento</span>
-                            <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutAnimated[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
-                              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutAnimated[key] ? 'left-4' : 'left-0.5'}`} />
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-1">
-                      "Exibir" mostra ou esconde o atalho no cabeçalho. "Movimento" liga o balancinho de animação; desligado, o ícone fica parado até você tocar.
-                    </p>
-                  </div>
-                )}
-              </div>
+                </div>
+                <ChevronRight size={16} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+              </button>
             </div>
 
             <div className={`p-5 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
@@ -1605,6 +1426,353 @@ export default function SettingsView({
                 <Check size={16} /> Salvar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Controle da Barra de Atalhos — popup próprio (era acordeão dentro de Acessibilidade),
+          com prévia de celular mostrando os ícones no cabeçalho, mesmo padrão do popup de
+          Espaço no Topo. Ordem dos ícones na prévia segue a ordem real do cabeçalho em App.tsx
+          (Privacidade, Scanner, Ajuda, Assistente IA, Modo Diurno/Noturno), não a ordem da lista
+          abaixo (que segue a ordem histórica dessa tela). */}
+      {showShortcutBarEditor && (() => {
+        const shortcutDefs = [
+          { key: 'privacidade' as const, label: 'Privacidade', Icon: hideFinancialValues ? EyeOff : Eye, iconBg: 'bg-rose-50 dark:bg-slate-700 text-rose-500 dark:text-rose-400' },
+          { key: 'ajuda' as const, label: 'Ajuda', Icon: HelpCircle, iconBg: 'bg-sky-50 dark:bg-slate-700 text-sky-500 dark:text-sky-400' },
+          { key: 'tema' as const, label: isDarkMode ? 'Modo Noturno' : 'Modo Diurno', Icon: isDarkMode ? Moon : Sun, iconBg: 'bg-amber-50 dark:bg-slate-700 text-amber-500 dark:text-amber-400' },
+          // Scanner e IA continuam configuráveis aqui mesmo com o módulo (Produção/IA)
+          // desativado — a preferência já fica pronta e passa a valer sozinha assim que o
+          // módulo correspondente for ativado, sem precisar mexer aqui de novo depois.
+          { key: 'scanner' as const, label: 'Scanner', Icon: ScanLine, iconBg: 'bg-emerald-50 dark:bg-slate-700 text-emerald-500 dark:text-emerald-400', note: !modulesConfig.production ? 'Só aparece com o Módulo de Produção ativo' : undefined },
+          { key: 'ia' as const, label: 'Assistente IA', Icon: Sparkles, iconBg: 'bg-violet-50 dark:bg-slate-700 text-violet-500 dark:text-violet-400', note: !modulesConfig.ai ? 'Só aparece com o Assistente de IA ativo' : undefined },
+        ];
+        const previewOrder: (typeof shortcutDefs[number]['key'])[] = ['privacidade', 'scanner', 'ajuda', 'ia', 'tema'];
+        const visiblePreviewIcons = previewOrder
+          .map(k => shortcutDefs.find(s => s.key === k)!)
+          .filter(s => headerShortcutVisibility[s.key]);
+        return (
+        <div
+          className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setShowShortcutBarEditor(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Controle da Barra de Atalhos</h3>
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
+                Escolha quais atalhos aparecem no cabeçalho ("Exibir") e se cada um fica com o
+                balancinho de animação ociosa ou parado até você tocar ("Movimento").
+              </p>
+            </div>
+
+            {/* Prévia ao vivo — silhueta de celular com os ícones exibidos no cabeçalho; os que
+                estão com Movimento ligado balançam (animate-bounce), os estáticos ficam parados. */}
+            <div className="flex justify-center py-1">
+              <div className={`relative w-48 rounded-[2.3rem] p-2 shadow-xl ${isDarkMode ? 'bg-slate-700' : 'bg-slate-900'}`} style={{ height: 220 }}>
+                <div className="absolute left-1/2 -translate-x-1/2 top-2 w-16 h-4 rounded-full bg-black z-10" />
+                <div className={`relative w-full h-full rounded-[1.7rem] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+                  <div className="pt-7 px-3">
+                    {/* Barra visível de verdade (pill com fundo próprio), não os ícones soltos
+                        direto no fundo da tela — mesmo espírito da cápsula do cabeçalho real. */}
+                    <div className={`w-full flex items-center justify-end gap-1.5 px-3 py-2 rounded-full shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white'}`}>
+                      {visiblePreviewIcons.length === 0 ? (
+                        <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Nenhum atalho visível</span>
+                      ) : visiblePreviewIcons.map(s => (
+                        <div key={s.key} className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${s.iconBg} ${headerShortcutAnimated[s.key] ? 'animate-bounce' : ''}`}>
+                          <s.Icon size={10} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex-1 flex items-center justify-center">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-300 dark:text-slate-700">Cabeçalho</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {shortcutDefs.map(({ key, label, Icon, iconBg, note }) => (
+                <div key={key} className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
+                      <Icon size={14} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
+                      {note && <p className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-wide truncate">{note}</p>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onToggleHeaderShortcutVisibility?.(key)}
+                      data-guide-anchor="settings.barraAtalhosExibir"
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+                    >
+                      <span className="text-[9px] font-black uppercase tracking-wide text-blue-900 dark:text-blue-300">Exibir</span>
+                      <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutVisibility[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutVisibility[key] ? 'left-4' : 'left-0.5'}`} />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleHeaderShortcutAnimated?.(key)}
+                      disabled={!headerShortcutVisibility[key]}
+                      data-guide-anchor="settings.barraAtalhosMovimento"
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl disabled:opacity-40 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+                    >
+                      <span className="text-[9px] font-black uppercase tracking-wide text-blue-900 dark:text-blue-300">Movimento</span>
+                      <span className={`w-9 h-5 rounded-full relative shrink-0 transition-colors ${headerShortcutAnimated[key] ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${headerShortcutAnimated[key] ? 'left-4' : 'left-0.5'}`} />
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <p className="text-[10px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed px-1">
+                "Exibir" mostra ou esconde o atalho no cabeçalho. "Movimento" liga o balancinho de animação; desligado, o ícone fica parado até você tocar.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowShortcutBarEditor(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Concluído
+            </button>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* Tema — popup próprio (era acordeão inline dentro de Acessibilidade). */}
+      {themeSectionOpen && (
+        <div className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setThemeSectionOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tema</h3>
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
+                Escolha a paleta de cores usada em todo o aplicativo.
+              </p>
+            </div>
+            <div className="grid grid-cols-4 gap-2.5">
+              {(Object.keys(THEME_VISUALS) as ThemeId[]).map(id => {
+                const t = THEME_VISUALS[id];
+                const active = appTheme === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setAppTheme(id)}
+                    data-guide-anchor="settings.tema"
+                    className="flex flex-col items-center gap-1.5"
+                    aria-label={`Tema ${t.label}`}
+                    title={t.label}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-lg border-2 transition-all flex items-center justify-center ${active ? 'border-violet-500 scale-110 shadow-lg' : 'border-transparent'}`}
+                      style={{ background: t.swatch }}
+                    >
+                      {active && <Check size={14} className="text-white drop-shadow" strokeWidth={3} />}
+                    </div>
+                    <span className={`text-[8px] font-black uppercase tracking-wide ${active ? 'text-violet-500' : 'text-blue-900 dark:text-blue-300'}`}>{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setThemeSectionOpen(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Concluído
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Fonte — popup próprio (era acordeão inline dentro de Acessibilidade). */}
+      {fontSectionOpen && (
+        <div className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setFontSectionOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fonte</h3>
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
+                Escolha a fonte usada em todo o aplicativo.
+              </p>
+            </div>
+            <div className={`flex flex-col gap-1.5 max-h-72 overflow-y-auto rounded-2xl p-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+              {FONT_OPTIONS.map(opt => {
+                const active = fontFamily === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setFontFamily(opt.value)}
+                    data-guide-anchor="settings.fonteFamilia"
+                    className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${active ? 'bg-violet-500 text-white' : isDarkMode ? 'hover:bg-slate-700 text-blue-300' : 'hover:bg-white text-blue-900'}`}
+                    style={{ fontFamily: opt.value }}
+                  >
+                    <span className="text-sm truncate">{opt.label}</span>
+                    {active && <Check size={14} className="shrink-0" strokeWidth={3} />}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setFontSectionOpen(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Concluído
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tamanho da Fonte — popup próprio (era acordeão inline dentro de Acessibilidade). */}
+      {fontScaleSectionOpen && (
+        <div className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setFontScaleSectionOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tamanho da Fonte ({fontScale}%)</h3>
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
+                Ajusta o tamanho do texto em todo o aplicativo.
+              </p>
+            </div>
+
+            {/* Prévia ao vivo — silhueta de celular com o texto de exemplo crescendo/encolhendo
+                junto com o tamanho escolhido. */}
+            <div className="flex justify-center py-1">
+              <div className={`relative w-48 rounded-[2.3rem] p-2 shadow-xl ${isDarkMode ? 'bg-slate-700' : 'bg-slate-900'}`} style={{ height: 180 }}>
+                <div className="absolute left-1/2 -translate-x-1/2 top-2 w-16 h-4 rounded-full bg-black z-10" />
+                <div className={`relative w-full h-full rounded-[1.7rem] overflow-hidden flex items-center justify-center px-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+                  <p
+                    style={{ fontFamily, fontSize: `${13 * (fontScale / 100)}px` }}
+                    className={`font-bold text-center leading-snug transition-all duration-150 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                  >
+                    Texto de exemplo — Aa Bb Cc 123
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {FONT_SCALE_OPTIONS.map(pct => {
+                const active = fontScale === pct;
+                return (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setFontScale(pct)}
+                    data-guide-anchor="settings.fonteTamanho"
+                    className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all active:scale-95 ${active ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+                  >
+                    <span className={`font-black leading-none ${active ? 'text-violet-600 dark:text-violet-400' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`} style={{ fontSize: `${10 + (pct / 100) * 6}px` }}>A</span>
+                    <span className={`text-[9px] font-black ${active ? 'text-violet-500' : 'text-slate-400'}`}>{pct}%</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setFontScaleSectionOpen(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Concluído
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Ícones do Menu — popup próprio (era acordeão inline dentro de Acessibilidade). */}
+      {navIconsSectionOpen && (
+        <div className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setNavIconsSectionOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className="text-center">
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ícones do Menu</h3>
+              <p className="text-[11px] font-medium tracking-wide text-blue-950 dark:text-blue-300 mt-2 leading-relaxed">
+                Escolha entre ícones monocromáticos (uma cor só) ou coloridos na navegação inferior.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setNavIconMode('mono')}
+                data-guide-anchor="settings.navIconMode"
+                className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'mono' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+              >
+                <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'mono' ? 'text-violet-500' : 'text-slate-400'}`}>Monocromático</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNavIconMode('colored')}
+                data-guide-anchor="settings.navIconMode"
+                className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-all active:scale-95 ${navIconMode === 'colored' ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+              >
+                <span className={`text-[11px] font-black uppercase tracking-wide ${navIconMode === 'colored' ? 'text-violet-500' : 'text-slate-400'}`}>Colorido</span>
+              </button>
+            </div>
+            {navIconMode === 'mono' && (
+              <div className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                <p className="text-[9px] font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest px-1">Cor do ícone ativo</p>
+                <div className="flex flex-wrap gap-2">
+                  {NAV_MONO_PALETTE.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setNavMonoColor(c)}
+                      title={c}
+                      aria-label={`Cor ${c}`}
+                      data-guide-anchor="settings.navMonoCor"
+                      className={`w-7 h-7 rounded-lg border transition-all ${navMonoColor === c ? 'border-violet-500 scale-110 ring-2 ring-violet-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Prévia ao vivo — silhueta de celular com a barra de menu inferior; a cor dos
+                ícones (mono ou colorido) e o texto de exemplo (fonte/tamanho) mudam na hora. */}
+            <div className="flex justify-center py-1">
+              <div className={`relative w-48 rounded-[2.3rem] p-2 shadow-xl ${isDarkMode ? 'bg-slate-700' : 'bg-slate-900'}`} style={{ height: 260 }}>
+                <div className="absolute left-1/2 -translate-x-1/2 top-2 w-16 h-4 rounded-full bg-black z-10" />
+                <div className={`relative w-full h-full rounded-[1.7rem] overflow-hidden flex flex-col ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+                  <div className="flex-1 flex items-center justify-center px-4 pt-7">
+                    <p
+                      style={{ fontFamily, fontSize: `${11 * (fontScale / 100)}px` }}
+                      className={`font-bold text-center ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                    >
+                      Texto de exemplo — Aa Bb Cc 123
+                    </p>
+                  </div>
+                  <div className="p-2.5">
+                    <div className={`flex items-center justify-around gap-1 px-2 py-2.5 rounded-full ${THEME_VISUALS[appTheme].pillGradient}`}>
+                      {[
+                        { key: 'dashboard', Icon: LayoutDashboard },
+                        { key: 'purchases', Icon: ShoppingCart },
+                        { key: 'sales', Icon: ShoppingBag },
+                        { key: 'financial', Icon: DollarSign },
+                      ].map(({ key, Icon }) => (
+                        <Icon key={key} size={16} color={navIconMode === 'colored' ? NAV_TAB_COLORS[key] : navMonoColor} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNavIconsSectionOpen(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Concluído
+            </button>
           </div>
         </div>
       )}

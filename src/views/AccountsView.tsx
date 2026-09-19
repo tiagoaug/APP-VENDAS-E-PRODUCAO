@@ -206,14 +206,14 @@ export default function AccountsView({ accounts, onAdd, onQuickAdd, onEdit, onDe
                 <div className="flex items-center gap-1">
                    <button
                      onClick={() => onAdjust(account.id)}
-                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-700 hover:text-emerald-400' : 'text-slate-200 hover:text-emerald-600'}`}
+                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-emerald-400 hover:bg-emerald-900/20' : 'text-emerald-600 hover:bg-emerald-50'}`}
                      title="Reajustar Saldo"
                    >
                      <RefreshCcw size={16} strokeWidth={2.5} />
                    </button>
                    <button
                      onClick={() => onEdit(account.id)}
-                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-700 hover:text-indigo-400' : 'text-slate-200 hover:text-indigo-600'}`}
+                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-indigo-400 hover:bg-indigo-900/20' : 'text-indigo-600 hover:bg-indigo-50'}`}
                      title="Editar Conta"
                      aria-label="Editar Conta"
                    >
@@ -221,7 +221,7 @@ export default function AccountsView({ accounts, onAdd, onQuickAdd, onEdit, onDe
                    </button>
                    <button
                      onClick={() => handleDeleteClick(account.id)}
-                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-700 hover:text-rose-500' : 'text-slate-200 hover:text-rose-500'}`}
+                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-rose-400 hover:bg-rose-900/20' : 'text-rose-500 hover:bg-rose-50'}`}
                      title="Excluir Conta"
                      aria-label="Excluir Conta"
                    >

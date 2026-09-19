@@ -38,15 +38,15 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
   }, []);
 
   const allTabs = [
-    { id: CategoryType.PRODUCT, label: 'Produtos', icon: <ShoppingBag size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'sales' },
-    { id: CategoryType.EXPENSE, label: 'Despesas', icon: <TrendingDown size={14} />, color: 'bg-rose-500', text: 'text-rose-600', module: 'sales' },
-    { id: CategoryType.REVENUE, label: 'Receitas', icon: <TrendingUp size={14} />, color: 'bg-emerald-500', text: 'text-emerald-600', module: 'sales' },
-    { id: CategoryType.PRODUCTION, label: 'Produção', icon: <Factory size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production' },
-    { id: CategoryType.SUPPLY, label: 'Insumos', icon: <Package size={14} />, color: 'bg-emerald-500', text: 'text-emerald-600', module: 'production' },
-    { id: CategoryType.CUTTING_TOOL, label: 'Facas', icon: <Scissors size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production' },
-    { id: CategoryType.MOLD, label: 'Solados', icon: <Footprints size={14} />, color: 'bg-cyan-500', text: 'text-cyan-600', module: 'production' },
-    { id: CategoryType.GENERAL, label: 'Gerais', icon: <LayoutGrid size={14} />, color: 'bg-blue-500', text: 'text-blue-600', module: 'sales' },
-    { id: CategoryType.OTHER, label: 'Pessoais', icon: <User size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'personal' },
+    { id: CategoryType.PRODUCT, label: 'Produtos', icon: <ShoppingBag size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'sales', description: 'Organiza o catálogo de produtos — aparece no campo Categoria ao cadastrar ou editar um Produto em Vendas.' },
+    { id: CategoryType.EXPENSE, label: 'Despesas', icon: <TrendingDown size={14} />, color: 'bg-rose-500', text: 'text-rose-600', module: 'sales', description: 'Organiza saídas financeiras — usada ao lançar uma Despesa no Financeiro e como categoria financeira obrigatória nas Compras de Solado.' },
+    { id: CategoryType.REVENUE, label: 'Receitas', icon: <TrendingUp size={14} />, color: 'bg-emerald-500', text: 'text-emerald-600', module: 'sales', description: 'Organiza entradas financeiras — usada ao lançar uma Receita no Financeiro e nos recebimentos rápidos do Financeiro Pessoal.' },
+    { id: CategoryType.PRODUCTION, label: 'Produção', icon: <Factory size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production', description: 'Agrupa etapas do processo produtivo (ex.: Corte, Costura, Montagem) — opção genérica ao criar categorias rápidas em Configurações de Produção.' },
+    { id: CategoryType.SUPPLY, label: 'Insumos', icon: <Package size={14} />, color: 'bg-emerald-500', text: 'text-emerald-600', module: 'production', description: 'Organiza matérias-primas e insumos — alimenta as categorias do cadastro de Materiais em Configurações de Produção.' },
+    { id: CategoryType.CUTTING_TOOL, label: 'Facas', icon: <Scissors size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production', description: 'Organiza as facas de corte — alimenta as categorias disponíveis no cadastro de Facas em Configurações de Produção.' },
+    { id: CategoryType.MOLD, label: 'Solados', icon: <Footprints size={14} />, color: 'bg-cyan-500', text: 'text-cyan-600', module: 'production', description: 'Organiza moldes e solados — alimenta as categorias disponíveis no cadastro de Solados em Configurações de Produção.' },
+    { id: CategoryType.GENERAL, label: 'Gerais', icon: <LayoutGrid size={14} />, color: 'bg-blue-500', text: 'text-blue-600', module: 'sales', description: 'Categoria coringa pra itens que não se encaixam nos outros tipos — disponível em Configurações de Produção e em Compras que não são de Solado.' },
+    { id: CategoryType.OTHER, label: 'Pessoais', icon: <User size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'personal', description: 'Reúne categorias do Financeiro Pessoal — usada nas receitas e despesas pessoais, separadas das categorias do negócio.' },
   ];
 
   const tabs = allTabs.filter(t => modulesConfig[t.module as keyof AppModulesConfig]);
@@ -251,6 +251,12 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
               }`}>{tab.label}</span>
             </button>
           ))}
+        </div>
+
+        <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-indigo-900/10 border-indigo-900/30' : 'bg-indigo-50/50 border-indigo-100'}`}>
+          <p className="text-[11px] font-medium text-blue-900 dark:text-blue-300 leading-relaxed">
+            {tabs.find(t => t.id === activeTab)?.description}
+          </p>
         </div>
 
         <div className="relative flex gap-2">

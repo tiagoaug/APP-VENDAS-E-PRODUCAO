@@ -1,7 +1,7 @@
 import { Reorder, useDragControls } from 'motion/react';
 import {
   X, ShoppingCart, ShoppingBag, Factory, Building2, Truck, DollarSign, User as UserIcon, UserCog,
-  Eye, EyeOff, ChevronUp, ChevronDown, LayoutDashboard, Settings, GripVertical, Pin, PinOff,
+  Eye, EyeOff, LayoutDashboard, Settings, Pin, PinOff,
   GanttChartSquare, Boxes, Users, BarChart3, Footprints, Database, AlertTriangle, Calculator, Printer,
   Inbox, Link2, Handshake, Package, CreditCard, ScanText, Sparkles, Scissors,
   PackagePlus, Layout, SlidersHorizontal, Wand2, Smartphone,
@@ -54,21 +54,23 @@ const CANDIDATES: NavCandidate[] = [
 
 interface NavRowProps {
   item: NavCandidate;
-  index: number;
-  total: number;
   isHidden: boolean;
   isPinned: boolean;
   isDarkMode: boolean;
-  onMove: (index: number, direction: -1 | 1) => void;
   onToggleHidden: (id: BottomNavItemId) => void;
   onTogglePinned: (id: BottomNavItemId) => void;
+  // Tile menor pra caber na fileira da barra fixa (junto de Home/Mais); a expansível usa o
+  // tamanho normal, igual ao painel "Mais" de verdade.
+  compact?: boolean;
 }
 
 // Item arrastável — useDragControls precisa viver num componente próprio por linha (não dá pra
 // chamar o hook direto dentro do .map do pai), mesmo padrão já usado em DashboardConfigView e
 // DeliveryRouteBuilderView/DeliveryRouteDetailView (Reorder.Item + alça própria via onPointerDown,
-// já testado em touch Android — nada de drag nativo HTML5, que não funciona em toque).
-function NavRow({ item, index, total, isHidden, isPinned, isDarkMode, onMove, onToggleHidden, onTogglePinned }: NavRowProps) {
+// já testado em touch Android — nada de drag nativo HTML5, que não funciona em toque). Ocultar/
+// Fixar viraram botões pequenos direto no próprio ícone (canto superior), a pedido do Tiago —
+// as antigas setas pra cima/baixo saíram, já que arrastar cobre a mesma necessidade.
+function NavRow({ item, isHidden, isPinned, isDarkMode, onToggleHidden, onTogglePinned, compact }: NavRowProps) {
   const controls = useDragControls();
 
   return (
@@ -76,64 +78,37 @@ function NavRow({ item, index, total, isHidden, isPinned, isDarkMode, onMove, on
       value={item}
       dragListener={false}
       dragControls={controls}
-      className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isHidden ? 'opacity-50' : ''} ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+      onPointerDown={(e: React.PointerEvent) => { e.preventDefault(); controls.start(e); }}
+      className={`relative flex flex-col items-center gap-1 rounded-2xl border cursor-grab active:cursor-grabbing select-none touch-none transition-all ${compact ? 'p-1.5' : 'p-2.5'} ${isHidden ? 'opacity-40' : ''} ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
     >
-      <div
-        onPointerDown={(e) => { e.preventDefault(); controls.start(e); }}
-        className="p-1.5 -ml-1.5 rounded-lg cursor-grab active:cursor-grabbing select-none touch-none shrink-0"
-        title="Arrastar para reordenar"
-        aria-label={`Arrastar ${item.label} para reordenar`}
-      >
-        <GripVertical size={16} className="text-slate-300 dark:text-slate-600" />
-      </div>
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}>
-        {item.icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className={`text-xs font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="absolute -top-1.5 -right-1.5 flex items-center gap-1 z-10">
         <button
           type="button"
-          onClick={() => onMove(index, -1)}
-          disabled={index === 0}
-          title="Mover pra cima"
-          aria-label={`Mover ${item.label} pra cima`}
-          className={`p-1.5 rounded-lg transition-all disabled:opacity-30 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-400 shadow-sm'}`}
-        >
-          <ChevronUp size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onMove(index, 1)}
-          disabled={index === total - 1}
-          title="Mover pra baixo"
-          aria-label={`Mover ${item.label} pra baixo`}
-          className={`p-1.5 rounded-lg transition-all disabled:opacity-30 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-400 shadow-sm'}`}
-        >
-          <ChevronDown size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onToggleHidden(item.id)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onToggleHidden(item.id); }}
           title={isHidden ? 'Mostrar na barra' : 'Esconder da barra'}
           aria-label={isHidden ? `Mostrar ${item.label} na barra` : `Esconder ${item.label} da barra`}
-          className={`p-1.5 rounded-lg transition-all ${isHidden ? (isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-300 shadow-sm') : 'bg-indigo-600 text-white'}`}
+          className={`w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${isHidden ? (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-400') : 'bg-indigo-600 text-white'}`}
         >
-          {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+          {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
         </button>
         {!isHidden && (
           <button
             type="button"
-            onClick={() => onTogglePinned(item.id)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onTogglePinned(item.id); }}
             title={isPinned ? 'Fixo na barra — tocar pra deixar só na expansão' : 'Só aparece expandindo — tocar pra fixar na barra'}
             aria-label={isPinned ? `Desafixar ${item.label} da barra` : `Fixar ${item.label} na barra`}
-            className={`p-1.5 rounded-lg transition-all ${isPinned ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-300 shadow-sm')}`}
+            className={`w-5 h-5 rounded-full flex items-center justify-center shadow transition-all ${isPinned ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-400')}`}
           >
-            {isPinned ? <Pin size={14} /> : <PinOff size={14} />}
+            {isPinned ? <Pin size={11} /> : <PinOff size={11} />}
           </button>
         )}
       </div>
+      <div className={`${compact ? 'w-8 h-8' : 'w-10 h-10'} rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-600 shadow-sm'}`}>
+        {item.icon}
+      </div>
+      <p className={`text-[7px] font-black tracking-tight uppercase text-center leading-tight truncate max-w-full ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
     </Reorder.Item>
   );
 }
@@ -186,11 +161,6 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
   // o tamanho de página típico da barra: 3 colunas x 2 linhas).
   const pinnedIds = new Set(config.pinned && config.pinned.length > 0 ? config.pinned : visibleIds.slice(0, 6));
 
-  // Pra pré-visualização — segue a MESMA ordem/lista que aparece na barra real (visibleItems,
-  // já na ordem configurada), só separada em fixado vs. resto.
-  const previewPinnedItems = visibleItems.filter(item => pinnedIds.has(item.id));
-  const previewExpandableItems = visibleItems.filter(item => !pinnedIds.has(item.id));
-
   const togglePinned = (id: BottomNavItemId) => {
     const current = config.pinned && config.pinned.length > 0 ? config.pinned : visibleIds.slice(0, 6);
     const isPinned = current.includes(id);
@@ -200,24 +170,36 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
     });
   };
 
-  const move = (index: number, direction: -1 | 1) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= visibleIds.length) return;
-    const newVisibleOrder = [...visibleIds];
-    [newVisibleOrder[index], newVisibleOrder[targetIndex]] = [newVisibleOrder[targetIndex], newVisibleOrder[index]];
-    onSave({ ...config, order: mergeOrder(newVisibleOrder) });
+  // Prévia dividida nas MESMAS duas zonas da barra de verdade (ver App.tsx <nav>): fixados
+  // aparecem direto (junto de Home/Mais, que nunca entram aqui pra reordenar) e o resto só ao
+  // expandir — Tiago pediu fidelidade visual a essa separação, em vez de uma grade única com
+  // tudo junto. Cada zona reordena só entre si; fixar/ocultar (botão no ícone) que move um item
+  // de uma zona pra outra.
+  const pinnedItems = visibleItems.filter(item => pinnedIds.has(item.id));
+  const expandableItems = visibleItems.filter(item => !pinnedIds.has(item.id));
+
+  const mergeSubOrder = (subsetIds: Set<BottomNavItemId>, newSubOrder: BottomNavItemId[]): BottomNavItemId[] => {
+    let idx = 0;
+    return visibleIds.map(id => subsetIds.has(id) ? newSubOrder[idx++] : id);
+  };
+  const reorderPinned = (newOrder: NavCandidate[]) => {
+    onSave({ ...config, order: mergeOrder(mergeSubOrder(pinnedIds, newOrder.map(i => i.id))) });
+  };
+  const reorderExpandable = (newOrder: NavCandidate[]) => {
+    const expandableIds = new Set(expandableItems.map(i => i.id));
+    onSave({ ...config, order: mergeOrder(mergeSubOrder(expandableIds, newOrder.map(i => i.id))) });
   };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md max-h-[85vh] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+        className={`w-full max-w-lg max-h-[90vh] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
       >
         <div className="p-6 pb-4 flex items-center justify-between shrink-0">
           <div>
             <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Personalizar Navegação</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Arraste pela alça ou use as setas pra reordenar</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Arraste os ícones pra posicionar — toque no olho/pin pra ocultar ou fixar</p>
           </div>
           <button
             type="button"
@@ -243,69 +225,81 @@ export default function BottomNavConfigModal({ isOpen, onClose, config, onSave, 
             Fixado aparece sempre na barra — o resto só ao expandir (seta pra cima)
           </div>
 
-          {/* Pré-visualização — não é a barra de verdade (que ajusta colunas pela largura real
-              da tela), só uma maquete pra dar uma ideia de como fica: fixados aparecem direto,
-              o resto vira "+N ícones" que só aparecem expandindo. */}
-          <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-            <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2">Pré-visualização da barra</p>
-            <div className={`flex items-stretch gap-1 p-1.5 rounded-[1.5rem] ${isDarkMode ? 'bg-slate-900' : 'bg-white shadow-sm'}`}>
-              <div className="flex flex-col items-center justify-center gap-0.5 px-2.5 py-2 rounded-xl bg-indigo-600 text-white shrink-0">
-                <LayoutDashboard size={14} />
-                <span className="text-[6px] font-black uppercase tracking-wide">Home</span>
+        </div>
+
+        {/* Prévia interativa — celular representativo com as MESMAS duas camadas da barra de
+            verdade: a barra fixa (Home + fixados + Mais) embaixo, e o painel expansível (o
+            resto) acima dela, exatamente como aparece na tela real ao tocar na seta pra cima.
+            Arrasta pra reposicionar dentro de cada camada, toca no olho/pin de cada ícone pra
+            ocultar/fixar (o que move o item de uma camada pra outra). */}
+        <div className="flex-1 overflow-y-auto px-6 pb-4 min-h-0">
+          <div className={`relative mx-auto max-w-[340px] rounded-[2.3rem] p-3 shadow-xl ${isDarkMode ? 'bg-slate-700' : 'bg-slate-900'}`}>
+            <div className="absolute left-1/2 -translate-x-1/2 top-2 w-16 h-4 rounded-full bg-black z-10" />
+            <div className={`relative rounded-[1.7rem] pt-8 px-3 pb-3 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+              {/* Painel expansível — some antes de aparecer a barra fixa na tela real (a seta
+                  pra cima "abre" ele por cima do conteúdo); aqui já fica sempre visível pra dar
+                  pra editar. */}
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1.5 px-1">Painel expansível (seta pra cima)</p>
+                <div className={`rounded-2xl p-2 shadow-sm ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                  {expandableItems.length === 0 ? (
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wide text-center py-3">Tudo fixado — nada pra expandir</p>
+                  ) : (
+                    <Reorder.Group values={expandableItems} onReorder={reorderExpandable} className="grid grid-cols-3 gap-2">
+                      {expandableItems.map(item => (
+                        <NavRow
+                          key={item.id}
+                          item={item}
+                          isHidden={config.hidden.includes(item.id)}
+                          isPinned={false}
+                          isDarkMode={isDarkMode}
+                          onToggleHidden={toggleHidden}
+                          onTogglePinned={togglePinned}
+                        />
+                      ))}
+                    </Reorder.Group>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 min-w-0 grid grid-cols-3 gap-0.5">
-                {previewPinnedItems.length === 0 ? (
-                  <div className="col-span-3 flex items-center justify-center text-center text-[7px] font-bold text-slate-400 uppercase tracking-wide py-2 px-1">
-                    Nada fixado — tudo vai pra expansão
+
+              {/* Barra fixa — Home e Mais são fixos (não arrastam), só os fixados no meio
+                  reordenam entre si. */}
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1.5 px-1">Barra fixa</p>
+                <div className={`flex items-stretch gap-1.5 p-1.5 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white shadow-sm'}`}>
+                  <div className="flex flex-col items-center justify-center gap-0.5 w-12 shrink-0 rounded-xl bg-indigo-600 text-white py-1.5">
+                    <LayoutDashboard size={14} />
+                    <span className="text-[6px] font-black uppercase tracking-wide">Home</span>
                   </div>
-                ) : previewPinnedItems.map(item => (
-                  <div key={item.id} className={`flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                    {item.icon}
-                    <span className="text-[6px] font-bold uppercase tracking-wide truncate max-w-full">{item.label}</span>
+                  {pinnedItems.length === 0 ? (
+                    <div className="flex-1 min-w-0 flex items-center justify-center text-center text-[7px] font-bold text-slate-400 uppercase tracking-wide px-1">
+                      Nada fixado
+                    </div>
+                  ) : (
+                    <Reorder.Group values={pinnedItems} onReorder={reorderPinned} className="flex-1 min-w-0 grid grid-cols-3 gap-1">
+                      {pinnedItems.map(item => (
+                        <NavRow
+                          key={item.id}
+                          item={item}
+                          compact
+                          isHidden={config.hidden.includes(item.id)}
+                          isPinned={true}
+                          isDarkMode={isDarkMode}
+                          onToggleHidden={toggleHidden}
+                          onTogglePinned={togglePinned}
+                        />
+                      ))}
+                    </Reorder.Group>
+                  )}
+                  <div className="flex flex-col items-center justify-center gap-0.5 w-12 shrink-0 rounded-xl bg-black/5 dark:bg-white/10 py-1.5">
+                    <Settings size={14} className={isDarkMode ? 'text-slate-300' : 'text-slate-600'} />
+                    <span className={`text-[6px] font-black uppercase tracking-wide ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Mais</span>
                   </div>
-                ))}
-              </div>
-              <div className="flex flex-col gap-0.5 shrink-0 w-10">
-                {previewExpandableItems.length > 0 && (
-                  <div className={`flex-1 flex items-center justify-center rounded-full ${isDarkMode ? 'bg-white/10 text-indigo-400' : 'bg-black/5 text-indigo-600'}`}>
-                    <ChevronUp size={12} strokeWidth={3} />
-                  </div>
-                )}
-                <div className={`flex-1 flex flex-col items-center justify-center gap-0.5 rounded-xl ${isDarkMode ? 'bg-white/10' : 'bg-black/5'}`}>
-                  <Settings size={12} className={isDarkMode ? 'text-slate-300' : 'text-slate-600'} />
-                  <span className={`text-[6px] font-black uppercase tracking-wide ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Mais</span>
                 </div>
               </div>
             </div>
-            {previewExpandableItems.length > 0 && (
-              <p className="text-[7px] font-bold text-slate-400 mt-2 leading-relaxed">
-                Ao expandir: {previewExpandableItems.map(i => i.label).join(', ')}
-              </p>
-            )}
           </div>
         </div>
-
-        <Reorder.Group
-          axis="y"
-          values={visibleItems}
-          onReorder={(newOrder) => onSave({ ...config, order: mergeOrder(newOrder.map(i => i.id)) })}
-          className="flex-1 overflow-y-auto px-6 pb-6 space-y-2 custom-scrollbar"
-        >
-          {visibleItems.map((item, index) => (
-            <NavRow
-              key={item.id}
-              item={item}
-              index={index}
-              total={visibleItems.length}
-              isHidden={config.hidden.includes(item.id)}
-              isPinned={pinnedIds.has(item.id)}
-              isDarkMode={isDarkMode}
-              onMove={move}
-              onToggleHidden={toggleHidden}
-              onTogglePinned={togglePinned}
-            />
-          ))}
-        </Reorder.Group>
 
         <div className="p-6 pt-2 shrink-0">
           <p className="text-[9px] font-bold text-slate-400 text-center italic">
